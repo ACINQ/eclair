@@ -19,97 +19,86 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.OnionTlv._
 import fr.acinq.eclair.wire.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
-import scodec.codecs._
-import scodec.{Codec, DecodeResult, Decoder}
 
 /**
  * Created by t-bast on 05/07/2019.
  */
 
-/**
- * Tlv types used inside onion messages.
- */
+case class OnionRoutingPacket(version: Int, publicKey: ByteVector, payload: ByteVector, hmac: ByteVector32)
+
+/** Tlv types used inside onion messages. */
 sealed trait OnionTlv extends Tlv
-
-case class OnionRoutingPacket(version: Int,
-                              publicKey: ByteVector,
-                              payload: ByteVector,
-                              hmac: ByteVector32)
-
-case class OnionForwardInfo(shortChannelId: ShortChannelId,
-                            amtToForward: MilliSatoshi,
-                            outgoingCltvValue: CltvExpiry)
-
-case class OnionPaymentInfo(amount: MilliSatoshi, cltvExpiry: CltvExpiry)
-
-case class OnionPerHopPayload(payload: Either[TlvStream[OnionTlv], OnionForwardInfo]) {
-
-  lazy val paymentInfo: Either[InvalidOnionPayload, OnionPaymentInfo] = payload match {
-    case Right(OnionForwardInfo(_, amount, cltv)) => Right(OnionPaymentInfo(amount, cltv))
-    case Left(tlv) =>
-      val amount = tlv.get[AmountToForward].map(_.amount)
-      val cltv = tlv.get[OutgoingCltv].map(_.cltv)
-      if (amount.isEmpty) {
-        Left(InvalidOnionPayload(UInt64(2), 0))
-      } else if (cltv.isEmpty) {
-        Left(InvalidOnionPayload(UInt64(4), 0))
-      } else {
-        Right(OnionPaymentInfo(amount.get, cltv.get))
-      }
-  }
-
-  lazy val forwardInfo: Either[InvalidOnionPayload, OnionForwardInfo] = payload match {
-    case Right(onionForwardInfo) => Right(onionForwardInfo)
-    case Left(tlv) =>
-      val shortChannelId = tlv.get[OutgoingChannelId].map(_.shortChannelId)
-      val amount = tlv.get[AmountToForward].map(_.amount)
-      val cltv = tlv.get[OutgoingCltv].map(_.cltv)
-      if (amount.isEmpty) {
-        Left(InvalidOnionPayload(UInt64(2), 0))
-      } else if (cltv.isEmpty) {
-        Left(InvalidOnionPayload(UInt64(4), 0))
-      } else if (shortChannelId.isEmpty) {
-        Left(InvalidOnionPayload(UInt64(6), 0))
-      } else {
-        Right(OnionForwardInfo(shortChannelId.get, amount.get, cltv.get))
-      }
-  }
-
-}
-
-object OnionPerHopPayload {
-
-  // @formatter:off
-  implicit def legacyToPerHopPayload(legacy: OnionForwardInfo): OnionPerHopPayload = OnionPerHopPayload(Right(legacy))
-  implicit def tlvToPerHopPayload(tlv: TlvStream[OnionTlv]): OnionPerHopPayload = OnionPerHopPayload(Left(tlv))
-  // @formatter:on
-
-}
 
 object OnionTlv {
 
-  /**
-   * Amount to forward to the next node.
-   */
+  /** Amount to forward to the next node. */
   case class AmountToForward(amount: MilliSatoshi) extends OnionTlv
 
-  /**
-   * CLTV value to use for the HTLC offered to the next node.
-   */
+  /** CLTV value to use for the HTLC offered to the next node. */
   case class OutgoingCltv(cltv: CltvExpiry) extends OnionTlv
 
-  /**
-   * Id of the channel to use to forward a payment to the next node.
-   */
+  /** Id of the channel to use to forward a payment to the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends OnionTlv
 
 }
 
+object Onion {
+
+  import OnionTlv._
+
+  /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
+  sealed trait PerHopPayload
+
+  /** Legacy fixed-size 65-bytes onion payload. */
+  sealed trait LegacyPayload extends PerHopPayload
+
+  /** Variable-length onion payload with optional additional tlv records. */
+  sealed trait TlvPayload extends PerHopPayload {
+    val records: TlvStream[OnionTlv]
+  }
+
+  /** Per-hop payload for an intermediate node. */
+  sealed trait RelayPayload extends PerHopPayload {
+    /** Amount to forward to the next node. */
+    val amountToForward: MilliSatoshi
+    /** CLTV value to use for the HTLC offered to the next node. */
+    val outgoingCltv: CltvExpiry
+    /** Id of the channel to use to forward a payment to the next node. */
+    val outgoingChannelId: ShortChannelId
+  }
+
+  /** Per-hop payload for a final node. */
+  sealed trait FinalPayload extends PerHopPayload {
+    val amount: MilliSatoshi
+    val expiry: CltvExpiry
+  }
+
+  case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends LegacyPayload with RelayPayload
+
+  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends LegacyPayload with FinalPayload
+
+  case class RelayTlvPayload(records: TlvStream[OnionTlv]) extends TlvPayload with RelayPayload {
+    override val amountToForward = records.get[AmountToForward].get.amount
+    override val outgoingCltv = records.get[OutgoingCltv].get.cltv
+    override val outgoingChannelId = records.get[OutgoingChannelId].get.shortChannelId
+  }
+
+  case class FinalTlvPayload(records: TlvStream[OnionTlv]) extends TlvPayload with FinalPayload {
+    override val amount = records.get[AmountToForward].get.amount
+    override val expiry = records.get[OutgoingCltv].get.cltv
+  }
+
+}
+
 object OnionCodecs {
+
+  import Onion._
+  import OnionTlv._
+  import scodec.codecs._
+  import scodec.{Attempt, Codec, DecodeResult, Decoder, Err}
 
   def onionRoutingPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
     ("version" | uint8) ::
@@ -141,13 +130,48 @@ object OnionCodecs {
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionTlv](onionTlvCodec).complete
 
-  val legacyPerHopPayloadCodec: Codec[OnionForwardInfo] = (
+  private val legacyRelayPerHopPayloadCodec: Codec[RelayLegacyPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("short_channel_id" | shortchannelid) ::
       ("amt_to_forward" | millisatoshi) ::
       ("outgoing_cltv_value" | cltvExpiry) ::
-      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[OnionForwardInfo]
+      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[RelayLegacyPayload]
 
-  val perHopPayloadCodec: Codec[OnionPerHopPayload] = fallback(tlvPerHopPayloadCodec, legacyPerHopPayloadCodec).as[OnionPerHopPayload]
+  private val legacyFinalPerHopPayloadCodec: Codec[FinalLegacyPayload] = (
+    ("realm" | constant(ByteVector.fromByte(0))) ::
+      ("short_channel_id" | ignore(8 * 8)) ::
+      ("amount" | millisatoshi) ::
+      ("expiry" | cltvExpiry) ::
+      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[FinalLegacyPayload]
+
+  case class MissingRequiredTlv(tag: UInt64) extends Err {
+    // @formatter:off
+    val failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
+    override def message = failureMessage.message
+    override def context: List[String] = Nil
+    override def pushContext(ctx: String): Err = this
+    // @formatter:on
+  }
+
+  val relayPerHopPayloadCodec: Codec[RelayPayload] = fallback(tlvPerHopPayloadCodec, legacyRelayPerHopPayloadCodec).narrow({
+    case Left(tlvs) if tlvs.get[AmountToForward].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
+    case Left(tlvs) if tlvs.get[OutgoingCltv].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
+    case Left(tlvs) if tlvs.get[OutgoingChannelId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(6)))
+    case Left(tlvs) => Attempt.successful(RelayTlvPayload(tlvs))
+    case Right(legacy) => Attempt.successful(legacy)
+  }, {
+    case legacy: RelayLegacyPayload => Right(legacy)
+    case RelayTlvPayload(tlvs) => Left(tlvs)
+  })
+
+  val finalPerHopPayloadCodec: Codec[FinalPayload] = fallback(tlvPerHopPayloadCodec, legacyFinalPerHopPayloadCodec).narrow({
+    case Left(tlvs) if tlvs.get[AmountToForward].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
+    case Left(tlvs) if tlvs.get[OutgoingCltv].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
+    case Left(tlvs) => Attempt.successful(FinalTlvPayload(tlvs))
+    case Right(legacy) => Attempt.successful(legacy)
+  }, {
+    case legacy: FinalLegacyPayload => Right(legacy)
+    case FinalTlvPayload(tlvs) => Left(tlvs)
+  })
 
 }

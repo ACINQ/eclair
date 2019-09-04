@@ -36,7 +36,6 @@ import scodec.{Attempt, DecodeResult}
 import scala.collection.mutable
 
 // @formatter:off
-
 sealed trait Origin
 case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
 case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
@@ -49,9 +48,7 @@ case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc:
 
 case object GetUsableBalances
 case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
-
 // @formatter:on
-
 
 /**
  * Created by PM on 01/02/2017.
@@ -113,7 +110,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Right(r: RelayPayload) =>
           handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
             case RelayFailure(cmdFail) =>
-              log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${r.payload.shortChannelId} reason=${cmdFail.reason}")
+              log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
               commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
             case RelaySuccess(selectedShortChannelId, cmdAdd) =>
               log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=$selectedShortChannelId")
@@ -218,16 +215,16 @@ object Relayer extends Logging {
 
   // @formatter:off
   sealed trait NextPayload
-  case class FinalPayload(add: UpdateAddHtlc, payload: OnionPerHopPayload) extends NextPayload
-  case class RelayPayload(add: UpdateAddHtlc, payload: OnionForwardInfo, nextPacket: OnionRoutingPacket) extends NextPayload {
-    val relayFeeMsat: MilliSatoshi = add.amountMsat - payload.amtToForward
-    val expiryDelta: CltvExpiryDelta = add.cltvExpiry - payload.outgoingCltvValue
+  case class FinalPayload(add: UpdateAddHtlc, payload: Onion.FinalPayload) extends NextPayload
+  case class RelayPayload(add: UpdateAddHtlc, payload: Onion.RelayPayload, nextPacket: OnionRoutingPacket) extends NextPayload {
+    val relayFeeMsat: MilliSatoshi = add.amountMsat - payload.amountToForward
+    val expiryDelta: CltvExpiryDelta = add.cltvExpiry - payload.outgoingCltv
   }
   // @formatter:on
 
   /**
-   * Decrypt the onion of a received htlc, and find out if the payment is to be relayed,
-   * or if our node is the last one in the route
+   * Decrypt the onion of a received htlc, and find out if the payment is to be relayed, or if our node is the last one
+   * in the route.
    *
    * @param add        incoming htlc
    * @param privateKey this node's private key
@@ -236,28 +233,21 @@ object Relayer extends Logging {
   def decryptPacket(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector): Either[FailureMessage, NextPayload] =
     Sphinx.PaymentPacket.peel(privateKey, add.paymentHash, add.onionRoutingPacket) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        OnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(OnionPerHopPayload(Left(_)), _)) if !Features.hasVariableLengthOnion(features) =>
-            Left(InvalidRealm)
+        val codec = if (p.isLastPacket) OnionCodecs.finalPerHopPayloadCodec else OnionCodecs.relayPerHopPayloadCodec
+        codec.decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(_: Onion.TlvPayload, _)) if !Features.hasVariableLengthOnion(features) => Left(InvalidRealm)
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
             }
-            if (p.isLastPacket) {
-              perHopPayload.paymentInfo match {
-                case Right(_) => Right(FinalPayload(add, perHopPayload))
-                case Left(err) => Left(err)
-              }
-            } else {
-              perHopPayload.forwardInfo match {
-                case Right(forwardInfo) => Right(RelayPayload(add, forwardInfo, nextPacket))
-                case Left(err) => Left(err)
-              }
+            perHopPayload match {
+              case finalPayload: Onion.FinalPayload => Right(FinalPayload(add, finalPayload))
+              case relayPayload: Onion.RelayPayload => Right(RelayPayload(add, relayPayload, nextPacket))
             }
-          case Attempt.Failure(_) =>
-            // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
-            // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
-            Left(InvalidOnionPayload(UInt64(0), 0))
+          case Attempt.Failure(e: OnionCodecs.MissingRequiredTlv) => Left(e.failureMessage)
+          // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
+          // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
+          case Attempt.Failure(_) => Left(InvalidOnionPayload(UInt64(0), 0))
         }
       case Left(badOnion) => Left(badOnion)
     }
@@ -265,22 +255,18 @@ object Relayer extends Logging {
   /**
    * Handle an incoming htlc when we are the last node
    *
-   * @param finalPayload payload
+   * @param p final payload
    * @return either:
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - an UpdateAddHtlc to forward
    */
-  def handleFinal(finalPayload: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
-    import finalPayload.add
-    finalPayload.payload.paymentInfo match {
-      case Right(OnionPaymentInfo(amountMsat, _)) if amountMsat > add.amountMsat =>
-        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
-      case Right(OnionPaymentInfo(_, cltvExpiry)) if cltvExpiry != add.cltvExpiry =>
-        Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.cltvExpiry)), commit = true))
-      case Left(err) =>
-        Left(CMD_FAIL_HTLC(add.id, Right(err), commit = true))
-      case _ =>
-        Right(add)
+  def handleFinal(p: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
+    if (p.add.amountMsat < p.payload.amount) {
+      Left(CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectHtlcAmount(p.add.amountMsat)), commit = true))
+    } else if (p.add.cltvExpiry != p.payload.expiry) {
+      Left(CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectCltvExpiry(p.add.cltvExpiry)), commit = true))
+    } else {
+      Right(p.add)
     }
   }
 
@@ -300,7 +286,7 @@ object Relayer extends Logging {
    */
   def handleRelay(relayPayload: RelayPayload, channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.Map[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId], previousFailures: Seq[AddHtlcFailed], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
     import relayPayload._
-    log.info(s"relaying htlc #${add.id} paymentHash={} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.paymentHash, add.channelId, relayPayload.payload.shortChannelId, previousFailures.size)
+    log.info(s"relaying htlc #${add.id} paymentHash={} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.paymentHash, add.channelId, relayPayload.payload.outgoingChannelId, previousFailures.size)
     val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
     selectPreferredChannel(relayPayload, channelUpdates, node2channels, alreadyTried)
       .flatMap(selectedShortChannelId => channelUpdates.get(selectedShortChannelId).map(_.channelUpdate)) match {
@@ -308,7 +294,7 @@ object Relayer extends Logging {
         // no more channels to try
         val error = previousFailures
           // we return the error for the initially requested channel if it exists
-          .find(_.channelUpdate.map(_.shortChannelId).contains(relayPayload.payload.shortChannelId))
+          .find(_.channelUpdate.map(_.shortChannelId).contains(relayPayload.payload.outgoingChannelId))
           // otherwise we return the error for the first channel tried
           .getOrElse(previousFailures.head)
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(translateError(error)), commit = true))
@@ -325,7 +311,7 @@ object Relayer extends Logging {
    */
   def selectPreferredChannel(relayPayload: RelayPayload, channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.Map[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId], alreadyTried: Seq[ShortChannelId])(implicit log: LoggingAdapter): Option[ShortChannelId] = {
     import relayPayload.add
-    val requestedShortChannelId = relayPayload.payload.shortChannelId
+    val requestedShortChannelId = relayPayload.payload.outgoingChannelId
     log.debug(s"selecting next channel for htlc #${add.id} paymentHash={} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.paymentHash, add.channelId, requestedShortChannelId, alreadyTried.size)
     // first we find out what is the next node
     val nextNodeId_opt = channelUpdates.get(requestedShortChannelId) match {
@@ -350,7 +336,7 @@ object Relayer extends Logging {
             (shortChannelId, channelInfo_opt, relayResult)
           }
           .collect { case (shortChannelId, Some(channelInfo), _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSend) }
-          .filter(_._2 > relayPayload.payload.amtToForward) // we only keep channels that have enough balance to handle this payment
+          .filter(_._2 > relayPayload.payload.amountToForward) // we only keep channels that have enough balance to handle this payment
           .toList // needed for ordering
           .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
           .headOption match {
@@ -383,14 +369,14 @@ object Relayer extends Logging {
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
       case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
-      case Some(channelUpdate) if payload.amtToForward < channelUpdate.htlcMinimumMsat =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amtToForward, channelUpdate)), commit = true))
+      case Some(channelUpdate) if payload.amountToForward < channelUpdate.htlcMinimumMsat =>
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, channelUpdate)), commit = true))
       case Some(channelUpdate) if relayPayload.expiryDelta != channelUpdate.cltvExpiryDelta =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltvValue, channelUpdate)), commit = true))
-      case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amtToForward) =>
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, channelUpdate)), commit = true))
+      case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amountToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amtToForward, add.paymentHash, payload.outgoingCltvValue, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
     }
   }
 

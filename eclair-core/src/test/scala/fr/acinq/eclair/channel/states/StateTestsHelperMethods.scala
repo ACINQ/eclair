@@ -27,8 +27,8 @@ import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentLifecycle
-import fr.acinq.eclair.payment.PaymentLifecycle.LegacyPayload
 import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 
@@ -110,7 +110,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val payment_preimage: ByteVector32 = randomBytes32
     val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
     val expiry = CltvExpiryDelta(144).toCltvExpiry
-    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, payment_hash, Hop(null, destination, null) :: Nil, LegacyPayload(amount, expiry))._1.copy(commit = false)
+    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, payment_hash, Hop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
     (payment_preimage, cmd)
   }
 
