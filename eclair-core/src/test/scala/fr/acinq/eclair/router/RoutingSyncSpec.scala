@@ -43,7 +43,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   val fakeRoutingInfo: TreeMap[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)] = RoutingSyncSpec
     .shortChannelIds
-    .take(4567)
+    .take(60)
     .foldLeft(TreeMap.empty[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)]) {
       case (m, shortChannelId) => m + (shortChannelId -> makeFakeRoutingInfo(shortChannelId))
     }
@@ -137,7 +137,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
     // add some channels and updates to bob and resync
-    fakeRoutingInfo.take(40).values.foreach {
+    fakeRoutingInfo.take(10).values.foreach {
       case (pc, na1, na2) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.ann))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_1_opt.get))
@@ -145,17 +145,17 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(bob.stateData.channels.size === 10 && countUpdates(bob.stateData.channels) === 10)
+    assert(BasicSyncResult(ranges = 1, queries = 2, channels = 10, updates = 10, nodes = 10 * 2) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels)
 
     // add some updates to bob and resync
-    fakeRoutingInfo.take(40).values.foreach {
+    fakeRoutingInfo.take(10).values.foreach {
       case (pc, na1, na2) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
     }
-    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 80)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 80, nodes = 80) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(bob.stateData.channels.size === 10 && countUpdates(bob.stateData.channels) === 10 * 2)
+    assert(BasicSyncResult(ranges = 1, queries = 2, channels = 10, updates = 10 * 2, nodes = 10 * 2) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels)
 
     // add everything (duplicates will be ignored)
@@ -168,7 +168,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size, max = 60 seconds)
-    assert(BasicSyncResult(ranges = 2, queries = 46, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 3, queries = 12, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
   }
 
@@ -185,7 +185,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond(alice.stateData.channels === bob.stateData.channels)
 
     // add some channels and updates to bob and resync
-    fakeRoutingInfo.take(40).values.foreach {
+    fakeRoutingInfo.take(10).values.foreach {
       case (pc, na1, na2) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.ann))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_1_opt.get))
@@ -193,18 +193,18 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na1))
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 40)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 40, updates = 40, nodes = if (requestNodeAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(bob.stateData.channels.size === 10 && countUpdates(bob.stateData.channels) === 10)
+    assert(BasicSyncResult(ranges = 1, queries = 2, channels = 10, updates = 10, nodes = if (requestNodeAnnouncements) 10 * 2 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
     if (requestNodeAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
 
     // add some updates to bob and resync
-    fakeRoutingInfo.take(40).values.foreach {
+    fakeRoutingInfo.take(10).values.foreach {
       case (pc, na1, na2) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
     }
-    awaitCond(bob.stateData.channels.size === 40 && countUpdates(bob.stateData.channels) === 80)
-    assert(BasicSyncResult(ranges = 1, queries = 1, channels = 0, updates = 40, nodes = if (requestNodeAnnouncements) 80 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    awaitCond(bob.stateData.channels.size === 10 && countUpdates(bob.stateData.channels) === 10 * 2)
+    assert(BasicSyncResult(ranges = 1, queries = 2, channels = 0, updates = 10, nodes = if (requestNodeAnnouncements) 10 * 2 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
 
     // add everything (duplicates will be ignored)
@@ -217,7 +217,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size,  max = 60 seconds)
-    assert(BasicSyncResult(ranges = 2, queries = 46, channels = fakeRoutingInfo.size - 40, updates = 2 * (fakeRoutingInfo.size - 40), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 40) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 3, queries = 10, channels = fakeRoutingInfo.size - 10, updates = 2 * (fakeRoutingInfo.size - 10), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 10) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
 
     // bump random channel_updates
@@ -226,9 +226,9 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       makeNewerChannelUpdate(c, if (side) u1 else u2)
     }
 
-    val bumpedUpdates = (List(0, 42, 147, 153, 654, 834, 4301).map(touchUpdate(_, true)) ++ List(1, 42, 150, 200).map(touchUpdate(_, false))).toSet
+    val bumpedUpdates = (List(0, 3, 7).map(touchUpdate(_, true)) ++ List(1, 3, 9).map(touchUpdate(_, false))).toSet
     bumpedUpdates.foreach(c => sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, c)))
-    assert(BasicSyncResult(ranges = 2, queries = 2, channels = 0, updates = bumpedUpdates.size, nodes = if (requestNodeAnnouncements) 20 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 3, queries = 1, channels = 0, updates = bumpedUpdates.size, nodes = if (requestNodeAnnouncements) 5 * 2 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
     if (requestNodeAnnouncements) awaitCond(alice.stateData.nodes === bob.stateData.nodes)
   }
@@ -254,7 +254,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
 
-    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(100).keys.toList), None, None)
+    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(params.routerConf.shortIdWindow).keys.toList), None, None)
 
     // send first block
     sender.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, block1))
