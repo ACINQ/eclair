@@ -199,6 +199,9 @@ object NodeParams {
       case "zlib" => EncodingType.COMPRESSED_ZLIB
     }
 
+    val channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size")
+    require(channelRangeChunkSize <= 4000, "channel-range-chunk-size must be below 4000")
+
     NodeParams(
       keyManager = keyManager,
       alias = nodeAlias,
@@ -246,6 +249,8 @@ object NodeParams {
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
+        channelRangeChunkSize = channelRangeChunkSize,
+        shortIdWindow = config.getInt("router.sync.short-id-window"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
