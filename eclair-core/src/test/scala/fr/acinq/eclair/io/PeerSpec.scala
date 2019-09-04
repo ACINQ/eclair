@@ -44,7 +44,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
   val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
-  val fakeRoutingInfo = shortChannelIds.map(id => makeFakeRoutingInfo(id))
+  val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   val channels = fakeRoutingInfo.map(_._1.ann).toList
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement).toList
