@@ -54,7 +54,7 @@ case class RouterConf(randomizeRouteSelection: Boolean,
                       requestNodeAnnouncements: Boolean,
                       encodingType: EncodingType,
                       channelRangeChunkSize: Int,
-                      shortIdWindow: Int,
+                      channelQueryChunkSize: Int,
                       searchMaxFeeBase: Satoshi,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
@@ -589,7 +589,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
       // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
       val replies = shortChannelIdAndFlags
-        .grouped(nodeParams.routerConf.shortIdWindow)
+        .grouped(nodeParams.routerConf.channelQueryChunkSize)
         .map(chunk => QueryShortChannelIds(chainHash,
           shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
           if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
