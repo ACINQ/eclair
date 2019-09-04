@@ -33,12 +33,9 @@ case class UInt64(private val underlying: Long) extends Ordered[UInt64] {
   def <=(other: MilliSatoshi): Boolean = compare(other) <= 0
   def >=(other: MilliSatoshi): Boolean = compare(other) >= 0
 
-  def toByteVector: ByteVector = underlying match {
-    case 0 => hex"00"
-    case _ => ByteVector.fromLong(underlying).dropWhile(_ == 0)
-  }
+  def toByteVector: ByteVector = ByteVector.fromLong(underlying)
 
-  def toBigInt: BigInt = BigInt(signum = 1, toByteVector.toArray)
+  def toBigInt: BigInt = (BigInt(underlying >>> 1) << 1) + (underlying & 1)
 
   override def toString: String = UnsignedLongs.toString(underlying, 10)
 }

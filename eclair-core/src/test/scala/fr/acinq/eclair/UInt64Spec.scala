@@ -38,22 +38,33 @@ class UInt64Spec extends FunSuite {
     assert(z < a && z < b && z < c && z < l && c < l && l < l1 && l < b && l < a)
     assert(a == a)
     assert(a == UInt64.MaxValue)
+
     assert(l.toByteVector == hex"7fffffffffffffff")
     assert(l.toString == Long.MaxValue.toString)
     assert(l.toBigInt == BigInt(Long.MaxValue))
+
     assert(l1.toByteVector == hex"8000000000000000")
     assert(l1.toString == "9223372036854775808")
     assert(l1.toBigInt == BigInt("9223372036854775808"))
-    assert(a.toByteVector === hex"0xffffffffffffffff")
+
+    assert(a.toByteVector === hex"ffffffffffffffff")
     assert(a.toString === "18446744073709551615") // 2^64 - 1
-    assert(b.toByteVector === hex"0xfffffffffffffffe")
+    assert(a.toBigInt === BigInt("18446744073709551615"))
+
+    assert(b.toByteVector === hex"fffffffffffffffe")
     assert(b.toString === "18446744073709551614")
-    assert(c.toByteVector === hex"0x2a")
+    assert(b.toBigInt === BigInt("18446744073709551614"))
+
+    assert(c.toByteVector === hex"00000000000002a")
     assert(c.toString === "42")
-    assert(z.toByteVector === hex"0x00")
+    assert(c.toBigInt === BigInt("42"))
+
+    assert(z.toByteVector === hex"000000000000000")
     assert(z.toString === "0")
-    assert(UInt64(hex"0xff").toByteVector == hex"0xff")
-    assert(UInt64(hex"0x800").toByteVector == hex"0x800")
+    assert(z.toBigInt === BigInt("0"))
+
+    assert(UInt64(hex"ff").toByteVector ==  hex"0000000000000ff")
+    assert(UInt64(hex"800").toByteVector == hex"000000000000800")
   }
 
   test("use unsigned comparison when comparing millisatoshis to uint64") {
