@@ -14,7 +14,7 @@ before_install:
  - export PATH=$M2_HOME/bin:$PATH
  - sudo sh -c "ulimit -n 65535"
 script:
- - mvn scoverage:report -Dscalatest.parallel=false
+ - mvn scoverage:report
 cache:
  directories:
   - .autoconf
