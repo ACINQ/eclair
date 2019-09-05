@@ -31,12 +31,12 @@ import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
-import org.scalatest.fixture
+import org.scalatest.{ParallelTestExecution, fixture}
 
 /**
  * Created by PM on 23/08/2016.
  */
-trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite {
+trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with ParallelTestExecution {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                           bob: TestFSMRef[State, Data, Channel],
