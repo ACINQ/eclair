@@ -246,6 +246,8 @@ object NodeParams {
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
+        channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
+        channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
