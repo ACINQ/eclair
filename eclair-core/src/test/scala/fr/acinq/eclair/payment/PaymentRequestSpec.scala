@@ -25,6 +25,7 @@ import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, _}
 import org.scalatest.FunSuite
 import scodec.DecodeResult
 import scodec.bits._
+import scodec.codecs.bits
 
 /**
  * Created by fabrice on 15/05/17.
@@ -52,19 +53,17 @@ class PaymentRequestSpec extends FunSuite {
   }
 
   test("check that we can still decode non-minimal amount encoding") {
-    assert(Some(100000000 msat) === Amount.decode("1000u"))
-    assert(Some(100000000 msat) === Amount.decode("1000000n"))
-    assert(Some(100000000 msat) === Amount.decode("1000000000p"))
+    assert(Amount.decode("1000u") === Some(100000000 msat))
+    assert(Amount.decode("1000000n") === Some(100000000 msat))
+    assert(Amount.decode("1000000000p") === Some(100000000 msat))
   }
 
   test("data string -> bitvector") {
-    import scodec.bits._
     assert(string2Bits("p") === bin"00001")
     assert(string2Bits("pz") === bin"0000100010")
   }
 
   test("minimal length long, left-padded to be multiple of 5") {
-    import scodec.bits._
     assert(long2bits(0) == bin"")
     assert(long2bits(1) == bin"00001")
     assert(long2bits(42) == bin"0000101010")
@@ -74,13 +73,10 @@ class PaymentRequestSpec extends FunSuite {
   }
 
   test("verify that padding is zero") {
-    import scodec.bits._
-    import scodec.codecs._
     val codec = PaymentRequest.Codecs.alignedBytesCodec(bits)
 
     assert(codec.decode(bin"1010101000").require == DecodeResult(bin"10101010", BitVector.empty))
     assert(codec.decode(bin"1010101001").isFailure) // non-zero padding
-
   }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
@@ -187,7 +183,6 @@ class PaymentRequestSpec extends FunSuite {
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3") {
     val ref = "lnbc20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qvnjha2auylmwrltv2pkp2t22uy8ura2xsdwhq5nm7s574xva47djmnj2xeycsu7u5v8929mvuux43j0cqhhf32wfyn2th0sv4t9x55sppz5we8"
     val pr = PaymentRequest.read(ref)
@@ -215,6 +210,34 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(12)))
     assert(pr.tags.size == 4)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
+  }
+
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 1 and 9") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9qzsze992adudgku8p05pstl6zh7av6rx2f297pv89gu5q93a0hf3g7lynl3xq56t23dpvah6u7y9qey9lccrdml3gaqwc6nxsl5ktzm464sq73t7cl"
+    val pr = PaymentRequest.read(ref)
+    assert(pr.prefix === "lnbc")
+    assert(pr.amount === Some(MilliSatoshi(2500000000L)))
+    assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.timestamp === 1496314658L)
+    assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description === Left("coffee beans"))
+    assert(pr.fallbackAddress().isEmpty)
+    assert(pr.features.bitmask === bin"1000000010")
+    assert(PaymentRequest.write(pr.sign(priv)) === ref)
+  }
+
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 1, 9 and 100") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9q4pqqqqqqqqqqqqqqqqqqszk3ed62snp73037h4py4gry05eltlp0uezm2w9ajnerhmxzhzhsu40g9mgyx5v3ad4aqwkmvyftzk4k9zenz90mhjcy9hcevc7r3lx2sphzfxz7"
+    val pr = PaymentRequest.read(ref)
+    assert(pr.prefix === "lnbc")
+    assert(pr.amount === Some(MilliSatoshi(2500000000L)))
+    assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.timestamp === 1496314658L)
+    assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description === Left("coffee beans"))
+    assert(pr.fallbackAddress().isEmpty)
+    assert(pr.features.bitmask === bin"000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010")
+    assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
   test("correctly serialize/deserialize variable-length tagged fields") {
@@ -264,7 +287,8 @@ class PaymentRequestSpec extends FunSuite {
   test("Pay 1 BTC without multiplier") {
     val ref = "lnbc11pdkmqhupp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2xvtsv5tc743wgctlza8k3zlpxucl7f3kvjnjptv7xz0nkaww307sdyrvgke2w8kmq7dgz4lkasfn0zvplc9aa4gp8fnhrwfjny0j59sq42x9gp"
     val pr = PaymentRequest.read(ref)
-    assert(pr.amount.contains(100000000000L msat))
+    assert(pr.amount === Some(100000000000L msat))
+    assert(pr.features.bitmask === BitVector.empty)
   }
 
   test("nonreg") {
@@ -325,7 +349,9 @@ class PaymentRequestSpec extends FunSuite {
       "lnbc100n1pd6hzfgpp5au2d4u2f2gm9wyz34e9rls66q77cmtlw3tzu8h67gcdcvj0dsjdqdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcnqvscqzysxqyd9uqxg5n7462ykgs8a23l3s029dun9374xza88nlf2e34nupmc042lgps7tpwd0ue0he0gdcpfmc5mshmxkgw0hfztyg4j463ux28nh2gagqage30p",
       "lnbc50n1pdl052epp57549dnjwf2wqfz5hg8khu0wlkca8ggv72f9q7x76p0a7azkn3ljsdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcnvvscqzysxqyd9uqa2z48kchpmnyafgq2qlt4pruwyjh93emh8cd5wczwy47pkx6qzarmvl28hrnqf98m2rnfa0gx4lnw2jvhlg9l4265240av6t9vdqpzsqntwwyx",
       "lnbc100n1pd7cwrypp57m4rft00sh6za2x0jwe7cqknj568k9xajtpnspql8dd38xmd7musdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcngvscqzysxqyd9uqsxfmfv96q0d7r3qjymwsem02t5jhtq58a30q8lu5dy3jft7wahdq2f5vc5qqymgrrdyshff26ak7m7n0vqyf7t694vam4dcqkvnr65qp6wdch9",
-      "lnbc100n1pw9qjdgpp5lmycszp7pzce0rl29s40fhkg02v7vgrxaznr6ys5cawg437h80nsdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdejcqzysxqrrss47kl34flydtmu2wnszuddrd0nwa6rnu4d339jfzje6hzk6an0uax3kteee2lgx5r0629wehjeseksz0uuakzwy47lmvy2g7hja7mnpsqjmdct9"
+      "lnbc100n1pw9qjdgpp5lmycszp7pzce0rl29s40fhkg02v7vgrxaznr6ys5cawg437h80nsdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdejcqzysxqrrss47kl34flydtmu2wnszuddrd0nwa6rnu4d339jfzje6hzk6an0uax3kteee2lgx5r0629wehjeseksz0uuakzwy47lmvy2g7hja7mnpsqjmdct9",
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9qzsze992adudgku8p05pstl6zh7av6rx2f297pv89gu5q93a0hf3g7lynl3xq56t23dpvah6u7y9qey9lccrdml3gaqwc6nxsl5ktzm464sq73t7cl",
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9q4pqqqqqqqqqqqqqqqqqqszk3ed62snp73037h4py4gry05eltlp0uezm2w9ajnerhmxzhzhsu40g9mgyx5v3ad4aqwkmvyftzk4k9zenz90mhjcy9hcevc7r3lx2sphzfxz7"
     )
 
     for (req <- requests) {
