@@ -85,7 +85,7 @@ class RouterSpec extends BaseRouterSpec {
     watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
     watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
     watcher.expectMsgType[WatchSpentBasic]
-    watcher.expectNoMsg(1 second)
+    watcher.expectNoMessage(1 second)
 
     eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_ac, 1000000 sat) :: Nil))
   }
@@ -99,19 +99,19 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectMsg(ChannelLost(channelId_ab))
     // a doesn't have any channels, b still has one with c
     eventListener.expectMsg(NodeLost(a))
-    eventListener.expectNoMsg(200 milliseconds)
+    eventListener.expectNoMessage(200 milliseconds)
 
     router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(channelId_cd))
     eventListener.expectMsg(ChannelLost(channelId_cd))
     // d doesn't have any channels, c still has one with b
     eventListener.expectMsg(NodeLost(d))
-    eventListener.expectNoMsg(200 milliseconds)
+    eventListener.expectNoMessage(200 milliseconds)
 
     router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(channelId_bc))
     eventListener.expectMsg(ChannelLost(channelId_bc))
     // now b and c do not have any channels
     eventListener.expectMsgAllOf(NodeLost(b), NodeLost(c))
-    eventListener.expectNoMsg(200 milliseconds)
+    eventListener.expectNoMessage(200 milliseconds)
 
   }
 

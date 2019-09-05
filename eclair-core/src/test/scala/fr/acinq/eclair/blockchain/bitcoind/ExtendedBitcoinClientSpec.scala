@@ -28,7 +28,7 @@ import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, JString}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 
@@ -41,7 +41,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     "eclair.bitcoind.port" -> 28333,
     "eclair.bitcoind.rpcport" -> 28332,
     "eclair.router-broadcast-interval" -> "2 second",
-    "eclair.auto-reconnect" -> false))
+    "eclair.auto-reconnect" -> false).asJava)
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   implicit val formats = DefaultFormats

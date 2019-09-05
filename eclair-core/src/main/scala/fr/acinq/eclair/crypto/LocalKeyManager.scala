@@ -30,6 +30,7 @@ object LocalKeyManager {
   def channelKeyBasePath(chainHash: ByteVector32) = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
+    case _ => throw new IllegalArgumentException(s"chain hash=$chainHash did not match")
   }
 
 
@@ -39,6 +40,7 @@ object LocalKeyManager {
   def nodeKeyBasePath(chainHash: ByteVector32) = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
+    case _ => throw new IllegalArgumentException(s"chain hash=$chainHash did not match")
   }
 }
 

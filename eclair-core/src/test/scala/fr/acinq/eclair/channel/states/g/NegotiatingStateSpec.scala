@@ -89,7 +89,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))
-    alice2bob.expectNoMsg(200 millis)
+    alice2bob.expectNoMessage(200 millis)
   }
 
   test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { f =>
@@ -178,7 +178,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.expectNoMsg(100 millis)
+    alice2blockchain.expectNoMessage(100 millis)
     assert(alice.stateName == CLOSING)
   }
 
@@ -198,7 +198,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.expectNoMsg(100 millis)
+    alice2blockchain.expectNoMessage(100 millis)
     assert(alice.stateName == CLOSING)
   }
 

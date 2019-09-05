@@ -33,7 +33,7 @@ import javafx.application.Platform
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 
 /**
@@ -110,8 +110,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toHex)
           case _ => {}
         }
-        channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))
-        channelPaneController.forceclose.setVisible(STATE_FORCE_CLOSE.contains(currentState))
+        channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.asJava.contains(currentState))
+        channelPaneController.forceclose.setVisible(STATE_FORCE_CLOSE.asJava.contains(currentState))
         channelPaneController.state.setText(currentState.toString)
       }
 
@@ -216,15 +216,15 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case p: PaymentSent =>
       log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.amount}, fees=${p.feesPaid}")
-      runInGuiThread(() => mainController.paymentSentList.prepend(new PaymentSentRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentSentList.asScala.prepend(new PaymentSentRecord(p, LocalDateTime.now())))
 
     case p: PaymentReceived =>
       log.debug(s"payment received with h=${p.paymentHash}, amount=${p.amount}")
-      runInGuiThread(() => mainController.paymentReceivedList.prepend(new PaymentReceivedRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentReceivedList.asScala.prepend(new PaymentReceivedRecord(p, LocalDateTime.now())))
 
     case p: PaymentRelayed =>
       log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amountIn}, feesEarned=${p.amountOut}")
-      runInGuiThread(() => mainController.paymentRelayedList.prepend(new PaymentRelayedRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentRelayedList.asScala.prepend(new PaymentRelayedRecord(p, LocalDateTime.now())))
 
     case ZMQConnected =>
       log.debug("ZMQ connection UP")

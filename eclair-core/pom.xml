@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
-        <version>0.3.2-SNAPSHOT</version>
+        <artifactId>eclair_2.12</artifactId>
+        <version>0.3.3-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-core_2.11</artifactId>
+    <artifactId>eclair-core_2.12</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
@@ -245,7 +245,7 @@
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-scala-scalatest_2.11</artifactId>
+            <artifactId>mockito-scala-scalatest_2.12</artifactId>
             <version>1.4.1</version>
             <scope>test</scope>
         </dependency>

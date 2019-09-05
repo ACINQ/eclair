@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
-        <version>0.3.2-SNAPSHOT</version>
+        <artifactId>eclair_2.12</artifactId>
+        <version>0.3.3-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-node_2.11</artifactId>
+    <artifactId>eclair-node_2.12</artifactId>
     <packaging>jar</packaging>
 
     <name>eclair-node</name>
@@ -91,6 +91,11 @@
             <artifactId>janino</artifactId>
             <version>3.0.7</version>
         </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+        </dependency>
         <!-- http server -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
@@ -100,7 +105,7 @@
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.19.0</version>
+            <version>1.27.0</version>
         </dependency>
         <!-- test dependencies -->
         <dependency>
@@ -111,7 +116,7 @@
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-scala-scalatest_2.11</artifactId>
+            <artifactId>mockito-scala-scalatest_2.12</artifactId>
             <version>1.4.1</version>
             <scope>test</scope>
         </dependency>

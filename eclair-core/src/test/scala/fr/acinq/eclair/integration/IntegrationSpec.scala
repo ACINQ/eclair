@@ -49,7 +49,7 @@ import org.json4s.{DefaultFormats, JString}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -87,7 +87,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.router.broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false,
-    "eclair.to-remote-delay-blocks" -> 144))
+    "eclair.to-remote-delay-blocks" -> 144).asJava)
 
   implicit val formats = DefaultFormats
 
@@ -139,17 +139,17 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("starting eclair nodes") {
     import collection.JavaConversions._
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083)).withFallback(commonConfig))
-    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
-    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.payment-handler" -> "noop")).withFallback(commonConfig)) // NB: eclair.payment-handler = noop allows us to manually fulfill htlcs
-    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0).asJava).withFallback(commonConfig)) // A's channels are private
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081).asJava).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop").asJava).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083).asJava).withFallback(commonConfig))
+    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(commonConfig))
+    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.payment-handler" -> "noop").asJava).withFallback(commonConfig)) // NB: eclair.payment-handler = noop allows us to manually fulfill htlcs
+    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.payment-handler" -> "noop").asJava).withFallback(commonConfig))
+    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop").asJava).withFallback(commonConfig))
+    instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop").asJava).withFallback(commonConfig))
+    instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089, "eclair.payment-handler" -> "noop").asJava).withFallback(commonConfig))
+    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102).asJava).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
     val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
@@ -305,7 +305,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 30 seconds, interval = 1 seconds)
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
-    sender.expectNoMsg(3 seconds)
+    sender.expectNoMessage(3 seconds)
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, BroadcastChannelUpdate(PeriodicRefresh)))
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
     val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
@@ -798,7 +798,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     forwardHandlerC.expectMsgType[UpdateAddHtlc]
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
-    sigListener.expectNoMsg(1 second)
+    sigListener.expectNoMessage(1 second)
     // in this commitment, both parties should have a main output, and there are four pending htlcs
     val localCommitF = commitmentsF.localCommit.publishableTxs
     assert(localCommitF.commitTx.tx.txOut.size === 6)

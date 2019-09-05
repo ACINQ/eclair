@@ -71,7 +71,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     val listener = TestProbe()
     probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
     probe.send(bitcoincli, BitcoinReq("generate", 3))
-    listener.expectNoMsg(1 second)
+    listener.expectNoMessage(1 second)
     probe.send(bitcoincli, BitcoinReq("generate", 2))
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid.toHex === txid)
@@ -113,7 +113,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     val listener = TestProbe()
     probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
-    listener.expectNoMsg(1 second)
+    listener.expectNoMessage(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("generate", 2))
