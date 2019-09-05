@@ -19,7 +19,5 @@ blocks:
             - sem-version java 11
             - checkout
             - cache restore maven
-            - cache restore docker
             - mvn scoverage:report
             - cache store maven .m2
-            - cache store docker /var/lib/docker
