@@ -14,11 +14,10 @@ blocks:
         - name: MAVEN_OPTS
           value: "-Dmaven.repo.local=.m2"
       jobs:
-        - name: Dependencies
+        - name: Build & Test
           commands:
             - sem-version java 11
             - checkout
             - cache restore maven
             - mvn scoverage:report
             - cache store maven .m2
-  
