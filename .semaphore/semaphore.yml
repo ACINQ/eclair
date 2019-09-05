@@ -1,0 +1,24 @@
+version: v1.0
+name: Build & Test
+agent:
+  machine:
+    type: e1-standard-8
+    os_image: ubuntu1804
+
+blocks:
+  - name: Compile & Test
+    task:
+      env_vars:
+        # Set maven to use a local directory. This is required for
+        # the cache util. It must be set in all blocks.
+        - name: MAVEN_OPTS
+          value: "-Dmaven.repo.local=.m2"
+      jobs:
+        - name: Dependencies
+          commands:
+            - sem-version java 11
+            - checkout
+            - cache restore maven
+            - mvn scoverage:report
+            - cache store maven .m2
+  
