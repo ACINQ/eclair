@@ -31,7 +31,7 @@ package object eclair {
    * We are using 'new SecureRandom()' instead of 'SecureRandom.getInstanceStrong()' because the latter can hang on Linux
    * See http://bugs.java.com/view_bug.do?bug_id=6521844 and https://tersesystems.com/2015/12/17/the-right-way-to-use-securerandom/
    */
-  val secureRandom = new SecureRandom()
+  lazy val secureRandom = new SecureRandom()
 
   def randomBytes(length: Int): ByteVector = {
     val buffer = new Array[Byte](length)

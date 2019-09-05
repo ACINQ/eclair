@@ -338,7 +338,7 @@ object ElectrumClient {
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require
 
   // this is expensive and shared with all clients
-  val workerGroup = new NioEventLoopGroup()
+  lazy val workerGroup = new NioEventLoopGroup()
 
   /**
     * Utility function to converts a publicKeyScript to electrum's scripthash
