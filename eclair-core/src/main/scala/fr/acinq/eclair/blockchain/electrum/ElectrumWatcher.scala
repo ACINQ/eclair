@@ -19,16 +19,15 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash, Terminated}
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{Globals, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Globals, LongToBtcAmount, ShortChannelId, TxCoordinates}
 
 import scala.collection.SortedMap
 import scala.collection.immutable.Queue
-
 
 class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLogging {
 
@@ -42,7 +41,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       val fakeFundingTx = Transaction(
         version = 2,
         txIn = Seq.empty[TxIn],
-        txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+        txOut = List.fill(outputIndex + 1)(TxOut(0 sat, pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
         lockTime = 0)
       sender ! ValidateResult(c, Right((fakeFundingTx, UtxoStatus.Unspent)))
 

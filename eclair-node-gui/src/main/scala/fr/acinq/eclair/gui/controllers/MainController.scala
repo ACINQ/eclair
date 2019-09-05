@@ -344,7 +344,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     })
     paymentRelayedFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayedRecord, String], ObservableValue[String]]() {
       def call(p: CellDataFeatures[PaymentRelayedRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(
-        MilliSatoshi(p.getValue.event.amountIn.amount - p.getValue.event.amountOut.amount), FxApp.getUnit, withUnit = true))
+        p.getValue.event.amountIn - p.getValue.event.amountOut, FxApp.getUnit, withUnit = true))
     })
     paymentRelayedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
     paymentRelayedDateColumn.setCellValueFactory(paymentDateCellValueFactory)

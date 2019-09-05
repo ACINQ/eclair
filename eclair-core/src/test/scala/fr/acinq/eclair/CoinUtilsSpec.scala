@@ -19,7 +19,6 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi}
 import org.scalatest.FunSuite
 
-
 class CoinUtilsSpec  extends FunSuite {
 
   test("Convert string amount to the correct BtcAmount") {

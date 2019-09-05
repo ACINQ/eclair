@@ -25,6 +25,7 @@ import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
@@ -35,10 +36,10 @@ import scodec.bits.ByteVector
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
-
 class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   import ElectrumWalletSimulatedClientSpec._
+
   val sender = TestProbe()
 
   val entropy = ByteVector32(ByteVector.fill(32)(1))
@@ -70,7 +71,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     }
   })
 
-  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = Satoshi(5000))
+  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat)
   val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, walletParameters))
 
   // wallet sends a receive address notification as soon as it is created
@@ -176,7 +177,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(100000), ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
     // wallet will generate a new address and the corresponding subscription
@@ -209,9 +210,9 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     val ready = reconnect
-    assert(ready.unconfirmedBalance == Satoshi(0))
+    assert(ready.unconfirmedBalance === 0.sat)
   }
-  
+
   test("clear status when we have pending history requests") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
@@ -239,7 +240,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(2)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(100000), ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
     // wallet will generate a new address and the corresponding subscription
@@ -262,8 +263,8 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
       val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
 
-      val amount1 = Satoshi(1000000)
-      val amount2 = Satoshi(1500000)
+      val amount1 = 1000000 sat
+      val amount2 = 1500000 sat
 
       // transactions that send funds to our wallet
       val wallettxs = Seq(
@@ -278,7 +279,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       val tx1 = {
         val tx = Transaction(version = 2,
           txIn = TxIn(OutPoint(wallettxs(0), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-          txOut = walletOutput(wallettxs(0).txOut(0).amount - Satoshi(50000), data2.accountKeys(2).publicKey) :: walletOutput(Satoshi(50000), data2.changeKeys(0).publicKey) :: Nil,
+          txOut = walletOutput(wallettxs(0).txOut(0).amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(50000 sat, data2.changeKeys(0).publicKey) :: Nil,
           lockTime = 0)
         data2.signTransaction(tx)
       }
@@ -287,7 +288,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       val tx2 = {
         val tx = Transaction(version = 2,
           txIn = TxIn(OutPoint(wallettxs(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-          txOut = TxOut(wallettxs(1).txOut(0).amount - Satoshi(50000), Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(Satoshi(50000), data2.changeKeys(1).publicKey) :: Nil,
+          txOut = TxOut(wallettxs(1).txOut(0).amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(50000 sat, data2.changeKeys(1).publicKey) :: Nil,
           lockTime = 0)
         data2.signTransaction(tx)
       }
@@ -303,7 +304,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     client.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = {
         counter = msg match {
-          case _:ScriptHashSubscription => counter
+          case _: ScriptHashSubscription => counter
           case _ => counter + 1
         }
         msg match {
@@ -376,9 +377,9 @@ object ElectrumWalletSimulatedClientSpec {
 
   def walletOutput(amount: Satoshi, key: PublicKey) = TxOut(amount, ElectrumWallet.computePublicKeyScript(key))
 
-  def addOutputs(tx: Transaction, amount: Satoshi,  keys: PublicKey*): Transaction = keys.foldLeft(tx) { case (t, k) => t.copy(txOut = t.txOut :+ walletOutput(amount, k)) }
+  def addOutputs(tx: Transaction, amount: Satoshi, keys: PublicKey*): Transaction = keys.foldLeft(tx) { case (t, k) => t.copy(txOut = t.txOut :+ walletOutput(amount, k)) }
 
-  def addToHistory(history: Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]], scriptHash: ByteVector32, item : TransactionHistoryItem): Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]] = {
+  def addToHistory(history: Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]], scriptHash: ByteVector32, item: TransactionHistoryItem): Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]] = {
     history.get(scriptHash) match {
       case None => history + (scriptHash -> List(item))
       case Some(items) if items.contains(item) => history
@@ -386,7 +387,7 @@ object ElectrumWalletSimulatedClientSpec {
     }
   }
 
-  def updateStatus(data: ElectrumWallet.Data) : ElectrumWallet.Data = {
+  def updateStatus(data: ElectrumWallet.Data): ElectrumWallet.Data = {
     val status1 = data.history.mapValues(items => {
       val status = items.map(i => s"${i.tx_hash}:${i.height}:").mkString("")
       Crypto.sha256(ByteVector.view(status.getBytes())).toString()
@@ -394,7 +395,7 @@ object ElectrumWalletSimulatedClientSpec {
     data.copy(status = status1)
   }
 
-  def addTransaction(data: ElectrumWallet.Data, tx: Transaction) : ElectrumWallet.Data = {
+  def addTransaction(data: ElectrumWallet.Data, tx: Transaction): ElectrumWallet.Data = {
     data.transactions.get(tx.txid) match {
       case Some(_) => data
       case None =>
