@@ -39,6 +39,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
       // We add one block in order to not have our htlc fail when a new block has just been found.
       val finalExpiry = (p.finalExpiryDelta + 1).toCltvExpiry
       val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
+      // NB: we only generate legacy payment onions for now for maximum compatibility.
       p.predefinedRoute match {
         case Nil => payFsm forward SendPayment(p.paymentHash, p.targetNodeId, FinalLegacyPayload(p.amount, finalExpiry), p.maxAttempts, p.assistedRoutes, p.routeParams)
         case hops => payFsm forward SendPaymentToRoute(p.paymentHash, hops, FinalLegacyPayload(p.amount, finalExpiry))

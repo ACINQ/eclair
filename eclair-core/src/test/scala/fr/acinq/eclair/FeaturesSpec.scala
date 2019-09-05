@@ -35,8 +35,8 @@ class FeaturesSpec extends FunSuite {
     assert(hasFeature(hex"02", Features.OPTION_DATA_LOSS_PROTECT_OPTIONAL))
   }
 
-  test("'initial_routing_sync' and 'data_loss_protect' feature") {
-    val features = hex"0a"
+  test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
+    val features = hex"010a"
     assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
@@ -52,6 +52,7 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY)))
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_MANDATORY)))
     assert(areSupported(hex"0b"))
     assert(!areSupported(hex"14"))
     assert(!areSupported(hex"0141"))

@@ -229,10 +229,10 @@ object PaymentLifecycle {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
     val payloadsBin: Seq[ByteVector] = payloads
-      .map({
+      .map {
         case p: FinalPayload => OnionCodecs.finalPerHopPayloadCodec.encode(p)
         case p: RelayPayload => OnionCodecs.relayPerHopPayloadCodec.encode(p)
-      })
+      }
       .map {
         case Attempt.Successful(bitVector) => bitVector.toByteVector
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")

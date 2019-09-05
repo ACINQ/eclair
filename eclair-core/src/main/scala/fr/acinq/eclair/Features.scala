@@ -54,7 +54,7 @@ object Features {
     * we don't understand (even bits).
     */
   def areSupported(features: BitVector): Boolean = {
-    val supportedMandatoryFeatures = Set[Long](OPTION_DATA_LOSS_PROTECT_MANDATORY)
+    val supportedMandatoryFeatures = Set[Long](OPTION_DATA_LOSS_PROTECT_MANDATORY, VARIABLE_LENGTH_ONION_MANDATORY)
     val reversed = features.reverse
     for (i <- 0L until reversed.length by 2) {
       if (reversed.get(i) && !supportedMandatoryFeatures.contains(i)) return false
