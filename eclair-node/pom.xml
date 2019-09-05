@@ -136,11 +136,6 @@
             <version>1.4.0</version>
         </dependency>
         <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.2.3</version>
-        </dependency>
-        <dependency>
             <!--conditional logging -->
             <groupId>org.codehaus.janino</groupId>
             <artifactId>janino</artifactId>
@@ -161,27 +156,6 @@
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
             <version>1.27.0</version>
-        </dependency>
-        <!-- graal -->
-        <dependency>
-            <groupId>com.github.vmencik</groupId>
-            <artifactId>graal-akka-http_${scala.version.short}</artifactId>
-            <version>${graal.akka.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.github.vmencik</groupId>
-            <artifactId>graal-akka-slf4j_${scala.version.short}</artifactId>
-            <version>${graal.akka.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.sdk</groupId>
-            <artifactId>graal-sdk</artifactId>
-            <version>${graal.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.oracle.substratevm</groupId>
-            <artifactId>svm</artifactId>
-            <version>${graal.version}</version>
         </dependency>
         <!-- test dependencies -->
         <dependency>

@@ -183,6 +183,11 @@
             <artifactId>grizzled-slf4j_${scala.version.short}</artifactId>
             <version>1.3.1</version>
         </dependency>
+        <dependency>
+            <groupId>com.typesafe.scala-logging</groupId>
+            <artifactId>scala-logging_${scala.version.short}</artifactId>
+            <version>3.9.2</version>
+        </dependency>
         <!-- OTHER -->
         <dependency>
             <groupId>org.jheaps</groupId>
@@ -204,6 +209,27 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
+        </dependency>
+        <!-- graal -->
+        <dependency>
+            <groupId>com.github.vmencik</groupId>
+            <artifactId>graal-akka-http_${scala.version.short}</artifactId>
+            <version>${graal.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.vmencik</groupId>
+            <artifactId>graal-akka-slf4j_${scala.version.short}</artifactId>
+            <version>${graal.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.sdk</groupId>
+            <artifactId>graal-sdk</artifactId>
+            <version>${graal.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.substratevm</groupId>
+            <artifactId>svm</artifactId>
+            <version>${graal.version}</version>
         </dependency>
         <!-- TESTS -->
         <dependency>
@@ -235,12 +261,6 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-testkit_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.2.3</version>
             <scope>test</scope>
         </dependency>
         <dependency>
