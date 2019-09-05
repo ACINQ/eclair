@@ -250,8 +250,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(stats.channels === 4)
     assert(stats.nodes === 6)
     assert(stats.capacity.median === 1000000.sat)
-    assert(stats.cltvExpiryDelta.min === CltvExpiryDelta(3))
-    assert(stats.cltvExpiryDelta.max === CltvExpiryDelta(9))
+    assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(6))
   }
 
   test("given a pre-computed route add the proper channel updates") { fixture =>

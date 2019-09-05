@@ -165,7 +165,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
-  setTimer(TickNetworkStats.toString, TickNetworkStats, 6 hour, repeat = true)
+  setTimer(TickNetworkStats.toString, TickNetworkStats, 6 hours, repeat = true)
 
   val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
@@ -848,11 +848,13 @@ object Router {
     // The invoice doesn't explicitly specify the channel's htlcMaximumMsat, but we can safely assume that the channel
     // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
     // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
+    // We also need to make sure the channel isn't excluded by our heuristics.
+    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).reverse.foldLeft((amount, Map.empty[ShortChannelId, AssistedChannel])) {
+    extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
       case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
         val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
-        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW))))
+        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount)))
     }._2
   }
 

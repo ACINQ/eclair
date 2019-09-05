@@ -16,27 +16,25 @@
 
 package fr.acinq.eclair.router
 
+import com.google.common.math.Quantiles.percentiles
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi}
+
+import scala.collection.JavaConverters._
 
 /**
  * Created by t-bast on 30/08/2019.
  */
 
-case class Stats[T](min: T, max: T, median: T, percentile5: T, percentile10: T, percentile25: T, percentile75: T, percentile90: T, percentile95: T)
+case class Stats[T](median: T, percentile5: T, percentile10: T, percentile25: T, percentile75: T, percentile90: T, percentile95: T)
 
 object Stats {
-  def apply[T](values: Seq[Long], fromLong: Long => T): Stats[T] = {
+  def apply[T](values: Seq[Long], fromDouble: Double => T): Stats[T] = {
     require(values.nonEmpty, "can't compute stats on empty values")
-    val sorted = values.sorted
-    val count = sorted.size
-    val median = if (count % 2 == 0) (sorted(count / 2) + sorted((count / 2) - 1)) / 2 else sorted(count / 2)
-    val percentileT = (bucket: Int) => percentile(bucket, sorted, fromLong)
-    Stats(fromLong(sorted.head), fromLong(sorted.last), fromLong(median), percentileT(5), percentileT(10), percentileT(25), percentileT(75), percentileT(90), percentileT(95))
+    val stats = percentiles().indexes(5, 10, 25, 50, 75, 90, 95).compute(values.map(java.lang.Long.valueOf).asJavaCollection)
+    Stats(fromDouble(stats.get(50)), fromDouble(stats.get(5)), fromDouble(stats.get(10)), fromDouble(stats.get(25)), fromDouble(stats.get(75)), fromDouble(stats.get(90)), fromDouble(stats.get(95)))
   }
-
-  private def percentile[T](bucket: Int, values: Seq[Long], fromLong: Long => T): T = fromLong(values((bucket * values.size) / 100))
 }
 
 case class NetworkStats(channels: Int, nodes: Int, capacity: Stats[Satoshi], cltvExpiryDelta: Stats[CltvExpiryDelta], feeBase: Stats[MilliSatoshi], feeProportional: Stats[Long])
@@ -51,10 +49,10 @@ object NetworkStats {
     if (publicChannels.isEmpty || publicChannels.flatMap(pc => getChannelUpdateField(pc, _ => true)).isEmpty) {
       None
     } else {
-      val capacityStats = Stats(publicChannels.map(_.capacity.toLong).sorted, Satoshi)
-      val cltvStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.cltvExpiryDelta.toInt.toLong)), l => CltvExpiryDelta(l.toInt))
-      val feeBaseStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeBaseMsat.toLong)), l => MilliSatoshi(l))
-      val feeProportionalStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeProportionalMillionths)), l => l)
+      val capacityStats = Stats(publicChannels.map(_.capacity.toLong), d => Satoshi(d.toLong))
+      val cltvStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.cltvExpiryDelta.toInt.toLong)), d => CltvExpiryDelta(d.toInt))
+      val feeBaseStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeBaseMsat.toLong)), d => MilliSatoshi(d.toLong))
+      val feeProportionalStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeProportionalMillionths)), d => d.toLong)
       val nodes = publicChannels.flatMap(pc => pc.ann.nodeId1 :: pc.ann.nodeId2 :: Nil).toSet.size
       Some(NetworkStats(publicChannels.size, nodes, capacityStats, cltvStats, feeBaseStats, feeProportionalStats))
     }

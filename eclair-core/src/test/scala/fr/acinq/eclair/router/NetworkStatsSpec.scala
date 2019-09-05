@@ -52,10 +52,10 @@ class NetworkStatsSpec extends FunSuite {
     val Some(stats) = NetworkStats(channels)
     assert(stats.channels === 5)
     assert(stats.nodes === 6)
-    assert(stats.capacity === Stats(10 sat, 50 sat, 30 sat, 10 sat, 10 sat, 20 sat, 40 sat, 50 sat, 50 sat))
-    assert(stats.cltvExpiryDelta === Stats(CltvExpiryDelta(10), CltvExpiryDelta(55), CltvExpiryDelta(32), CltvExpiryDelta(10), CltvExpiryDelta(10), CltvExpiryDelta(25), CltvExpiryDelta(50), CltvExpiryDelta(55), CltvExpiryDelta(55)))
-    assert(stats.feeBase === Stats(10 msat, 55 msat, 32 msat, 10 msat, 10 msat, 25 msat, 50 msat, 55 msat, 55 msat))
-    assert(stats.feeProportional === Stats(10, 55, 32, 10, 10, 25, 50, 55, 55))
+    assert(stats.capacity === Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat))
+    assert(stats.cltvExpiryDelta === Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53)))
+    assert(stats.feeBase === Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat))
+    assert(stats.feeProportional === Stats(32, 11, 13, 22, 42, 51, 53))
   }
 
   test("intermediate network") {
@@ -73,7 +73,7 @@ class NetworkStatsSpec extends FunSuite {
     assert(stats.nodes <= 100)
     assert(1000.sat <= stats.capacity.median && stats.capacity.median <= 11000.sat)
     assert(stats.feeBase.percentile10 >= 21000.msat)
-    assert(stats.feeProportional.max <= 1000)
+    assert(stats.feeProportional.median <= 1000)
   }
 
 }
