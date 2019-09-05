@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
-import fr.acinq.eclair.{CltvExpiryDelta, Globals, LongToBtcAmount, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, randomKey}
 import scodec.bits._
 
 import scala.compat.Platform
@@ -252,7 +252,7 @@ class RouterSpec extends BaseRouterSpec {
 
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
     import fixture._
-    val blockHeight = Globals.blockCount.get().toInt - 2020
+    val blockHeight = 400000 - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val timestamp = (Platform.currentTime.milliseconds - 14.days - 1.day).toSeconds

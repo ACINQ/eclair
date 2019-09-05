@@ -16,10 +16,13 @@
 
 package fr.acinq.eclair
 
+import java.util.concurrent.atomic.AtomicLong
+
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite
+
 import scala.util.Try
 
 class StartupSpec extends FunSuite {
@@ -42,8 +45,10 @@ class StartupSpec extends FunSuite {
     val conf = illegalAliasConf.withFallback(ConfigFactory.parseResources("reference.conf").getConfig("eclair"))
     val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
 
+    val blockCount = new AtomicLong(0)
+
     // try to create a NodeParams instance with a conf that contains an illegal alias
-    val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), new TestConstants.TestFeeEstimator))
+    val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator))
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
   }
 
