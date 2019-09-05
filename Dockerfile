@@ -1,14 +1,13 @@
-FROM openjdk:8u171-jdk-alpine as BUILD
+FROM adoptopenjdk/openjdk11:jdk-11.0.3_7-alpine as BUILD
 
 # Setup maven, we don't use https://hub.docker.com/_/maven/ as it declare .m2 as volume, we loose all mvn cache
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
 # this was meant to make the image smaller, but we use multi-stage build so we don't care
-
 RUN apk add --no-cache curl tar bash
 
-ARG MAVEN_VERSION=3.6.0
+ARG MAVEN_VERSION=3.6.2
 ARG USER_HOME_DIR="/root"
-ARG SHA=6a1b346af36a1f1a491c1c1a141667c5de69b42e6611d3687df26868bc0f4637
+ARG SHA=3fbc92d1961482d6fbd57fbf3dd6d27a4de70778528ee3fb44aa7d27eb32dfdc
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
@@ -42,7 +41,7 @@ RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.comm
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
 # We currently use a debian image for runtime because of some jni-related issue with sqlite
-FROM openjdk:8u181-jre-slim
+FROM openjdk:11.0.4-jre-slim
 WORKDIR /app
 
 # install jq for eclair-cli

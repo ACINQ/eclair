@@ -56,6 +56,8 @@ case class RouterConf(randomizeRouteSelection: Boolean,
                       networkStatsRefreshInterval: FiniteDuration,
                       requestNodeAnnouncements: Boolean,
                       encodingType: EncodingType,
+                      channelRangeChunkSize: Int,
+                      channelQueryChunkSize: Int,
                       searchMaxFeeBase: Satoshi,
                       searchMaxFeePct: Double,
                       searchMaxRouteLength: Int,
@@ -560,7 +562,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
       val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
       log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
-      split(shortChannelIds)
+      split(shortChannelIds, nodeParams.routerConf.channelRangeChunkSize)
         .foreach(chunk => {
           val (timestamps, checksums) = routingMessage.queryFlags_opt match {
             case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
@@ -608,7 +610,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
       // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
       val replies = shortChannelIdAndFlags
-        .grouped(SHORTID_WINDOW)
+        .grouped(nodeParams.routerConf.channelQueryChunkSize)
         .map(chunk => QueryShortChannelIds(chainHash,
           shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
           if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
@@ -834,7 +836,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 }
 
 object Router {
-  val SHORTID_WINDOW = 100
 
   def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
@@ -1095,15 +1096,14 @@ object Router {
    * Have to split ids because otherwise message could be too big
    * there could be several reply_channel_range messages for a single query
    */
-  def split(shortChannelIds: SortedSet[ShortChannelId]): List[ShortChannelIdsChunk] = {
+  def split(shortChannelIds: SortedSet[ShortChannelId], channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
     // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
     // and a different set of short_channel_ids) but it doesn't matter
-    val SPLIT_SIZE = 3500 // we can theoretically fit 4091 uncompressed channel ids in a single lightning message (max size 65 Kb)
     if (shortChannelIds.isEmpty) {
       List(ShortChannelIdsChunk(0, 0, List.empty))
     } else {
       shortChannelIds
-        .grouped(SPLIT_SIZE)
+        .grouped(channelRangeChunkSize)
         .toList
         .map { group =>
           // NB: group is never empty
