@@ -30,12 +30,12 @@ import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
-import org.scalatest.{ParallelTestExecution, fixture}
+import org.scalatest.fixture
 
 /**
  * Created by PM on 23/08/2016.
  */
-trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with ParallelTestExecution {
+trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                           bob: TestFSMRef[State, Data, Channel],
