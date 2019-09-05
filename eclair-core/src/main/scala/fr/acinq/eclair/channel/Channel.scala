@@ -1403,7 +1403,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) if nodeParams.onChainFeeConf.closeOnOfflineMismatch =>
+    case Event(c: CurrentFeerates, d: HasCommitments) =>
       handleOfflineFeerate(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
@@ -1540,7 +1540,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) if nodeParams.onChainFeeConf.closeOnOfflineMismatch =>
+    case Event(c: CurrentFeerates, d: HasCommitments) =>
       handleOfflineFeerate(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
@@ -1736,8 +1736,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the fees are too high we risk to not be able to confirm our current commitment
     if(networkFeeratePerKw > currentFeeratePerKw && Helpers.isFeeDiffTooHigh(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)){
-      log.warning(s"closing OFFLINE ${d.channelId} due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
-      handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
+      if(nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
+        log.warning(s"closing OFFLINE ${d.channelId} due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
+        handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
+      } else {
+        log.warning(s"channel ${d.channelId} is OFFLINE but its fee mismatch is over the threshold: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
+        stay
+      }
     } else {
       stay
     }
