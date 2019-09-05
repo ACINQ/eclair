@@ -17,10 +17,12 @@
 package fr.acinq.eclair.channel.states.e
 
 import java.util.UUID
+
 import akka.actor.Status
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
+import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates, PublishAsap, WatchConfirmed, WatchEventSpent}
 import fr.acinq.eclair.channel.Channel.LocalError
@@ -32,7 +34,8 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
+
 import scala.concurrent.duration._
 
 /**
@@ -44,7 +47,10 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = test.tags.contains("disable-offline-mismatch") match {
+      case false => init()
+      case true => init(nodeParamsA = Alice.nodeParams.copy(onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(closeOnOfflineMismatch = false)))
+    }
     import setup._
     within(30 seconds) {
       reachNormal(setup)
@@ -478,6 +484,29 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice is funder
     sender.send(alice, CurrentFeerates(highFeerate))
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+  }
+
+  test("handle feerate changes while offline (disabled flag)", Tag("disable-offline-mismatch")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
+
+    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+
+    // this time Alice will ignore feerate changes for the offline channel
+    sender.send(alice, CurrentFeerates(highFeerate))
+    alice2blockchain.expectNoMsg()
+    alice2bob.expectNoMsg()
   }
 
   test("handle feerate changes while offline (fundee scenario)") { f =>
