@@ -19,6 +19,6 @@ blocks:
             - sem-version java 11
             - checkout
             - cache restore maven
-            - mvn scoverage:report
+            - mvn scoverage:report -U
             - cache store maven .m2
   
