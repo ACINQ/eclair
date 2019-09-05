@@ -49,13 +49,13 @@ object Onion {
 
   import OnionTlv._
 
-  sealed trait PerHopPayloadEncoding
+  sealed trait PerHopPayloadFormat
 
   /** Legacy fixed-size 65-bytes onion payload. */
-  sealed trait LegacyPayload extends PerHopPayloadEncoding
+  sealed trait LegacyFormat extends PerHopPayloadFormat
 
   /** Variable-length onion payload with optional additional tlv records. */
-  sealed trait TlvPayload extends PerHopPayloadEncoding {
+  sealed trait TlvFormat extends PerHopPayloadFormat {
     def records: TlvStream[OnionTlv]
   }
 
@@ -63,7 +63,7 @@ object Onion {
   sealed trait PerHopPayload
 
   /** Per-hop payload for an intermediate node. */
-  sealed trait RelayPayload extends PerHopPayload with PerHopPayloadEncoding {
+  sealed trait RelayPayload extends PerHopPayload with PerHopPayloadFormat {
     /** Amount to forward to the next node. */
     val amountToForward: MilliSatoshi
     /** CLTV value to use for the HTLC offered to the next node. */
@@ -73,22 +73,22 @@ object Onion {
   }
 
   /** Per-hop payload for a final node. */
-  sealed trait FinalPayload extends PerHopPayload with PerHopPayloadEncoding {
+  sealed trait FinalPayload extends PerHopPayload with PerHopPayloadFormat {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
   }
 
-  case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends RelayPayload with LegacyPayload
+  case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends RelayPayload with LegacyFormat
 
-  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyPayload
+  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat
 
-  case class RelayTlvPayload(records: TlvStream[OnionTlv]) extends RelayPayload with TlvPayload {
+  case class RelayTlvPayload(records: TlvStream[OnionTlv]) extends RelayPayload with TlvFormat {
     override val amountToForward = records.get[AmountToForward].get.amount
     override val outgoingCltv = records.get[OutgoingCltv].get.cltv
     override val outgoingChannelId = records.get[OutgoingChannelId].get.shortChannelId
   }
 
-  case class FinalTlvPayload(records: TlvStream[OnionTlv]) extends FinalPayload with TlvPayload {
+  case class FinalTlvPayload(records: TlvStream[OnionTlv]) extends FinalPayload with TlvFormat {
     override val amount = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
   }

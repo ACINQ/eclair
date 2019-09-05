@@ -37,7 +37,7 @@ class FeaturesSpec extends FunSuite {
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
     val features = hex"010a"
-    assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
+    assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL) && hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY))
   }
 
   test("'variable_length_onion' feature") {

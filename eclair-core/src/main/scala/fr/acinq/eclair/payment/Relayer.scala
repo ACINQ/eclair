@@ -235,7 +235,7 @@ object Relayer extends Logging {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         val codec = if (p.isLastPacket) OnionCodecs.finalPerHopPayloadCodec else OnionCodecs.relayPerHopPayloadCodec
         codec.decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(_: Onion.TlvPayload, _)) if !Features.hasVariableLengthOnion(features) => Left(InvalidRealm)
+          case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !Features.hasVariableLengthOnion(features) => Left(InvalidRealm)
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
               logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
