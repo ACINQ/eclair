@@ -65,6 +65,61 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>com.oracle.substratevm</groupId>
+                <artifactId>native-image-maven-plugin</artifactId>
+                <version>${graal.version}</version>
+                <configuration>
+                    <imageName>eclair-native</imageName>
+                    <mainClass>
+                        fr.acinq.eclair.Boot
+                    </mainClass>
+                    <buildArgs>
+                        -H:IncludeResources=.*\.properties
+                        -H:ConfigurationFileDirectories=../graal-config
+                        -H:+ReportUnsupportedElementsAtRuntime
+                        -H:+ReportExceptionStackTraces
+                        -H:+TraceClassInitialization
+                        <!-- -H:+ReflectionPluginTracing -->
+                        --no-server
+                        --initialize-at-build-time
+                        <!-- sqlite related -->
+                        --initialize-at-build-time=org.sqlite.JDBC
+                        --initialize-at-build-time=org.sqlite.core.DB\$ProgressObserver
+                        --initialize-at-build-time=org.sqlite.core.DB
+                        --initialize-at-build-time=org.sqlite.core.NativeDB
+                        --initialize-at-build-time=org.sqlite.ProgressHandler
+                        --initialize-at-build-time=org.sqlite.Function
+                        --initialize-at-build-time=org.sqlite.Function\$Aggregate
+                        --initialize-at-build-time=org.sqlite.Function\$Window
+                        <!-- bitcoin-lib related -->
+                        --initialize-at-run-time=fr.acinq.bitcoin.Crypto$
+
+                        --initialize-at-run-time=akka.protobuf.DescriptorProtos
+                        --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$EnvVariablesHolder
+                        --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$SystemPropertiesHolder
+                        <!-- netty related -->
+                        --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslServerContext
+                        --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslClientContext
+                        --initialize-at-run-time=io.netty.handler.ssl.JdkNpnApplicationProtocolNegotiator
+                        --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslEngine
+                        --initialize-at-run-time=io.netty.handler.ssl.ConscryptAlpnSslEngine
+                        --initialize-at-run-time=io.netty.handler.ssl.JettyNpnSslEngine
+                        --initialize-at-run-time=io.netty.util.internal.logging.Log4JLogger
+                        --no-fallback
+                        --allow-incomplete-classpath
+                        -J-Xmx3G
+                    </buildArgs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>native-image</goal>
+                        </goals>
+                        <phase>package</phase>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -106,6 +161,27 @@
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
             <version>1.27.0</version>
+        </dependency>
+        <!-- graal -->
+        <dependency>
+            <groupId>com.github.vmencik</groupId>
+            <artifactId>graal-akka-http_${scala.version.short}</artifactId>
+            <version>${graal.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.vmencik</groupId>
+            <artifactId>graal-akka-slf4j_${scala.version.short}</artifactId>
+            <version>${graal.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.sdk</groupId>
+            <artifactId>graal-sdk</artifactId>
+            <version>${graal.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.substratevm</groupId>
+            <artifactId>svm</artifactId>
+            <version>${graal.version}</version>
         </dependency>
         <!-- test dependencies -->
         <dependency>
