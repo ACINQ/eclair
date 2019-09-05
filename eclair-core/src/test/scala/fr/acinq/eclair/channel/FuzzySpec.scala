@@ -30,6 +30,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
 import org.scalatest.{Outcome, Tag}
@@ -95,7 +96,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(blockHeight = 400000)
-      PaymentLifecycle.buildCommand(UUID.randomUUID(), amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
+      PaymentLifecycle.buildCommand(UUID.randomUUID(), paymentHash, Hop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =

@@ -25,16 +25,18 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.wire.{ChannelUpdate, OnionCodecs, PerHopPayload}
+import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, PerHopPayload, RelayLegacyPayload}
+import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import scodec.bits.ByteVector
 
 /**
  * Created by PM on 31/05/2016.
  */
 
-class HtlcGenerationSpec extends FunSuite {
+class HtlcGenerationSpec extends FunSuite with BeforeAndAfterAll {
 
   test("compute fees") {
     val feeBaseMsat = 150000 msat
@@ -49,89 +51,80 @@ class HtlcGenerationSpec extends FunSuite {
   import HtlcGenerationSpec._
 
   test("compute payloads with fees and expiry delta") {
-
-    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(hops.drop(1), FinalLegacyPayload(finalAmountMsat, finalExpiry))
+    val expectedPayloads = Seq[PerHopPayload](
+      RelayLegacyPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc),
+      RelayLegacyPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd),
+      RelayLegacyPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de),
+      FinalLegacyPayload(finalAmountMsat, finalExpiry))
 
     assert(firstAmountMsat === amount_ab)
     assert(firstExpiry === expiry_ab)
-    assert(payloads ===
-      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
-        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
-        PerHopPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de) ::
-        PerHopPayload(ShortChannelId(0L), finalAmountMsat, finalExpiry) :: Nil)
+    assert(payloads === expectedPayloads)
   }
 
-  test("build onion") {
-
-    val (_, _, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
+  def testBuildOnion(legacy: Boolean): Unit = {
+    val finalPayload = if (legacy) {
+      FinalLegacyPayload(finalAmountMsat, finalExpiry)
+    } else {
+      FinalTlvPayload(TlvStream[OnionTlv](AmountToForward(finalAmountMsat), OutgoingCltv(finalExpiry)))
+    }
+    val (_, _, payloads) = buildPayloads(hops.drop(1), finalPayload)
     val nodes = hops.map(_.nextNodeId)
     val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
     assert(packet_b.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
+    testPeelOnion(packet_b)
+  }
+
+  def testPeelOnion(packet_b: OnionRoutingPacket): Unit = {
     val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, packet_b)
-    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    val payload_b = OnionCodecs.relayPerHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === amount_bc)
-    assert(payload_b.outgoingCltvValue === expiry_bc)
+    assert(payload_b.amountToForward === amount_bc)
+    assert(payload_b.outgoingCltv === expiry_bc)
 
     val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
-    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
+    val payload_c = OnionCodecs.relayPerHopPayloadCodec.decode(bin_c.toBitVector).require.value
     assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_c.amtToForward === amount_cd)
-    assert(payload_c.outgoingCltvValue === expiry_cd)
+    assert(payload_c.amountToForward === amount_cd)
+    assert(payload_c.outgoingCltv === expiry_cd)
 
     val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
-    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
+    val payload_d = OnionCodecs.relayPerHopPayloadCodec.decode(bin_d.toBitVector).require.value
     assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_d.amtToForward === amount_de)
-    assert(payload_d.outgoingCltvValue === expiry_de)
+    assert(payload_d.amountToForward === amount_de)
+    assert(payload_d.outgoingCltv === expiry_de)
 
     val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
-    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
+    val payload_e = OnionCodecs.finalPerHopPayloadCodec.decode(bin_e.toBitVector).require.value
     assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_e.amtToForward === finalAmountMsat)
-    assert(payload_e.outgoingCltvValue === finalExpiry)
+    assert(payload_e.amount === finalAmountMsat)
+    assert(payload_e.expiry === finalExpiry)
+  }
+
+  test("build onion with final legacy payload") {
+    testBuildOnion(legacy = true)
+  }
+
+  test("build onion with final tlv payload") {
+    testBuildOnion(legacy = false)
   }
 
   test("build a command including the onion") {
-
-    val (add, _) = buildCommand(UUID.randomUUID, finalAmountMsat, finalExpiry, paymentHash, hops)
-
+    val (add, _) = buildCommand(UUID.randomUUID, paymentHash, hops, FinalLegacyPayload(finalAmountMsat, finalExpiry))
     assert(add.amount > finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
     assert(add.onion.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val Right(DecryptedPacket(bin_b, packet_c, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
-    assert(packet_c.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === amount_bc)
-    assert(payload_b.outgoingCltvValue === expiry_bc)
-
-    val Right(DecryptedPacket(bin_c, packet_d, _)) = Sphinx.PaymentPacket.peel(priv_c.privateKey, paymentHash, packet_c)
-    val payload_c = OnionCodecs.perHopPayloadCodec.decode(bin_c.toBitVector).require.value
-    assert(packet_d.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_c.amtToForward === amount_cd)
-    assert(payload_c.outgoingCltvValue === expiry_cd)
-
-    val Right(DecryptedPacket(bin_d, packet_e, _)) = Sphinx.PaymentPacket.peel(priv_d.privateKey, paymentHash, packet_d)
-    val payload_d = OnionCodecs.perHopPayloadCodec.decode(bin_d.toBitVector).require.value
-    assert(packet_e.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_d.amtToForward === amount_de)
-    assert(payload_d.outgoingCltvValue === expiry_de)
-
-    val Right(DecryptedPacket(bin_e, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_e.privateKey, paymentHash, packet_e)
-    val payload_e = OnionCodecs.perHopPayloadCodec.decode(bin_e.toBitVector).require.value
-    assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_e.amtToForward === finalAmountMsat)
-    assert(payload_e.outgoingCltvValue === finalExpiry)
+    testPeelOnion(add.onion)
   }
 
   test("build a command with no hops") {
-    val (add, _) = buildCommand(UUID.randomUUID(), finalAmountMsat, finalExpiry, paymentHash, hops.take(1))
-
+    val (add, _) = buildCommand(UUID.randomUUID(), paymentHash, hops.take(1), FinalLegacyPayload(finalAmountMsat, finalExpiry))
     assert(add.amount === finalAmountMsat)
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
@@ -139,10 +132,10 @@ class HtlcGenerationSpec extends FunSuite {
 
     // let's peel the onion
     val Right(DecryptedPacket(bin_b, packet_random, _)) = Sphinx.PaymentPacket.peel(priv_b.privateKey, paymentHash, add.onion)
-    val payload_b = OnionCodecs.perHopPayloadCodec.decode(bin_b.toBitVector).require.value
+    val payload_b = OnionCodecs.relayPerHopPayloadCodec.decode(bin_b.toBitVector).require.value
     assert(packet_random.payload.length === Sphinx.PaymentPacket.PayloadLength)
-    assert(payload_b.amtToForward === finalAmountMsat)
-    assert(payload_b.outgoingCltvValue === finalExpiry)
+    assert(payload_b.amountToForward === finalAmountMsat)
+    assert(payload_b.outgoingCltv === finalExpiry)
   }
 
 }
@@ -175,12 +168,12 @@ object HtlcGenerationSpec {
       Hop(d, e, channelUpdate_de) :: Nil
 
   val finalAmountMsat = 42000000 msat
-  val currentBlockCount = 420000
+  val currentBlockCount = 400000
   val finalExpiry = CltvExpiry(currentBlockCount) + Channel.MIN_CLTV_EXPIRY_DELTA
   val paymentPreimage = randomBytes32
   val paymentHash = Crypto.sha256(paymentPreimage)
 
-  val expiry_de = CltvExpiry(currentBlockCount) + Channel.MIN_CLTV_EXPIRY_DELTA
+  val expiry_de = finalExpiry
   val amount_de = finalAmountMsat
   val fee_d = nodeFee(channelUpdate_de.feeBaseMsat, channelUpdate_de.feeProportionalMillionths, amount_de)
 

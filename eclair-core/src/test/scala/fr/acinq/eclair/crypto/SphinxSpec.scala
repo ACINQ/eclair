@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.wire
+import fr.acinq.eclair.{UInt64, wire}
 import fr.acinq.eclair.wire._
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -249,7 +249,7 @@ class SphinxSpec extends FunSuite {
 
     val packet = FailurePacket.wrap(
       FailurePacket.wrap(
-        FailurePacket.create(sharedSecrets.head, InvalidOnionPayload(ByteVector32.Zeroes)),
+        FailurePacket.create(sharedSecrets.head, InvalidOnionPayload(UInt64(0), 0)),
         sharedSecrets(1)),
       sharedSecrets(2))
 

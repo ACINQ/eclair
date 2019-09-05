@@ -28,6 +28,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
@@ -56,7 +57,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h1 = Crypto.sha256(r1)
       val amount1 = 300000000 msat
       val expiry1 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-      val cmd1 = PaymentLifecycle.buildCommand(UUID.randomUUID, amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
+      val cmd1 = PaymentLifecycle.buildCommand(UUID.randomUUID, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount1, expiry1))._1.copy(commit = false)
       sender.send(alice, cmd1)
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -66,7 +67,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h2 = Crypto.sha256(r2)
       val amount2 = 200000000 msat
       val expiry2 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-      val cmd2 = PaymentLifecycle.buildCommand(UUID.randomUUID, amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
+      val cmd2 = PaymentLifecycle.buildCommand(UUID.randomUUID, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount2, expiry2))._1.copy(commit = false)
       sender.send(alice, cmd2)
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -216,7 +217,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FAIL_HTLC (acknowledge in case of failure)") { f =>
     import f._
     val sender = TestProbe()
-    val r = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
@@ -239,7 +239,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
@@ -248,7 +248,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, 42))
     sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
   }
@@ -256,10 +256,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_FAIL_MALFORMED_HTLC (acknowledge in case of failure)") { f =>
     import f._
     val sender = TestProbe()
-    val r = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)) // this will fail
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION)) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }

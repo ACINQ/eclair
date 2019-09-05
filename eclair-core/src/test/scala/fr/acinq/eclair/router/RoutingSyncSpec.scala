@@ -30,6 +30,7 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.scalatest.{FunSuiteLike, ParallelTestExecution}
+import scodec.bits.HexStringSyntax
 
 import scala.collection.immutable.TreeMap
 import scala.collection.{SortedSet, immutable, mutable}
@@ -120,7 +121,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   def countUpdates(channels: Map[ShortChannelId, PublicChannel]) = channels.values.foldLeft(0) {
-    case (count, pc) =>  count + pc.update_1_opt.map(_ => 1).getOrElse(0) + pc.update_2_opt.map(_ => 1).getOrElse(0)
+    case (count, pc) => count + pc.update_1_opt.map(_ => 1).getOrElse(0) + pc.update_2_opt.map(_ => 1).getOrElse(0)
   }
 
   test("sync with standard channel queries") {
@@ -151,7 +152,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     // add some updates to bob and resync
     fakeRoutingInfo.take(10).values.foreach {
-      case (pc, na1, na2) =>
+      case (pc, _, _) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
     }
     awaitCond(bob.stateData.channels.size === 10 && countUpdates(bob.stateData.channels) === 10 * 2)
@@ -172,7 +173,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
   }
 
-  def syncWithExtendedQueries(requestNodeAnnouncements: Boolean) = {
+  def syncWithExtendedQueries(requestNodeAnnouncements: Boolean): Unit = {
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestNodeAnnouncements)), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
@@ -200,7 +201,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     // add some updates to bob and resync
     fakeRoutingInfo.take(10).values.foreach {
-      case (pc, na1, na2) =>
+      case (pc, _, _) =>
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, pc.update_2_opt.get))
     }
     awaitCond(bob.stateData.channels.size === 10 && countUpdates(bob.stateData.channels) === 10 * 2)
@@ -319,8 +320,8 @@ object RoutingSyncSpec {
     val channelAnn_12 = channelAnnouncement(shortChannelId, priv1, priv2, priv_funding1, priv_funding2)
     val channelUpdate_12 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv1, priv2.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
-    val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "", Color(0, 0, 0), List())
-    val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "", Color(0, 0, 0), List())
+    val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "a", Color(0, 0, 0), List(), hex"0200")
+    val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "b", Color(0, 0, 0), List(), hex"00")
     val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21))
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
@@ -336,7 +337,7 @@ object RoutingSyncSpec {
 
   def makeFakeNodeAnnouncement(nodeId: PublicKey): NodeAnnouncement = {
     val priv = pub2priv(nodeId)
-    makeNodeAnnouncement(priv, "", Color(0, 0, 0), List())
+    makeNodeAnnouncement(priv, "", Color(0, 0, 0), List(), hex"00")
   }
 
 }
