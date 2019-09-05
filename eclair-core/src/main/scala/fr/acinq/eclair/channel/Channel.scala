@@ -1736,7 +1736,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the fees are too high we risk to not be able to confirm our current commitment
     if(networkFeeratePerKw > currentFeeratePerKw && Helpers.isFeeDiffTooHigh(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)){
-      log.warning(s"closing OFFLINE ${d.channelId} due fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
+      log.warning(s"closing OFFLINE ${d.channelId} due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
       handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
     } else {
       stay
