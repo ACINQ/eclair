@@ -58,7 +58,6 @@ object NetworkStats {
     }
   }
 
-  private def getChannelUpdateField[T](pc: PublicChannel, f: ChannelUpdate => T): Seq[T] =
-    pc.update_1_opt.map(u => f(u) :: Nil).getOrElse(Nil) ++ pc.update_2_opt.map(u => f(u) :: Nil).getOrElse(Nil)
+  private def getChannelUpdateField[T](pc: PublicChannel, f: ChannelUpdate => T): Seq[T] = (pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).map(f)
 
 }

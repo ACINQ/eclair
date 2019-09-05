@@ -151,7 +151,7 @@ case object NORMAL extends State
 
 case object TickBroadcast
 case object TickPruneStaleChannels
-case object TickNetworkStats
+case object TickComputeNetworkStats
 // @formatter:on
 
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
@@ -168,7 +168,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
-  setTimer(TickNetworkStats.toString, TickNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
+  setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
   val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
@@ -390,7 +390,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
-    case Event(TickNetworkStats, d) if d.channels.nonEmpty =>
+    case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
       log.info("re-computing network statistics")
       stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
 
