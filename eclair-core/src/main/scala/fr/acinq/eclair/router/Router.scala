@@ -53,6 +53,7 @@ import scala.util.{Random, Try}
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
+                      networkStatsRefreshInterval: FiniteDuration,
                       requestNodeAnnouncements: Boolean,
                       encodingType: EncodingType,
                       searchMaxFeeBase: Satoshi,
@@ -165,7 +166,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
-  setTimer(TickNetworkStats.toString, TickNetworkStats, 6 hours, repeat = true)
+  setTimer(TickNetworkStats.toString, TickNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
   val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 

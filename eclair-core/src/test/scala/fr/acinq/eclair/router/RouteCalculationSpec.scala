@@ -433,10 +433,10 @@ class RouteCalculationSpec extends FunSuite {
     val amount = 900 sat // below RoutingHeuristics.CAPACITY_CHANNEL_LOW
     val assistedChannels = Router.toAssistedChannels(extraHops, e, amount.toMilliSatoshi)
 
-    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, RoutingHeuristics.CAPACITY_CHANNEL_LOW))
-    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 1100.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 1300.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 1325.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, 1050.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 1200.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 1400.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 1426.sat.toMilliSatoshi))
   }
 
   test("blacklist routes") {
