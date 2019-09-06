@@ -163,7 +163,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val add = CMD_ADD_HTLC(initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(bob, add)
 
     val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 10000 sat, fees = 0 sat)
