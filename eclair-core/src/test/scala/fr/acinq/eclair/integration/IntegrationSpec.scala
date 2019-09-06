@@ -54,6 +54,7 @@ import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.util.Try
 
 /**
  * Created by PM on 15/03/2017.
@@ -794,7 +795,27 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
+      case t =>
+        println(s"try #1: $t")
+        Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
+          case t =>
+            println(s"try #2: $t")
+            Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
+              case t =>
+                println(s"try #3: $t")
+                Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
+                  case t =>
+                    println(s"try #4: $t")
+                    Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
+                      case t =>
+                        println(s"try #5: $t")
+                    }
+                }
+            }
+        }
+    }
+    println("success 'for forwardHandlerC.expectMsgType[UpdateAddHtlc]'")
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
