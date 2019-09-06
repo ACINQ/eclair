@@ -33,7 +33,9 @@ object TestUtils {
     var serverSocket: ServerSocket = null
     try {
       serverSocket = new ServerSocket(0)
-      serverSocket.getLocalPort
+      val port = serverSocket.getLocalPort
+      println(s"attributing port=$port")
+      port
     } finally {
       if (serverSocket != null) {
         serverSocket.close()
