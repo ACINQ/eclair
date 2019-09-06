@@ -20,11 +20,11 @@ import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
-import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair._
+import fr.acinq.eclair.{MilliSatoshi, _}
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentResult, ReceivePayment, SendPayment}
+import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
 
@@ -33,26 +33,23 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 /**
-  * Created by PM on 16/08/2016.
-  */
+ * Created by PM on 16/08/2016.
+ */
 class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Logging {
 
   implicit val timeout = Timeout(60 seconds)
 
   private var notifsController: Option[NotificationsController] = None
 
-  def initNotifications(controller: NotificationsController) = {
+  def initNotifications(controller: NotificationsController): Unit = {
     notifsController = Option(controller)
   }
 
   /**
-    * Opens a connection to a node. If the channel option exists this will also open a channel with the node, with a
-    * `fundingSatoshis` capacity and `pushMsat` amount.
-    *
-    * @param nodeUri
-    * @param channel
-    */
-  def open(nodeUri: NodeURI, channel: Option[Peer.OpenChannel]) = {
+   * Opens a connection to a node. If the channel option exists this will also open a channel with the node, with a
+   * `fundingSatoshis` capacity and `pushMsat` amount.
+   */
+  def open(nodeUri: NodeURI, channel: Option[Peer.OpenChannel]): Unit = {
     logger.info(s"opening a connection to nodeUri=$nodeUri")
     (for {
       kit <- fKit
@@ -88,8 +85,8 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       sendPayment = req.minFinalCltvExpiryDelta match {
-        case None => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, maxAttempts = kit.nodeParams.maxPaymentAttempts)
-        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiryDelta = minFinalCltvExpiry, maxAttempts = kit.nodeParams.maxPaymentAttempts)
+        case None => SendPaymentRequest(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo)
+        case Some(minFinalCltvExpiry) => SendPaymentRequest(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, finalExpiryDelta = minFinalCltvExpiry)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {
@@ -108,14 +105,14 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
   } yield res
 
   /**
-    * Displays a system notification if the system supports it.
-    *
-    * @param title            Title of the notification
-    * @param message          main message of the notification, will not wrap
-    * @param notificationType type of the message, default to NONE
-    * @param showAppName      true if you want the notification title to be preceded by "Eclair - ". True by default
-    */
-  def notification(title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true) = {
+   * Displays a system notification if the system supports it.
+   *
+   * @param title            Title of the notification
+   * @param message          main message of the notification, will not wrap
+   * @param notificationType type of the message, default to NONE
+   * @param showAppName      true if you want the notification title to be preceded by "Eclair - ". True by default
+   */
+  def notification(title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true): Unit = {
     notifsController.foreach(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType))
   }
 }
