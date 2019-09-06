@@ -43,8 +43,9 @@ object Boot extends App with Logging {
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
 
-    // TODO: disable Kamon for now
-    //Kamon.init(setup.appConfig)
+    if (setup.config.getBoolean("enable-kamon")) {
+      Kamon.init(setup.appConfig)
+    }
 
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
