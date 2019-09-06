@@ -797,7 +797,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
     val t1 = Platform.currentTime.milliseconds
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[UpdateAddHtlc](1 hour)
     val t2 = Platform.currentTime.milliseconds
     println(s"success 'for forwardHandlerC.expectMsgType[UpdateAddHtlc]' took ${t2 - t1}")
     forwardHandlerC.forward(buffer.ref)
