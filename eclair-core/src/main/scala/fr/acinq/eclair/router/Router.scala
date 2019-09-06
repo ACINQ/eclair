@@ -33,7 +33,7 @@ import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSigna
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
+import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
@@ -46,11 +46,14 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.{Random, Try}
 
-// @formatter:off
+/**
+ * Created by PM on 24/05/2016.
+ */
 
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
+                      networkStatsRefreshInterval: FiniteDuration,
                       requestNodeAnnouncements: Boolean,
                       encodingType: EncodingType,
                       channelRangeChunkSize: Int,
@@ -64,8 +67,8 @@ case class RouterConf(randomizeRouteSelection: Boolean,
                       searchRatioChannelAge: Double,
                       searchRatioChannelCapacity: Double)
 
+// @formatter:off
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
-
 case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
   update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
@@ -76,7 +79,6 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
-
 case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
 
@@ -86,8 +88,9 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
+// @formatter:on
 
-case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey)
+case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 
@@ -107,10 +110,15 @@ case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChan
   require(hops.nonEmpty, "route cannot be empty")
 }
 
-case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
+// @formatter:off
+/** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */
+case class ExcludeChannel(desc: ChannelDesc)
 case class LiftChannelExclusion(desc: ChannelDesc)
+// @formatter:on
 
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
+
+case object GetNetworkStats
 
 case object GetRoutingState
 
@@ -126,6 +134,7 @@ case class Sync(pending: List[RoutingMessage], total: Int)
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 channels: SortedMap[ShortChannelId, PublicChannel],
+                stats: Option[NetworkStats],
                 stash: Stash,
                 rebroadcast: Rebroadcast,
                 awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
@@ -136,19 +145,14 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 // for which we have not yet received an 'end' message
                )
 
+// @formatter:off
 sealed trait State
-
 case object NORMAL extends State
 
 case object TickBroadcast
-
 case object TickPruneStaleChannels
-
+case object TickComputeNetworkStats
 // @formatter:on
-
-/**
- * Created by PM on 24/05/2016.
- */
 
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
@@ -164,6 +168,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
+  setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
   val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
@@ -177,7 +182,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     val initChannels = channels
     // this will be used to calculate routes
     val graph = DirectedGraph.makeGraph(initChannels)
-    val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
+    val initNodes = nodes.map(n => n.nodeId -> n).toMap
     // send events for remaining channels/nodes
     context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity))))
     context.system.eventStream.publish(ChannelUpdatesReceived(initChannels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
@@ -199,7 +204,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, None, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -252,14 +257,26 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         stay
       }
 
+    case Event(SyncProgress(progress), d: Data) =>
+      if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
+        log.info("initial routing sync done: computing network statistics")
+        stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
+      } else {
+        stay
+      }
+
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
       sender ! RoutingState(d.channels.values, d.nodes.values)
       stay
 
+    case Event(GetNetworkStats, d: Data) =>
+      sender ! d.stats
+      stay
+
     case Event(v@ValidateResult(c, _), d0) =>
       d0.awaiting.get(c) match {
-        case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
+        case Some(origin +: _) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
         case _ => ()
       }
       log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
@@ -356,7 +373,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
-        case nodeId =>
+        nodeId =>
           log.info("pruning nodeId={} (spent)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
@@ -372,6 +389,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
+
+    case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
+      log.info("re-computing network statistics")
+      stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
@@ -400,7 +421,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
       val graph1 = d.graph.removeEdges(staleChannelsToRemove)
       staleNodes.foreach {
-        case nodeId =>
+        nodeId =>
           log.info("pruning nodeId={} (stale)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
@@ -448,8 +469,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, params_opt), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it takes precedence over all other channel_updates we know
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, end)).toMap
-      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop))).toSet
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, end, amount)).toMap
+      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
       val ignoredEdges = ignoreChannels ++ d.excludedChannels
       val params = params_opt.getOrElse(defaultRouteParams)
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
@@ -481,7 +502,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using d.copy(sync = d.sync - remoteNodeId)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
-    case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), d) if routingMessage.chainHash != nodeParams.chainHash =>
+    case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
@@ -601,10 +622,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
       // we only send a reply right away if there were no pending requests
       replynow_opt.foreach(transport ! _)
-      context.system.eventStream.publish(syncProgress(sync1))
+      val progress = syncProgress(sync1)
+      context.system.eventStream.publish(progress)
+      self ! progress
       stay using d.copy(sync = sync1)
 
-    case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, queryFlags_opt)), d) =>
+    case Event(PeerRoutingMessage(transport, _, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       val flags = routingMessage.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
 
@@ -650,7 +673,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           }
         case _ => d.sync
       }
-      context.system.eventStream.publish(syncProgress(sync1))
+      val progress = syncProgress(sync1)
+      context.system.eventStream.publish(progress)
+      self ! progress
       stay using d.copy(sync = sync1)
 
   }
@@ -814,18 +839,25 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
-  // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
-  // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 0, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, None)
+  def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
+    // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
+    // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, Platform.currentTime.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
+  }
 
-
-  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ShortChannelId, AssistedChannel] = {
+  def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey, amount: MilliSatoshi): Map[ShortChannelId, AssistedChannel] = {
     // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
+    // The invoice doesn't explicitly specify the channel's htlcMaximumMsat, but we can safely assume that the channel
+    // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
+    // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
+    // We also need to make sure the channel isn't excluded by our heuristics.
+    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
-    extraRoute.zip(nextNodeIds).map {
-      case (extraHop: ExtraHop, nextNodeId) => extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId)
-    }.toMap
+    extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
+      case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
+        val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
+        (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount)))
+    }._2
   }
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
@@ -858,7 +890,6 @@ object Router {
    * AND
    * (2) has no channel_update younger than 2 weeks
    *
-   * @param channel
    * @param update1_opt update corresponding to one side of the channel, if we have it
    * @param update2_opt update corresponding to the other side of the channel, if we have it
    * @return
@@ -868,7 +899,7 @@ object Router {
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = currentBlockHeight - 2016
     val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
-    blockHeight < staleThresholdBlocks && update1_opt.map(isStale).getOrElse(true) && update2_opt.map(isStale).getOrElse(true)
+    blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
   }
 
   def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: Long): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))
@@ -966,8 +997,8 @@ object Router {
         log.warning("received query for shortChannelId={} that we don't have", head)
         loop(tail, flags.drop(1), numca, numcu, nodesSent)
       case head :: tail =>
-        var numca1 = numca
-        var numcu1 = numcu
+        val numca1 = numca
+        val numcu1 = numcu
         var sent1 = nodesSent
         val pc = channels(head)
         val flag_opt = flags.headOption
@@ -1013,11 +1044,10 @@ object Router {
   /**
    * Returns overall progress on synchronization
    *
-   * @param sync
    * @return a sync progress indicator (1 means fully synced)
    */
   def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress = {
-    //NB: progress is in terms of requests, not individual channels
+    // NB: progress is in terms of requests, not individual channels
     val (pending, total) = sync.foldLeft((0, 0)) {
       case ((p, t), (_, sync)) => (p + sync.pending.size, t + sync.total)
     }
@@ -1065,9 +1095,6 @@ object Router {
   /**
    * Have to split ids because otherwise message could be too big
    * there could be several reply_channel_range messages for a single query
-   *
-   * @param shortChannelIds
-   * @return
    */
   def split(shortChannelIds: SortedSet[ShortChannelId], channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
     // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
@@ -1114,7 +1141,7 @@ object Router {
   // Max allowed CLTV for a route
   val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(1008)
 
-  // The default amount of routes we'll search for when findRoute is called
+  // The default number of routes we'll search for when findRoute is called with randomize = true
   val DEFAULT_ROUTES_COUNT = 3
 
   def getDefaultRouteParams(routerConf: RouterConf) = RouteParams(
@@ -1137,9 +1164,9 @@ object Router {
    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
    *
-   * @param g
-   * @param localNodeId
-   * @param targetNodeId
+   * @param g            graph of the whole network
+   * @param localNodeId  sender node (payer)
+   * @param targetNodeId target node (final recipient)
    * @param amount       the amount that will be sent along this route
    * @param numRoutes    the number of shortest-paths to find
    * @param extraEdges   a set of extra edges we want to CONSIDER during the search
@@ -1188,6 +1215,7 @@ object Router {
     }
 
     // At this point 'foundRoutes' cannot be empty
-    Random.shuffle(foundRoutes).head.path.map(graphEdgeToHop)
+    val randomizedRoutes = if (routeParams.randomize) Random.shuffle(foundRoutes) else foundRoutes
+    randomizedRoutes.head.path.map(graphEdgeToHop)
   }
 }
