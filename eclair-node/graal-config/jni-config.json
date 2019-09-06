@@ -1,5 +1,8 @@
 [
 {
+  "name":"byte[]"
+},
+{
   "name":"java.lang.InternalError",
   "methods":[{"name":"<init>","parameterTypes":["java.lang.String"] }]
 },

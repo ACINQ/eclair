@@ -62,6 +62,10 @@
   "name":"akka.dispatch.BoundedDequeBasedMessageQueueSemantics"
 },
 {
+  "name":"akka.dispatch.BoundedMailbox",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
   "name":"akka.dispatch.BoundedMessageQueueSemantics"
 },
 {
@@ -250,6 +254,44 @@
   "methods":[{"name":"<init>","parameterTypes":["com.typesafe.sslconfig.util.LoggerFactory"] }]
 },
 {
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCRequest",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCRequest$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCResponse",
+  "allDeclaredFields":true,
+  "allPublicFields":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.io.Client",
+  "allDeclaredFields":true
+},
+{
+  "name":"fr.acinq.eclair.payment.Auditor",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentInitiator",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.Relayer",
+  "allDeclaredConstructors":true
+},
+{
   "name":"io.netty.buffer.AbstractByteBufAllocator",
   "allDeclaredMethods":true
 },
@@ -305,6 +347,10 @@
   "fields":[{"name":"parkBlocker", "allowUnsafeAccess":true}]
 },
 {
+  "name":"java.lang.Throwable",
+  "methods":[{"name":"addSuppressed","parameterTypes":["java.lang.Throwable"] }]
+},
+{
   "name":"java.lang.management.ManagementFactory",
   "methods":[{"name":"getRuntimeMXBean","parameterTypes":[] }]
 },
@@ -330,6 +376,17 @@
 },
 {
   "name":"scala.Symbol"
+},
+{
+  "name":"scala.collection.Seq$",
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"scala.collection.generic.GenericCompanion",
+  "methods":[{"name":"apply","parameterTypes":["scala.collection.Seq"] }]
+},
+{
+  "name":"scala.collection.generic.GenericTraversableTemplate"
 },
 {
   "name":"scala.concurrent.Future$InternalCallbackExecutor$",
