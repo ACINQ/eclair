@@ -34,24 +34,6 @@ import scala.util.{Failure, Success}
   */
 object Boot extends App with LazyLogging {
 
-  private def configureLogging(): Unit = {
-    var is: InputStream = null
-    try {
-      is = getClass.getResourceAsStream("/app.logging.properties")
-      LogManager.getLogManager.reset()
-      LogManager.getLogManager.readConfiguration(is)
-    } catch {
-      case e: Exception =>
-        e.printStackTrace(System.err)
-        System.err.println(s"could not start logging")
-    }
-    finally {
-      if(is != null) is.close()
-    }
-  }
-
-  configureLogging()
-
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {

@@ -179,6 +179,11 @@
         </dependency>
         <!-- LOGGING -->
         <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>1.7.26</version>
+        </dependency>
+        <dependency>
             <groupId>com.typesafe.scala-logging</groupId>
             <artifactId>scala-logging_${scala.version.short}</artifactId>
             <version>3.9.2</version>
