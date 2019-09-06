@@ -104,7 +104,7 @@ object NodeParams {
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(overrideDefaults)
-      .withFallback(ConfigFactory.load()).getConfig("eclair")
+      .withFallback(ConfigFactory.load())
 
   def getSeed(datadir: File): ByteVector = {
     val seedPath = new File(datadir, "seed.dat")
