@@ -178,6 +178,7 @@
 },
 {
   "name":"akka.io.TcpIncomingConnection",
+  "allDeclaredFields":true,
   "allDeclaredConstructors":true
 },
 {
@@ -250,8 +251,89 @@
   "methods":[{"name":"<init>","parameterTypes":[] }]
 },
 {
+  "name":"com.google.common.util.concurrent.AbstractFuture",
+  "fields":[
+    {"name":"listeners", "allowUnsafeAccess":true}, 
+    {"name":"value", "allowUnsafeAccess":true}, 
+    {"name":"waiters", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"com.google.common.util.concurrent.AbstractFuture$Waiter",
+  "fields":[
+    {"name":"next", "allowUnsafeAccess":true}, 
+    {"name":"thread", "allowUnsafeAccess":true}
+  ]
+},
+{
   "name":"com.typesafe.sslconfig.ssl.DefaultHostnameVerifier",
   "methods":[{"name":"<init>","parameterTypes":["com.typesafe.sslconfig.util.LoggerFactory"] }]
+},
+{
+  "name":"fr.acinq.bitcoin.DeterministicWallet$KeyPath",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.bitcoin.DeterministicWallet$KeyPath$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.AuditResponse",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.AuditResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.GetInfoResponse",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.GetInfoResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.api.ErrorResponse",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.api.ErrorResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet$Options",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet$Options$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.Error",
+  "allDeclaredFields":true,
+  "allPublicFields":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.Error$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
 },
 {
   "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCRequest",
@@ -276,8 +358,195 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.channel.Commitments",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.Commitments$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_CLOSING",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_CLOSING$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NORMAL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NORMAL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalChanges",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalChanges$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommit",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommit$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommitPublished",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommitPublished$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalParams",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalParams$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.PublishableTxs",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.PublishableTxs$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RES_GETINFO",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RES_GETINFO$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteChanges",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteChanges$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteCommit",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteCommit$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteParams",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteParams$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.db.IncomingPayment",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.db.IncomingPayment$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.db.OutgoingPayment",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.db.OutgoingPayment$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.db.Stats",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.db.Stats$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.io.Client",
   "allDeclaredFields":true
+},
+{
+  "name":"fr.acinq.eclair.io.Peer$PeerInfo",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.io.Peer$PeerInfo$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
 },
 {
   "name":"fr.acinq.eclair.payment.Auditor",
@@ -288,8 +557,68 @@
   "allDeclaredConstructors":true
 },
 {
+  "name":"fr.acinq.eclair.payment.PaymentLifecycle",
+  "allDeclaredFields":true,
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentReceived",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentReceived$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSent",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSent$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.payment.Relayer",
   "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.transactions.CommitmentSpec",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.transactions.CommitmentSpec$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.wire.ChannelUpdate",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.wire.ChannelUpdate$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.wire.FundingCreated",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.wire.FundingCreated$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
 },
 {
   "name":"io.netty.buffer.AbstractByteBufAllocator",

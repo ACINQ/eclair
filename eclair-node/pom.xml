@@ -112,7 +112,7 @@
 
                         --no-fallback
                         --allow-incomplete-classpath
-                        -J-Xmx3G
+                        -J-Xmx4G
                     </buildArgs>
                 </configuration>
                 <executions>
