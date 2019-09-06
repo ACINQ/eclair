@@ -51,6 +51,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
+import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -795,27 +796,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
-      case t =>
-        println(s"try #1: $t")
-        Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
-          case t =>
-            println(s"try #2: $t")
-            Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
-              case t =>
-                println(s"try #3: $t")
-                Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
-                  case t =>
-                    println(s"try #4: $t")
-                    Try(forwardHandlerC.expectMsgType[UpdateAddHtlc]).recover {
-                      case t =>
-                        println(s"try #5: $t")
-                    }
-                }
-            }
-        }
-    }
-    println("success 'for forwardHandlerC.expectMsgType[UpdateAddHtlc]'")
+    val t1 = Platform.currentTime.milliseconds
+    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    val t2 = Platform.currentTime.milliseconds
+    println(s"success 'for forwardHandlerC.expectMsgType[UpdateAddHtlc]' took ${t2 - t1}")
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
