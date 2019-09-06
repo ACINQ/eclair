@@ -782,6 +782,16 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.expectMsgType[UUID]
     }
 
+    def time[T](name: String)(f: => T) = {
+      val t1 = Platform.currentTime.milliseconds
+      try {
+        f
+      } finally {
+        val t2 = Platform.currentTime.milliseconds
+        println(s"$name took ${t2 - t1}")
+      }
+    }
+
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
     forwardHandlerF.expectMsgType[UpdateAddHtlc]
@@ -796,10 +806,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    val t1 = Platform.currentTime.milliseconds
-    forwardHandlerC.expectMsgType[UpdateAddHtlc](1 hour)
-    val t2 = Platform.currentTime.milliseconds
-    println(s"success 'for forwardHandlerC.expectMsgType[UpdateAddHtlc]' took ${t2 - t1}")
+    time("a")(forwardHandlerC.expectMsgType[UpdateAddHtlc](1 hour))
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
@@ -811,22 +818,22 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimagse
-    buffer.expectMsgType[UpdateAddHtlc]
+    time("b")(buffer.expectMsgType[UpdateAddHtlc](1 hour))
     buffer.forward(paymentHandlerF)
-    sigListener.expectMsgType[ChannelSignatureReceived]
-    val preimage1 = sender.expectMsgType[PaymentSucceeded].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    time("c")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
+    val preimage1 = time("d")(sender.expectMsgType[PaymentSucceeded].paymentPreimage)
+    time("e")(buffer.expectMsgType[UpdateAddHtlc](1 hour))
     buffer.forward(paymentHandlerF)
-    sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSucceeded].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    time("f")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
+    time("g")(sender.expectMsgType[PaymentSucceeded](1 hour).paymentPreimage)
+    time("h")(buffer.expectMsgType[UpdateAddHtlc](1 hour))
     buffer.forward(paymentHandlerC)
-    sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSucceeded].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    time("i")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
+    time("j")(sender.expectMsgType[PaymentSucceeded](1 hour).paymentPreimage)
+    time("k")(buffer.expectMsgType[UpdateAddHtlc](1 hour))
     buffer.forward(paymentHandlerC)
-    sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSucceeded].paymentPreimage
+    time("l")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
+    time("m")(sender.expectMsgType[PaymentSucceeded](1 hour).paymentPreimage)
     // this also allows us to get the channel id
     val channelId = commitmentsF.channelId
     // we also retrieve C's default final address
