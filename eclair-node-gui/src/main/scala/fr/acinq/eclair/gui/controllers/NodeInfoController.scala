@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, QRCodeUtils}
-import grizzled.slf4j.Logging
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
@@ -27,7 +27,7 @@ import javafx.stage.Stage
 
 import scala.util.{Failure, Success, Try}
 
-class NodeInfoController(val address: String, val handlers: Handlers, val stage: Stage) extends Logging {
+class NodeInfoController(val address: String, val handlers: Handlers, val stage: Stage) extends LazyLogging {
 
   @FXML var uriTextarea: TextArea = _
   @FXML var uriQRCode: ImageView = _

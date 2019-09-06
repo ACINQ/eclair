@@ -18,8 +18,8 @@ package fr.acinq.eclair
 
 import java.text.{DecimalFormat, NumberFormat}
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, Satoshi}
-import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 
@@ -91,7 +91,7 @@ case object BtcUnit extends CoinUnit {
   override def factorToMsat: Long = 1000 * 100000 * 1000L // 1 btc = 1 000 00000 000 msat
 }
 
-object CoinUtils extends Logging {
+object CoinUtils extends LazyLogging {
 
   // msat pattern, no decimals allowed
   val MILLI_SAT_PATTERN = "#,###,###,###,###,###,##0"

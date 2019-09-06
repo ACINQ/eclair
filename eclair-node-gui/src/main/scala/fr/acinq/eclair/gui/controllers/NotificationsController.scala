@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.gui.utils.ContextMenuUtils
-import grizzled.slf4j.Logging
 import javafx.animation._
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
@@ -40,7 +40,7 @@ case object NOTIFICATION_INFO extends NotificationType
 /**
   * Created by DPA on 17/02/2017.
   */
-class NotificationsController extends Logging {
+class NotificationsController extends LazyLogging {
   @FXML var notifsVBox: VBox = _
 
   val successIcon: Image = new Image(getClass.getResource("/gui/commons/images/success_icon.png").toExternalForm, true)

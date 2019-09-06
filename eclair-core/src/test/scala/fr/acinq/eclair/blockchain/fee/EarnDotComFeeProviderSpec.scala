@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import grizzled.slf4j.Logging
+import com.typesafe.scalalogging.LazyLogging
 import org.json4s.DefaultFormats
 import org.scalatest.FunSuite
 
@@ -28,7 +28,7 @@ import scala.concurrent.Await
   * Created by PM on 27/01/2017.
   */
 
-class EarnDotComFeeProviderSpec extends FunSuite with Logging {
+class EarnDotComFeeProviderSpec extends FunSuite with LazyLogging {
 
   import EarnDotComFeeProvider._
   import org.json4s.jackson.JsonMethods.parse

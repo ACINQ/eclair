@@ -20,6 +20,7 @@ import java.util.UUID
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel._
@@ -29,7 +30,6 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, nodeFee}
-import grizzled.slf4j.Logging
 import scodec.{Attempt, DecodeResult}
 
 import scala.collection.mutable
@@ -206,7 +206,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
 }
 
-object Relayer extends Logging {
+object Relayer extends LazyLogging {
   def props(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, register, paymentHandler)
 
   case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: Commitments)

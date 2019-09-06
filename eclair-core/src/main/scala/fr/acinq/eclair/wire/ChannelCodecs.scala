@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire
 import java.util.UUID
 
 import akka.actor.ActorRef
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
@@ -28,7 +29,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -39,7 +39,7 @@ import scala.concurrent.duration._
 /**
   * Created by PM on 02/06/2017.
   */
-object ChannelCodecs extends Logging {
+object ChannelCodecs extends LazyLogging {
 
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 

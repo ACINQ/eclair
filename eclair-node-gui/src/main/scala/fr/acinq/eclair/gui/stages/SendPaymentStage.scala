@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.gui.stages
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.controllers.SendPaymentController
-import grizzled.slf4j.Logging
 import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
@@ -27,7 +27,7 @@ import javafx.stage.{Modality, Stage, StageStyle}
 /**
   * Created by PM on 16/08/2016.
   */
-class SendPaymentStage(handlers: Handlers) extends Stage() with Logging {
+class SendPaymentStage(handlers: Handlers) extends Stage() with LazyLogging {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))

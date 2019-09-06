@@ -18,6 +18,7 @@ package fr.acinq.eclair.transactions
 
 import java.nio.ByteOrder
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
@@ -26,7 +27,6 @@ import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalD
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshi, TestConstants, randomBytes32, _}
-import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 
 import scala.io.Source
@@ -36,7 +36,7 @@ import scala.util.{Failure, Random, Success, Try}
  * Created by PM on 16/12/2016.
  */
 
-class TransactionsSpec extends FunSuite with Logging {
+class TransactionsSpec extends FunSuite with LazyLogging {
 
   test("encode/decode sequence and locktime (one example)") {
 

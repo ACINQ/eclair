@@ -19,6 +19,7 @@ package fr.acinq.eclair.gui.controllers
 import java.lang.Boolean
 
 import com.google.common.base.Strings
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
@@ -26,7 +27,6 @@ import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.{CoinUtils, Globals, MilliSatoshi}
-import grizzled.slf4j.Logging
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
@@ -39,7 +39,7 @@ import scala.util.{Failure, Success, Try}
 /**
   * Created by DPA on 23/09/2016.
   */
-class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Logging {
+class OpenChannelController(val handlers: Handlers, val stage: Stage) extends LazyLogging {
 
   @FXML var host: TextField = _
   @FXML var hostError: Label = _

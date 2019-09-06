@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.gui.controllers
 
-import grizzled.slf4j.Logging
+import com.typesafe.scalalogging.LazyLogging
 import javafx.animation._
 import javafx.application.HostServices
 import javafx.fxml.FXML
@@ -28,7 +28,7 @@ import javafx.util.Duration
 /**
   * Created by DPA on 22/09/2016.
   */
-class SplashController(hostServices: HostServices) extends Logging {
+class SplashController(hostServices: HostServices) extends LazyLogging {
 
   @FXML var splash: Pane = _
   @FXML var img: ImageView = _

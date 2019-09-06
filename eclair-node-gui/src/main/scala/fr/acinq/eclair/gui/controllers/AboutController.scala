@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.gui.controllers
 
-import grizzled.slf4j.Logging
+import com.typesafe.scalalogging.LazyLogging
 import javafx.application.HostServices
 import javafx.fxml.FXML
 import javafx.scene.text.Text
@@ -24,7 +24,7 @@ import javafx.scene.text.Text
 /**
   * Created by DPA on 28/09/2016.
   */
-class AboutController(hostServices: HostServices) extends Logging {
+class AboutController(hostServices: HostServices) extends LazyLogging {
 
   @FXML var version: Text = _
 

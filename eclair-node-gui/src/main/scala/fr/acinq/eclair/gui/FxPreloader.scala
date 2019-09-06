@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.gui
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.gui.controllers.SplashController
-import grizzled.slf4j.Logging
 import javafx.application.Preloader
 import javafx.application.Preloader.{ErrorNotification, PreloaderNotification}
 import javafx.fxml.FXMLLoader
@@ -37,7 +37,7 @@ case class AppNotification(notificationType: AppNotificationType, message: Strin
 /**
   * Created by DPA on 15/03/2017.
   */
-class FxPreloader extends Preloader with Logging {
+class FxPreloader extends Preloader with LazyLogging {
 
   var controller: Option[SplashController] = None
   var stage: Option[Stage] = None

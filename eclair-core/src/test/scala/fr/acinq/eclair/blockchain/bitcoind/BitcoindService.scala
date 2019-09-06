@@ -24,16 +24,16 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
-import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-trait BitcoindService extends Logging {
+trait BitcoindService extends LazyLogging {
   self: TestKitBase =>
 
   implicit val system: ActorSystem

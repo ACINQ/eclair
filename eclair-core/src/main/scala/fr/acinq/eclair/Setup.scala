@@ -27,6 +27,8 @@ import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.scalalogging.LazyLogging
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
@@ -47,7 +49,6 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.NodeAddress
-import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
 
@@ -66,7 +67,7 @@ import scala.concurrent.duration._
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
-            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+            db: Option[Databases] = None)(implicit system: ActorSystem) extends LazyLogging {
 
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
@@ -85,12 +86,16 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
   val database = db match {
     case Some(d) => d
     case None => Databases.sqliteJDBC(chaindir)
   }
+
+  PrivateKey(randomBytes32).add(PrivateKey(randomBytes32))
+
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+
 
   val feeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)

@@ -19,14 +19,15 @@ package fr.acinq.eclair
 import java.io.File
 
 import akka.actor.ActorSystem
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.gui.{FxApp, FxPreloader}
-import grizzled.slf4j.Logging
 import javafx.application.Application
+
 import scala.concurrent.ExecutionContext.Implicits.global
 /**
   * Created by PM on 25/01/2016.
   */
-object JavafxBoot extends App with Logging {
+object JavafxBoot extends App with LazyLogging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
   try {
     val headless = System.getProperty("eclair.headless") != null

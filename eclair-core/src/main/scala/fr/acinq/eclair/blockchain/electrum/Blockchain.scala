@@ -18,9 +18,9 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.math.BigInteger
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, decodeCompact}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
-import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
 
@@ -81,7 +81,7 @@ case class Blockchain(chainHash: ByteVector32,
   else None
 }
 
-object Blockchain extends Logging {
+object Blockchain extends LazyLogging {
 
   val RETARGETING_PERIOD = 2016 // on bitcoin, the difficulty re-targeting period is 2016 blocks
   val MAX_REORG = 500 // we assume that there won't be a reorg of more than 500 blocks

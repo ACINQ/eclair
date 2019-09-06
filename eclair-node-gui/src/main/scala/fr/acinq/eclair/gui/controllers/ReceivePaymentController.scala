@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.gui.utils._
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.{CoinUtils, LongToBtcAmount, MilliSatoshi}
-import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
@@ -34,7 +34,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * Created by DPA on 23/09/2016.
  */
-class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends Logging {
+class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends LazyLogging {
 
   @FXML var amount: TextField = _
   @FXML var amountError: Label = _

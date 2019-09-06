@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, FSM, PoisonPill, Props}
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
@@ -25,7 +26,6 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
 import fr.acinq.eclair.transactions.Transactions
-import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -708,7 +708,7 @@ object ElectrumWallet {
                   pendingTransactionRequests: Set[ByteVector32],
                   pendingHeadersRequests: Set[GetHeaders],
                   pendingTransactions: List[Transaction],
-                  lastReadyMessage: Option[WalletReady]) extends Logging {
+                  lastReadyMessage: Option[WalletReady]) extends LazyLogging {
     val chainHash = blockchain.chainHash
 
     lazy val accountKeyMap = accountKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap

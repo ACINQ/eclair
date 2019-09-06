@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -23,13 +24,12 @@ import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants}
-import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits._
 
 import scala.io.Source
 
-class TestVectorsSpec extends FunSuite with Logging {
+class TestVectorsSpec extends FunSuite with LazyLogging {
 
   val results = collection.mutable.HashMap.empty[String, Map[String, String]]
   val current = collection.mutable.HashMap.empty[String, String]

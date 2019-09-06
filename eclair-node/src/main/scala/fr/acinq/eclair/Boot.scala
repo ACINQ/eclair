@@ -22,8 +22,8 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.stream.{ActorMaterializer, BindFailedException}
 import com.typesafe.config.Config
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.api.Service
-import grizzled.slf4j.Logging
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.util.{Failure, Success}
@@ -31,12 +31,12 @@ import scala.util.{Failure, Success}
 /**
   * Created by PM on 25/01/2016.
   */
-object Boot extends App with Logging {
+object Boot extends App with LazyLogging {
 
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    val plugins = Plugin.loadPlugins(args.map(new File(_)))
+    val plugins = Seq.empty[Plugin] //Plugin.loadPlugins(args.map(new File(_)))
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
@@ -86,6 +86,7 @@ object Boot extends App with Logging {
 
   def onError(t: Throwable): Unit = {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
+    t.printStackTrace(System.err)
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)
     System.exit(1)

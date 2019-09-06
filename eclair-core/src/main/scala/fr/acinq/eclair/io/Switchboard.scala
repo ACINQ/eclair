@@ -19,6 +19,7 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
@@ -31,7 +32,6 @@ import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import grizzled.slf4j.Logging
 
 import scala.util.Success
 
@@ -150,7 +150,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
-object Switchboard extends Logging {
+object Switchboard extends LazyLogging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
 
