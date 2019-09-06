@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
@@ -26,7 +25,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, MilliSatoshi, UInt64, _}
+import fr.acinq.eclair.{Globals, MilliSatoshi, _}
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
