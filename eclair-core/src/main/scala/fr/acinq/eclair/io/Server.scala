@@ -23,6 +23,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.NodeParams
+import kamon.Kamon
 
 import scala.concurrent.Promise
 
@@ -52,6 +53,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   def listening(listener: ActorRef): Receive = {
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
+      Kamon.counter("peers.connecting.count").withTag("state", "connected").increment()
       val connection = sender
       authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
       listener ! ResumeAccepting(batchSize = 1)
