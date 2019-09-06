@@ -1,0 +1,365 @@
+[
+{
+  "name":"[B"
+},
+{
+  "name":"akka.actor.ActorCell",
+  "allDeclaredFields":true,
+  "fields":[
+    {"name":"akka$actor$dungeon$Children$$_childrenRefsDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"akka$actor$dungeon$Children$$_functionRefsDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"akka$actor$dungeon$Children$$_nextNameDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"akka$actor$dungeon$Dispatch$$_mailboxDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.actor.DefaultSupervisorStrategy",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.actor.LightArrayRevolverScheduler",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.config.Config","akka.event.LoggingAdapter","java.util.concurrent.ThreadFactory"] }]
+},
+{
+  "name":"akka.actor.LightArrayRevolverScheduler$TaskHolder",
+  "fields":[{"name":"task", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.actor.LocalActorRefProvider",
+  "methods":[{"name":"<init>","parameterTypes":["java.lang.String","akka.actor.ActorSystem$Settings","akka.event.EventStream","akka.actor.DynamicAccess"] }]
+},
+{
+  "name":"akka.actor.LocalActorRefProvider$Guardian",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.actor.LocalActorRefProvider$SystemGuardian",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.actor.Props$EmptyActor",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.actor.RepointableActorRef",
+  "fields":[
+    {"name":"_cellDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_lookupDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.AbstractNodeQueue",
+  "fields":[{"name":"_tailDoNotCallMeDirectly", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.dispatch.AbstractNodeQueue$Node",
+  "fields":[{"name":"_nextDoNotCallMeDirectly", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.dispatch.BoundedControlAwareMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.BoundedDequeBasedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.BoundedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.ControlAwareMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.DequeBasedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.Mailbox",
+  "fields":[
+    {"name":"_statusDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_systemQueueDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.MessageDispatcher",
+  "fields":[
+    {"name":"_inhabitantsDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_shutdownScheduleDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.MultipleConsumerSemantics"
+},
+{
+  "name":"akka.dispatch.UnboundedControlAwareMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.UnboundedDequeBasedMailbox",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.dispatch.UnboundedDequeBasedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.UnboundedMailbox",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.dispatch.UnboundedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.forkjoin.ForkJoinPool",
+  "fields":[
+    {"name":"ctl", "allowUnsafeAccess":true}, 
+    {"name":"indexSeed", "allowUnsafeAccess":true}, 
+    {"name":"plock", "allowUnsafeAccess":true}, 
+    {"name":"stealCount", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.forkjoin.ForkJoinPool$WorkQueue",
+  "fields":[{"name":"qlock", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.dispatch.forkjoin.ForkJoinTask",
+  "fields":[{"name":"status", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.event.DeadLetterListener",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.event.EventStreamUnsubscriber",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.event.LoggerMailboxType",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.event.LoggerMessageQueueSemantics"
+},
+{
+  "name":"akka.event.slf4j.Slf4jLogger",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.event.slf4j.Slf4jLoggingFilter",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","akka.event.EventStream"] }]
+},
+{
+  "name":"akka.http.impl.engine.client.PoolInterfaceActor",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.http.impl.engine.client.PoolMasterActor",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.io.InetAddressDnsProvider",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.io.InetAddressDnsResolver",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.SelectionHandler",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.SimpleDnsManager",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpConnection",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.io.TcpIncomingConnection",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpListener",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpManager",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpOutgoingConnection",
+  "allDeclaredFields":true,
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.pattern.PromiseActorRef",
+  "fields":[
+    {"name":"_stateDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_watchedByDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.routing.ConsistentHashingPool",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.routing.RoundRobinPool",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.routing.RoutedActorCell$RouterActorCreator",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.serialization.ByteArraySerializer",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
+},
+{
+  "name":"akka.serialization.JavaSerializer",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
+},
+{
+  "name":"akka.serialization.SerializationExtension$",
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"akka.stream.SinkRef"
+},
+{
+  "name":"akka.stream.SourceRef"
+},
+{
+  "name":"akka.stream.impl.fusing.ActorGraphInterpreter",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.stream.impl.io.TLSActor",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.stream.impl.streamref.StreamRefsProtocol"
+},
+{
+  "name":"akka.stream.serialization.StreamRefSerializer",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
+},
+{
+  "name":"com.fasterxml.jackson.databind.ext.Java7SupportImpl",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"com.typesafe.sslconfig.ssl.DefaultHostnameVerifier",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.sslconfig.util.LoggerFactory"] }]
+},
+{
+  "name":"io.netty.buffer.AbstractByteBufAllocator",
+  "allDeclaredMethods":true
+},
+{
+  "name":"io.netty.buffer.AbstractReferenceCountedByteBuf",
+  "fields":[{"name":"refCnt", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.channel.socket.nio.NioSocketChannel",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"io.netty.util.ReferenceCountUtil",
+  "allDeclaredMethods":true
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields",
+  "fields":[{"name":"producerLimit", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields",
+  "fields":[{"name":"consumerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields",
+  "fields":[{"name":"producerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueConsumerIndexField",
+  "fields":[{"name":"consumerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerIndexField",
+  "fields":[{"name":"producerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerLimitField",
+  "fields":[{"name":"producerLimit", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.io.Serializable"
+},
+{
+  "name":"java.lang.Object",
+  "allDeclaredFields":true
+},
+{
+  "name":"java.lang.String",
+  "fields":[{"name":"value", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.lang.Thread",
+  "fields":[{"name":"parkBlocker", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.lang.management.ManagementFactory",
+  "methods":[{"name":"getRuntimeMXBean","parameterTypes":[] }]
+},
+{
+  "name":"java.lang.management.RuntimeMXBean",
+  "methods":[{"name":"getName","parameterTypes":[] }]
+},
+{
+  "name":"java.nio.Bits",
+  "methods":[{"name":"unaligned","parameterTypes":[] }]
+},
+{
+  "name":"java.nio.Buffer",
+  "fields":[{"name":"address", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.nio.DirectByteBuffer",
+  "fields":[{"name":"cleaner", "allowUnsafeAccess":true}],
+  "methods":[{"name":"<init>","parameterTypes":["long","int"] }]
+},
+{
+  "name":"org.sqlite.JDBC"
+},
+{
+  "name":"scala.Symbol"
+},
+{
+  "name":"scala.concurrent.Future$InternalCallbackExecutor$",
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"sun.misc.Cleaner",
+  "methods":[{"name":"clean","parameterTypes":[] }]
+},
+{
+  "name":"sun.misc.Unsafe",
+  "allDeclaredFields":true,
+  "methods":[
+    {"name":"copyMemory","parameterTypes":["java.lang.Object","long","java.lang.Object","long","long"] }, 
+    {"name":"getAndSetObject","parameterTypes":["java.lang.Object","long","java.lang.Object"] }
+  ]
+},
+{
+  "name":"sun.misc.VM",
+  "methods":[{"name":"maxDirectMemory","parameterTypes":[] }]
+},
+{
+  "name":"sun.nio.ch.SelectorImpl",
+  "fields":[
+    {"name":"publicSelectedKeys"}, 
+    {"name":"selectedKeys"}
+  ]
+},
+{
+  "name":"sun.reflect.Reflection",
+  "methods":[{"name":"getCallerClass","parameterTypes":["int"] }]
+}
+]

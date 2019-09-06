@@ -1,0 +1,17 @@
+{
+  "resources":[
+    {"pattern":"META-INF/MANIFEST.MF"}, 
+    {"pattern":"META-INF/maven/org.xerial/sqlite-jdbc/pom.properties"}, 
+    {"pattern":"akka-http-version.conf"}, 
+    {"pattern":"app.logging.properties"}, 
+    {"pattern":"application.conf"}, 
+    {"pattern":"fr/acinq/native/Linux/x86_64/libsecp256k1.so"}, 
+    {"pattern":"library.properties"}, 
+    {"pattern":"org/slf4j/impl/StaticLoggerBinder.class"}, 
+    {"pattern":"org/sqlite/native/Linux/x86_64/libsqlitejdbc.so"}, 
+    {"pattern":"reference.conf"}, 
+    {"pattern":"sun/net/idn/uidna.spp"}, 
+    {"pattern":"sun/text/resources/unorm.icu"}, 
+    {"pattern":"version.conf"}
+  ]
+}

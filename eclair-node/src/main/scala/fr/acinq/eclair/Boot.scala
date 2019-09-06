@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair
 
-import java.io.File
+import java.io.{File, InputStream}
+import java.util.logging.LogManager
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -32,6 +33,24 @@ import scala.util.{Failure, Success}
   * Created by PM on 25/01/2016.
   */
 object Boot extends App with LazyLogging {
+
+  private def configureLogging(): Unit = {
+    var is: InputStream = null
+    try {
+      is = getClass.getResourceAsStream("/app.logging.properties")
+      LogManager.getLogManager.reset()
+      LogManager.getLogManager.readConfiguration(is)
+    } catch {
+      case e: Exception =>
+        e.printStackTrace(System.err)
+        System.err.println(s"could not start logging")
+    }
+    finally {
+      if(is != null) is.close()
+    }
+  }
+
+  configureLogging()
 
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
