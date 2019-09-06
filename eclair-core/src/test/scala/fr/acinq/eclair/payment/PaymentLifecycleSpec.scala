@@ -22,7 +22,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
@@ -51,9 +51,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import fixture._
     val defaultPaymentHash = randomBytes32
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
-    val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
+    val paymentDb = nodeParams.db.payments
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, progressHandler, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -71,7 +72,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
-    sender.expectMsgType[PaymentSucceeded]
+    sender.expectMsgType[PaymentSent]
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
   }
 
@@ -81,8 +82,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
     val routerForwarder = TestProbe()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, routerForwarder.ref, TestProbe().ref))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, progressHandler, routerForwarder.ref, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -96,7 +98,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
 
     routerForwarder.forward(router, routeRequest)
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, LocalFailure(RouteNotFound) :: Nil))
+    assert(sender.expectMsgType[PaymentFailed].failures === LocalFailure(RouteNotFound) :: Nil)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
@@ -105,7 +107,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, progressHandler, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -128,7 +131,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -160,7 +164,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash)) // unparsable message
 
     // we allow 2 tries, so we send a 2nd request to the router
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, UnreadableRemoteFailure(hops) :: UnreadableRemoteFailure(hops) :: Nil))
+    assert(sender.expectMsgType[PaymentFailed].failures === UnreadableRemoteFailure(hops) :: UnreadableRemoteFailure(hops) :: Nil)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED)) // after last attempt the payment is failed
   }
 
@@ -171,7 +175,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -204,7 +209,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -235,7 +241,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, nodeParams.db.payments)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -265,7 +272,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsg(RouteRequest(a, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
     routerForwarder.forward(router)
     // we allow 2 tries, so we send a 2nd request to the router
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
+    assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil)
   }
 
   test("payment failed (Update)") { fixture =>
@@ -275,7 +282,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -326,7 +334,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(router)
 
     // this time the router can't find a route: game over
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(hops2, Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil))
+    assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(hops2, Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
@@ -337,7 +345,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
     val id = UUID.randomUUID()
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -363,7 +372,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(router)
     // we allow 2 tries, so we send a 2nd request to the router, which won't find another route
 
-    sender.expectMsg(PaymentFailed(id, request.paymentHash, RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil))
+    assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
   }
 
@@ -379,11 +388,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("payment succeeded") { fixture =>
     import fixture._
-    val defaultPaymentHash = randomBytes32
+    val paymentPreimage = randomBytes32
+    val paymentHash = Crypto.sha256(paymentPreimage)
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
     val paymentDb = nodeParams.db.payments
     val id = UUID.randomUUID()
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, id, router, TestProbe().ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, paymentDb)
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, progressHandler, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -392,17 +403,18 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 5)
+    val request = SendPayment(paymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 5)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
-    sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
+    sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, paymentPreimage))
 
-    val paymentOK = sender.expectMsgType[PaymentSucceeded]
-    val PaymentSent(_, request.finalPayload.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
-    assert(fee > 0.msat)
-    assert(fee === paymentOK.amount - request.finalPayload.amount)
+    val ps = eventListener.expectMsgType[PaymentSent]
+    assert(ps.feesPaid > 0.msat)
+    assert(ps.amount === defaultAmountMsat)
+    assert(ps.paymentHash === paymentHash)
+    assert(ps.paymentPreimage === paymentPreimage)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
   }
 
@@ -432,7 +444,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     watcher.expectMsgType[WatchSpentBasic]
 
     // actual test begins
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, UUID.randomUUID(), router, TestProbe().ref))
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(UUID.randomUUID(), nodeParams.db.payments)
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, progressHandler, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -451,7 +464,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
-    val paymentOK = sender.expectMsgType[PaymentSucceeded]
+    val paymentOK = sender.expectMsgType[PaymentSent]
     val PaymentSent(_, request.finalPayload.amount, fee, request.paymentHash, paymentOK.paymentPreimage, _, _) = eventListener.expectMsgType[PaymentSent]
 
     // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
@@ -463,7 +476,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
   test("filter errors properly") { _ =>
     val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
-    val filtered = PaymentLifecycle.transformForUser(failures)
+    val filtered = PaymentFailure.transformForUser(failures)
     assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable(ByteVector32.Zeroes)) :: Nil)
   }
 }

@@ -36,8 +36,7 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest, _}
+import fr.acinq.eclair.payment.{PaymentFailed, PaymentReceived, PaymentRequest, _}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector

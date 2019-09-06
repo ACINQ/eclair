@@ -32,7 +32,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
-import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
+import fr.acinq.eclair.payment.PaymentFailed
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.NodeAddress
 import org.mockito.scalatest.IdiomaticMockito
@@ -357,14 +357,14 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       mockService.route ~>
       check {
 
-        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty)
-        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[]}"""
+        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, timestamp = 1553784963659L)
+        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"timestamp":1553784963659}"""
         serialization.write(pf)(mockService.formatsWithTypeHint) === expectedSerializedPf
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(fixedUUID, amount = 21 msat, feesPaid = 1 msat, paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, toChannelId = ByteVector32.Zeroes, timestamp = 1553784337711L)
-        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}"""
+        val ps = PaymentSent(fixedUUID, amount = 21 msat, feesPaid = 1 msat, paymentHash = ByteVector32.Zeroes, paymentPreimage = ByteVector32.One, route = Nil, timestamp = 1553784337711L)
+        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","route":[],"timestamp":1553784337711}"""
         serialization.write(ps)(mockService.formatsWithTypeHint) === expectedSerializedPs
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
@@ -375,8 +375,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         system.eventStream.publish(prel)
         wsClient.expectMessage(expectedSerializedPrel)
 
-        val precv = PaymentReceived(amount = 21 msat, paymentHash = ByteVector32.Zeroes, fromChannelId = ByteVector32.One, timestamp = 1553784963659L)
-        val expectedSerializedPrecv = """{"type":"payment-received","amount":21,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}"""
+        val precv = PaymentReceived(amount = 21 msat, paymentHash = ByteVector32.Zeroes, timestamp = 1553784963659L)
+        val expectedSerializedPrecv = """{"type":"payment-received","amount":21,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}"""
         serialization.write(precv)(mockService.formatsWithTypeHint) === expectedSerializedPrecv
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)

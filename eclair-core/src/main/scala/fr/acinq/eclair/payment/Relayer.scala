@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.OutgoingPaymentStatus
-import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
@@ -159,12 +158,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFulfill(fulfill, to, add) =>
       to match {
         case Local(id, None) =>
-          val feesPaid = 0.msat
-          context.system.eventStream.publish(PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
-          // we publish the failure on the event stream and update the status in paymentDb
+          // we publish the success on the event stream and update the status in paymentDb
+          val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
           nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage))
-          context.system.eventStream.publish(PaymentSucceeded(id, add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil)) //
+          context.system.eventStream.publish(PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, Nil))
         case Local(_, Some(sender)) =>
           sender ! fulfill
         case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>

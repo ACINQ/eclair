@@ -59,7 +59,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.expectMsgType[CMD_FULFILL_HTLC]
 
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
+      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, timestamp = 0))
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
     }
 
@@ -72,7 +72,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, add.channelId, timestamp = 0))
+      assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, timestamp = 0))
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
     }
 
