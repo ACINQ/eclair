@@ -794,17 +794,17 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    time("0")(forwardHandlerF.expectMsgType[UpdateAddHtlc](1 hour))
     forwardHandlerF.forward(buffer.ref)
-    sigListener.expectMsgType[ChannelSignatureReceived]
+    time("1")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    time("2")(forwardHandlerF.expectMsgType[UpdateAddHtlc](1 hour))
     forwardHandlerF.forward(buffer.ref)
-    sigListener.expectMsgType[ChannelSignatureReceived]
+    time("3")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
     send(120000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    time("4")(forwardHandlerC.expectMsgType[UpdateAddHtlc](1 hour))
     forwardHandlerC.forward(buffer.ref)
-    sigListener.expectMsgType[ChannelSignatureReceived]
+    time("5")(sigListener.expectMsgType[ChannelSignatureReceived](1 hour))
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
     time("a")(forwardHandlerC.expectMsgType[UpdateAddHtlc](1 hour))
     forwardHandlerC.forward(buffer.ref)
