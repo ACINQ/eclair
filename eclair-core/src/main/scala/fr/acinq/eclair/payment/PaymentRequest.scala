@@ -110,7 +110,7 @@ object PaymentRequest {
 
   val DEFAULT_EXPIRY_SECONDS = 3600
 
-  val prefixes = Map(
+  lazy val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
     Block.TestnetGenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc")

@@ -83,7 +83,7 @@
                         <!-- -H:+ReflectionPluginTracing -->
                         --no-server
                         --initialize-at-build-time
-                        <!-- sqlite related -->
+                        <!-- sqlite -->
                         --initialize-at-build-time=org.sqlite.JDBC
                         --initialize-at-build-time=org.sqlite.core.DB\$ProgressObserver
                         --initialize-at-build-time=org.sqlite.core.DB
@@ -92,13 +92,14 @@
                         --initialize-at-build-time=org.sqlite.Function
                         --initialize-at-build-time=org.sqlite.Function\$Aggregate
                         --initialize-at-build-time=org.sqlite.Function\$Window
-                        <!-- bitcoin-lib related -->
+                        <!-- bitcoin-lib -->
                         --initialize-at-run-time=fr.acinq.bitcoin.Crypto$
 
+                        <!-- akka and typesafe config-->
                         --initialize-at-run-time=akka.protobuf.DescriptorProtos
                         --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$EnvVariablesHolder
                         --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$SystemPropertiesHolder
-                        <!-- netty related -->
+                        <!-- netty -->
                         --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslServerContext
                         --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslClientContext
                         --initialize-at-run-time=io.netty.handler.ssl.JdkNpnApplicationProtocolNegotiator
@@ -106,6 +107,9 @@
                         --initialize-at-run-time=io.netty.handler.ssl.ConscryptAlpnSslEngine
                         --initialize-at-run-time=io.netty.handler.ssl.JettyNpnSslEngine
                         --initialize-at-run-time=io.netty.util.internal.logging.Log4JLogger
+                        <!-- ZMQ -->
+                        --initialize-at-run-time=zmq.util.Utils
+
                         --no-fallback
                         --allow-incomplete-classpath
                         -J-Xmx3G
