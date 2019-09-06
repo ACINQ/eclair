@@ -152,7 +152,7 @@ object Commitments {
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
     val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else 0.sat
     val missing = reduced.toRemote - commitments1.remoteParams.channelReserve - fees
-    if (missing < 0.sat) {
+    if (missing < 0.msat) {
       return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
     }
 
@@ -186,7 +186,7 @@ object Commitments {
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
     val missing = reduced.toRemote - commitments1.localParams.channelReserve - fees
-    if (missing < 0.sat) {
+    if (missing < 0.msat) {
       throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
