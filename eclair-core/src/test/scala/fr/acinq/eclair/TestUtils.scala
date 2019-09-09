@@ -18,6 +18,9 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.ServerSocket
+import java.util.concurrent.atomic.AtomicInteger
+
+import scala.util.Random
 
 object TestUtils {
 
@@ -29,7 +32,8 @@ object TestUtils {
     .get("buildDirectory") // this is defined if we run from maven
     .getOrElse(new File(sys.props("user.dir"), "target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
 
-  def availablePort: Int = synchronized {
+
+  /*def availablePort: Int = synchronized {
     var serverSocket: ServerSocket = null
     try {
       serverSocket = new ServerSocket(0)
@@ -41,5 +45,10 @@ object TestUtils {
         serverSocket.close()
       }
     }
-  }
+  }*/
+
+  private val ports = new AtomicInteger(35000)
+
+  def availablePort = ports.incrementAndGet()
+
 }
