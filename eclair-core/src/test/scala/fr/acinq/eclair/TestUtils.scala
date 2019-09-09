@@ -47,7 +47,7 @@ object TestUtils {
     }
   }*/
 
-  private val ports = new AtomicInteger(35000)
+  private val ports = new AtomicInteger(65000)
 
   def availablePort = ports.incrementAndGet()
 
