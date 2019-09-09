@@ -56,7 +56,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   test("watch for confirmed transactions") {
     val probe = TestProbe()
-    val blockCount = new AtomicLong()
+    val blockCount = Array(0L)
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
@@ -82,7 +82,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   test("watch for spent transactions") {
     val probe = TestProbe()
-    val blockCount = new AtomicLong()
+    val blockCount = Array(0L)
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
@@ -127,7 +127,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
   }
 
   test("get transaction") {
-    val blockCount = new AtomicLong()
+    val blockCount = Array(0L)
     val mainnetAddress = ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(mainnetAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))

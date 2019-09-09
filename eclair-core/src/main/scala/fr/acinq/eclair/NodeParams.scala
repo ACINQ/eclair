@@ -42,7 +42,7 @@ import scala.concurrent.duration.FiniteDuration
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
-                      private val blockCount: AtomicLong,
+                      private val blockCount: Array[Long],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -82,7 +82,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxPaymentAttempts: Int) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
-  def currentBlockHeight: Long = blockCount.get
+  def currentBlockHeight: Long = blockCount(0)
 }
 
 object NodeParams {
@@ -127,7 +127,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: Array[Long], feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)

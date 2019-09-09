@@ -66,7 +66,7 @@ object TestConstants {
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
       keyManager = keyManager,
-      blockCount = new AtomicLong(400000),
+      blockCount = Array(400000L),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -143,7 +143,7 @@ object TestConstants {
 
     def nodeParams = NodeParams(
       keyManager = keyManager,
-      blockCount = new AtomicLong(400000),
+      blockCount = Array(400000L),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
