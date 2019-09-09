@@ -19,10 +19,9 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.KeyManager
-import fr.acinq.eclair.api.MilliSatoshiSerializer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
@@ -205,15 +204,13 @@ final case class LocalParams(version: Int,
                              globalFeatures: ByteVector,
                              localFeatures: ByteVector) {
 
-  def fundingPubKey(keyManager: KeyManager) = keyManager.fundingPublicKey(fundingKeyPath)
-
   def channelKeyPath(keyManager: KeyManager) = version match {
     case 0 =>
       // legacy mode:  we reuse the funding key path as our channel key path
       fundingKeyPath
     case 1 =>
       // deterministic mode: use the funding pubkey to compute the channel key path
-      KeyManager.channelKeyPath(fundingPubKey(keyManager))
+      KeyManager.channelKeyPath(keyManager.fundingPublicKey(fundingKeyPath))
 
   }
 }

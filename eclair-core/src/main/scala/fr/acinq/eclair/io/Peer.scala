@@ -16,16 +16,14 @@
 
 package fr.acinq.eclair.io
 
-import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
-import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Protocol, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -664,15 +662,9 @@ object Peer {
   }
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
-    val entropy = new Array[Byte](8)
-    secureRandom.nextBytes(entropy)
-    val bis = new ByteArrayInputStream(entropy)
     // we make sure that funder and fundee key path end differently
-    val last = isFunder match {
-      case false => DeterministicWallet.hardened(0)
-      case true => DeterministicWallet.hardened(1)
-    }
-    val fundingKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), last))
+    val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
+    val fundingKeyPath = DeterministicWallet.KeyPath(Seq(secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL, last))
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, fundingKeyPath)
   }
 

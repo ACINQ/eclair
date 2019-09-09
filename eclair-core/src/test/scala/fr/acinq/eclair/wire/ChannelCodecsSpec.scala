@@ -33,9 +33,9 @@ import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, Transacti
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
-import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
+import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.scalatest.FunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
@@ -395,7 +395,7 @@ object ChannelCodecsSpec {
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
   val fundingAmount = fundingTx.txOut(0).amount
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, localParams.fundingPubKey(keyManager).publicKey, remoteParams.fundingPubKey)
+  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)

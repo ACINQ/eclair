@@ -378,10 +378,9 @@ object Commitments {
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, localParams.fundingPubKey(keyManager))
+        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-        val fundingPubKey = localParams.fundingPubKey(keyManager)
         val channelKeyPath = localParams.channelKeyPath(keyManager)
         val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint))
 
@@ -427,18 +426,17 @@ object Commitments {
     // receiving money i.e its commit tx has one output for them
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val fundingPubKey = localParams.fundingPubKey(keyManager)
     val channelKeyPath = localParams.channelKeyPath(keyManager)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-    val sig = keyManager.sign(localCommitTx, fundingPubKey)
+    val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
 
     log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
 
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 
     // no need to compute htlc sigs if commit sig doesn't check out
-    val signedCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, sig, commit.signature)
+    val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
     if (Transactions.checkSpendable(signedCommitTx).isFailure) {
       throw InvalidCommitmentSignature(commitments.channelId, signedCommitTx.tx)
     }
@@ -527,7 +525,6 @@ object Commitments {
   }
 
   def makeLocalTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val fundingPubKey = localParams.fundingPubKey(keyManager)
     val channelKeyPath = localParams.channelKeyPath(keyManager)
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
@@ -540,7 +537,6 @@ object Commitments {
   }
 
   def makeRemoteTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val fundingPubKey = localParams.fundingPubKey(keyManager)
     val channelKeyPath = localParams.channelKeyPath(keyManager)
     val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
