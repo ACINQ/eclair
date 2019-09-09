@@ -460,8 +460,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    val currentBlockCount = getBlockCount
     awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
@@ -534,14 +533,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
   }
 
+  def getBlockCount: Long = {
+    val sender = TestProbe()
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    sender.expectMsgType[JValue](10 seconds).extract[Long]
+  }
+
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
     val sender = TestProbe()
     // we subscribe to C's channel state transitions
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    val currentBlockCount = getBlockCount
     awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
@@ -617,8 +621,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    val currentBlockCount = getBlockCount
     awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
@@ -679,8 +682,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    val currentBlockCount = getBlockCount
     awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
@@ -756,8 +758,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
     val paymentHandlerF = nodes("F5").system.actorOf(LocalPaymentHandler.props(nodes("F5").nodeParams))
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    val currentBlockCount = getBlockCount
     awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
     // first we send 3 mBTC to F so that it has a balance
     val amountMsat = 300000000.msat
