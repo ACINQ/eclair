@@ -39,8 +39,8 @@ object ReplyChannelRangeTlv {
   case class EncodedChecksums(checksums: List[Checksums]) extends ReplyChannelRangeTlv
 
   val timestampsCodec: Codec[Timestamps] = (
-    ("checksum1" | uint32) ::
-      ("checksum2" | uint32)
+    ("timestamp1" | uint32) ::
+      ("timestamp2" | uint32)
     ).as[Timestamps]
 
   val encodedTimestampsCodec: Codec[EncodedTimestamps] = variableSizeBytesLong(varintoverflow,

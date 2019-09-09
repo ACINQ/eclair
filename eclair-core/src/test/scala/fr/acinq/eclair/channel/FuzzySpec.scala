@@ -30,6 +30,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
 import org.scalatest.{Outcome, Tag}
@@ -39,8 +40,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
@@ -67,7 +68,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       relayerA ! alice
       relayerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelVersion.STANDARD)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[WatchSpent]
@@ -95,10 +96,10 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // allow overpaying (no more than 2 times the required amount)
       val amount = MilliSatoshi(requiredAmount + Random.nextInt(requiredAmount))
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry
-      PaymentLifecycle.buildCommand(UUID.randomUUID(), amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
+      PaymentLifecycle.buildCommand(UUID.randomUUID(), paymentHash, Hop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
     }
 
-    def initiatePayment(stopping: Boolean) =
+    def initiatePayment(stopping: Boolean): Unit =
       if (stopping) {
         context stop self
       } else {

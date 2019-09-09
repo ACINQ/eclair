@@ -32,6 +32,7 @@ import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import scala.util.Success
 
@@ -57,7 +58,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     })
     val peers = nodeParams.db.peers.listPeers()
 
-    checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
+    checkBrokenHtlcsLink(channels, nodeParams.privateKey, nodeParams.globalFeatures) match {
       case Nil => ()
       case brokenHtlcs =>
         val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
@@ -165,7 +166,7 @@ object Switchboard extends Logging {
     *
     * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
     */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
@@ -174,7 +175,7 @@ object Switchboard extends Logging {
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .filter(_.direction == OUT)
       .map(_.add)
-      .map(Relayer.decryptPacket(_, privateKey))
+      .map(Relayer.decryptPacket(_, privateKey, features))
       .collect { case Right(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
 
     // Here we do it differently because we need the origin information.

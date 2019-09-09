@@ -40,7 +40,6 @@ import fr.acinq.eclair.payment.PaymentLifecycle.PaymentFailed
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest, _}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
-import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -74,6 +73,9 @@ trait Service extends ExtraDirectives with Logging {
   val paramParsingTimeout = 5 seconds
 
   val apiExceptionHandler = ExceptionHandler {
+    case t: IllegalArgumentException =>
+      logger.error(s"API call failed with cause=${t.getMessage}", t)
+      complete(StatusCodes.BadRequest, ErrorResponse(t.getMessage))
     case t: Throwable =>
       logger.error(s"API call failed with cause=${t.getMessage}", t)
       complete(StatusCodes.InternalServerError, ErrorResponse(t.getMessage))
@@ -103,8 +105,8 @@ trait Service extends ExtraDirectives with Logging {
       }
 
       def receive: Receive = {
-        case message: PaymentFailed => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
-        case message: PaymentEvent => flowInput.offer(Serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentFailed => flowInput.offer(serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentEvent => flowInput.offer(serialization.write(message)(formatsWithTypeHint))
       }
 
     }))
@@ -224,9 +226,9 @@ trait Service extends ExtraDirectives with Logging {
                         path("payinvoice") {
                           formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?) {
                             case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
-                              complete(eclairApi.send(nodeId, amount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiryDelta, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+                              complete(eclairApi.send(nodeId, amount, invoice.paymentHash, Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
                             case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt) =>
-                              complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, invoice.routingInfo, invoice.minFinalCltvExpiryDelta, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+                              complete(eclairApi.send(invoice.nodeId, overrideAmount, invoice.paymentHash, Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
                             case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                           }
                         } ~

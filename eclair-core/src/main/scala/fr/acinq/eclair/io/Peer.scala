@@ -32,6 +32,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{secureRandom, wire, _}
+import kamon.Kamon
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -298,7 +299,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
       val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
       log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
       stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
@@ -535,6 +536,22 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
+  onTransition {
+    case _ -> CONNECTED =>
+      Metrics.connectedPeers.increment()
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
+    case CONNECTED -> DISCONNECTED =>
+      Metrics.connectedPeers.decrement()
+      context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
+  onTermination {
+    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+      // the transition handler won't be fired if we go directly from CONNECTED to closed
+      Metrics.connectedPeers.decrement()
+      context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
     val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingAmount)
@@ -639,6 +656,12 @@ object Peer {
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   // @formatter:on
+
+  object Metrics {
+    val peers = Kamon.rangeSampler("peers.count").withoutTags()
+    val connectedPeers = Kamon.rangeSampler("peers.connected.count").withoutTags()
+    val channels = Kamon.rangeSampler("channels.count").withoutTags()
+  }
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     val entropy = new Array[Byte](8)
