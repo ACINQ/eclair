@@ -22,6 +22,7 @@ import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
@@ -54,7 +55,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       assert(nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).isDefined)
       assert(!nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).get._2.isExpired)
 
-      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, Sphinx.emptyOnionPacket)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
 
@@ -68,7 +69,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
 
-      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, Sphinx.emptyOnionPacket)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
@@ -81,7 +82,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val pr = sender.expectMsgType[PaymentRequest]
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
 
-      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, cltvExpiry = CltvExpiryDelta(3).toCltvExpiry, TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, cltvExpiry = CltvExpiryDelta(3).toCltvExpiry, Sphinx.emptyOnionPacket)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(IncorrectOrUnknownPaymentDetails(amountMsat, Globals.blockCount.get())))
       eventListener.expectNoMsg(300 milliseconds)
@@ -164,7 +165,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, ReceivePayment(Some(amountMsat), "some desc", expirySeconds_opt = Some(0)))
     val pr = sender.expectMsgType[PaymentRequest]
 
-    val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, Sphinx.emptyOnionPacket)
     sender.send(handler, add)
 
     sender.expectMsgType[CMD_FAIL_HTLC]

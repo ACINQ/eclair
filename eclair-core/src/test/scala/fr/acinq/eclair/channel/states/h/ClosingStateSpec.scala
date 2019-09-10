@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
@@ -299,7 +300,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = Sphinx.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))

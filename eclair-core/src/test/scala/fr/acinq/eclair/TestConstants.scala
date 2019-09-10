@@ -40,7 +40,6 @@ object TestConstants {
   val fundingSatoshis = 1000000L sat
   val pushMsat = 200000000L msat
   val feeratePerKw = 10000L
-  val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   class TestFeeEstimator extends FeeEstimator {
     private var currentFeerates = FeeratesPerKw.single(feeratePerKw)

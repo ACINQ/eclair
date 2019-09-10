@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, TestkitBaseClass}
@@ -85,7 +86,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     import f._
     alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(5000000000L msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(5000000000L msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = Sphinx.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), None, Some(add))))

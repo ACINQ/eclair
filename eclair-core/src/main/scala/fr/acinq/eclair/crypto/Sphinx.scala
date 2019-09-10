@@ -36,6 +36,8 @@ object Sphinx extends Logging {
   // We use HMAC-SHA256 which returns 32-bytes message authentication codes.
   val MacLength = 32
 
+  val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+
   def mac(key: ByteVector, message: ByteVector): ByteVector32 = Mac32.hmac256(key, message)
 
   def generateKey(keyType: ByteVector, secret: ByteVector32): ByteVector32 = Mac32.hmac256(keyType, secret)

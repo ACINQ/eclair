@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayFailure, RelayPayload, RelaySuccess}
 import fr.acinq.eclair.router.Announcements
@@ -42,9 +43,9 @@ class ChannelSelectionSpec extends FunSuite {
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
     val onionPayload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
+      add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), Sphinx.emptyOnionPacket),
       payload = onionPayload,
-      nextPacket = TestConstants.emptyOnionPacket // just a placeholder
+      nextPacket = Sphinx.emptyOnionPacket // just a placeholder
     )
 
     val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10000000 msat, true)
@@ -73,9 +74,9 @@ class ChannelSelectionSpec extends FunSuite {
   test("channel selection") {
     val onionPayload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
     val relayPayload = RelayPayload(
-      add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
+      add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), Sphinx.emptyOnionPacket),
       payload = onionPayload,
-      nextPacket = TestConstants.emptyOnionPacket // just a placeholder
+      nextPacket = Sphinx.emptyOnionPacket // just a placeholder
     )
 
     val (a, b) = (randomKey.publicKey, randomKey.publicKey)

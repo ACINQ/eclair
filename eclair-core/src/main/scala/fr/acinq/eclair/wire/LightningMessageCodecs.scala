@@ -285,5 +285,62 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+    .typecase(65535, HostedChannelCodecs.invokeHostedChannelCodec)
+    .typecase(65534, HostedChannelCodecs.initHostedChannelCodec)
+    .typecase(65533, HostedChannelCodecs.lastCrossSignedStateCodec)
+    .typecase(65532, HostedChannelCodecs.stateUpdateCodec)
+    .typecase(65531, HostedChannelCodecs.stateOverrideCodec)
 
+}
+
+object HostedChannelCodecs {
+  val invokeHostedChannelCodec: Codec[InvokeHostedChannel] = {
+    (bytes32 withContext "chainHash") ::
+      (varsizebinarydata withContext "refundScriptPubKey")
+  }.as[InvokeHostedChannel]
+
+  val initHostedChannelCodec: Codec[InitHostedChannel] = {
+    (uint64 withContext "maxHtlcValueInFlightMsat") ::
+      (millisatoshi withContext "htlcMinimumMsat") ::
+      (uint16 withContext "maxAcceptedHtlcs") ::
+      (millisatoshi withContext "channelCapacityMsat") ::
+      (uint16 withContext "liabilityDeadlineBlockdays") ::
+      (satoshi withContext "minimalOnchainRefundAmountSatoshis") ::
+      (millisatoshi withContext "initialClientBalanceMsat")
+  }.as[InitHostedChannel]
+
+  val inFlightHtlcCodec: Codec[InFlightHtlc] = {
+    (uint64overflow withContext "id") ::
+      (millisatoshi withContext "amountMsat") ::
+      (bytes32 withContext "paymentHash") ::
+      (cltvExpiry withContext "expiry")
+  }.as[InFlightHtlc]
+
+  val lastCrossSignedStateCodec: Codec[LastCrossSignedState] = {
+    (varsizebinarydata withContext "refundScriptPubKey") ::
+      (initHostedChannelCodec withContext "initHostedChannel") ::
+      (uint32 withContext "blockDay") ::
+      (millisatoshi withContext "localBalanceMsat") ::
+      (millisatoshi withContext "remoteBalanceMsat") ::
+      (uint32 withContext "localUpdates") ::
+      (uint32 withContext "remoteUpdates") ::
+      (listOfN(uint16, inFlightHtlcCodec) withContext "incomingHtlcs") ::
+      (listOfN(uint16, inFlightHtlcCodec) withContext "outgoingHtlcs") ::
+      (bytes64 withContext "remoteSignature")
+  }.as[LastCrossSignedState]
+
+  val stateUpdateCodec: Codec[StateUpdate] = {
+    (uint32 withContext "blockDay") ::
+      (uint32 withContext "localUpdates") ::
+      (uint32 withContext "remoteUpdates") ::
+      (bytes64 withContext "localSigOfRemoteLCSS")
+  }.as[StateUpdate]
+
+  val stateOverrideCodec: Codec[StateOverride] = {
+    (uint32 withContext "blockDay") ::
+      (millisatoshi withContext "localBalanceMsat") ::
+      (uint32 withContext "localUpdates") ::
+      (uint32 withContext "remoteUpdates") ::
+      (bytes64 withContext "localSigOfRemoteLCSS")
+  }.as[StateOverride]
 }

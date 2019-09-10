@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.crypto.{Generators, Sphinx}
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants}
@@ -154,11 +154,11 @@ class TestVectorsSpec extends FunSuite with Logging {
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), Sphinx.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), Sphinx.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), Sphinx.emptyOnionPacket)),
+    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), Sphinx.emptyOnionPacket)),
+    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), Sphinx.emptyOnionPacket))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))

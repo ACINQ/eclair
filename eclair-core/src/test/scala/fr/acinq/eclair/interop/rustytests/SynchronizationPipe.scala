@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}
 
@@ -57,7 +58,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
 
     script match {
       case offer(x, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+        resolve(x) ! CMD_ADD_HTLC(MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), Sphinx.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r))

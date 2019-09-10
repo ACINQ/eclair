@@ -24,6 +24,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import ReplyChannelRangeTlv._
+import fr.acinq.eclair.crypto.Sphinx
 import org.scalatest.FunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -61,7 +62,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val update_fee = UpdateFee(randomBytes32, 2)
     val shutdown = Shutdown(randomBytes32, bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes32, 2 sat, randomBytes64)
-    val update_add_htlc = UpdateAddHtlc(randomBytes32, 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket)
+    val update_add_htlc = UpdateAddHtlc(randomBytes32, 2, 3 msat, bin32(0), CltvExpiry(4), Sphinx.emptyOnionPacket)
     val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes32, 2, bin32(0))
     val update_fail_htlc = UpdateFailHtlc(randomBytes32, 2, bin(154, 0))
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes32, 2, randomBytes32, 1111)
@@ -77,7 +78,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
       100000,
       1500,
-      TlvStream(QueryChannelRangeTlv.QueryFlags((QueryChannelRangeTlv.QueryFlags.WANT_ALL)) :: Nil, unknownTlv :: Nil))
+      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
@@ -88,10 +89,22 @@ class LightningMessageCodecsSpec extends FunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L)
 
+    val invoke_hosted_channel = InvokeHostedChannel(randomBytes32, bin(47, 0))
+    val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
+    val state_override = StateOverride(50000L, 500000 msat, 70000, 700000, randomBytes64)
+    val in_flight_htlc = InFlightHtlc(1L, 600000000000L msat, randomBytes32, CltvExpiry(1000L))
+
+    val state_update = StateUpdate(50000L, 10, 20, randomBytes64)
+    val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(in_flight_htlc, in_flight_htlc), List(in_flight_htlc, in_flight_htlc), randomBytes64)
+    val lcss2 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, List(in_flight_htlc, in_flight_htlc), randomBytes64)
+    val lcss3 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(in_flight_htlc, in_flight_htlc), Nil, randomBytes64)
+    val lcss4 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, Nil, randomBytes64)
+
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
+        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish ::
+        invoke_hosted_channel :: init_hosted_channel :: lcss1 :: lcss2 :: lcss3 :: lcss4 :: state_override :: state_update :: Nil
 
     msgs.foreach {
       msg => {
