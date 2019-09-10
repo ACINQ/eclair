@@ -534,9 +534,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   def getBlockCount: Long = {
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    sender.expectMsgType[JValue](10 seconds).extract[Long]
+    // we make sure that all nodes have the same value
+    awaitCond(nodes.values.map(_.nodeParams.currentBlockHeight).toSet.size == 1, max = 1 minute, interval = 1 second)
+    // and we return it (NB: it could be a different value at this point
+    nodes.values.head.nodeParams.currentBlockHeight
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
