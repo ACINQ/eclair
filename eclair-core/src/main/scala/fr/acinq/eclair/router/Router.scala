@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
@@ -286,6 +287,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             }
             log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
             val publicChannel_opt = v match {
+              case ValidateResult(_, Left(t: JsonRPCError)) if t.error.isFatal =>
+                log.error(s"fatal error: bitcoind is unavailable", t)
+                context.system.terminate().foreach { _ =>
+                  System.exit(1)
+                }
+                None
               case ValidateResult(c, Left(t)) =>
                 log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
                 None

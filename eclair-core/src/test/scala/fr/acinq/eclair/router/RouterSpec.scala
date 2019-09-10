@@ -17,11 +17,13 @@
 package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
+import akka.actor.Terminated
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCError}
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
@@ -30,10 +32,11 @@ import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
-import fr.acinq.eclair.{CltvExpiryDelta, Globals, LongToBtcAmount, ShortChannelId, randomKey}
+import fr.acinq.eclair.{BitcoinRPCConnectionException, CltvExpiryDelta, Globals, LongToBtcAmount, ShortChannelId, randomKey}
 import scodec.bits._
 
 import scala.compat.Platform
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 /**
@@ -293,6 +296,22 @@ class RouterSpec extends BaseRouterSpec {
     probe.send(router, PeerRoutingMessage(transport.ref, remoteNodeId, update1))
     val query = transport.expectMsgType[QueryShortChannelIds]
     assert(query.shortChannelIds.array == List(channelId))
+  }
+
+  test("shut down actor system on fatal validation errors") { fixture =>
+    import fixture._
+
+    implicit val ec = system.dispatcher
+
+    val probe = TestProbe()
+    probe.watch(router)
+    val specializedErrorMsg = "No such mempool transaction. Blockchain transactions are still in the process of being indexed. Use gettransaction for wallet transactions."
+    val announcement = channelAnnouncement(ShortChannelId(1010), priv_a, randomKey, priv_funding_a, randomKey)
+    val bitcoindError = Error(5, specializedErrorMsg)
+    assert(bitcoindError.isFatal)
+    val failure = ValidateResult(announcement, Left(JsonRPCError(bitcoindError)))
+    probe.send(router, failure)
+    probe.expectMsgType[Terminated]
   }
 
 }
