@@ -126,12 +126,6 @@
             <artifactId>akka-slf4j_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
-        <!-- HTTP SERVER -->
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>${akka.http.version}</version>
-        </dependency>
         <!-- HTTP CLIENT -->
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
@@ -143,11 +137,6 @@
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
             <version>3.6.0</version>
-        </dependency>
-        <dependency>
-            <groupId>de.heikoseeberger</groupId>
-            <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.19.0</version>
         </dependency>
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
@@ -216,6 +205,17 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
+        <!-- MONITORING -->
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-core_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-akka_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
         <!-- TESTS -->
         <dependency>
             <groupId>com.softwaremill.quicklens</groupId>
@@ -252,12 +252,6 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.2.3</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-http-testkit_${scala.version.short}</artifactId>
-            <version>${akka.http.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

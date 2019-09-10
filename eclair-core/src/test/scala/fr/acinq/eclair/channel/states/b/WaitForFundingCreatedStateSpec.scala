@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -41,14 +41,14 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     val setup = init()
     import setup._
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
-      (Satoshi(1000100L), MilliSatoshi(1000000000L)) // toRemote = 100 satoshis
+      (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -73,7 +73,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     import f._
     val fees = Satoshi(Transactions.commitWeight * TestConstants.feeratePerKw / 1000)
     val reserve = Bob.channelParams.channelReserve
-    val missing = Satoshi(100) - fees - reserve
+    val missing = 100.sat - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]

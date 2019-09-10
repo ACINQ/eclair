@@ -18,15 +18,14 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, MilliSatoshi, UInt64}
+import fr.acinq.eclair.{Globals, MilliSatoshi, _}
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -63,9 +62,9 @@ case class Commitments(channelVersion: ChannelVersion,
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
-    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry) ++
-      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry) ++
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
+    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong) ++
+      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong) ++
+      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
 
   /**
     * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
@@ -73,9 +72,9 @@ case class Commitments(channelVersion: ChannelVersion,
     * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
     * and our HTLC success in case of a force-close.
     */
-  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: Int): Set[UpdateAddHtlc] = {
+  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
     localCommit.spec.htlcs.collect {
-      case htlc if htlc.direction == IN && blockheight >= htlc.add.cltvExpiry - fulfillSafety => htlc.add
+      case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).toLong => htlc.add
     }
   }
 
@@ -86,15 +85,17 @@ case class Commitments(channelVersion: ChannelVersion,
   val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   lazy val availableBalanceForSend: MilliSatoshi = {
-    val reduced = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-    val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else MilliSatoshi(0)
-    maxOf(reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0))
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
+    val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else 0.msat
+    (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
   }
 
   lazy val availableBalanceForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val feesMsat = if (localParams.isFunder) MilliSatoshi(0) else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
-    maxOf(reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat, MilliSatoshi(0))
+    val feesMsat = if (localParams.isFunder) 0.msat else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
+    (reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
   }
 }
 
@@ -120,14 +121,13 @@ object Commitments {
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
-
     val blockCount = Globals.blockCount.get()
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
-    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
+    val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry
     if (cmd.cltvExpiry < minExpiry) {
       return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
     }
-    val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
+    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     if (cmd.cltvExpiry >= maxExpiry) {
       return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
@@ -147,26 +147,24 @@ object Commitments {
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(outgoingHtlcs.map(_.add.amountMsat).sum.toLong)
-    if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
+    // note that the funder pays the fee, so if we are fundee the funder needs to afford the increased commitment fee
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    val missingForSender = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
+    val missingForReceiver = reduced.toLocal.truncateToSatoshi - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
+    if (missingForSender < 0.sat) {
+      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+    } else if (!commitments1.localParams.isFunder && missingForReceiver < 0.sat) {
+      return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+    }
+
+    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
+    if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
       return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
-    }
-
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = Transactions.commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missingLocal = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    val missingRemote = reduced.toLocal.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-
-    if (missingLocal < Satoshi(0)) {
-      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingLocal, reserve = commitments1.remoteParams.channelReserve, fees = fees, isLocal = true))
-    } else if (!commitments1.localParams.isFunder && missingRemote < Satoshi(0)) {
-      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingRemote, reserve = commitments1.localParams.channelReserve, fees = fees, isLocal = false))
     }
 
     Right(commitments1, add)
@@ -186,20 +184,20 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    val htlcValueInFlight = UInt64(incomingHtlcs.map(_.add.amountMsat).sum.toLong)
-    if (htlcValueInFlight > commitments1.localParams.maxHtlcValueInFlightMsat) {
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
+    val missing = reduced.toRemote - commitments1.localParams.channelReserve - fees
+    if (missing < 0.msat) {
+      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = fees)
+    }
+
+    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
+    if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
 
     if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
       throw TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.localParams.maxAcceptedHtlcs)
-    }
-
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) Satoshi(0) else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
-    val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
-      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees, isLocal = true)
     }
 
     commitments1
@@ -320,7 +318,7 @@ object Commitments {
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
     val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
+    if (missing < 0.sat) {
       throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
@@ -354,7 +352,7 @@ object Commitments {
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
     val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-    if (missing < Satoshi(0)) {
+    if (missing < 0.sat) {
       throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
@@ -595,5 +593,3 @@ object Commitments {
        |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }
 }
-
-

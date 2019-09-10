@@ -61,12 +61,29 @@
                             <type>fat</type>
                             <fileName>${project.name}-${project.version}</fileName>
                             <fileDesc>-${git.commit.id.abbrev}</fileDesc>
+                            <manifest>
+                                <entry>
+                                    <key>Java-Agents</key>
+                                    <value>kanela-agent-1.0.1.jar</value>
+                                </entry>
+                            </manifest>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
         </plugins>
     </build>
+
+    <repositories>
+        <repository>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <id>bintray-kamon-io-releases</id>
+            <name>bintray</name>
+            <url>https://dl.bintray.com/kamon-io/releases</url>
+        </repository>
+    </repositories>
 
     <dependencies>
         <dependency>
@@ -80,6 +97,7 @@
             <artifactId>classutil_${scala.version.short}</artifactId>
             <version>1.4.0</version>
         </dependency>
+        <!-- logging -->
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
@@ -90,6 +108,62 @@
             <groupId>org.codehaus.janino</groupId>
             <artifactId>janino</artifactId>
             <version>3.0.7</version>
+        </dependency>
+        <!-- http server -->
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-core_${scala.version.short}</artifactId>
+            <version>${akka.http.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>de.heikoseeberger</groupId>
+            <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
+            <version>1.19.0</version>
+        </dependency>
+        <!-- metrics -->
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-apm-reporter_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-system-metrics_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-jdbc_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency>
+        <!--dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-annotation_${scala.version.short}</artifactId>
+            <version>2.0.0-RC1</version>
+        </dependency-->
+        <!--dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kamon-akka-http_${scala.version.short}</artifactId>
+            <version>${kamon.version}</version>
+        </dependency-->
+        <!-- test dependencies -->
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-testkit_${scala.version.short}</artifactId>
+            <version>${akka.http.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-scala-scalatest_2.11</artifactId>
+            <version>1.4.1</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- agents -->
+        <dependency>
+            <groupId>io.kamon</groupId>
+            <artifactId>kanela-agent</artifactId>
+            <version>1.0.1</version>
         </dependency>
     </dependencies>
 </project>
