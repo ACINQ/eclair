@@ -99,7 +99,7 @@ class Setup(datadir: File,
    * It is mainly used to calculate htlc expiries.
    * The value is read by all actors, hence it needs to be thread-safe.
    */
-  val blockCount: Array[Long] = Array(0L)
+  val blockCount = new AtomicLong(0)
 
   /**
    * This holds the current feerates, in satoshi-per-kilobytes.

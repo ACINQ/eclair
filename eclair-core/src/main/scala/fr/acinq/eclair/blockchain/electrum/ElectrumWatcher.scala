@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
@@ -28,7 +30,7 @@ import scala.collection.SortedMap
 import scala.collection.immutable.Queue
 
 
-class ElectrumWatcher(blockCount: Array[Long], client: ActorRef) extends Actor with Stash with ActorLogging {
+class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor with Stash with ActorLogging {
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -161,7 +163,7 @@ class ElectrumWatcher(blockCount: Array[Long], client: ActorRef) extends Actor w
     case ElectrumClient.ServerError(ElectrumClient.GetTransaction(txid, Some(origin: ActorRef)), _) => origin ! GetTxWithMetaResponse(txid, None, tip.time)
 
     case PublishAsap(tx) =>
-      val blockCount = this.blockCount(0)
+      val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
@@ -182,7 +184,7 @@ class ElectrumWatcher(blockCount: Array[Long], client: ActorRef) extends Actor w
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
-      val blockCount = this.blockCount(0)
+      val blockCount = this.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
       if (absTimeout > blockCount) {

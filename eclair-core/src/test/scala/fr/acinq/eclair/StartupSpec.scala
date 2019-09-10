@@ -45,7 +45,7 @@ class StartupSpec extends FunSuite {
     val conf = illegalAliasConf.withFallback(ConfigFactory.parseResources("reference.conf").getConfig("eclair"))
     val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
 
-    val blockCount = Array(0L)
+    val blockCount = new AtomicLong(0)
 
     // try to create a NodeParams instance with a conf that contains an illegal alias
     val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator))

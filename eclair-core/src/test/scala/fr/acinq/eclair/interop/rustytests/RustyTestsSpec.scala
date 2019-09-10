@@ -44,7 +44,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
   case class FixtureParam(ref: List[String], res: List[String])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val blockCount = Array(0L)
+    val blockCount = new AtomicLong(0)
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val alice2blockchain = TestProbe()

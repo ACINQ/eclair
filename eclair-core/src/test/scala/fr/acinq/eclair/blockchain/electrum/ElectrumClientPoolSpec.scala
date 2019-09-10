@@ -67,7 +67,7 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
     val addresses = random.shuffle(serverAddresses.toSeq).take(2).toSet + ElectrumClientPool.ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
     stream.close()
     assert(addresses.nonEmpty)
-    pool = system.actorOf(Props(new ElectrumClientPool(Array(0L), addresses)), "electrum-client")
+    pool = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), addresses)), "electrum-client")
   }
 
   test("connect to an electrumx mainnet server") {

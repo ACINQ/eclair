@@ -32,7 +32,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ElectrumClientPool(blockCount: Array[Long], serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
+class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
   import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
@@ -166,10 +166,10 @@ class ElectrumClientPool(blockCount: Array[Long], serverAddresses: Set[ElectrumS
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
-    if (this.blockCount(0) < blockCount) {
+    if (this.blockCount.get() < blockCount) {
       log.debug("current blockchain height={}", blockCount)
       context.system.eventStream.publish(CurrentBlockCount(blockCount))
-      this.blockCount(0) = blockCount
+      this.blockCount.set(blockCount)
     }
   }
 }

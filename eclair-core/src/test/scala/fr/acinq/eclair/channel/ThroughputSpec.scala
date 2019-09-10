@@ -39,7 +39,7 @@ class ThroughputSpec extends FunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem()
     val pipe = system.actorOf(Props[Pipe], "pipe")
-    val blockCount = Array(0L)
+    val blockCount = new AtomicLong()
     val blockchain = system.actorOf(ZmqWatcher.props(blockCount, new TestBitcoinClient()), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = new Random()
@@ -86,7 +86,7 @@ class ThroughputSpec extends FunSuite {
     pipe ! (alice, bob)
     latch.await()
 
-    var i = Array(0L)
+    var i = new AtomicLong(0)
     val random = new Random()
 
     def msg = random.nextInt(100) % 5 match {
