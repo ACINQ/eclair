@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
@@ -82,7 +83,13 @@ case class NodeParams(keyManager: KeyManager,
                       maxPaymentAttempts: Int) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
-  def currentBlockHeight: Long = blockCount.get
+  def currentBlockHeight: Long = {
+    val uuid = UUID.randomUUID()
+    println(s"$uuid start get")
+    val b = blockCount.get
+    println(s"$uuid end get")
+    b
+  }
 }
 
 object NodeParams {

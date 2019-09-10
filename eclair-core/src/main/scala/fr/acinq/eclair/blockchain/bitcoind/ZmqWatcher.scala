@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
@@ -80,7 +81,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       client.getBlockCount.map {
         case count =>
           log.debug(s"setting blockCount=$count")
+          val uuid = UUID.randomUUID()
+          println(s"$uuid start set")
           blockCount.set(count)
+          println(s"$uuid end set")
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
