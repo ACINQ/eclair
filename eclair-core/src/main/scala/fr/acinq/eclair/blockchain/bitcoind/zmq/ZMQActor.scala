@@ -80,12 +80,10 @@ class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>
         log.info(s"connected to ${event.getAddress}")
-        println(s"connected to ${event.getAddress}")
         Try(connected.map(_.success(Done)))
         context.system.eventStream.publish(ZMQConnected)
       case ZMQ.EVENT_DISCONNECTED =>
         log.warning(s"disconnected from ${event.getAddress}")
-        println(s"disconnected from ${event.getAddress}")
         context.system.eventStream.publish(ZMQDisconnected)
       case x => log.error(s"unexpected event $x")
     }
