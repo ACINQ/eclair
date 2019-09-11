@@ -218,15 +218,15 @@ final case class RemoteParams(nodeId: PublicKey,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
-  val AnnounceChannel = 0x01.toByte
-  val Empty = 0x00.toByte
+  val AnnounceChannel: Byte = 0x01.toByte
+  val Empty: Byte = 0x00.toByte
 }
 
 case class ChannelVersion(bits: BitVector) {
   require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
 }
 object ChannelVersion {
-  val LENGTH_BITS = 4 * 8
+  val LENGTH_BITS: Int = 4 * 8
   val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
 }
 // @formatter:on

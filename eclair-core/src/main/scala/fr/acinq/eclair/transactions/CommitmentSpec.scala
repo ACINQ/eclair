@@ -57,7 +57,7 @@ object CommitmentSpec {
     spec.findHtlcById(htlcId, direction.opposite) match {
       case Some(htlc) if direction == OUT => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${htlcId}")
+      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 
@@ -66,7 +66,7 @@ object CommitmentSpec {
     spec.findHtlcById(htlcId, direction.opposite) match {
       case Some(htlc) if direction == OUT => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${htlcId}")
+      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 

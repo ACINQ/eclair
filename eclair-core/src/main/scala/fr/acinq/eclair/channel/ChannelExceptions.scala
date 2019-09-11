@@ -16,11 +16,15 @@
 
 package fr.acinq.eclair.channel
 
+import java.nio.charset.StandardCharsets
+
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
+import scodec.bits.ByteVector
+import fr.acinq.eclair.wire.Error
 
 /**
  * Created by PM on 11/04/2017.
@@ -84,3 +88,21 @@ case class PleasePublishYourCommitment         (override val channelId: ByteVect
 case class AddHtlcFailed                       (override val channelId: ByteVector32, paymentHash: ByteVector32, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends ChannelException(channelId, s"cannot add htlc with origin=$origin reason=${t.getMessage}")
 case class CommandUnavailableInThisState       (override val channelId: ByteVector32, command: String, state: State) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
 // @formatter:on
+
+object ChannelErrorCodes {
+  final val ERR_HOSTED_WRONG_BLOCKDAY = ByteVector.fromValidHex("0001")
+  final val ERR_HOSTED_WRONG_LOCAL_SIG = ByteVector.fromValidHex("0002")
+  final val ERR_HOSTED_WRONG_REMOTE_SIG = ByteVector.fromValidHex("0003")
+  final val ERR_HOSTED_UPDATE_CLTV_TOO_LOW = ByteVector.fromValidHex("0004")
+
+  val knownHostedCodes: Set[ByteVector] = Set(
+    ERR_HOSTED_WRONG_BLOCKDAY,
+    ERR_HOSTED_WRONG_LOCAL_SIG,
+    ERR_HOSTED_WRONG_REMOTE_SIG,
+    ERR_HOSTED_UPDATE_CLTV_TOO_LOW
+  )
+
+  def toHostedAscii(error: Error): String = if (knownHostedCodes.contains(error.tag)) toAscii(error.taggedData) else toAscii(error.data)
+
+  def toAscii(data: ByteVector): String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+}

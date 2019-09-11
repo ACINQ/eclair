@@ -1716,7 +1716,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def replyToUser(message: Either[Channel.ChannelError, String]): Unit = {
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
-      case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))
+      case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${ChannelErrorCodes.toAscii(e.data)}' bin=${e.data.toHex}"))
       case Right(s) => s
     }
     origin_opt.foreach(_ ! m)
@@ -1878,7 +1878,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def handleRemoteError(e: Error, d: Data) = {
     // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
-    log.error(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}")
+    log.error(s"peer sent error: ascii='${ChannelErrorCodes.toAscii(e.data)}' bin=${e.data.toHex}")
     context.system.eventStream.publish(ChannelErrorOccured(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e), isFatal = true))
 
     d match {
