@@ -29,7 +29,7 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.scalatest.FunSuiteLike
+import org.scalatest.{FunSuiteLike, ParallelTestExecution}
 import scodec.bits.HexStringSyntax
 
 import scala.collection.immutable.TreeMap
@@ -38,7 +38,7 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 
 
-class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with ParallelTestExecution {
 
   import RoutingSyncSpec._
 
