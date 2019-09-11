@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import com.google.common.primitives.UnsignedLongs
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
@@ -26,7 +25,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, MilliSatoshi, UInt64, _}
+import fr.acinq.eclair.{MilliSatoshi, _}
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -121,17 +120,16 @@ object Commitments {
    * @param cmd         add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
    */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
-    val blockCount = Globals.blockCount.get()
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
-    val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry
+    val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     if (cmd.cltvExpiry < minExpiry) {
-      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
+      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
-    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry
+    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     if (cmd.cltvExpiry >= maxExpiry) {
-      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockCount))
+      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
 
     if (cmd.amount < commitments.remoteParams.htlcMinimum) {
@@ -148,23 +146,22 @@ object Commitments {
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
+    val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else 0.sat
+    val missing = reduced.toRemote - commitments1.remoteParams.channelReserve - fees
+    if (missing < 0.msat) {
+      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+    }
+
     val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
-    // we must use unsigned comparison here because 'maxHtlcValueInFlightMsat' is effectively an uint64 and can exceed the capacity of MilliSatoshi class
-    if (htlcValueInFlight.compareUnsigned(commitments1.remoteParams.maxHtlcValueInFlightMsat) > 0) {
+    if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
       return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
-    }
-
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else 0.sat
-    val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    if (missing < 0.sat) {
-      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
     }
 
     Right(commitments1, add)
@@ -184,21 +181,20 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
+    val missing = reduced.toRemote - commitments1.localParams.channelReserve - fees
+    if (missing < 0.msat) {
+      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = fees)
+    }
+
     val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
-    // we must use unsigned comparison here because 'maxHtlcValueInFlightMsat' is effectively an uint64 and can exceed the capacity of MilliSatoshi class
-    if (htlcValueInFlight.compareUnsigned(commitments1.localParams.maxHtlcValueInFlightMsat) > 0) {
+    if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
 
     if (incomingHtlcs.size > commitments1.localParams.maxAcceptedHtlcs) {
       throw TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.localParams.maxAcceptedHtlcs)
-    }
-
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
-    val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-    if (missing < 0.sat) {
-      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
     }
 
     commitments1

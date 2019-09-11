@@ -49,7 +49,7 @@ case class CltvExpiryDelta(private val underlying: Int) extends Ordered[CltvExpi
   /**
    * Adds the current block height to the given delta to obtain an absolute expiry.
    */
-  def toCltvExpiry = CltvExpiry(Globals.blockCount.get() + underlying)
+  def toCltvExpiry(blockHeight: Long) = CltvExpiry(blockHeight + underlying)
 
   // @formatter:off
   def +(other: Int): CltvExpiryDelta = CltvExpiryDelta(underlying + other)
