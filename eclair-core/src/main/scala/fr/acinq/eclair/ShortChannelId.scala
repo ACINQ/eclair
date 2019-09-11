@@ -26,7 +26,7 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   lazy val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
 
-  lazy val isHosted: Boolean = blockHeight <= 100000L
+  lazy val isHosted: Boolean = blockHeight <= maxHostedBlockHeight
 
   def toLong: Long = id
 

@@ -99,6 +99,12 @@ package object eclair {
    **/
   val MinimumRelayFeeRate = 1000
 
+  val blocksPerDay: Int = 144
+
+  val maxHostedBlockHeight: Long = 100000L
+
+  val minHostedCltvDelta = CltvExpiryDelta(blocksPerDay * 3)
+
   /**
    * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
    *
@@ -160,7 +166,7 @@ package object eclair {
   /**
    * We use this in the context of timestamp filtering, when we don't need an upper bound.
    */
-  val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
+  val MaxEpochSeconds: Long = Duration.fromNanos(Long.MaxValue).toSeconds
 
   implicit class LongToBtcAmount(l: Long) {
     // @formatter:off
