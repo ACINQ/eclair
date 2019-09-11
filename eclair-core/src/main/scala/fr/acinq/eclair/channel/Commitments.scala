@@ -40,6 +40,19 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, r
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
+trait ChannelCommitments {
+
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc]
+
+  val availableBalanceForReceive: MilliSatoshi
+
+  val availableBalanceForSend: MilliSatoshi
+
+  val originChannels: Map[Long, Origin] // for outgoing htlcs relayed through us, the id of the previous channel
+
+  val channelId: ByteVector32
+}
+
 /**
  * about remoteNextCommitInfo:
  * we either:
@@ -54,10 +67,11 @@ case class Commitments(channelVersion: ChannelVersion,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
+                       originChannels: Map[Long, Origin],
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
+                       remotePerCommitmentSecrets: ShaChain,
+                       channelId: ByteVector32) extends ChannelCommitments {
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 

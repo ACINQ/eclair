@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
@@ -80,9 +80,14 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
-  val privateKey = keyManager.nodeKey.privateKey
-  val nodeId = keyManager.nodeId
+
+  val privateKey: Crypto.PrivateKey = keyManager.nodeKey.privateKey
+
+  val nodeId: PublicKey = keyManager.nodeId
+
   def currentBlockHeight: Long = blockCount.get
+
+  def currentBlockDay: Long = currentBlockHeight / blocksPerDay
 }
 
 object NodeParams {
