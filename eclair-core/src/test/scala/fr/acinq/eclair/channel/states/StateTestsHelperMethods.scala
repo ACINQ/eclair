@@ -46,7 +46,9 @@ trait StateTestsHelperMethods extends TestKitBase {
                           router: TestProbe,
                           relayerA: TestProbe,
                           relayerB: TestProbe,
-                          channelUpdateListener: TestProbe)
+                          channelUpdateListener: TestProbe) {
+    def currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+  }
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
     val alice2bob = TestProbe()
@@ -107,17 +109,18 @@ trait StateTestsHelperMethods extends TestKitBase {
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey): (ByteVector32, CMD_ADD_HTLC) = {
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
     val payment_preimage: ByteVector32 = randomBytes32
     val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
-    val expiry = CltvExpiryDelta(144).toCltvExpiry
+    val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
     val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, payment_hash, Hop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
     (payment_preimage, cmd)
   }
 
   def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
     val sender = TestProbe()
-    val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId)
+    val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
+    val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId, currentBlockHeight)
     sender.send(s, cmd)
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
