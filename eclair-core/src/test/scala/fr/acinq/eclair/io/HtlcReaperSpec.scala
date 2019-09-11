@@ -29,7 +29,7 @@ import scala.concurrent.duration._
  * Created by PM on 27/01/2017.
  */
 
-class HtlcReaperSpec extends TestKit(ActorSystem()) with FunSuiteLike {
+class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("init and cleanup") {
 

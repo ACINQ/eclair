@@ -61,7 +61,7 @@ import scala.util.Try
  * Created by PM on 15/03/2017.
  */
 
-class IntegrationSpec extends TestKit(ActorSystem()) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
+class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
 

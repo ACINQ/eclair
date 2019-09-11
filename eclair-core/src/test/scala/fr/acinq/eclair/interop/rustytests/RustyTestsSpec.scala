@@ -39,7 +39,7 @@ import scala.io.Source
   * Created by PM on 30/05/2016.
   */
 
-class RustyTestsSpec extends TestKit(ActorSystem()) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
+class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
 
   case class FixtureParam(ref: List[String], res: List[String])
 

@@ -28,7 +28,7 @@ import scala.concurrent.Await
   * This base class kills all actor between each tests.
   * Created by PM on 06/09/2016.
   */
-abstract class TestkitBaseClass extends TestKit(ActorSystem()) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
+abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
 
   override def afterEach() {
     system.actorSelection(system / "*") ! PoisonPill

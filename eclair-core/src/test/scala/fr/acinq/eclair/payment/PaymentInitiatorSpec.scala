@@ -30,7 +30,7 @@ import org.scalatest.FunSuiteLike
  * Created by t-bast on 25/07/2019.
  */
 
-class PaymentInitiatorSpec extends TestKit(ActorSystem()) with FunSuiteLike {
+class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("forward payment with pre-defined route") {
     val sender = TestProbe()

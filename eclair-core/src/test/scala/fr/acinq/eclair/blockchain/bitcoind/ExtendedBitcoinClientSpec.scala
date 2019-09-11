@@ -32,7 +32,7 @@ import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 
-class ExtendedBitcoinClientSpec extends TestKit(ActorSystem()) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
+class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",

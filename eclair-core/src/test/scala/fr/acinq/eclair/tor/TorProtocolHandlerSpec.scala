@@ -31,7 +31,7 @@ import scodec.bits._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Promise}
 
-class TorProtocolHandlerSpec extends TestKit(ActorSystem())
+class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   with FunSuiteLike
   with ImplicitSender
   with BeforeAndAfterEach

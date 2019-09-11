@@ -28,7 +28,7 @@ import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{TestConstants, TestUtils, randomBytes32}
 import org.scalatest.FunSuiteLike
 
-class BackupHandlerSpec extends TestKit(ActorSystem()) with FunSuiteLike {
+class BackupHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("process backups") {
     val db = TestConstants.inMemoryDb()

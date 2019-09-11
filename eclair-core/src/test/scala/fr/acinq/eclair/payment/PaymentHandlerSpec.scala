@@ -35,7 +35,7 @@ import scala.concurrent.duration._
  * Created by PM on 24/03/2017.
  */
 
-class PaymentHandlerSpec extends TestKit(ActorSystem()) with FunSuiteLike {
+class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("LocalPaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and adds payment in DB") {
     val nodeParams = Alice.nodeParams
