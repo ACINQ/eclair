@@ -1,19 +1,17 @@
-package fr.acinq.eclair.wire.hosted
+package fr.acinq.eclair.wire
 
 import java.util.UUID
 
 import fr.acinq.eclair._
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, UInt64, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomBytes64, randomKey}
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, HOSTED_DATA_COMMITMENTS, LocalChanges}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Local, Origin, Relayed}
+import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
-import fr.acinq.eclair.wire._
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
-
 import scala.util.Random
 
 class HostedChannelCodecsSpec extends FunSuite {
