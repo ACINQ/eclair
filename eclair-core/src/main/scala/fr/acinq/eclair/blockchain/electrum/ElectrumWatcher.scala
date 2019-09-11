@@ -16,20 +16,21 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
+import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{Globals, LongToBtcAmount}
+import fr.acinq.eclair.LongToBtcAmount
 
 import scala.collection.SortedMap
 import scala.collection.immutable.Queue
 
-class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLogging {
+
+class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor with Stash with ActorLogging {
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -47,7 +48,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case _ => log.warning(s"unhandled message $message")
   }
 
-  def receive = disconnected(Set.empty, Queue.empty, SortedMap.empty, Queue.empty)
+  def receive: Receive = disconnected(Set.empty, Queue.empty, SortedMap.empty, Queue.empty)
 
   def disconnected(watches: Set[Watch], publishQueue: Queue[PublishAsap], block2tx: SortedMap[Long, Seq[Transaction]], getTxQueue: Queue[(GetTxWithMeta, ActorRef)]): Receive = {
     case ElectrumClient.ElectrumReady(_, _, _) =>
@@ -161,7 +162,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case ElectrumClient.ServerError(ElectrumClient.GetTransaction(txid, Some(origin: ActorRef)), _) => origin ! GetTxWithMetaResponse(txid, None, tip.time)
 
     case PublishAsap(tx) =>
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
@@ -182,7 +183,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
       if (absTimeout > blockCount) {
@@ -209,39 +210,4 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
   }
 
-}
-
-object ElectrumWatcher extends App {
-
-  val system = ActorSystem()
-
-  import scala.concurrent.ExecutionContext.Implicits.global
-
-  class Root extends Actor with ActorLogging {
-    val client = context.actorOf(Props(new ElectrumClient(new InetSocketAddress("localhost", 51000), ssl = SSL.OFF)), "client")
-    client ! ElectrumClient.AddStatusListener(self)
-
-    override def unhandled(message: Any): Unit = {
-      super.unhandled(message)
-      log.warning(s"unhandled message $message")
-    }
-
-    def receive = {
-      case ElectrumClient.ElectrumReady(_, _, _) =>
-        log.info(s"starting watcher")
-        context become running(context.actorOf(Props(new ElectrumWatcher(client)), "watcher"))
-    }
-
-    def running(watcher: ActorRef): Receive = {
-      case watch: Watch => watcher forward watch
-    }
-  }
-
-  val root = system.actorOf(Props[Root], "root")
-  val scanner = new java.util.Scanner(System.in)
-  while (true) {
-    val tx = Transaction.read(scanner.nextLine())
-    root ! WatchSpent(root, tx.txid, 0, tx.txOut(0).publicKeyScript, BITCOIN_FUNDING_SPENT)
-    root ! WatchConfirmed(root, tx.txid, tx.txOut(0).publicKeyScript, 4L, BITCOIN_FUNDING_DEPTHOK)
-  }
 }

@@ -57,7 +57,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
       val amount1 = 300000000 msat
-      val expiry1 = CltvExpiryDelta(144).toCltvExpiry
+      val expiry1 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
       val cmd1 = PaymentLifecycle.buildCommand(UUID.randomUUID, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount1, expiry1))._1.copy(commit = false)
       sender.send(alice, cmd1)
       sender.expectMsg("ok")
@@ -67,7 +67,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
       val amount2 = 200000000 msat
-      val expiry2 = CltvExpiryDelta(144).toCltvExpiry
+      val expiry2 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
       val cmd2 = PaymentLifecycle.buildCommand(UUID.randomUUID, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount2, expiry2))._1.copy(commit = false)
       sender.send(alice, cmd2)
       sender.expectMsg("ok")

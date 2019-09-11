@@ -37,6 +37,7 @@ import scala.collection.{SortedSet, immutable, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 
+
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   import RoutingSyncSpec._
