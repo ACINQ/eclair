@@ -19,6 +19,5 @@ blocks:
             - sem-version java 11
             - checkout
             - cache restore maven
-            - mvn scoverage:report
-            - bash <(curl -s https://codecov.io/bash)
+            - mvn scoverage:report && bash <(curl -s https://codecov.io/bash)
             - cache store maven .m2
