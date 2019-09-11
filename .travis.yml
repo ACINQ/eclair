@@ -23,5 +23,3 @@ jdk:
 notifications:
  email:
   - ops@acinq.fr
-after_success:
- - bash <(curl -s https://codecov.io/bash)
