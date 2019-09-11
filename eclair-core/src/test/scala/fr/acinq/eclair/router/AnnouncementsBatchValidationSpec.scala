@@ -45,7 +45,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
   ignore("validate a batch of announcements") {
     import scala.concurrent.ExecutionContext.Implicits.global
 
-    implicit val system = ActorSystem()
+    implicit val system = ActorSystem("test")
     implicit val sttpBackend = OkHttpFutureBackend()
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
