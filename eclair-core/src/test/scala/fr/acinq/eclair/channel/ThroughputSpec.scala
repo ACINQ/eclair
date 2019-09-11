@@ -37,7 +37,7 @@ import scala.util.Random
 
 class ThroughputSpec extends FunSuite {
   ignore("throughput") {
-    implicit val system = ActorSystem()
+    implicit val system = ActorSystem("test")
     val pipe = system.actorOf(Props[Pipe], "pipe")
     val blockCount = new AtomicLong()
     val blockchain = system.actorOf(ZmqWatcher.props(blockCount, new TestBitcoinClient()), "blockchain")
