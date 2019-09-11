@@ -214,15 +214,10 @@ object Commitments {
     commitments1
   }
 
-  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = {
-    val remoteSigned = commitments.localCommit.spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal && htlc.add.id == htlcId)
-    val localSigned = commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit)
-      .spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal.opposite && htlc.add.id == htlcId)
-    for {
-      htlc_out <- remoteSigned
-      htlc_in <- localSigned
-    } yield htlc_in.add
-  }
+  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = for {
+    _ <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findHtlcById(htlcId, directionRelativeToLocal.opposite)
+    remoteSigned <- commitments.localCommit.spec.findHtlcById(htlcId, directionRelativeToLocal)
+  } yield remoteSigned.add
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
@@ -244,7 +239,7 @@ object Commitments {
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(commitments, OUT, fulfill.id) match {
-      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Right((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
+      case Some(htlc) if htlc.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
       case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
       case None => throw UnknownHtlcId(commitments.channelId, fulfill.id)
     }
@@ -508,12 +503,12 @@ object Commitments {
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
-            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).get.add
             ForwardFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
-            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).get.add
             ForwardFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation

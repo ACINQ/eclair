@@ -1274,12 +1274,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       extracted foreach { case (htlc, fulfill) =>
         d.commitments.originChannels.get(fulfill.id) match {
           case Some(origin) =>
-            log.info(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
+            log.info(s"fulfilling htlc #${fulfill.id} paymentHash=${fulfill.paymentHash} origin=$origin")
             relayer ! ForwardFulfill(fulfill, origin, htlc)
           case None =>
             // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
-            log.info(s"cannot fulfill htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} (origin not found)")
+            log.info(s"cannot fulfill htlc #${fulfill.id} paymentHash=${fulfill.paymentHash} (origin not found)")
         }
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
