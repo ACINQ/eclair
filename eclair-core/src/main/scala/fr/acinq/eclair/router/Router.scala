@@ -193,10 +193,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
     initChannels.values.foreach { pc =>
-      val txid = pc.fundingTxid
-      val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(pc.ann.bitcoinKey1, pc.ann.bitcoinKey2)))
-      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+      watcher ! WatchSpentBasic(self, pc.fundingTxid, pc.ann.shortChannelId.outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
     }
 
     // on restart we update our node announcement
@@ -290,25 +288,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                 log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
                 None
               case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
-                val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
                 val (fundingOutputScript, ok) = Kamon.runWithSpan(Kamon.spanBuilder("checked-pubkeyscript").start(), finishSpan = true) {
                   // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
                   val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
-                  val ok = tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript
+                  val ok = tx.txOut.size < c.shortChannelId.outputIndex + 1 || fundingOutputScript != tx.txOut(c.shortChannelId.outputIndex).publicKeyScript
                   (fundingOutputScript, ok)
                 }
                 if (ok) {
-                  log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
+                  log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=${c.shortChannelId.outputIndex} ann={}", c.shortChannelId, tx.txid, c)
                   d0.awaiting.get(c) match {
                     case Some(origins) => origins.foreach(_ ! InvalidAnnouncement(c))
                     case _ => ()
                   }
                   None
                 } else {
-                  watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+                  watcher ! WatchSpentBasic(self, tx, c.shortChannelId.outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
                   // TODO: check feature bit set
                   log.debug("added channel channelId={}", c.shortChannelId)
-                  val capacity = tx.txOut(outputIndex).amount
+                  val capacity = tx.txOut(c.shortChannelId.outputIndex).amount
                   context.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity) :: Nil))
                   Kamon.runWithSpan(Kamon.spanBuilder("add-to-db").start(), finishSpan = true) {
                     db.addChannel(c, tx.txid, capacity)
@@ -942,8 +939,7 @@ object Router {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
-    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
-    blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
+    channel.shortChannelId.blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
   }
 
   def getStaleChannels(channels: Iterable[PublicChannel]): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt))
@@ -952,8 +948,7 @@ object Router {
    * Filters channels that we want to send to nodes asking for a channel range
    */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
-    val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
-    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+    id.blockHeight >= firstBlockNum && id.blockHeight <= (firstBlockNum + numberOfBlocks)
   }
 
   def shouldRequestUpdate(ourTimestamp: Long, ourChecksum: Long, theirTimestamp_opt: Option[Long], theirChecksum_opt: Option[Long]): Boolean = {
@@ -1151,8 +1146,8 @@ object Router {
         .toList
         .map { group =>
           // NB: group is never empty
-          val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-          val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
+          val firstBlock: Long = group.head.blockHeight.toLong
+          val numBlocks: Long = group.last.blockHeight.toLong - firstBlock + 1
           ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
         }
     }

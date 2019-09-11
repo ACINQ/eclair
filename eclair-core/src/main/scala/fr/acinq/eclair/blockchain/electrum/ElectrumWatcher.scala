@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{Globals, LongToBtcAmount, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Globals, LongToBtcAmount}
 
 import scala.collection.SortedMap
 import scala.collection.immutable.Queue
@@ -37,11 +37,10 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case ValidateRequest(c) =>
       log.info(s"blindly validating channel=$c")
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
-      val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
       val fakeFundingTx = Transaction(
         version = 2,
         txIn = Seq.empty[TxIn],
-        txOut = List.fill(outputIndex + 1)(TxOut(0 sat, pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+        txOut = List.fill(c.shortChannelId.outputIndex + 1)(TxOut(0 sat, pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
         lockTime = 0)
       sender ! ValidateResult(c, Right((fakeFundingTx, UtxoStatus.Unspent)))
 

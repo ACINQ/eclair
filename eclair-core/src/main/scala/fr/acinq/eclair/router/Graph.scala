@@ -298,8 +298,7 @@ object Graph {
       import RoutingHeuristics._
 
       // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
-      val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-      val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
+      val ageFactor = normalize(edge.desc.shortChannelId.blockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
       // Every edge is weighted by channel capacity, larger channels add less weight
       val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW)

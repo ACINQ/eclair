@@ -24,12 +24,13 @@ package fr.acinq.eclair
   */
 case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] {
 
+  lazy val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
+
+  lazy val isHosted: Boolean = blockHeight <= 100000L
+
   def toLong: Long = id
 
-  override def toString: String = {
-    val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
-    s"${blockHeight}x${txIndex}x${outputIndex}"
-  }
+  override def toString: String = s"${blockHeight}x${txIndex}x$outputIndex"
 
   // we use an unsigned long comparison here
   override def compare(that: ShortChannelId): Int = (this.id + Long.MinValue).compareTo(that.id + Long.MinValue)

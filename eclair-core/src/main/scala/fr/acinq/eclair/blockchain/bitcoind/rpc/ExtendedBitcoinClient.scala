@@ -17,8 +17,6 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.ShortChannelId.coordinates
-import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
@@ -149,18 +147,17 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
-    val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
       val span = Kamon.spanBuilder("validate-bitcoin-client").start()
       for {
         _ <- Future.successful(0)
         span0 = Kamon.spanBuilder("getblockhash").start()
-        blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
+        blockHash: String <- rpcClient.invoke("getblockhash", c.shortChannelId.blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
         _ = span0.finish()
         span1 = Kamon.spanBuilder("getblock").start()
         txid: String <- rpcClient.invoke("getblock", blockHash).map {
           case json => Try {
             val JArray(txs) = json \ "tx"
-            txs(txIndex).extract[String]
+            txs(c.shortChannelId.txIndex).extract[String]
           } getOrElse ByteVector32.Zeroes.toHex
         }
         _ = span1.finish()
@@ -168,13 +165,13 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         tx <- getRawTransaction(txid)
         _ = span2.finish()
         span3 = Kamon.spanBuilder("utxospendable-mempool").start()
-        unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
+        unspent <- isTransactionOutputSpendable(txid, c.shortChannelId.outputIndex, includeMempool = true)
         _ = span3.finish()
         fundingTxStatus <- if (unspent) {
           Future.successful(UtxoStatus.Unspent)
         } else {
           // if this returns true, it means that the spending tx is *not* in the blockchain
-          isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+          isTransactionOutputSpendable(txid, c.shortChannelId.outputIndex, includeMempool = false).map {
             case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
           }
         }
