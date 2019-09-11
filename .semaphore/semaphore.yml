@@ -13,11 +13,14 @@ blocks:
         # the cache util. It must be set in all blocks.
         - name: MAVEN_OPTS
           value: "-Dmaven.repo.local=.m2"
+        - name: CODECOV_TOKEN
+          value: "eadc3ab4-14c9-441a-841b-9a5ae511059f"
       jobs:
         - name: Build & Test
           commands:
             - sem-version java 11
             - checkout
             - cache restore maven
-            - mvn scoverage:report && bash <(curl -s https://codecov.io/bash)
+            - mvn scoverage:report
+            - bash <(curl -s https://codecov.io/bash)
             - cache store maven .m2
