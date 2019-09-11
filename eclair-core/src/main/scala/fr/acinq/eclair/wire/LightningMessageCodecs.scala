@@ -285,15 +285,15 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-    .typecase(65535, HostedChannelCodecs.invokeHostedChannelCodec)
-    .typecase(65534, HostedChannelCodecs.initHostedChannelCodec)
-    .typecase(65533, HostedChannelCodecs.lastCrossSignedStateCodec)
-    .typecase(65532, HostedChannelCodecs.stateUpdateCodec)
-    .typecase(65531, HostedChannelCodecs.stateOverrideCodec)
+    .typecase(65535, HostedMessagesCodecs.invokeHostedChannelCodec)
+    .typecase(65534, HostedMessagesCodecs.initHostedChannelCodec)
+    .typecase(65533, HostedMessagesCodecs.lastCrossSignedStateCodec)
+    .typecase(65532, HostedMessagesCodecs.stateUpdateCodec)
+    .typecase(65531, HostedMessagesCodecs.stateOverrideCodec)
 
 }
 
-object HostedChannelCodecs {
+object HostedMessagesCodecs {
   val invokeHostedChannelCodec: Codec[InvokeHostedChannel] = {
     (bytes32 withContext "chainHash") ::
       (varsizebinarydata withContext "refundScriptPubKey")

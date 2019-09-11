@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrde
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
-import fr.acinq.eclair.wire.HostedChannelCodecs.inFlightHtlcCodec
+import fr.acinq.eclair.wire.HostedMessagesCodecs.inFlightHtlcCodec
 import scodec.bits.ByteVector
 import scala.util.Try
 

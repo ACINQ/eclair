@@ -6,6 +6,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
 import fr.acinq.eclair.wire.{ChannelUpdate, InFlightHtlc, LastCrossSignedState, UpdateAddHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.Error
 import scodec.bits.ByteVector
 
 sealed trait HostedData
@@ -16,7 +17,8 @@ case class HOSTED_DATA_WAIT_REMOTE_REPLY(refundScriptPubKey: ByteVector) extends
 
 case class HOSTED_DATA_WAIT_REMOTE_STATE_UPDATE(hostedDataCommits: HOSTED_DATA_COMMITMENTS) extends HostedData
 
-case class HOSTED_DATA_COMMITMENTS(shortChannelId: ShortChannelId,
+case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
+                                   shortChannelId: ShortChannelId,
                                    lastCrossSignedState: LastCrossSignedState,
                                    allLocalUpdates: Long,
                                    allRemoteUpdates: Long,
