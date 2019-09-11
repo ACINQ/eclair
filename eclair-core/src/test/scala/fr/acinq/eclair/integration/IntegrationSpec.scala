@@ -51,15 +51,17 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
+import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.util.Try
 
 /**
  * Created by PM on 15/03/2017.
  */
 
-class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
+class IntegrationSpec extends TestKit(ActorSystem()) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
 
@@ -345,7 +347,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, nodes("A").nodeParams.currentBlockHeight)))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockCount)))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -365,7 +367,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.id == paymentId)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, nodes("A").nodeParams.currentBlockHeight)))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockCount)))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -385,7 +387,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentId == failed.id)
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000 msat, nodes("A").nodeParams.currentBlockHeight)))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000 msat, getBlockCount)))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
@@ -458,9 +460,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockCount = getBlockCount
+    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -532,15 +533,21 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
   }
 
+  def getBlockCount: Long = {
+    // we make sure that all nodes have the same value
+    awaitCond(nodes.values.map(_.nodeParams.currentBlockHeight).toSet.size == 1, max = 1 minute, interval = 1 second)
+    // and we return it (NB: it could be a different value at this point
+    nodes.values.head.nodeParams.currentBlockHeight
+  }
+
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
     val sender = TestProbe()
     // we subscribe to C's channel state transitions
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockCount = getBlockCount
+    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -615,9 +622,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockCount = getBlockCount
+    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -677,9 +683,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockCount = getBlockCount
+    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -754,9 +759,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
     val paymentHandlerF = nodes("F5").system.actorOf(LocalPaymentHandler.props(nodes("F5").nodeParams))
     // first we make sure we are in sync with current blockchain height
-    sender.send(bitcoincli, BitcoinReq("getblockcount"))
-    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
-    awaitCond(nodes("A").nodeParams.currentBlockHeight == currentBlockCount, max = 20 seconds, interval = 1 second)
+    val currentBlockCount = getBlockCount
+    awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
     // first we send 3 mBTC to F so that it has a balance
     val amountMsat = 300000000.msat
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))

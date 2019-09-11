@@ -68,7 +68,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       relayerA ! alice
       relayerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelVersion.STANDARD)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[WatchSpent]
@@ -143,7 +143,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     import f._
     val senders = 2
     val totalMessages = 100
-    val latch = new CountDownLatch(senders)
+    val latch = new CountDownLatch(2 * senders)
     for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
     for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch, totalMessages / senders)))
     awaitCond(latch.getCount == 0, max = 2 minutes)
@@ -171,11 +171,10 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     import f._
     val senders = 2
     val totalMessages = 100
-    val latch1 = new CountDownLatch(senders)
-    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch1, totalMessages / senders)))
-    val latch2 = new CountDownLatch(senders)
-    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch2, totalMessages / senders)))
-    awaitCond(latch1.getCount == 0 && latch2.getCount == 0, max = 2 minutes)
+    val latch = new CountDownLatch(2 * senders)
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch, totalMessages / senders)))
+    for (_ <- 0 until senders) system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch, totalMessages / senders)))
+    awaitCond(latch.getCount == 0, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))

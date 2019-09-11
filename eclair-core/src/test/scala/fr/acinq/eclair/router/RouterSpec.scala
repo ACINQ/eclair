@@ -236,6 +236,23 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 8)
   }
 
+  test("send network statistics") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+    sender.send(router, GetNetworkStats)
+    assert(sender.expectMsgType[Option[NetworkStats]] === None)
+
+    // Network statistics should be computed after initial sync
+    router ! SyncProgress(1.0)
+    sender.send(router, GetNetworkStats)
+
+    val Some(stats) = sender.expectMsgType[Option[NetworkStats]]
+    assert(stats.channels === 4)
+    assert(stats.nodes === 6)
+    assert(stats.capacity.median === 1000000.sat)
+    assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(6))
+  }
+
   test("given a pre-computed route add the proper channel updates") { fixture =>
     import fixture._
 
@@ -267,7 +284,7 @@ class RouterSpec extends BaseRouterSpec {
     probe.send(router, TickPruneStaleChannels)
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
-    val state = sender.expectMsgType[RoutingState]
+    sender.expectMsgType[RoutingState]
 
     val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat, timestamp = Platform.currentTime.millisecond.toSeconds)
 
@@ -277,4 +294,5 @@ class RouterSpec extends BaseRouterSpec {
     val query = transport.expectMsgType[QueryShortChannelIds]
     assert(query.shortChannelIds.array == List(channelId))
   }
+
 }

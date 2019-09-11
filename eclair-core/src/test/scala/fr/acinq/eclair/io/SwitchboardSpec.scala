@@ -14,7 +14,7 @@ import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.FunSuiteLike
 import scodec.bits._
 
-class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with IdiomaticMockito {
+class SwitchboardSpec extends TestKit(ActorSystem()) with FunSuiteLike with IdiomaticMockito {
 
   test("on initialization create peers and send Reconnect to them") {
 

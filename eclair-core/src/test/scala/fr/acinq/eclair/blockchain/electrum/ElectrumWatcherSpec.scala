@@ -36,7 +36,7 @@ import scodec.bits._
 
 import scala.concurrent.duration._
 
-class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
+class ElectrumWatcherSpec extends TestKit(ActorSystem()) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")

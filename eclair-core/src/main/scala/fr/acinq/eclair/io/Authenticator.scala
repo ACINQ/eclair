@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Authenticator.{Authenticated, AuthenticationFailed, PendingAuth}
 import fr.acinq.eclair.wire.LightningMessageCodecs
 import fr.acinq.eclair.{Logs, NodeParams}
+import kamon.Kamon
 
 /**
   * The purpose of this class is to serve as a buffer for newly connection before they are authenticated
@@ -43,6 +44,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
   def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
       log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
+      Kamon.counter("peers.connecting.count").withTag("state", "authenticating").increment()
       val transport = context.actorOf(TransportHandler.props(
         KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
         remoteNodeId_opt.map(_.value),
@@ -56,6 +58,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
       import pendingAuth.{address, remoteNodeId_opt}
       val outgoing = remoteNodeId_opt.isDefined
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (outgoing) "outgoing" else "incoming"}")
+      Kamon.counter("peers.connecting.count").withTag("state", "authenticated").increment()
       switchboard ! Authenticated(connection, transport, remoteNodeId, address, remoteNodeId_opt.isDefined, pendingAuth.origin_opt)
       context become ready(switchboard, authenticating - transport)
 

@@ -32,7 +32,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 
-class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
+class ElectrumClientPoolSpec extends TestKit(ActorSystem()) with FunSuiteLike with Logging with BeforeAndAfterAll {
   var pool: ActorRef = _
   val probe = TestProbe()
   // this is tx #2690 of block #500000

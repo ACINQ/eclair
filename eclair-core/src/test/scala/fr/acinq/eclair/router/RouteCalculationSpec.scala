@@ -24,7 +24,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, ToMilliSatoshiConversion, randomKey}
 import org.scalatest.{FunSuite, ParallelTestExecution}
 import scodec.bits._
 
@@ -42,7 +42,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
   test("calculate simple route") {
-
     val updates = List(
       makeUpdate(1L, a, b, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
       makeUpdate(2L, b, c, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
@@ -58,7 +57,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("check fee against max pct properly") {
-
     // fee is acceptable is it is either
     // - below our maximum fee base
     // - below our maximum fraction of the paid amount
@@ -82,7 +80,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate the shortest path (correct fees)") {
-
     val (a, b, c, d, e, f) = (
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // a: source
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
@@ -116,7 +113,7 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
     val Success(route) = Router.findRoute(graph, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
 
-    val totalCost = Graph.pathWeight(hops2Edges(route), amount, false, 0, None).cost
+    val totalCost = Graph.pathWeight(hops2Edges(route), amount, isPartial = false, 0, None).cost
 
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(totalCost === expectedCost)
@@ -146,7 +143,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate simple route (add and remove edges") {
-
     val updates = List(
       makeUpdate(1L, a, b, 0 msat, 0),
       makeUpdate(2L, b, c, 0 msat, 0),
@@ -165,7 +161,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate the shortest path (hardcoded nodes)") {
-
     val (f, g, h, i) = (
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // source
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
@@ -188,7 +183,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate the shortest path (select direct channel)") {
-
     val (f, g, h, i) = (
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // source
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
@@ -252,7 +246,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("if there are multiple channels between the same node, select the cheapest") {
-
     val (f, g, h, i) = (
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // F source
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), // G
@@ -274,7 +267,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate longer but cheaper route") {
-
     val updates = List(
       makeUpdate(1L, a, b, 0 msat, 0),
       makeUpdate(2L, b, c, 0 msat, 0),
@@ -290,7 +282,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("no local channels") {
-
     val updates = List(
       makeUpdate(2L, b, c, 0 msat, 0),
       makeUpdate(4L, d, e, 0 msat, 0)
@@ -303,7 +294,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("route not found") {
-
     val updates = List(
       makeUpdate(1L, a, b, 0 msat, 0),
       makeUpdate(2L, b, c, 0 msat, 0),
@@ -317,7 +307,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("route not found (source OR target node not connected)") {
-
     val updates = List(
       makeUpdate(2L, b, c, 0 msat, 0),
       makeUpdate(4L, c, d, 0 msat, 0)
@@ -330,7 +319,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("route not found (amount too high OR too low)") {
-
     val highAmount = DEFAULT_AMOUNT_MSAT * 10
     val lowAmount = DEFAULT_AMOUNT_MSAT / 10
 
@@ -354,7 +342,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("route to self") {
-
     val updates = List(
       makeUpdate(1L, a, b, 0 msat, 0),
       makeUpdate(2L, b, c, 0 msat, 0),
@@ -368,7 +355,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("route to immediate neighbor") {
-
     val updates = List(
       makeUpdate(1L, a, b, 0 msat, 0),
       makeUpdate(2L, b, c, 0 msat, 0),
@@ -402,7 +388,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate route and return metadata") {
-
     val DUMMY_SIG = Transactions.PlaceHolderSig
 
     val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, 0, 0, CltvExpiryDelta(1), 42 msat, 2500 msat, 140, None)
@@ -432,31 +417,26 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
   }
 
-  test("convert extra hops to channel_update") {
+  test("convert extra hops to assisted channels") {
     val a = randomKey.publicKey
     val b = randomKey.publicKey
     val c = randomKey.publicKey
     val d = randomKey.publicKey
     val e = randomKey.publicKey
 
-    val extraHop1 = ExtraHop(a, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
-    val extraHop2 = ExtraHop(b, ShortChannelId(2), 20 msat, 21, CltvExpiryDelta(22))
-    val extraHop3 = ExtraHop(c, ShortChannelId(3), 30 msat, 31, CltvExpiryDelta(32))
-    val extraHop4 = ExtraHop(d, ShortChannelId(4), 40 msat, 41, CltvExpiryDelta(42))
-
+    val extraHop1 = ExtraHop(a, ShortChannelId(1), 12.sat.toMilliSatoshi, 10000, CltvExpiryDelta(12))
+    val extraHop2 = ExtraHop(b, ShortChannelId(2), 200.sat.toMilliSatoshi, 0, CltvExpiryDelta(22))
+    val extraHop3 = ExtraHop(c, ShortChannelId(3), 150.sat.toMilliSatoshi, 0, CltvExpiryDelta(32))
+    val extraHop4 = ExtraHop(d, ShortChannelId(4), 50.sat.toMilliSatoshi, 0, CltvExpiryDelta(42))
     val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
 
-    val fakeUpdates: Map[ShortChannelId, ExtraHop] = Router.toAssistedChannels(extraHops, e).map { case (shortChannelId, assistedChannel) =>
-      (shortChannelId, assistedChannel.extraHop)
-    }
+    val amount = 900 sat // below RoutingHeuristics.CAPACITY_CHANNEL_LOW
+    val assistedChannels = Router.toAssistedChannels(extraHops, e, amount.toMilliSatoshi)
 
-    assert(fakeUpdates == Map(
-      extraHop1.shortChannelId -> extraHop1,
-      extraHop2.shortChannelId -> extraHop2,
-      extraHop3.shortChannelId -> extraHop3,
-      extraHop4.shortChannelId -> extraHop4
-    ))
-
+    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, 1050.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 1200.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 1400.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 1426.sat.toMilliSatoshi))
   }
 
   test("blacklist routes") {
@@ -502,7 +482,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
-
   test("verify that extra hops takes precedence over known channels") {
     val updates = List(
       makeUpdate(1L, a, b, 10 msat, 10),
@@ -527,7 +506,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("compute ignored channels") {
-
     val f = randomKey.publicKey
     val g = randomKey.publicKey
     val h = randomKey.publicKey
@@ -558,12 +536,11 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     ).toMap
 
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
-      val (_, update) = updates.find{ case (d, u) => d.shortChannelId == shortChannelId}.get
+      val (_, update) = updates.find { case (d, _) => d.shortChannelId == shortChannelId }.get
       val (update_1_opt, update_2_opt) = if (Announcements.isNode1(update.channelFlags)) (Some(update), None) else (None, Some(update))
       val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt, update_2_opt)
       (shortChannelId, pc)
     }
-
 
     val ignored = Router.getIgnoredChannelDesc(publicChannels, ignoreNodes = Set(c, j, randomKey.publicKey))
 
@@ -574,9 +551,7 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("limit routes to 20 hops") {
-
     val nodes = (for (_ <- 0 until 22) yield randomKey.publicKey).toList
-
     val updates = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
@@ -592,7 +567,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("ignore cheaper route when it has more than 20 hops") {
-
     val nodes = (for (_ <- 0 until 50) yield randomKey.publicKey).toList
 
     val updates = nodes
@@ -610,7 +584,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("ignore cheaper route when it has more than the requested CLTV") {
-
     val f = randomKey.publicKey
 
     val g = makeGraph(List(
@@ -627,7 +600,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("ignore cheaper route when it grows longer than the requested size") {
-
     val f = randomKey.publicKey
 
     val g = makeGraph(List(
@@ -644,7 +616,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("ignore loops") {
-
     val updates = List(
       makeUpdate(1L, a, b, 10 msat, 10),
       makeUpdate(2L, b, c, 10 msat, 10),
@@ -660,7 +631,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("ensure the route calculation terminates correctly when selecting 0-fees edges") {
-
     // the graph contains a possible 0-cost path that goes back on its steps ( e -> f, f -> e )
     val updates = List(
       makeUpdate(1L, a, b, 10 msat, 10), // a -> b
@@ -678,21 +648,20 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     assert(route1.map(hops2Ids) === Success(1 :: 3 :: 5 :: Nil))
   }
 
+  // @formatter:off
   /**
-   *
    * +---+            +---+            +---+
    * | A +-----+      | B +----------> | C |
    * +-+-+     |      +-+-+            +-+-+
-   * ^       |        ^                |
-   * |       |        |                |
-   * |       v----> + |                |
+   *   ^       |        ^                |
+   *   |       |        |                |
+   *   |       v----> + |                |
    * +-+-+            <-+-+            +-+-+
    * | D +----------> | E +----------> | F |
    * +---+            +---+            +---+
-   *
    */
+  // @formatter:on
   test("find the k-shortest paths in a graph, k=4") {
-
     val (a, b, c, d, e, f) = (
       PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
       PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
@@ -701,7 +670,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
       PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc") //f
     )
-
 
     val edges = Seq(
       makeUpdate(1L, d, a, 1 msat, 0),
@@ -734,7 +702,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc") //h
     )
 
-
     val edges = Seq(
       makeUpdate(10L, c, e, 2 msat, 0),
       makeUpdate(20L, c, d, 3 msat, 0),
@@ -760,7 +727,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("terminate looking for k-shortest path if there are no more alternative paths than k, must not consider routes going back on their steps") {
-
     val f = randomKey.publicKey
 
     // simple graph with only 2 possible paths from A to F
@@ -791,7 +757,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("select a random route below the requested fee") {
-
     val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 7 msat, maxFeePct = 0)
 
     // A -> B -> C -> D has total cost of 10000005
@@ -808,7 +773,7 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     ).toMap)
 
     (for {_ <- 0 to 10} yield Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = 400000)).map {
-      case Failure(thr) => assert(false, thr)
+      case Failure(thr) => fail(thr)
       case Success(someRoute) =>
 
         val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false, 0, None).cost - DEFAULT_AMOUNT_MSAT
@@ -819,7 +784,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("Use weight ratios to when computing the edge weight") {
-
     val largeCapacity = 8000000000L msat
 
     // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 4000)
@@ -858,7 +822,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("prefer going through an older channel if fees and CLTV are the same") {
-
     val currentBlockHeight = 554000
 
     val g = makeGraph(List(
@@ -880,7 +843,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
-
     val g = makeGraph(List(
       makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
       makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
@@ -889,7 +851,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
       makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
     ).toMap)
-
 
     val Success(routeScoreOptimized) = Router.findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
@@ -900,9 +861,7 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     assert(hops2Nodes(routeScoreOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
   }
 
-
   test("avoid a route that breaks off the max CLTV") {
-
     // A -> B -> C -> D is cheaper but has a total CLTV > 2016!
     // A -> E -> F -> D is more expensive but has a total CLTV < 2016
     val g = makeGraph(List(
@@ -924,7 +883,6 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("cost function is monotonic") {
-
     // This test have a channel (542280x2156x0) that according to heuristics is very convenient but actually useless to reach the target,
     // then if the cost function is not monotonic the path-finding breaks because the result path contains a loop.
     val updates = SortedMap(

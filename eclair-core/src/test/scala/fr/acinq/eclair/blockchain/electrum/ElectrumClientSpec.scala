@@ -28,7 +28,7 @@ import scodec.bits._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
+class ElectrumClientSpec extends TestKit(ActorSystem()) with FunSuiteLike with Logging with BeforeAndAfterAll {
 
   import ElectrumClient._
 

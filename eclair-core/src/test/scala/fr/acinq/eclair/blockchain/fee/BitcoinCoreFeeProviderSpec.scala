@@ -36,7 +36,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Random
 
 
-class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
+class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem()) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",

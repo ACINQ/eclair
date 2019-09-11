@@ -33,7 +33,7 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 
-class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll {
+class TransportHandlerSpec extends TestKit(ActorSystem()) with FunSuiteLike with BeforeAndAfterAll {
 
   import TransportHandlerSpec._
 

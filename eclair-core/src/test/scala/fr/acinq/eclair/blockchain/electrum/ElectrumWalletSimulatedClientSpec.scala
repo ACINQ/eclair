@@ -36,7 +36,7 @@ import scodec.bits.ByteVector
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
-class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem()) with FunSuiteLike {
 
   import ElectrumWalletSimulatedClientSpec._
 
