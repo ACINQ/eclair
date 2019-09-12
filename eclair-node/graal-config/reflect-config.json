@@ -469,6 +469,17 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.channel.DATA_SHUTDOWN",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_SHUTDOWN$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.channel.LocalChanges",
   "allDeclaredFields":true,
   "allPublicMethods":true,
