@@ -172,6 +172,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
         // let's bring existing/requested channels online
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(d.transport, d.localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        hostedChannelGateway ! CMD_HOSTED_INPUT_RECONNECTED(hostedChannelId, remoteNodeId, d.transport)
         // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
         val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
         log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
@@ -282,12 +283,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
     case Event(msg: wire.HostedChannelMessage, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
-      hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, remoteNodeId, msg)
+      hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, msg)
       stay
 
     case Event(msg: wire.HasChannelId, d: ConnectedData) if msg.channelId == hostedChannelId =>
       d.transport ! TransportHandler.ReadAck(msg)
-      hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, remoteNodeId, msg)
+      hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, msg)
       stay
 
     // END HOSTED CHANNEL MESSAGES

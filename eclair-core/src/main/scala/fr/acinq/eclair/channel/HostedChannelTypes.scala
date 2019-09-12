@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel
 
+import akka.actor.ActorRef
 import fr.acinq.eclair._
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -7,14 +8,18 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
-import fr.acinq.eclair.wire.{ChannelUpdate, Error, FailureMessageCodecs, InFlightHtlc, LastCrossSignedState, LightningMessage, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
 sealed trait HostedCommand
+sealed trait HasHostedChanIdCommand extends HostedCommand {
+  def channelId: ByteVector32
+}
 case object CMD_KILL_IDLE_HOSTED_CHANNELS extends HostedCommand
-case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HostedCommand
-case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey) extends HostedCommand
-case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, remoteNodeId: PublicKey, message: LightningMessage) extends HostedCommand
+case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHostedChanIdCommand
+case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
+case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey) extends HasHostedChanIdCommand
+case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
 case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(hc: HOSTED_DATA_COMMITMENTS) extends HostedCommand
 
 sealed trait HostedData
@@ -46,7 +51,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForReceive: MilliSatoshi = nextLocalReduced.toRemote
 
-  def isInErrorState: Boolean = localError.isDefined || remoteError.isDefined
+  def getError: Option[Error] = localError.orElse(remoteError)
 
   def addRemoteProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS =
     me.modify(_.remoteUpdates).using(_ :+ update).modify(_.allRemoteUpdates).using(_ + 1)
