@@ -43,9 +43,11 @@ import scala.util.Random
 /**
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, hostedChannelGateway: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
+
+  lazy val hostedChannelId: ByteVector32 = hostedChanId(nodeParams.nodeId.value, remoteNodeId.value)
 
   startWith(INSTANTIATING, Nothing())
 
@@ -275,6 +277,20 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           log.debug(s"received unexpected pong with size=${data.length}")
       }
       stay using d.copy(expectedPong_opt = None)
+
+    // START HOSTED CHANNEL MESSAGES
+
+    case Event(msg: wire.HostedChannelMessage, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(msg)
+      hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, remoteNodeId, msg)
+      stay
+
+    case Event(msg: wire.HasChannelId, d: ConnectedData) if msg.channelId == hostedChannelId =>
+      d.transport ! TransportHandler.ReadAck(msg)
+      hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, remoteNodeId, msg)
+      stay
+
+    // END HOSTED CHANNEL MESSAGES
 
     case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
       d.transport ! TransportHandler.ReadAck(err)
@@ -598,7 +614,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, hostedChannelGateway: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, hostedChannelGateway, wallet))
 
   // @formatter:off
 

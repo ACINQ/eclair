@@ -58,6 +58,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val relayer = TestProbe()
     val connection = TestProbe()
     val transport = TestProbe()
+    val hostedChannelGateway = TestProbe()
     val wallet: EclairWallet = new TestWallet()
     val remoteNodeId = Bob.nodeParams.nodeId
 
@@ -71,7 +72,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, hostedChannelGateway.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 

@@ -114,4 +114,9 @@ class PackageSpec extends FunSuite {
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 
+  test("compute hosted channel id") {
+    val pubkey1 = randomKey.publicKey.value
+    val pubkey2 = randomKey.publicKey.value
+    assert(hostedChanId(pubkey1, pubkey2) === hostedChanId(pubkey2, pubkey1))
+  }
 }

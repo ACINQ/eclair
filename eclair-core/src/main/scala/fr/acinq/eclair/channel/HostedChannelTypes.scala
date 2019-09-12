@@ -15,6 +15,7 @@ case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, remoteNodeId: PublicKey, 
 case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(hc: HOSTED_DATA_COMMITMENTS) extends HostedCommand
 
 sealed trait HostedData
+case object HostedNothing extends HostedData
 case class HOSTED_DATA_WAIT_REMOTE_REPLY(refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
