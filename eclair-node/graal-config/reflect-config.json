@@ -271,18 +271,15 @@
 },
 {
   "name":"fr.acinq.bitcoin.DeterministicWallet$KeyPath",
-  "allPublicMethods":true,
   "allDeclaredFields":true,
   "allPublicMethods":true,
   "allPublicConstructors":true
 },
 {
   "name":"fr.acinq.bitcoin.DeterministicWallet$KeyPath$",
-  "allPublicMethods":true,
   "allDeclaredFields":true,
   "allPublicMethods":true,
-  "allPublicConstructors":true,
-  "fields":[{"name":"MODULE$"}]
+  "allPublicConstructors":true
 },
 {
   "name":"fr.acinq.eclair.AuditResponse",
@@ -402,6 +399,17 @@
 },
 {
   "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL$",
   "allPublicMethods":true,
   "fields":[{"name":"MODULE$"}]
 },
@@ -596,6 +604,28 @@
   "allDeclaredConstructors":true
 },
 {
+  "name":"fr.acinq.eclair.payment.UsableBalances",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.UsableBalances$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.router.ChannelDesc",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.router.ChannelDesc$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.transactions.CommitmentSpec",
   "allDeclaredFields":true,
   "allPublicMethods":true,
@@ -625,6 +655,17 @@
 },
 {
   "name":"fr.acinq.eclair.wire.FundingCreated$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.wire.NodeAnnouncement",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.wire.NodeAnnouncement$",
   "allPublicMethods":true,
   "fields":[{"name":"MODULE$"}]
 },
