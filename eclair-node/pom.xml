@@ -61,12 +61,6 @@
                             <type>fat</type>
                             <fileName>${project.name}-${project.version}</fileName>
                             <fileDesc>-${git.commit.id.abbrev}</fileDesc>
-                            <manifest>
-                                <entry>
-                                    <key>Java-Agents</key>
-                                    <value>kanela-agent-1.0.1.jar</value>
-                                </entry>
-                            </manifest>
                         </configuration>
                     </execution>
                 </executions>
@@ -98,8 +92,6 @@
                         --initialize-at-build-time=org.sqlite.Function
                         --initialize-at-build-time=org.sqlite.Function\$Aggregate
                         --initialize-at-build-time=org.sqlite.Function\$Window
-                        <!-- Kamon -->
-                        --initialize-at-build-time=kamon.Kamon$.MODULE$
 
                         <!-- bitcoin-lib -->
                         --initialize-at-run-time=fr.acinq.bitcoin.Crypto$
@@ -136,17 +128,6 @@
         </plugins>
     </build>
 
-    <repositories>
-        <repository>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-            <id>bintray-kamon-io-releases</id>
-            <name>bintray</name>
-            <url>https://dl.bintray.com/kamon-io/releases</url>
-        </repository>
-    </repositories>
-
     <dependencies>
         <dependency>
             <groupId>fr.acinq.eclair</groupId>
@@ -159,7 +140,6 @@
             <artifactId>classutil_${scala.version.short}</artifactId>
             <version>1.4.0</version>
         </dependency>
-        <!-- logging -->
         <dependency>
             <!--conditional logging -->
             <groupId>org.codehaus.janino</groupId>
@@ -182,32 +162,6 @@
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
             <version>1.27.0</version>
         </dependency>
-        <!-- metrics -->
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-apm-reporter_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-system-metrics_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-jdbc_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <!--dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-annotation_${scala.version.short}</artifactId>
-            <version>2.0.0-RC1</version>
-        </dependency-->
-        <!--dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-akka-http_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency-->
         <!-- test dependencies -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
@@ -220,12 +174,6 @@
             <artifactId>mockito-scala-scalatest_2.12</artifactId>
             <version>1.4.1</version>
             <scope>test</scope>
-        </dependency>
-        <!-- agents -->
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kanela-agent</artifactId>
-            <version>1.0.1</version>
         </dependency>
     </dependencies>
 </project>

@@ -83,8 +83,7 @@ class Setup(datadir: File,
   secureRandom.nextInt()
 
   datadir.mkdirs()
-  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val config = appConfig.getConfig("eclair")
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)

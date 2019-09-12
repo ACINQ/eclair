@@ -210,17 +210,6 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
-        <!-- MONITORING -->
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-core_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-akka_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
         <!-- graal -->
         <dependency>
             <groupId>com.github.vmencik</groupId>

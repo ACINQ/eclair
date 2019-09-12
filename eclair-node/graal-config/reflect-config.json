@@ -708,37 +708,6 @@
   "methods":[{"name":"<init>","parameterTypes":["long","int"] }]
 },
 {
-  "name":"kamon.jsr166.Striped64",
-  "fields":[
-    {"name":"base", "allowUnsafeAccess":true}, 
-    {"name":"cellsBusy", "allowUnsafeAccess":true}
-  ]
-},
-{
-  "name":"kamon.lib.org.jctools.queues.MpscArrayQueueConsumerIndexField",
-  "fields":[{"name":"consumerIndex", "allowUnsafeAccess":true}]
-},
-{
-  "name":"kamon.lib.org.jctools.queues.MpscArrayQueueProducerIndexField",
-  "fields":[{"name":"producerIndex", "allowUnsafeAccess":true}]
-},
-{
-  "name":"kamon.lib.org.jctools.queues.MpscArrayQueueProducerLimitField",
-  "fields":[{"name":"producerLimit", "allowUnsafeAccess":true}]
-},
-{
-  "name":"kamon.trace.Hooks$PreStart$FromContext",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"kamon.trace.SpanPropagation$B3",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
-  "name":"kamon.trace.SpanPropagation$Colfer",
-  "methods":[{"name":"<init>","parameterTypes":[] }]
-},
-{
   "name":"org.sqlite.JDBC"
 },
 {
