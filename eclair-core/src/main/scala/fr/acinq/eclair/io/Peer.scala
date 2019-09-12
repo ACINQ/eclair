@@ -478,6 +478,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         stopPeer()
       } else {
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        hostedChannelGateway ! CMD_HOSTED_INPUT_DISCONNECTED(hostedChannelId)
         goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
       }
 
@@ -496,6 +497,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       context unwatch d.transport
       d.transport ! PoisonPill
       d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+      hostedChannelGateway ! CMD_HOSTED_INPUT_DISCONNECTED(hostedChannelId)
       self ! h
       goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
 

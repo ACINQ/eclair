@@ -12,6 +12,8 @@ import scodec.bits.ByteVector
 
 sealed trait HostedCommand
 case object CMD_KILL_IDLE_HOSTED_CHANNELS extends HostedCommand
+case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HostedCommand
+case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey) extends HostedCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, remoteNodeId: PublicKey, message: LightningMessage) extends HostedCommand
 case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(hc: HOSTED_DATA_COMMITMENTS) extends HostedCommand
 
