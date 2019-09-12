@@ -54,6 +54,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val switchboard = TestProbe()
     val paymentInitiator = TestProbe()
     val server = TestProbe()
+    val hostedChannelGateway = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,
@@ -65,7 +66,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
       switchboard.ref,
       paymentInitiator.ref,
       server.ref,
-      new TestWallet()
+      new TestWallet(),
+      hostedChannelGateway.ref
     )
 
     withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, kit)))

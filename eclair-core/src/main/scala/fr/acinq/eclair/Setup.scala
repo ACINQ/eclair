@@ -39,7 +39,7 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
-import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.{HostedChannelGateway, Register}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
@@ -282,6 +282,7 @@ class Setup(datadir: File,
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      hostedChannelGateway = system.actorOf(SimpleSupervisor.props(HostedChannelGateway.props(nodeParams, router, relayer), "hosted-channel-gateway", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       kit = Kit(
@@ -295,7 +296,8 @@ class Setup(datadir: File,
         switchboard = switchboard,
         paymentInitiator = paymentInitiator,
         server = server,
-        wallet = wallet)
+        wallet = wallet,
+        hostedChannelGateway)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -359,7 +361,8 @@ case class Kit(nodeParams: NodeParams,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
                server: ActorRef,
-               wallet: EclairWallet)
+               wallet: EclairWallet,
+               hostedChannelGateway: ActorRef)
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 

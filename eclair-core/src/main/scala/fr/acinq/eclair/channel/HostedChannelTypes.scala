@@ -1,16 +1,19 @@
 package fr.acinq.eclair.channel
 
 import com.softwaremill.quicklens._
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
-import fr.acinq.eclair.wire.{ChannelUpdate, InFlightHtlc, LastCrossSignedState, UpdateAddHtlc, UpdateMessage}
-import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.wire.{ChannelUpdate, Error, InFlightHtlc, LastCrossSignedState, LightningMessage, UpdateAddHtlc, UpdateMessage}
 import scodec.bits.ByteVector
 
-sealed trait HostedData
+sealed trait HostedCommand
+case object CMD_KILL_IDLE_HOSTED_CHANNELS extends HostedCommand
+case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, remoteNodeId: PublicKey, message: LightningMessage) extends HostedCommand
 
+sealed trait HostedData
 case class HOSTED_DATA_WAIT_REMOTE_REPLY(refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
