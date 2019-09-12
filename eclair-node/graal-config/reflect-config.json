@@ -502,6 +502,12 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.payment.UsableBalances",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
   "name":"fr.acinq.eclair.channel.LocalChanges",
   "allDeclaredFields":true,
   "allPublicMethods":true,

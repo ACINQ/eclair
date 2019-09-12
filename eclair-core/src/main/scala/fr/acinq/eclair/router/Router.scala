@@ -1083,7 +1083,7 @@ object Router {
   def getChecksum(u: ChannelUpdate): Long = {
     import u._
     val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(chainHash :: shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
-    val checksum = com.google.common.hash.Hashing.crc32().newHasher()
+    val checksum = com.google.common.hash.Hashing.crc32c().newHasher()
     checksum.putBytes(data.toArray)
     checksum.hash().asLong()
   }
