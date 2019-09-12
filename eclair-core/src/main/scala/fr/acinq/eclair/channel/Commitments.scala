@@ -25,11 +25,18 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, _}
+import fr.acinq.eclair._
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
+
+  def alreadyProposed(id: Long): Boolean = proposed.exists {
+    case u: UpdateFulfillHtlc if id == u.id => true
+    case u: UpdateFailHtlc if id == u.id => true
+    case u: UpdateFailMalformedHtlc if id == u.id => true
+    case _ => false
+  }
 }
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
@@ -43,6 +50,18 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 trait ChannelCommitments {
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc]
+
+  def failHtlc(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): UpdateFailHtlc = {
+    Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
+      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
+        val reason = cmd.reason match {
+          case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
+          case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
+        }
+        UpdateFailHtlc(channelId, cmd.id, reason)
+      case Left(_) => throw CannotExtractSharedSecret(channelId, add)
+    }
+  }
 
   val availableBalanceForReceive: MilliSatoshi
 
@@ -221,12 +240,7 @@ object Commitments {
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if commitments.localChanges.alreadyProposed(htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
@@ -246,27 +260,13 @@ object Commitments {
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if commitments.localChanges.alreadyProposed(htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
-        // we need the shared secret to build the error packet
-        Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
-          case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
-            val reason = cmd.reason match {
-              case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
-              case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
-            }
-            val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
-            val commitments1 = addLocalProposal(commitments, fail)
-            (commitments1, fail)
-          case Left(_) => throw CannotExtractSharedSecret(commitments.channelId, htlc)
-        }
+        val fail = commitments.failHtlc(nodeSecret, cmd, htlc)
+        val commitments1 = addLocalProposal(commitments, fail)
+        (commitments1, fail)
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
 
@@ -276,12 +276,7 @@ object Commitments {
       throw InvalidFailureCode(commitments.channelId)
     }
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if commitments.localChanges.alreadyProposed(htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(_) =>

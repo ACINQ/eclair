@@ -1,12 +1,13 @@
 package fr.acinq.eclair.channel
 
+import fr.acinq.eclair._
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
-import fr.acinq.eclair.wire.{ChannelUpdate, Error, InFlightHtlc, LastCrossSignedState, LightningMessage, UpdateAddHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.{ChannelUpdate, Error, FailureMessageCodecs, InFlightHtlc, LastCrossSignedState, LightningMessage, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
 import scodec.bits.ByteVector
 
 sealed trait HostedCommand
@@ -75,5 +76,135 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
       incoming,
       outgoing,
       ByteVector64.Zeroes)
+  }
+
+  def sendAdd(cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (HOSTED_DATA_COMMITMENTS, UpdateAddHtlc)] = {
+    val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
+    if (cmd.cltvExpiry < minExpiry) {
+      return Left(ExpiryTooSmall(channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+    }
+
+    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
+    if (cmd.cltvExpiry >= maxExpiry) {
+      return Left(ExpiryTooBig(channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+    }
+
+    if (cmd.amount < lastCrossSignedState.initHostedChannel.htlcMinimumMsat) {
+      return Left(HtlcValueTooSmall(channelId, minimum = lastCrossSignedState.initHostedChannel.htlcMinimumMsat, actual = cmd.amount))
+    }
+
+    val add = UpdateAddHtlc(channelId, allLocalUpdates + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+    val commitments1 = addLocalProposal(add).copy(originChannels = originChannels + (add.id -> origin))
+    val outgoingHtlcs = commitments1.nextLocalReduced.htlcs.filter(_.direction == OUT)
+
+    if (commitments1.nextLocalReduced.toLocal < 0.msat) {
+      return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commitments1.nextLocalReduced.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
+    }
+
+    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
+    if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
+      // TODO: this should be a specific UPDATE error
+      return Left(HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+    }
+
+    if (outgoingHtlcs.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) {
+      return Left(TooManyAcceptedHtlcs(channelId, maximum = lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs))
+    }
+
+    Right(commitments1, add)
+  }
+
+  def receiveAdd(add: UpdateAddHtlc): HOSTED_DATA_COMMITMENTS = {
+    if (add.id != allRemoteUpdates + 1) {
+      throw UnexpectedHtlcId(channelId, expected = allRemoteUpdates + 1, actual = add.id)
+    }
+
+    if (add.amountMsat < lastCrossSignedState.initHostedChannel.htlcMinimumMsat) {
+      throw HtlcValueTooSmall(channelId, minimum = lastCrossSignedState.initHostedChannel.htlcMinimumMsat, actual = add.amountMsat)
+    }
+
+    val commitments1 = addRemoteProposal(add)
+    val incomingHtlcs = commitments1.nextLocalReduced.htlcs.filter(_.direction == IN)
+
+    if (commitments1.nextLocalReduced.toRemote < 0.msat) {
+      throw InsufficientFunds(channelId, amount = add.amountMsat, missing = -commitments1.nextLocalReduced.toRemote.truncateToSatoshi, reserve = 0 sat, fees = 0 sat)
+    }
+
+    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
+    if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
+      throw HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
+    }
+
+    if (incomingHtlcs.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) {
+      throw TooManyAcceptedHtlcs(channelId, maximum = lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs)
+    }
+
+    commitments1
+  }
+
+  def sendFulfill(cmd: CMD_FULFILL_HTLC): (HOSTED_DATA_COMMITMENTS, UpdateFulfillHtlc) =
+    localSpec.findHtlcById(cmd.id, IN) match {
+      case Some(htlc) if localChanges.alreadyProposed(htlc.add.id) =>
+        // we have already sent a fail/fulfill for this htlc
+        throw UnknownHtlcId(channelId, cmd.id)
+      case Some(htlc) if htlc.add.paymentHash == Crypto.sha256(cmd.r) =>
+        val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
+        (addLocalProposal(fulfill), fulfill)
+      case Some(_) => throw InvalidHtlcPreimage(channelId, cmd.id)
+      case None => throw UnknownHtlcId(channelId, cmd.id)
+    }
+
+  def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
+    localSpec.findHtlcById(fulfill.id, OUT) match {
+      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), originChannels(fulfill.id), htlc.add))
+      case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
+      case None => throw UnknownHtlcId(channelId, fulfill.id)
+    }
+
+  def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (HOSTED_DATA_COMMITMENTS, UpdateFailHtlc) =
+    localSpec.findHtlcById(cmd.id, IN) match {
+      case Some(htlc) if localChanges.alreadyProposed(htlc.add.id) =>
+        // we have already sent a fail/fulfill for this htlc
+        throw UnknownHtlcId(channelId, cmd.id)
+      case Some(htlc) =>
+        val fail = failHtlc(nodeSecret, cmd, htlc.add)
+        val commitments1 = addLocalProposal(fail)
+        (commitments1, fail)
+      case None => throw UnknownHtlcId(channelId, cmd.id)
+    }
+
+  def sendFailMalformed(cmd: CMD_FAIL_MALFORMED_HTLC): (HOSTED_DATA_COMMITMENTS, UpdateFailMalformedHtlc) = {
+    // BADONION bit must be set in failure_code
+    if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
+      throw InvalidFailureCode(channelId)
+    }
+    localSpec.findHtlcById(cmd.id, IN) match {
+      case Some(htlc) if localChanges.alreadyProposed(htlc.add.id) =>
+        // we have already sent a fail/fulfill for this htlc
+        throw UnknownHtlcId(channelId, cmd.id)
+      case Some(_) =>
+        val fail = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+        val commitments1 = addLocalProposal(fail)
+        (commitments1, fail)
+      case None => throw UnknownHtlcId(channelId, cmd.id)
+    }
+  }
+
+  def receiveFail(fail: UpdateFailHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
+    localSpec.findHtlcById(fail.id, OUT) match {
+      case Some(htlc) => Right((addRemoteProposal(fail), originChannels(fail.id), htlc.add))
+      case None => throw UnknownHtlcId(channelId, fail.id)
+    }
+
+  def receiveFailMalformed(fail: UpdateFailMalformedHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] = {
+    // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
+    if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
+      throw InvalidFailureCode(channelId)
+    }
+
+    localSpec.findHtlcById(fail.id, OUT) match {
+      case Some(htlc) => Right((addRemoteProposal(fail), originChannels(fail.id), htlc.add))
+      case None => throw UnknownHtlcId(channelId, fail.id)
+    }
   }
 }
