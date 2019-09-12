@@ -26,13 +26,14 @@ import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.{CoinUtils, Globals, MilliSatoshi}
+import fr.acinq.eclair.{CoinUtils, MilliSatoshi}
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -56,7 +57,16 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends La
   @FXML def initialize() = {
     fundingUnit.setItems(Constants.FX_UNITS_ARRAY_NO_MSAT)
     fundingUnit.setValue(FxApp.getUnit.label)
-    feerateField.setText((Globals.feeratesPerKB.get().blocks_6 / 1000).toString)
+
+    handlers.getFundingFeeRatePerKb().onComplete {
+      case Success(feeSatKb) =>
+        feerateField.setText((feeSatKb / 1000).toString)
+        feerateError.setText("")
+      case Failure(t) =>
+        logger.error(s"error when estimating funding fee from GUI: ${t.getLocalizedMessage}")
+        feerateField.setText("")
+        feerateError.setText("Could not estimate fees.")
+    } (ExecutionContext.Implicits.global)
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
       override def changed(observable: ObservableValue[_ <: Boolean], oldValue: Boolean, newValue: Boolean) = {

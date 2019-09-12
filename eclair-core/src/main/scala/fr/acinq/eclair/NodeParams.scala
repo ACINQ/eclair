@@ -20,6 +20,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -41,6 +42,7 @@ import scala.concurrent.duration.FiniteDuration
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
+                      private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -80,6 +82,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxPaymentAttempts: Int) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+  def currentBlockHeight: Long = blockCount.get
 }
 
 object NodeParams {
@@ -101,7 +104,7 @@ object NodeParams {
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(overrideDefaults)
-      .withFallback(ConfigFactory.load()).getConfig("eclair")
+      .withFallback(ConfigFactory.load())
 
   def getSeed(datadir: File): ByteVector = {
     val seedPath = new File(datadir, "seed.dat")
@@ -124,7 +127,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -202,6 +205,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
+      blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -244,9 +248,12 @@ object NodeParams {
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
+        networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval").getSeconds, TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
+        channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
+        channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
         searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),

@@ -29,7 +29,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.payment.PaymentLifecycle._
+import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
@@ -186,7 +187,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def sendToRoute(route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID] = {
-    (appKit.paymentInitiator ? SendPaymentToRoute(amount, paymentHash, route, finalCltvExpiryDelta)).mapTo[UUID]
+    (appKit.paymentInitiator ? SendPaymentRequest(amount, paymentHash, route.last, 1, finalCltvExpiryDelta, route)).mapTo[UUID]
   }
 
   override def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
@@ -202,12 +203,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
       case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
       case Some(invoice) =>
         val sendPayment = invoice.minFinalCltvExpiryDelta match {
-          case Some(minFinalCltvExpiryDelta) => SendPayment(amount, paymentHash, recipientNodeId, invoice.routingInfo, minFinalCltvExpiryDelta, maxAttempts = maxAttempts, routeParams = Some(routeParams))
-          case None => SendPayment(amount, paymentHash, recipientNodeId, invoice.routingInfo, maxAttempts = maxAttempts, routeParams = Some(routeParams))
+          case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
+          case None => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
         }
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
       case None =>
-        val sendPayment = SendPayment(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, routeParams = Some(routeParams))
+        val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, routeParams = Some(routeParams))
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
     }
   }
@@ -271,7 +272,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,
-      blockHeight = Globals.blockCount.intValue(),
+      blockHeight = appKit.nodeParams.currentBlockHeight.toInt,
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
 

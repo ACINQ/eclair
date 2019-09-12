@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.sql.{Connection, DriverManager}
+import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
@@ -27,7 +28,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 
@@ -36,6 +37,7 @@ import scala.concurrent.duration._
  */
 object TestConstants {
 
+  val globalFeatures = hex"0200" // variable_length_onion
   val fundingSatoshis = 1000000L sat
   val pushMsat = 200000000L msat
   val feeratePerKw = 10000L
@@ -64,10 +66,11 @@ object TestConstants {
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
       keyManager = keyManager,
+      blockCount = new AtomicLong(400000),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
-      globalFeatures = ByteVector.empty,
+      globalFeatures = globalFeatures,
       localFeatures = ByteVector(0),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
@@ -107,8 +110,11 @@ object TestConstants {
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
+        networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
         encodingType = EncodingType.COMPRESSED_ZLIB,
+        channelRangeChunkSize = 20,
+        channelQueryChunkSize = 5,
         searchMaxFeeBase = 21 sat,
         searchMaxFeePct = 0.03,
         searchMaxCltv = CltvExpiryDelta(2016),
@@ -137,10 +143,11 @@ object TestConstants {
 
     def nodeParams = NodeParams(
       keyManager = keyManager,
+      blockCount = new AtomicLong(400000),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      globalFeatures = ByteVector.empty,
+      globalFeatures = globalFeatures,
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
@@ -180,8 +187,11 @@ object TestConstants {
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
+        networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
         encodingType = EncodingType.UNCOMPRESSED,
+        channelRangeChunkSize = 20,
+        channelQueryChunkSize = 5,
         searchMaxFeeBase = 21 sat,
         searchMaxFeePct = 0.03,
         searchMaxCltv = CltvExpiryDelta(2016),

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
@@ -66,7 +67,7 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteL
     val addresses = random.shuffle(serverAddresses.toSeq).take(2).toSet + ElectrumClientPool.ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
     stream.close()
     assert(addresses.nonEmpty)
-    pool = system.actorOf(Props(new ElectrumClientPool(addresses)), "electrum-client")
+    pool = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), addresses)), "electrum-client")
   }
 
   test("connect to an electrumx mainnet server") {

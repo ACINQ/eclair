@@ -27,6 +27,9 @@ import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.api.Service
 
 import scala.concurrent.{Await, ExecutionContext}
+import kamon.Kamon
+
+import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
 /**
@@ -42,6 +45,11 @@ object Boot extends App with LazyLogging {
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
+
+    if (setup.config.getBoolean("enable-kamon")) {
+      Kamon.init(setup.appConfig)
+    }
+
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
