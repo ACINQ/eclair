@@ -425,6 +425,17 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.channel.LocalChanges",
   "allDeclaredFields":true,
   "allPublicMethods":true,
