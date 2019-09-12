@@ -458,6 +458,17 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.channel.LocalChanges",
   "allDeclaredFields":true,
   "allPublicMethods":true,
