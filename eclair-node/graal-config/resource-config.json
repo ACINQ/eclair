@@ -39,6 +39,8 @@
     {"pattern":"fr/acinq/eclair/channel/DATA_WAIT_FOR_FUNDING_INTERNAL.class"},
     {"pattern":"fr/acinq/eclair/channel/DATA_WAIT_FOR_FUNDING_CREATED$.class"},
     {"pattern":"fr/acinq/eclair/channel/DATA_WAIT_FOR_FUNDING_CREATED.class"},
+    {"pattern":"fr/acinq/eclair/channel/DATA_WAIT_FOR_FUNDING_SIGNED$.class"},
+    {"pattern":"fr/acinq/eclair/channel/DATA_WAIT_FOR_FUNDING_SIGNED.class"},
     {"pattern":"fr/acinq/eclair/channel/LocalChanges$.class"},
     {"pattern":"fr/acinq/eclair/channel/LocalChanges.class"}, 
     {"pattern":"fr/acinq/eclair/channel/LocalCommit$.class"}, 
