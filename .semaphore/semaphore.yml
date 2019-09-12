@@ -8,6 +8,9 @@ agent:
 blocks:
   - name: Build & Test
     task:
+      secrets:
+        # This needs to have the same name as the secret entry configured on semaphore dashboard.
+        - name: Codecov upload token
       env_vars:
         # Set maven to use a local directory. This is required for
         # the cache util. It must be set in all blocks.
@@ -20,4 +23,5 @@ blocks:
             - checkout
             - cache restore maven
             - mvn scoverage:report
+            - bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN
             - cache store maven .m2
