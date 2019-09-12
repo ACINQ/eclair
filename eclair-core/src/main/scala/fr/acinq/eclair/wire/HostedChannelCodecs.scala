@@ -20,6 +20,7 @@ object HostedChannelCodecs {
       ("localSpec" | commitmentSpecCodec) ::
       ("originChannels" | originsMapCodec) ::
       ("channelId" | bytes32) ::
+      ("isHost" | bool) ::
       ("updateOpt" | optional(bool, variableSizeBytes(uint16, channelUpdateCodec))) ::
       ("localError" | optional(bool, errorCodec)) ::
       ("remoteError" | optional(bool, errorCodec))

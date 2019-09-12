@@ -64,6 +64,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     localSpec = cs,
     originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     channelId = ByteVector32.Zeroes,
+    isHost = false,
     updateOpt = Some(channelUpdate),
     localError = None,
     remoteError = Some(error))

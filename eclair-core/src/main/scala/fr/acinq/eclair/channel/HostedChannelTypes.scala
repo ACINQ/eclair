@@ -32,6 +32,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    localSpec: CommitmentSpec,
                                    originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
+                                   isHost: Boolean,
                                    updateOpt: Option[ChannelUpdate],
                                    localError: Option[Error],
                                    remoteError: Option[Error]) extends ChannelCommitments with HostedData { me =>
