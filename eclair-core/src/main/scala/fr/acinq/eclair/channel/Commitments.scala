@@ -48,7 +48,6 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 // @formatter:on
 
 trait ChannelCommitments {
-
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc]
 
   def failHtlc(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): UpdateFailHtlc = {
@@ -70,6 +69,8 @@ trait ChannelCommitments {
   val originChannels: Map[Long, Origin] // for outgoing htlcs relayed through us, the id of the previous channel
 
   val channelId: ByteVector32
+
+  val announceChannel: Boolean
 }
 
 /**

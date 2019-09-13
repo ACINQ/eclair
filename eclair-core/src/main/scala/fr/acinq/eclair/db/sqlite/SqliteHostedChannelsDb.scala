@@ -3,9 +3,7 @@ package fr.acinq.eclair.db.sqlite
 import fr.acinq.eclair.db.HostedChannelsDb
 import grizzled.slf4j.Logging
 import java.sql.Connection
-
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec
 import fr.acinq.eclair.channel.HOSTED_DATA_COMMITMENTS
 import scodec.bits.BitVector
@@ -29,7 +27,7 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
       update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?)")) { statement =>
-          statement.setLong(1, state.shortChannelId.toLong)
+          statement.setLong(1, state.channelUpdate.shortChannelId.toLong)
           statement.setBytes(2, state.channelId.toArray)
           statement.setBytes(3, data)
           statement.executeUpdate()
@@ -41,18 +39,6 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
   override def getChannelById(channelId: ByteVector32): Option[HOSTED_DATA_COMMITMENTS] = {
     using(sqlite.prepareStatement("SELECT data FROM local_hosted_channels WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
-      val rs = statement.executeQuery()
-      if (rs.next()) {
-        Some(HOSTED_DATA_COMMITMENTS_Codec.decode(BitVector(rs.getBytes("data"))).require.value)
-      } else {
-        None
-      }
-    }
-  }
-
-  def getChannelByShortId(shortChannelId: ShortChannelId): Option[HOSTED_DATA_COMMITMENTS] = {
-    using(sqlite.prepareStatement("SELECT data FROM local_hosted_channels WHERE short_channel_id=?")) { statement =>
-      statement.setLong(1, shortChannelId.toLong)
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(HOSTED_DATA_COMMITMENTS_Codec.decode(BitVector(rs.getBytes("data"))).require.value)

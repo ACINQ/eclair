@@ -542,12 +542,12 @@ class RelayerSpec extends TestkitBaseClass {
     assert(usableBalances1.head.canSend === 0.msat && usableBalances1.head.canReceive === 300000.msat && usableBalances1.head.shortChannelId == channelUpdate_ab.shortChannelId)
     assert(usableBalances1.last.canReceive === 0.msat && usableBalances1.last.canSend === 400000.msat && usableBalances1.last.shortChannelId == channelUpdate_bc.shortChannelId)
 
-    relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, 0 msat, makeCommitments(channelId_bc, 200000 msat, 500000 msat))
+    relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, randomKey.publicKey, ChannelCodecsSpec.commitments.commitInput.txOut.amount, ChannelCodecsSpec.commitments.remoteParams.channelReserve, 0 msat, makeCommitments(channelId_bc, 200000 msat, 500000 msat))
     sender.send(relayer, GetUsableBalances)
     val usableBalances2 = sender.expectMsgType[Iterable[UsableBalances]]
     assert(usableBalances2.last.canReceive === 500000.msat && usableBalances2.last.canSend === 200000.msat)
 
-    relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, 0 msat, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
+    relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, randomKey.publicKey, ChannelCodecsSpec.commitments.commitInput.txOut.amount, ChannelCodecsSpec.commitments.remoteParams.channelReserve, 0 msat, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
     sender.send(relayer, GetUsableBalances)
     val usableBalances3 = sender.expectMsgType[Iterable[UsableBalances]]

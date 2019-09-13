@@ -88,9 +88,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
       context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
-    case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>
-      val channelUpdates1 = channelUpdates.get(shortChannelId) match {
-        case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
+    case event: AvailableBalanceChanged =>
+      val channelUpdates1 = channelUpdates.get(event.shortChannelId) match {
+        case Some(c: OutgoingChannel) => channelUpdates + (event.shortChannelId -> c.copy(commitments = event.commitments))
         case None => channelUpdates // we only consider the balance if we have the channel_update
       }
       context become main(channelUpdates1, node2channels)
@@ -211,7 +211,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 object Relayer extends Logging {
   def props(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, register, paymentHandler)
 
-  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: Commitments)
+  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: ChannelCommitments)
 
   // @formatter:off
   sealed trait NextPayload

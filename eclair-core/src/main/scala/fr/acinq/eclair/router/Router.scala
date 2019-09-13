@@ -209,7 +209,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   }
 
   when(NORMAL) {
-    case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u, _), d: Data) =>
+    // We do not care about hosted channels here so only process normal Commitments
+    case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u, _: Commitments), d: Data) =>
       d.channels.get(shortChannelId) match {
         case Some(_) =>
           // channel has already been announced and router knows about it, we can process the channel_update

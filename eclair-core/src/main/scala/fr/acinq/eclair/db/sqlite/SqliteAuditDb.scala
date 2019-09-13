@@ -85,10 +85,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   override def add(e: AvailableBalanceChanged): Unit =
     using(sqlite.prepareStatement("INSERT INTO balance_updated VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.commitments.remoteParams.nodeId.value.toArray)
+      statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setLong(3, e.localBalance.toLong)
-      statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
-      statement.setLong(5, e.commitments.remoteParams.channelReserve.toLong) // remote decides what our reserve should be
+      statement.setLong(4, e.channelCapacity.toLong)
+      statement.setLong(5, e.channelReserve.toLong) // remote decides what our reserve should be
       statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }

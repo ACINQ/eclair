@@ -135,17 +135,17 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
           // we delay the processing of the event in order to smooth variations
           log.info(s"will log balance event in $delay for channelId=${e.channelId}")
           context.system.scheduler.scheduleOnce(delay, self, ProcessEvent(e.channelId))
-          context.become(run(pending + (e.channelId -> (BalanceUpdate(e, e)))))
+          context.become(run(pending + (e.channelId -> BalanceUpdate(e, e))))
         case Some(BalanceUpdate(first, _)) =>
           // we already are about to log a balance event, let's update the data we have
           log.info(s"updating balance data for channelId=${e.channelId}")
-          context.become(run(pending + (e.channelId -> (BalanceUpdate(first, e)))))
+          context.become(run(pending + (e.channelId -> BalanceUpdate(first, e))))
       }
 
     case ProcessEvent(channelId) =>
       pending.get(channelId) match {
         case Some(BalanceUpdate(first, last)) =>
-          if (first.commitments.remoteCommit.spec.toRemote == last.localBalance) {
+          if (first.localBalance == last.localBalance) {
             // we don't log anything if the balance didn't change (e.g. it was a probe payment)
             log.info(s"ignoring balance event for channelId=$channelId (changed was discarded)")
           } else {
@@ -156,7 +156,6 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
           }
         case None => () // wtf?
       }
-
   }
 
 }

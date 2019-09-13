@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.eclair._
+import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
@@ -20,18 +21,22 @@ case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHos
 case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
 case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
-case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(hc: HOSTED_DATA_COMMITMENTS) extends HostedCommand
+case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, localLCSS: LastCrossSignedState) extends HasHostedChanIdCommand
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
-case class HOSTED_DATA_WAIT_REMOTE_REPLY(refundScriptPubKey: ByteVector) extends HostedData {
+case object HostedWaitingForShortIdResult extends HostedData
+case class HOSTED_DATA_CLIENT_WAIT_HOST_REPLY(refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
 
-case class HOSTED_DATA_WAIT_REMOTE_STATE_UPDATE(hostedDataCommits: HOSTED_DATA_COMMITMENTS) extends HostedData
+case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(hostedDataCommits: HOSTED_DATA_COMMITMENTS) extends HostedData
+
+case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel,
+                                                     refundScriptPubKey: ByteVector) extends HostedData
+
 
 case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
-                                   shortChannelId: ShortChannelId,
                                    lastCrossSignedState: LastCrossSignedState,
                                    allLocalUpdates: Long,
                                    allRemoteUpdates: Long,
@@ -41,7 +46,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
                                    isHost: Boolean,
-                                   updateOpt: Option[ChannelUpdate],
+                                   channelUpdate: ChannelUpdate,
                                    localError: Option[Error],
                                    remoteError: Option[Error]) extends ChannelCommitments with HostedData { me =>
 
@@ -50,6 +55,8 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
   lazy val availableBalanceForSend: MilliSatoshi = nextLocalReduced.toLocal
 
   lazy val availableBalanceForReceive: MilliSatoshi = nextLocalReduced.toRemote
+
+  override val announceChannel: Boolean = false
 
   def getError: Option[Error] = localError.orElse(remoteError)
 

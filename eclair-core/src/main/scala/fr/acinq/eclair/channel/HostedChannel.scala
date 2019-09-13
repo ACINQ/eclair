@@ -2,10 +2,12 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.{InvokeHostedChannel, LightningMessage, StateUpdate}
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, NodeParams}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.wire.{Error, InitHostedChannel, InvokeHostedChannel, LastCrossSignedState, LightningMessage, StateUpdate}
+import fr.acinq.eclair._
 
 import scala.concurrent.ExecutionContext
+import scala.util.Try
 
 object HostedChannel {
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef) = Props(new HostedChannel(nodeParams, remoteNodeId, router, relayer))
@@ -18,6 +20,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   startWith(OFFLINE, HostedNothing)
 
   when(OFFLINE) {
+    case Event(data: HOSTED_DATA_COMMITMENTS, HostedNothing | HostedWaitingForShortIdResult) =>
+      stay using data
+
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
       goto(WAIT_FOR_INIT_INTERNAL)
@@ -28,39 +33,67 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         case Some(error) =>
           goto(CLOSED) sending error
         case None =>
+          if (!data.isHost) {
+            forwarder ! InvokeHostedChannel(nodeParams.chainHash, data.lastCrossSignedState.refundScriptPubKey)
+          }
           goto(SYNCING)
       }
-
-    case Event(cmd: CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID, HostedNothing) =>
-      stay
-
-    case Event(CMD_KILL_IDLE_HOSTED_CHANNELS, _) =>
-      stop(FSM.Normal)
   }
 
   when(WAIT_FOR_INIT_INTERNAL) {
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, HostedNothing) =>
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) =>
       goto(OFFLINE)
 
-    case Event(msg: InvokeHostedChannel, HostedNothing) =>
-      stay
+    case Event(CMD_HOSTED_MESSAGE(channelId, msg: InvokeHostedChannel), HostedNothing) =>
+      if (nodeParams.chainHash != msg.chainHash) {
+        val message = InvalidChainHash(channelId, local = nodeParams.chainHash, remote = msg.chainHash).getMessage
+        stay sending Error(channelId, message)
+      } else if (!Helpers.Closing.isValidFinalScriptPubkey(msg.refundScriptPubKey)) {
+        val message = InvalidFinalScript(channelId).getMessage
+        stay sending Error(channelId, message)
+      } else {
+        val init = InitHostedChannel(maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+          htlcMinimumMsat = nodeParams.htlcMinimum, maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+          channelCapacityMsat = 100000000000L msat, liabilityDeadlineBlockdays = 1000,
+          minimalOnchainRefundAmountSatoshis = 1000000 sat,
+          initialClientBalanceMsat = 50000000L msat)
 
-    case Event(msg: StateUpdate, HostedNothing) =>
-      stay
+        stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, msg.refundScriptPubKey) sending init
+      }
 
-    case Event(cmd: CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID, HostedNothing) =>
-      stay
+    case Event(CMD_HOSTED_MESSAGE(channelId, remoteSU: StateUpdate), data: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) =>
+      val localLCSS = LastCrossSignedState(data.refundScriptPubKey, initHostedChannel = data.init, blockDay = remoteSU.blockDay,
+        localBalanceMsat = data.init.channelCapacityMsat - data.init.initialClientBalanceMsat, remoteBalanceMsat = data.init.initialClientBalanceMsat,
+        localUpdates = 0L, remoteUpdates = 0L, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSignature = remoteSU.localSigOfRemoteLCSS)
 
-    case Event(cmd: CMD_INVOKE_HOSTED_CHANNEL, HostedNothing) =>
-      stay
+      if (math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) > 1) {
+        val message = InvalidBlockDay(channelId, nodeParams.currentBlockDay, remoteSU.blockDay).getMessage
+        stay using HostedNothing sending Error(channelId, message)
+      } else if (!localLCSS.verifyRemoteSignature(remoteNodeId)) {
+        val message = InvalidRemoteStateSignature(channelId, localLCSS.hostedSigHash, remoteSU.localSigOfRemoteLCSS).getMessage
+        stay using HostedNothing sending Error(channelId, message)
+      } else {
+        context.parent ! CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId, remoteNodeId, localLCSS)
+        stay using HostedWaitingForShortIdResult
+      }
 
-    case Event(data: HOSTED_DATA_COMMITMENTS, HostedNothing) =>
-      goto(NORMAL) using data
+    case Event(data: HOSTED_DATA_COMMITMENTS, HostedWaitingForShortIdResult) =>
+      val localSU = data.lastCrossSignedState.reverse.makeStateUpdate(nodeParams.privateKey)
+      goto(NORMAL) using data replying localSU
   }
 
   when(SYNCING) {
-    case Event(cmd: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) =>
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) =>
       goto(OFFLINE)
+
+    case Event(msg: InvokeHostedChannel, data: HOSTED_DATA_COMMITMENTS) =>
+      stay
+
+    case Event(remoteSU: StateUpdate, HostedNothing) =>
+      stay
+
+    case Event(remoteLCSS: LastCrossSignedState, HostedNothing) =>
+      stay
   }
 
   when(NORMAL) {

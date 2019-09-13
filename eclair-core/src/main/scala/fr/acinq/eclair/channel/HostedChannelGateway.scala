@@ -4,9 +4,14 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import com.google.common.collect.HashBiMap
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-
+import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.wire.{ChannelUpdate, Error, LastCrossSignedState, UpdateMessage}
+import fr.acinq.eclair._
 import scala.concurrent.ExecutionContext
 import fr.acinq.eclair.{NodeParams, ShortChannelId}
+
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 
@@ -20,23 +25,30 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
     case cmd: CMD_HOSTED_INPUT_RECONNECTED =>
       Option(inMemoryHostedChannels.get(cmd.channelId)) getOrElse {
         val freshChannel = context.actorOf(HostedChannel.props(nodeParams, cmd.remoteNodeId, router, relayer))
-        freshChannel ! cmd
         nodeParams.db.hostedChannels.getChannelById(cmd.channelId).foreach(freshChannel ! _)
         inMemoryHostedChannels.put(cmd.channelId, freshChannel)
         context.watch(freshChannel)
+        freshChannel ! cmd
       }
-
-    case cmd: HasHostedChanIdCommand =>
-      Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
 
     case cmd: CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID =>
       val newShortChannelId = ShortChannelId(nodeParams.db.hostedChannels.getNewShortChannelId)
-      val hc1 = cmd.hc.copy(shortChannelId = newShortChannelId)
-      nodeParams.db.hostedChannels.addOrUpdateChannel(hc1)
-      sender ! CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(hc1)
+
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, cmd.remoteNodeId, newShortChannelId, minHostedCltvDelta,
+        cmd.localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, cmd.localLCSS.initHostedChannel.channelCapacityMsat)
+
+      val hc = HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, lastCrossSignedState = cmd.localLCSS, allLocalUpdates = 0L, allRemoteUpdates = 0L,
+        localChanges = LocalChanges(Nil, Nil, Nil), remoteUpdates = List.empty, localSpec = CommitmentSpec(Set.empty, feeratePerKw = 0L, toLocal = cmd.localLCSS.localBalanceMsat, toRemote = cmd.localLCSS.remoteBalanceMsat),
+        originChannels = Map.empty[Long, Origin], channelId = cmd.channelId, isHost = true, channelUpdate = channelUpdate, localError = None, remoteError = None)
+
+      nodeParams.db.hostedChannels.addOrUpdateChannel(hc)
+      sender ! hc
 
     case CMD_KILL_IDLE_HOSTED_CHANNELS =>
       inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_KILL_IDLE_HOSTED_CHANNELS)
+
+    case cmd: HasHostedChanIdCommand =>
+      Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
 
     case Terminated(channelRef) =>
       inMemoryHostedChannels.inverse.remove(channelRef)

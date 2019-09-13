@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import java.nio.charset.StandardCharsets
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi, Transaction}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
@@ -87,6 +87,9 @@ case class InvalidFailureCode                  (override val channelId: ByteVect
 case class PleasePublishYourCommitment         (override val channelId: ByteVector32) extends ChannelException(channelId, "please publish your local commitment")
 case class AddHtlcFailed                       (override val channelId: ByteVector32, paymentHash: ByteVector32, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends ChannelException(channelId, s"cannot add htlc with origin=$origin reason=${t.getMessage}")
 case class CommandUnavailableInThisState       (override val channelId: ByteVector32, command: String, state: State) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
+
+case class InvalidBlockDay                     (override val channelId: ByteVector32, localBlockDay: Long, remoteBlockDay: Long) extends ChannelException(channelId, s"invalid block day local=$localBlockDay remote=$remoteBlockDay")
+case class InvalidRemoteStateSignature         (override val channelId: ByteVector32, localHostedSigHash: ByteVector32, remoteSignature: ByteVector64) extends ChannelException(channelId, s"invalid remote state signature localHostedSigHash=$localHostedSigHash remoteSignature=$remoteSignature")
 // @formatter:on
 
 object ChannelErrorCodes {

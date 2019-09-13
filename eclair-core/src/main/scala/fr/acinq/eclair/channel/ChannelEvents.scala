@@ -38,7 +38,7 @@ case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, tempora
 
 case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId) extends ChannelEvent
 
-case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent
+case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: ChannelCommitments) extends ChannelEvent
 
 case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey) extends ChannelEvent
 
@@ -53,7 +53,7 @@ case class ChannelErrorOccured(channel: ActorRef, channelId: ByteVector32, remot
 case class NetworkFeePaid(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, tx: Transaction, fee: Satoshi, txType: String) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available
-case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, localBalance: MilliSatoshi, commitments: Commitments) extends ChannelEvent
+case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelCapacity: Satoshi, channelReserve: Satoshi, localBalance: MilliSatoshi, commitments: ChannelCommitments) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: Data) extends ChannelEvent
 

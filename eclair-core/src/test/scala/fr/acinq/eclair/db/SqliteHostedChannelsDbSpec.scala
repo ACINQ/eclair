@@ -1,4 +1,4 @@
-package fr.acinq.eclair.db.hosted
+package fr.acinq.eclair.db
 
 import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
@@ -55,7 +55,6 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
   val error = Error(ByteVector32.Zeroes, ByteVector.fromValidHex("0000"))
 
   val hdc = HOSTED_DATA_COMMITMENTS(channelVersion = ChannelVersion.STANDARD,
-    shortChannelId = ShortChannelId(42),
     lastCrossSignedState = lcss1,
     allLocalUpdates = 100L,
     allRemoteUpdates = 101L,
@@ -65,7 +64,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     channelId = ByteVector32.Zeroes,
     isHost = false,
-    updateOpt = Some(channelUpdate),
+    channelUpdate = channelUpdate,
     localError = None,
     remoteError = Some(error))
 
@@ -87,7 +86,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     val db = new SqliteHostedChannelsDb(sqlite)
     assert(db.getChannelById(ByteVector32.Zeroes).isEmpty)
     val newShortChannelId = ShortChannelId(db.getNewShortChannelId)
-    val hdc1 = hdc.copy(shortChannelId = newShortChannelId)
+    val hdc1 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId))
 
     db.addOrUpdateChannel(hdc1) // insert
     db.addOrUpdateChannel(hdc1) // update, same data
@@ -99,23 +98,12 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     assert(db.getNewShortChannelId == newShortChannelId.toLong + 1) // no short id increase after update
   }
 
-  test("get same hosted channel by id and short id") {
-    val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteHostedChannelsDb(sqlite)
-    assert(db.getChannelById(ByteVector32.Zeroes).isEmpty)
-    val newShortChannelId = ShortChannelId(db.getNewShortChannelId)
-    val hdc1 = hdc.copy(shortChannelId = newShortChannelId)
-
-    db.addOrUpdateChannel(hdc1) // insert
-    assert(db.getChannelById(ByteVector32.Zeroes) === db.getChannelByShortId(newShortChannelId))
-  }
-
   test("fail to insert two hosted commits with same short channel id") {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteHostedChannelsDb(sqlite)
     val newShortChannelId = ShortChannelId(db.getNewShortChannelId)
-    val hdc1 = hdc.copy(shortChannelId = newShortChannelId, channelId = ByteVector32.Zeroes)
-    val hdc2 = hdc.copy(shortChannelId = newShortChannelId, channelId = ByteVector32.One)
+    val hdc1 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId), channelId = ByteVector32.Zeroes)
+    val hdc2 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId), channelId = ByteVector32.One)
     db.addOrUpdateChannel(hdc1)
     intercept[org.sqlite.SQLiteException](db.addOrUpdateChannel(hdc2))
   }

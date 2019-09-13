@@ -54,7 +54,6 @@ class HostedChannelCodecsSpec extends FunSuite {
     val error = Error(ByteVector32.Zeroes, ByteVector.fromValidHex("0000"))
 
     val hdc = HOSTED_DATA_COMMITMENTS(channelVersion = ChannelVersion.STANDARD,
-      shortChannelId = ShortChannelId(42),
       lastCrossSignedState = lcss1,
       allLocalUpdates = 100L,
       allRemoteUpdates = 101L,
@@ -64,7 +63,7 @@ class HostedChannelCodecsSpec extends FunSuite {
       originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
       channelId = ByteVector32.Zeroes,
       isHost = true,
-      updateOpt = Some(channelUpdate),
+      channelUpdate = channelUpdate,
       localError = None,
       remoteError = Some(error))
 

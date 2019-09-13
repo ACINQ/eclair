@@ -50,7 +50,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes32, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
     val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
     val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
-    val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000 msat, ChannelCodecsSpec.commitments)
+    val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), randomKey.publicKey, ChannelCodecsSpec.commitments.commitInput.txOut.amount, ChannelCodecsSpec.commitments.remoteParams.channelReserve, 456123000 msat, ChannelCodecsSpec.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, true, false, "mutual")
     val e9 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
     val e10 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
