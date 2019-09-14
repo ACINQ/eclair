@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
@@ -80,13 +81,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def updateOutgoingPayment(id: UUID, newStatus: OutgoingPaymentStatus.Value, preimage: Option[ByteVector32], fee: MilliSatoshi): Unit = {
-    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus != SUCCEEDED && preimage.isEmpty && fee.amount == 0L), "Wrong combination of state/preimage")
+    require((newStatus == SUCCEEDED && preimage.isDefined) || (newStatus != SUCCEEDED && preimage.isEmpty && fee == 0.msat), "Wrong combination of state/preimage")
 
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, preimage, status, fee_msat) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       statement.setLong(1, Platform.currentTime)
       statement.setBytes(2, if (preimage.isEmpty) null else preimage.get.toArray)
       statement.setString(3, newStatus.toString)
-      statement.setLong(4, fee.amount)
+      statement.setLong(4, fee.toLong)
       statement.setString(5, id.toString)
       if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to update an outgoing payment (id=$id) already in final status with=$newStatus")
     }
