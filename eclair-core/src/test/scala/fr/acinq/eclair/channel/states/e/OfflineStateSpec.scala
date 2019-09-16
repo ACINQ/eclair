@@ -88,10 +88,10 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
-      bobCommitments.localParams.channelKeyPath(TestConstants.Bob.keyManager),
+      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
       bobCommitments.localCommit.index)
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
-      aliceCommitments.localParams.channelKeyPath(TestConstants.Alice.keyManager),
+      TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
       aliceCommitments.localCommit.index)
 
 
@@ -176,10 +176,10 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
-      bobCommitments.localParams.channelKeyPath(TestConstants.Bob.keyManager),
+      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
       bobCommitments.localCommit.index)
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
-      aliceCommitments.localParams.channelKeyPath(TestConstants.Alice.keyManager),
+      TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
       aliceCommitments.localCommit.index)
 
     // a didn't receive the sig

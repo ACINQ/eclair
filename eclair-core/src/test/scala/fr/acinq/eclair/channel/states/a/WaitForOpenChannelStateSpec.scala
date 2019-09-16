@@ -22,7 +22,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.Outcome
 
 import scala.concurrent.duration._
@@ -38,7 +38,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelVersion = ChannelVersion.STANDARD | ChannelVersion.USE_PUBKEY_KEYPATH
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)

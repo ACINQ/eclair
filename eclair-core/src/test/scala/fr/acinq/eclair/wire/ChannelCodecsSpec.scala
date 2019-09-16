@@ -84,7 +84,6 @@ class ChannelCodecsSpec extends FunSuite {
 
   test("encode/decode localparams") {
     val o = LocalParams(
-      version = 1,
       nodeId = randomKey.publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
@@ -347,7 +346,6 @@ class ChannelCodecsSpec extends FunSuite {
 object ChannelCodecsSpec {
   val keyManager = new LocalKeyManager(ByteVector32(ByteVector.fill(32)(1)), Block.RegtestGenesisBlock.hash)
   val localParams = LocalParams(
-    version = 1,
     keyManager.nodeId,
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimit = Satoshi(546),

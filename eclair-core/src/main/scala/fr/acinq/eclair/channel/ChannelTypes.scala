@@ -21,7 +21,6 @@ import java.util.UUID
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
@@ -190,8 +189,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
-final case class LocalParams(version: Int,
-                             nodeId: PublicKey,
+final case class LocalParams(nodeId: PublicKey,
                              fundingKeyPath: DeterministicWallet.KeyPath,
                              dustLimit: Satoshi,
                              maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
@@ -202,18 +200,7 @@ final case class LocalParams(version: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              globalFeatures: ByteVector,
-                             localFeatures: ByteVector) {
-
-  def channelKeyPath(keyManager: KeyManager) = version match {
-    case 0 =>
-      // legacy mode:  we reuse the funding key path as our channel key path
-      fundingKeyPath
-    case 1 =>
-      // deterministic mode: use the funding pubkey to compute the channel key path
-      KeyManager.channelKeyPath(keyManager.fundingPublicKey(fundingKeyPath))
-
-  }
-}
+                             localFeatures: ByteVector)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
@@ -237,9 +224,19 @@ object ChannelFlags {
 
 case class ChannelVersion(bits: BitVector) {
   require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
+
+  def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
+  def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
+  def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
+  def isSet(bit: Int) = bits.reverse.get(bit)
 }
+
 object ChannelVersion {
+  import scodec.bits._
   val LENGTH_BITS = 4 * 8
-  val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
+  val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
+  val STANDARD = ZEROES
+  val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+  val USE_PUBKEY_KEYPATH = STANDARD | ChannelVersion(bin"00000000000000000000000000000001")
 }
 // @formatter:on

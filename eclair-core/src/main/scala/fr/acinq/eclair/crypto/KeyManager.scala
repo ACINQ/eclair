@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import scodec.bits.ByteVector
 
@@ -44,6 +45,14 @@ trait KeyManager {
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
+
+  def channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)) {
+    // deterministic mode: use the funding pubkey to compute the channel key path
+    KeyManager.channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
+  } else {
+    // legacy mode:  we reuse the funding key path as our channel key path
+    localParams.fundingKeyPath
+  }
 
   /**
     *

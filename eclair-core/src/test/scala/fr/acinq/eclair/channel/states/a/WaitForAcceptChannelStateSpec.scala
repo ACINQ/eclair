@@ -49,7 +49,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       init(wallet = noopWallet)
     }
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelVersion = ChannelVersion.STANDARD | ChannelVersion.USE_PUBKEY_KEYPATH
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
