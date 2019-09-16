@@ -802,7 +802,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
-
   test("recv RevokeAndAck (one htlc sent)") { f =>
     import f._
     val sender = TestProbe()
@@ -1327,6 +1326,25 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv UpdateFailHtlc (invalid onion error length)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    // Bob receives a failure with a completely invalid onion error (missing mac)
+    sender.send(bob, CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(260)(42))))
+    sender.expectMsg("ok")
+    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+
+    // actual test begins
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData == initialState.copy(
+      commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+    // alice won't forward the fail before it is cross-signed
+    relayerA.expectNoMsg()
   }
 
   test("recv CMD_UPDATE_FEE") { f =>

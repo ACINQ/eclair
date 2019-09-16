@@ -318,12 +318,14 @@ object Sphinx extends Logging {
       * @return an encrypted failure packet that can be sent to the destination node.
       */
     def wrap(packet: ByteVector, sharedSecret: ByteVector32): ByteVector = {
-      require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
+      if (packet.length != PacketLength) {
+        logger.warn(s"invalid error packet length ${packet.length}, must be $PacketLength (malicious or buggy downstream node)")
+      }
       val key = generateKey("ammag", sharedSecret)
       val stream = generateStream(key, PacketLength)
       logger.debug(s"ammag key: $key")
       logger.debug(s"error stream: $stream")
-      packet xor stream
+      packet.take(PacketLength).padLeft(PacketLength) xor stream
     }
 
     /**
