@@ -105,9 +105,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Success(Attempt.Failure(err)) =>
-        log.error(s"cannot deserialize $plaintext: $err")
+        log.error(s"cannot deserialize $plaintext: $err", err)
       case Failure(t) =>
-        log.error(s"cannot deserialize $plaintext: ${t.getMessage}")
+        log.error(s"cannot deserialize $plaintext: ${t.getMessage}", t)
     })
     m
   }
