@@ -16,20 +16,35 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import akka.actor.{Actor, ActorLogging}
-import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQDisconnected, ZMQEvent}
+import akka.actor.{Actor, ActorLogging, Cancellable}
+import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected, ZMQEvent}
+import scala.concurrent.duration._
 
 /**
   * This actor is responsible for monitoring fatal errors and halt the execution.
   */
-class FatalErrorMonitor extends Actor with ActorLogging {
+class FatalErrorMonitor(haltGracePeriod: FiniteDuration) extends Actor with ActorLogging {
+
+  implicit private val ec = context.system.dispatcher
 
   context.system.eventStream.subscribe(self, classOf[ZMQEvent])
 
-  override def receive: Receive = {
+  override def receive: Receive = idleState()
+
+  def idleState(): Receive = {
     case ZMQDisconnected =>
-      log.error("fatal error: bitcoind's ZMQ disconnected, unable to continue")
-      System.exit(1)
+      log.info(s"ZMQ disconnected, will halt eclair in $haltGracePeriod if not reconnected")
+      val scheduled = context.system.scheduler.scheduleOnce(delay = haltGracePeriod){
+        log.error("fatal error: bitcoind's ZMQ disconnected, unable to continue")
+        System.exit(1)
+      }
+      context.become(waitingState(scheduled))
+  }
+
+  def waitingState(pending: Cancellable): Receive = {
+    case ZMQConnected =>
+      pending.cancel()
+      context.become(idleState())
   }
 
 }

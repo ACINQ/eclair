@@ -263,7 +263,7 @@ class Setup(datadir: File,
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
-      _ = system.actorOf(SimpleSupervisor.props(Props(new FatalErrorMonitor), "fatal-error-actor", SupervisorStrategy.Restart))
+      _ = system.actorOf(SimpleSupervisor.props(Props(new FatalErrorMonitor(config.getLong("bitcoind.disconnect-grace-seconds").seconds)), "fatal-error-actor", SupervisorStrategy.Restart))
       kit = Kit(
         nodeParams = nodeParams,
         system = system,
