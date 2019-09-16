@@ -1085,7 +1085,7 @@ object Router {
     val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(chainHash :: shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
     val checksum = com.google.common.hash.Hashing.crc32c().newHasher()
     checksum.putBytes(data.toArray)
-    checksum.hash().asLong()
+    checksum.hash().padToLong()
   }
 
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId])
