@@ -37,7 +37,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
     case p: PaymentInitiator.SendPaymentRequest =>
       val paymentId = UUID.randomUUID()
       // We add one block in order to not have our htlc fail when a new block has just been found.
-      val finalExpiry = (p.finalExpiryDelta + 1).toCltvExpiry
+      val finalExpiry = p.finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1)
       val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, paymentId, router, register))
       // NB: we only generate legacy payment onions for now for maximum compatibility.
       p.predefinedRoute match {

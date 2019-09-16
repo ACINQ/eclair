@@ -174,7 +174,7 @@ class ChannelCodecsSpec extends FunSuite {
 
   test("encode/decode origin") {
     val id = UUID.randomUUID()
-    assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("system").deadLetters))).require).require === Local(id, None))
+    assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
     // TODO: add backward compatibility check
     val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)

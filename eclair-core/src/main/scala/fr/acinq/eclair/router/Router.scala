@@ -412,7 +412,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels.values)
+      val staleChannels = getStaleChannels(d.channels.values, nodeParams.currentBlockHeight)
       val staleChannelIds = staleChannels.map(_.ann.shortChannelId)
       // then we remove nodes that aren't tied to any channels anymore (and deduplicate them)
       val potentialStaleNodes = staleChannels.flatMap(c => Set(c.ann.nodeId1, c.ann.nodeId2)).toSet
@@ -493,7 +493,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), ignoreNodes.map(_.value).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = ignoreNodes, routeParams = params)
+      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = ignoreNodes, routeParams = params, nodeParams.currentBlockHeight)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -938,15 +938,15 @@ object Router {
    * @param update2_opt update corresponding to the other side of the channel, if we have it
    * @return
    */
-  def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate]): Boolean = {
+  def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate], currentBlockHeight: Long): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
-    val staleThresholdBlocks = Globals.blockCount.get() - 2016
+    val staleThresholdBlocks = currentBlockHeight - 2016
     val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
     blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
   }
 
-  def getStaleChannels(channels: Iterable[PublicChannel]): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt))
+  def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: Long): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))
 
   /**
    * Filters channels that we want to send to nodes asking for a channel range
@@ -1226,11 +1226,10 @@ object Router {
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
-                routeParams: RouteParams): Try[Seq[Hop]] = Try {
+                routeParams: RouteParams,
+                currentBlockHeight: Long): Try[Seq[Hop]] = Try {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
-
-    val currentBlockHeight = Globals.blockCount.get()
 
     def feeBaseOk(fee: MilliSatoshi): Boolean = fee <= routeParams.maxFeeBase
 
@@ -1251,7 +1250,7 @@ object Router {
 
     val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV))
+        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
       case Nil => throw RouteNotFound
       case routes => routes.find(_.path.size == 1) match {
         case Some(directRoute) => directRoute :: Nil
