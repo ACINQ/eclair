@@ -58,11 +58,19 @@ Note that the native build is only available for x86_64 systems and windows supp
 
 After you installed the dependencies it's strongly suggested to set up these environment variables to ease 
 the build process:
-`$ export GRAALVM_HOME=<graal_installation_directory>`
-`$ export MAVEN_HOME=<maven_installation_directory>`
-`$ export PATH=$PATH:$GRAALVM_HOME/bin:$MAVEN_HOME/bin`
+```shell
+$ export GRAALVM_HOME=<graal_installation_directory>
+```
+```shell
+$ export MAVEN_HOME=<maven_installation_directory>
+```
+```shell
+$ export PATH=$PATH:$GRAALVM_HOME/bin:$MAVEN_HOME/bin
+```
 You also need to install `native-image` from graal's framework:
-`$ gu install native-image`
+```shell
+$ gu install native-image
+```
 
 
 The native build requires special dependencies to be built before, to start you need libsecp256k1:
