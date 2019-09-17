@@ -205,7 +205,7 @@ object Helpers {
   def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId) = {
     val features = ByteVector.empty // empty features for now
     val fundingPubKey = nodeParams.keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
-    val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(fundingPubKey, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
+    val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(fundingPubKey.path, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
