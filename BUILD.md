@@ -97,7 +97,7 @@ Now let's build eclair-native, assuming you have already cloned this repo:
 git pull && git checkout the_holy_build
 JAVA_HOME=GRAALVM_HOME/jre mvn clean install -DskipTests 
 ```
-You can grap a cup of coffee because the build takes around ~12 mins on a fast laptop,
+You can grab a cup of coffee because the build takes around ~12 mins on a fast laptop,
 after it finishes you will find the executable in `eclair-node/target/eclair-native`
 
 ## Build the API documentation
