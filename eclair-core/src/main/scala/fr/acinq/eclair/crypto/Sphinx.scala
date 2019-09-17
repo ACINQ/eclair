@@ -325,6 +325,8 @@ object Sphinx extends Logging {
       val stream = generateStream(key, PacketLength)
       logger.debug(s"ammag key: $key")
       logger.debug(s"error stream: $stream")
+      // If we received a packet with an invalid length, we trim and pad to forward a packet with a normal length upstream.
+      // This is a poor man's attempt at increasing the likelihood of the sender receiving the error.
       packet.take(PacketLength).padLeft(PacketLength) xor stream
     }
 

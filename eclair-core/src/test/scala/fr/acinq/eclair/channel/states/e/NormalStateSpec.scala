@@ -1337,14 +1337,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(260)(42))))
     sender.expectMsg("ok")
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
-
-    // actual test begins
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    bob2alice.forward(alice)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
-    // alice won't forward the fail before it is cross-signed
-    relayerA.expectNoMsg()
+    assert(fail.id === htlc.id)
+    // We should rectify the packet length before forwarding upstream.
+    assert(fail.reason.length === Sphinx.FailurePacket.PacketLength)
   }
 
   test("recv CMD_UPDATE_FEE") { f =>
