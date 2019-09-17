@@ -191,9 +191,9 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val i3 = PaymentRequest.read("lnbc1500n1pdl686hpp5y7mz3lgvrfccqnk9es6trumjgqdpjwcecycpkdggnx7h6cuup90sdpa2fjkzep6ypqkymm4wssycnjzf9rjqurjda4x2cm5ypskuepqv93x7at5ypek7cqzysxqr23s5e864m06fcfp3axsefy276d77tzp0xzzzdfl6p46wvstkeqhu50khm9yxea2d9efp7lvthrta0ktmhsv52hf3tvxm0unsauhmfmp27cqqx4xxe")
     postMigrationDb.addPaymentRequest(i3, randomBytes32)
 
-    val ps4 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some(UUID.randomUUID()), randomBytes32, 123 msat, alice, 6, PENDING, Some(i3))
-    val ps5 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some(UUID.randomUUID()), randomBytes32, 456 msat, bob, 7, SUCCEEDED, Some(i2), Some(8), Some(PaymentSuccessSummary(randomBytes32, 42 msat, Nil)))
-    val ps6 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some(UUID.randomUUID()), randomBytes32, 789 msat, bob, 8, FAILED, None, Some(9), None, Some(PaymentFailureSummary(Nil)))
+    val ps4 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some("1"), randomBytes32, 123 msat, alice, 6, PENDING, Some(i3))
+    val ps5 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some("2"), randomBytes32, 456 msat, bob, 7, SUCCEEDED, Some(i2), Some(8), Some(PaymentSuccessSummary(randomBytes32, 42 msat, Nil)))
+    val ps6 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some("3"), randomBytes32, 789 msat, bob, 8, FAILED, None, Some(9), None, Some(PaymentFailureSummary(Nil)))
     postMigrationDb.addOutgoingPayment(ps4)
     postMigrationDb.addOutgoingPayment(ps5)
     postMigrationDb.updateOutgoingPayment(PaymentSent(ps5.id, ps5.amount, ps5.successSummary.get.feesPaid, ps5.paymentHash, ps5.successSummary.get.paymentPreimage, Nil, ps5.completedAt.get))
@@ -235,7 +235,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val i1 = PaymentRequest(chainHash = Block.TestnetGenesisBlock.hash, amount = Some(123 msat), paymentHash = randomBytes32, privateKey = davePriv, description = "Some invoice", expirySeconds = None, timestamp = 1)
     val s1 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), None, i1.paymentHash, 123 msat, alice, 1, PENDING, Some(i1))
-    val s2 = OutgoingPayment(UUID.randomUUID(), None, Some(UUID.randomUUID()), randomBytes32, 456 msat, bob, 2, PENDING, None)
+    val s2 = OutgoingPayment(UUID.randomUUID(), None, Some("1"), randomBytes32, 456 msat, bob, 2, PENDING, None)
 
     assert(db.listOutgoingPayments(0, Platform.currentTime.milliseconds.toSeconds).isEmpty)
     db.addOutgoingPayment(s1)

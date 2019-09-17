@@ -83,28 +83,28 @@ case class IncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, rece
  * An outgoing payment sent by this node.
  * At first it is in a pending state, then will become either a success or a failure.
  *
- * @param id                 internal payment identifier.
- * @param parentId           internal identifier of a parent payment, if any.
- * @param externalId         external payment identifier: lets lightning applications reconcile payments with their own db.
- * @param paymentHash        payment_hash.
- * @param amount             amount of the payment, in milli-satoshis.
- * @param targetNodeId       node ID of the payment recipient.
- * @param createdAt          absolute time in seconds since UNIX epoch when the payment was created.
- * @param status             current status of the payment.
- * @param paymentRequest_opt Bolt 11 payment request (if paying from an invoice).
- * @param completedAt        absolute time in seconds since UNIX epoch when the payment completed (success of failure).
- * @param successSummary     summary of the payment success (if status == "SUCCEEDED").
- * @param failureSummary     summary of the payment failure (if status == "FAILED").
+ * @param id             internal payment identifier.
+ * @param parentId       internal identifier of a parent payment, if any.
+ * @param externalId     external payment identifier: lets lightning applications reconcile payments with their own db.
+ * @param paymentHash    payment_hash.
+ * @param amount         amount of the payment, in milli-satoshis.
+ * @param targetNodeId   node ID of the payment recipient.
+ * @param createdAt      absolute time in seconds since UNIX epoch when the payment was created.
+ * @param status         current status of the payment.
+ * @param paymentRequest Bolt 11 payment request (if paying from an invoice).
+ * @param completedAt    absolute time in seconds since UNIX epoch when the payment completed (success of failure).
+ * @param successSummary summary of the payment success (if status == "SUCCEEDED").
+ * @param failureSummary summary of the payment failure (if status == "FAILED").
  */
 case class OutgoingPayment(id: UUID,
                            parentId: Option[UUID],
-                           externalId: Option[UUID],
+                           externalId: Option[String],
                            paymentHash: ByteVector32,
                            amount: MilliSatoshi,
                            targetNodeId: PublicKey,
                            createdAt: Long,
                            status: OutgoingPaymentStatus.Value,
-                           paymentRequest_opt: Option[PaymentRequest],
+                           paymentRequest: Option[PaymentRequest],
                            completedAt: Option[Long] = None,
                            successSummary: Option[PaymentSuccessSummary] = None,
                            failureSummary: Option[PaymentFailureSummary] = None)

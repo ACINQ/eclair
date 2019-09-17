@@ -48,7 +48,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultAmountMsat = 142000000 msat
   val defaultExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA
   val defaultPaymentHash = randomBytes32
-  val defaultExternalId = UUID.randomUUID()
+  val defaultExternalId = UUID.randomUUID().toString
   val defaultPaymentRequest = SendPaymentRequest(defaultAmountMsat, defaultPaymentHash, d, 1, externalId = Some(defaultExternalId))
 
   test("send to route") { fixture =>

@@ -59,7 +59,7 @@ object PaymentInitiator {
                                 maxAttempts: Int,
                                 finalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                                 paymentRequest: Option[PaymentRequest] = None,
-                                externalId: Option[UUID] = None,
+                                externalId: Option[String] = None,
                                 predefinedRoute: Seq[PublicKey] = Nil,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                 routeParams: Option[RouteParams] = None)

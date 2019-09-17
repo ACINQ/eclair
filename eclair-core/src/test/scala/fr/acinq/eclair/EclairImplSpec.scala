@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.util.UUID
-
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import akka.util.Timeout
@@ -106,7 +104,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     assert(send.assistedRoutes === Seq.empty)
 
     // with assisted routes
-    val externalId1 = UUID.randomUUID()
+    val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
     val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, randomKey, "description", None, None, hints)
     eclair.send(Some(externalId1), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice1))
@@ -119,10 +117,11 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     assert(send1.assistedRoutes === hints)
 
     // with finalCltvExpiry
+    val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
     val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodeId, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
-    eclair.send(Some(externalId1), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice2))
+    eclair.send(Some(externalId2), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice2))
     val send2 = paymentInitiator.expectMsgType[SendPaymentRequest]
-    assert(send2.externalId === Some(externalId1))
+    assert(send2.externalId === Some(externalId2))
     assert(send2.targetNodeId === nodeId)
     assert(send2.amount === 123.msat)
     assert(send2.paymentHash === ByteVector32.Zeroes)
@@ -138,6 +137,9 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     assert(send3.paymentHash === ByteVector32.Zeroes)
     assert(send3.routeParams.get.maxFeeBase === 123000.msat) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct === 4.20)
+
+    val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
+    assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), nodeId, 123 msat, ByteVector32.Zeroes), 50 millis))
 
     val expiredInvoice = invoice2.copy(timestamp = 0L)
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(expiredInvoice)), 50 millis))
@@ -259,13 +261,12 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
   test("sendtoroute should pass the parameters correctly") { f =>
     import f._
 
-    val externalId = UUID.randomUUID()
     val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val eclair = new EclairImpl(kit)
-    eclair.sendToRoute(Some(externalId), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123))
+    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123))
 
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
-    assert(send.externalId === Some(externalId))
+    assert(send.externalId === Some("42"))
     assert(send.predefinedRoute === route)
     assert(send.amount === 1234.msat)
     assert(send.finalExpiryDelta === CltvExpiryDelta(123))

@@ -102,13 +102,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, status, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
       statement.setString(2, sent.parentId.map(_.toString).orNull)
-      statement.setString(3, sent.externalId.map(_.toString).orNull)
+      statement.setString(3, sent.externalId.orNull)
       statement.setBytes(4, sent.paymentHash.toArray)
       statement.setLong(5, sent.amount.toLong)
       statement.setBytes(6, sent.targetNodeId.value.toArray)
       statement.setLong(7, sent.createdAt)
       statement.setString(8, sent.status.toString)
-      statement.setString(9, sent.paymentRequest_opt.map(PaymentRequest.write).orNull)
+      statement.setString(9, sent.paymentRequest.map(PaymentRequest.write).orNull)
       statement.executeUpdate()
     }
 
@@ -136,7 +136,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     val result = OutgoingPayment(
       UUID.fromString(rs.getString("id")),
       rs.getStringNullable("parent_id").map(UUID.fromString),
-      rs.getStringNullable("external_id").map(UUID.fromString),
+      rs.getStringNullable("external_id"),
       rs.getByteVector32("payment_hash"),
       MilliSatoshi(rs.getLong("amount_msat")),
       PublicKey(rs.getByteVector("target_node_id")),
