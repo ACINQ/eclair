@@ -69,7 +69,7 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
-      progressHandler.onFail(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))(context)
+      progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))(context)
       stop(FSM.Normal)
   }
 
@@ -77,7 +77,7 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
     case Event("ok", _) => stay
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
-      progressHandler.onSucceed(s, PaymentSent(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, c.paymentHash, fulfill.paymentPreimage, route))(context)
+      progressHandler.onSuccess(s, PaymentSent(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, c.paymentHash, fulfill.paymentPreimage, route))(context)
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
@@ -85,7 +85,7 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-          progressHandler.onFail(s, PaymentFailed(id, c.paymentHash, failures :+ RemoteFailure(hops, e)))(context)
+          progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ RemoteFailure(hops, e)))(context)
           stop(FSM.Normal)
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
@@ -98,7 +98,7 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
               UnreadableRemoteFailure(hops)
           }
           log.warning(s"too many failed attempts, failing the payment")
-          progressHandler.onFail(s, PaymentFailed(id, c.paymentHash, failures :+ failure))(context)
+          progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ failure))(context)
           stop(FSM.Normal)
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
@@ -163,7 +163,7 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
-        progressHandler.onFail(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))(context)
+        progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))(context)
         stop(FSM.Normal)
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
@@ -191,8 +191,8 @@ object PaymentLifecycle {
 
     // @formatter:off
     def onSend(): Unit
-    def onSucceed(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit
-    def onFail(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit
+    def onSuccess(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit
+    def onFailure(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit
     // @formatter:on
   }
 
@@ -203,13 +203,13 @@ object PaymentLifecycle {
       db.addOutgoingPayment(OutgoingPayment(id, None, r.externalId, r.paymentHash, r.amount, r.targetNodeId, Platform.currentTime, OutgoingPaymentStatus.PENDING, r.paymentRequest))
     }
 
-    override def onSucceed(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit = {
+    override def onSuccess(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit = {
       db.updateOutgoingPayment(result)
       sender ! result
       ctx.system.eventStream.publish(result)
     }
 
-    override def onFail(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit = {
+    override def onFailure(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit = {
       db.updateOutgoingPayment(result)
       sender ! result
       ctx.system.eventStream.publish(result)
