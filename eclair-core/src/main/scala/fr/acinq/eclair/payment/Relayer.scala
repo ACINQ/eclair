@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
@@ -137,8 +136,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
-          context.system.eventStream.publish(PaymentFailed(id, paymentHash, Nil))
+          val result = PaymentFailed(id, paymentHash, Nil)
+          nodeParams.db.payments.updateOutgoingPayment(result)
+          context.system.eventStream.publish(result)
         case Local(_, Some(sender)) =>
           sender ! Status.Failure(addFailed)
         case Relayed(originChannelId, originHtlcId, _, _) =>
@@ -161,8 +161,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the success on the event stream and update the status in paymentDb
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, Some(fulfill.paymentPreimage))
-          context.system.eventStream.publish(PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, Nil))
+          val result = PaymentSent(id, add.amountMsat, feesPaid, add.paymentHash, fulfill.paymentPreimage, Nil)
+          nodeParams.db.payments.updateOutgoingPayment(result)
+          context.system.eventStream.publish(result)
         case Local(_, Some(sender)) =>
           sender ! fulfill
         case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
@@ -176,8 +177,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
-          context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
+          val result = PaymentFailed(id, add.paymentHash, Nil)
+          nodeParams.db.payments.updateOutgoingPayment(result)
+          context.system.eventStream.publish(result)
         case Local(_, Some(sender)) =>
           sender ! fail
         case Relayed(originChannelId, originHtlcId, _, _) =>
@@ -190,8 +192,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
-          nodeParams.db.payments.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
-          context.system.eventStream.publish(PaymentFailed(id, add.paymentHash, Nil))
+          val result = PaymentFailed(id, add.paymentHash, Nil)
+          nodeParams.db.payments.updateOutgoingPayment(result)
+          context.system.eventStream.publish(result)
         case Local(_, Some(sender)) =>
           sender ! fail
         case Relayed(originChannelId, originHtlcId, _, _) =>

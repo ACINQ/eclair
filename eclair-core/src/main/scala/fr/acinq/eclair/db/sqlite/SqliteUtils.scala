@@ -116,6 +116,12 @@ object SqliteUtils {
       val bytes = rs.getBytes(columnLabel)
       if (rs.wasNull()) None else Some(ByteVector32(ByteVector(bytes)))
     }
+
+    def getStringNullable(columnLabel: String): Option[String] = {
+      val result = rs.getString(columnLabel)
+      if (rs.wasNull()) None else Some(result)
+    }
+
   }
 
   object ExtendedResultSet {

@@ -25,6 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
+import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
@@ -50,12 +51,12 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       val send = SendPayment(c.paymentHash, c.hops.last, c.finalPayload, maxAttempts = 1)
       router ! FinalizeRoute(c.hops)
-      progressHandler.onSend(c.paymentHash, c.finalPayload.amount)
+      progressHandler.onSend()
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams)
-      progressHandler.onSend(c.paymentHash, c.finalPayload.amount)
+      progressHandler.onSend()
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -189,27 +190,27 @@ object PaymentLifecycle {
     val id: UUID
 
     // @formatter:off
-    def onSend(paymentHash: ByteVector32, finalAmount: MilliSatoshi): Unit
+    def onSend(): Unit
     def onSucceed(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit
     def onFail(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit
     // @formatter:on
   }
 
   /** Normal payments are stored in the payments DB and emit payment events. */
-  case class DefaultPaymentProgressHandler(id: UUID, db: PaymentsDb) extends PaymentProgressHandler {
+  case class DefaultPaymentProgressHandler(id: UUID, r: SendPaymentRequest, db: PaymentsDb) extends PaymentProgressHandler {
 
-    override def onSend(paymentHash: ByteVector32, finalAmount: MilliSatoshi): Unit = {
-      db.addOutgoingPayment(OutgoingPayment(id, paymentHash, None, finalAmount, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+    override def onSend(): Unit = {
+      db.addOutgoingPayment(OutgoingPayment(id, None, r.externalId, r.paymentHash, r.amount, r.targetNodeId, Platform.currentTime, OutgoingPaymentStatus.PENDING, r.paymentRequest))
     }
 
     override def onSucceed(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit = {
-      db.updateOutgoingPayment(result.id, OutgoingPaymentStatus.SUCCEEDED, preimage = Some(result.paymentPreimage))
+      db.updateOutgoingPayment(result)
       sender ! result
       ctx.system.eventStream.publish(result)
     }
 
     override def onFail(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit = {
-      db.updateOutgoingPayment(result.id, OutgoingPaymentStatus.FAILED)
+      db.updateOutgoingPayment(result)
       sender ! result
       ctx.system.eventStream.publish(result)
     }
