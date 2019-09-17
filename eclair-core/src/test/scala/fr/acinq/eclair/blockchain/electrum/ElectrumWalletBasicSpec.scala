@@ -18,18 +18,18 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.sql.DriverManager
 
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.Transactions
+import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Random, Success, Try}
 
-class ElectrumWalletBasicSpec extends FunSuite with LazyLogging {
+class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
   import ElectrumWallet._
   import ElectrumWalletBasicSpec._

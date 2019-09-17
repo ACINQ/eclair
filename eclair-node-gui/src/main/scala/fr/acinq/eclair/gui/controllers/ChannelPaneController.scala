@@ -18,12 +18,12 @@ package fr.acinq.eclair.gui.controllers
 
 import akka.actor.ActorRef
 import com.google.common.base.Strings
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Commitments}
 import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.{ActionEvent, EventHandler}
@@ -36,7 +36,7 @@ import javafx.scene.layout.VBox
 /**
   * Created by DPA on 23/09/2016.
   */
-class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) extends LazyLogging {
+class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) extends Logging {
 
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _

@@ -22,9 +22,9 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import akka.util.Timeout
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
+import grizzled.slf4j.Logging
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
@@ -32,7 +32,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 
-class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with LazyLogging with BeforeAndAfterAll {
+class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
   var pool: ActorRef = _
   val probe = TestProbe()
   // this is tx #2690 of block #500000

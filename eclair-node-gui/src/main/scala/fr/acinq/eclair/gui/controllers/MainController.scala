@@ -22,7 +22,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 import com.google.common.net.HostAndPort
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
@@ -32,6 +31,7 @@ import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import fr.acinq.eclair.{CoinUtils, MilliSatoshi, Setup, ShortChannelId}
+import grizzled.slf4j.Logging
 import javafx.animation.{FadeTransition, ParallelTransition, SequentialTransition, TranslateTransition}
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
@@ -70,7 +70,7 @@ case class PaymentRelayedRecord(event: PaymentRelayed, date: LocalDateTime) exte
 /**
   * Created by DPA on 22/09/2016.
   */
-class MainController(val handlers: Handlers, val hostServices: HostServices) extends LazyLogging {
+class MainController(val handlers: Handlers, val hostServices: HostServices) extends Logging {
 
   @FXML var root: AnchorPane = _
   var contextMenu: ContextMenu = _

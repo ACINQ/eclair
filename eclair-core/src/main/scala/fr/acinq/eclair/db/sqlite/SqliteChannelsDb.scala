@@ -18,16 +18,16 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, Statement}
 
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
+import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with LazyLogging {
+class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._

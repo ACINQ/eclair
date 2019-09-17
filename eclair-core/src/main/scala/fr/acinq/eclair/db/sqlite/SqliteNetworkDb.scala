@@ -18,17 +18,17 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.PublicChannel
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import grizzled.slf4j.Logging
 
 import scala.collection.immutable.SortedMap
 
-class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with LazyLogging {
+class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
   import SqliteUtils._
   import SqliteUtils.ExtendedResultSet._

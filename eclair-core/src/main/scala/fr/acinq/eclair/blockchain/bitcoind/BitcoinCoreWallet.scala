@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
+import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -33,7 +33,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 06/07/2017.
   */
-class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with LazyLogging {
+class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with Logging {
 
   import BitcoinCoreWallet._
 

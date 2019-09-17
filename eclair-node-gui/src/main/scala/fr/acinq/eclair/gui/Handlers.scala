@@ -20,13 +20,13 @@ import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.{MilliSatoshi, _}
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
+import grizzled.slf4j.Logging
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -35,7 +35,7 @@ import scala.util.{Failure, Success}
 /**
  * Created by PM on 16/08/2016.
  */
-class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LazyLogging {
+class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Logging {
 
   implicit val timeout = Timeout(60 seconds)
 

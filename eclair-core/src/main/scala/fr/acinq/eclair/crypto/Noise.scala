@@ -19,10 +19,10 @@ package fr.acinq.eclair.crypto
 import java.math.BigInteger
 import java.nio.ByteOrder
 
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Crypto, Protocol}
 import fr.acinq.eclair.randomBytes
+import grizzled.slf4j.Logging
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.macs.HMac
 import org.spongycastle.crypto.params.KeyParameter
@@ -117,7 +117,7 @@ object Noise {
   /**
     * Hash functions
     */
-  trait HashFunctions extends LazyLogging {
+  trait HashFunctions extends Logging {
     def name: String
 
     // Hashes some arbitrary-length data with a collision-resistant cryptographic hash function and returns an output of HASHLEN bytes.
@@ -229,7 +229,7 @@ object Noise {
     * @param h             hash
     * @param hashFunctions hash functions
     */
-  case class SymmetricState(cipherState: CipherState, ck: ByteVector, h: ByteVector, hashFunctions: HashFunctions) extends LazyLogging {
+  case class SymmetricState(cipherState: CipherState, ck: ByteVector, h: ByteVector, hashFunctions: HashFunctions) extends Logging {
     def mixKey(inputKeyMaterial: ByteVector): SymmetricState = {
       logger.debug(s"ss = 0x$inputKeyMaterial")
       val (ck1, tempk) = hashFunctions.hkdf(ck, inputKeyMaterial)
@@ -318,7 +318,7 @@ object Noise {
 
   sealed trait HandshakeState
 
-  case class HandshakeStateWriter(messages: List[MessagePatterns], state: SymmetricState, s: KeyPair, e: KeyPair, rs: ByteVector, re: ByteVector, dh: DHFunctions, byteStream: ByteStream) extends HandshakeState with LazyLogging {
+  case class HandshakeStateWriter(messages: List[MessagePatterns], state: SymmetricState, s: KeyPair, e: KeyPair, rs: ByteVector, re: ByteVector, dh: DHFunctions, byteStream: ByteStream) extends HandshakeState with Logging {
     def toReader: HandshakeStateReader = HandshakeStateReader(messages, state, s, e, rs, re, dh, byteStream)
 
     /**
@@ -371,7 +371,7 @@ object Noise {
     def apply(messages: List[MessagePatterns], state: SymmetricState, s: KeyPair, e: KeyPair, rs: ByteVector, re: ByteVector, dh: DHFunctions): HandshakeStateWriter = new HandshakeStateWriter(messages, state, s, e, rs, re, dh, RandomBytes)
   }
 
-  case class HandshakeStateReader(messages: List[MessagePatterns], state: SymmetricState, s: KeyPair, e: KeyPair, rs: ByteVector, re: ByteVector, dh: DHFunctions, byteStream: ByteStream) extends HandshakeState with LazyLogging {
+  case class HandshakeStateReader(messages: List[MessagePatterns], state: SymmetricState, s: KeyPair, e: KeyPair, rs: ByteVector, re: ByteVector, dh: DHFunctions, byteStream: ByteStream) extends HandshakeState with Logging {
     def toWriter: HandshakeStateWriter = HandshakeStateWriter(messages, state, s, e, rs, re, dh, byteStream)
 
     /** *

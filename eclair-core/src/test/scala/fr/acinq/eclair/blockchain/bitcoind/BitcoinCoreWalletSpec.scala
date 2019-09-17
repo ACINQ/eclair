@@ -21,13 +21,13 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.{Block, ByteVector32, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, addressToPublicKeyScript, randomKey}
+import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, JString}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
@@ -39,7 +39,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Try}
 
 
-class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with LazyLogging {
+class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",

@@ -18,8 +18,6 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, Statement}
 import java.util.UUID
-
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
@@ -27,12 +25,12 @@ import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOc
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs
-
+import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import scala.compat.Platform
 import concurrent.duration._
 
-class SqliteAuditDb(sqlite: Connection) extends AuditDb with LazyLogging {
+class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   import SqliteUtils._
   import ExtendedResultSet._

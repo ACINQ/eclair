@@ -18,8 +18,9 @@ package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
 
-import com.typesafe.scalalogging.{LazyLogging, Logger}
 import fr.acinq.bitcoin.{ByteVector32, Protocol}
+import grizzled.slf4j.Logger
+import grizzled.slf4j.Logging
 import org.spongycastle.crypto.engines.ChaCha7539Engine
 import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import scodec.bits.ByteVector
@@ -94,7 +95,7 @@ object ChaCha20 {
   *
   * This what we should be using (see BOLT #8)
   */
-object ChaCha20Poly1305 extends LazyLogging {
+object ChaCha20Poly1305 extends Logging {
 
   // This logger is used to dump encryption keys to enable traffic analysis by the lightning-dissector.
   // See https://github.com/nayutaco/lightning-dissector for more details.

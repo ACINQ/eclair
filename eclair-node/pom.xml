@@ -140,6 +140,12 @@
             <artifactId>classutil_${scala.version.short}</artifactId>
             <version>1.4.0</version>
         </dependency>
+        <!-- logging -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
+        </dependency>
         <dependency>
             <!--conditional logging -->
             <groupId>org.codehaus.janino</groupId>

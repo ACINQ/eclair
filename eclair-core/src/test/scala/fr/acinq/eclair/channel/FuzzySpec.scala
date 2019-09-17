@@ -21,7 +21,6 @@ import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -33,6 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
+import grizzled.slf4j.Logging
 import org.scalatest.{Outcome, Tag}
 
 import scala.collection.immutable.Nil
@@ -43,7 +43,7 @@ import scala.util.Random
   * Created by PM on 05/07/2016.
   */
 
-class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with LazyLogging {
+class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 

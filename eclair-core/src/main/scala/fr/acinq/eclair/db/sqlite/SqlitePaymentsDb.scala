@@ -18,21 +18,18 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest
-
+import grizzled.slf4j.Logging
 import scala.collection.immutable.Queue
 import OutgoingPaymentStatus._
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair.MilliSatoshi
-
 import concurrent.duration._
 import scala.compat.Platform
 
-class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with LazyLogging {
+class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
 

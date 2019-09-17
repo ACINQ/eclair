@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import com.typesafe.scalalogging.LazyLogging
 import com.whisk.docker.DockerReadyChecker
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, Transaction, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
@@ -31,6 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse, SSL}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
+import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
@@ -38,7 +38,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with LazyLogging {
+class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   import ElectrumWallet._
 

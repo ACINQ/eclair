@@ -16,12 +16,11 @@
 
 package fr.acinq.eclair
 
-
-import com.typesafe.scalalogging.LazyLogging
+import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 
-object DBCompatChecker extends LazyLogging {
+object DBCompatChecker extends Logging {
 
   /**
     * Tests if the channels data in the DB are compatible with the current version of eclair; throws an exception if incompatible.

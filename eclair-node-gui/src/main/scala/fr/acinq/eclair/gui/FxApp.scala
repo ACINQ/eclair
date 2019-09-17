@@ -19,7 +19,6 @@ package fr.acinq.eclair.gui
 import java.io.File
 
 import akka.actor.{ActorSystem, Props, SupervisorStrategy}
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
@@ -28,6 +27,7 @@ import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.payment.PaymentLifecycle.PaymentResult
 import fr.acinq.eclair.router.NetworkEvent
+import grizzled.slf4j.Logging
 import javafx.application.Preloader.ErrorNotification
 import javafx.application.{Application, Platform}
 import javafx.event.EventHandler
@@ -44,7 +44,7 @@ import scala.util.{Failure, Success, Try}
 /**
   * Created by PM on 16/08/2016.
   */
-class FxApp extends Application with LazyLogging {
+class FxApp extends Application with Logging {
 
   override def init = {
     logger.debug("initializing application...")

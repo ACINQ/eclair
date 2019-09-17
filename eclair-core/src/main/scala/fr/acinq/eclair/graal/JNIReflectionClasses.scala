@@ -2,7 +2,7 @@ package fr.acinq.eclair.graal
 
 import com.oracle.svm.core.annotate.AutomaticFeature
 import com.oracle.svm.core.jni.JNIRuntimeAccess
-import com.typesafe.scalalogging.LazyLogging
+import grizzled.slf4j.Logging
 import org.graalvm.nativeimage.hosted.Feature
 import org.graalvm.nativeimage.hosted.RuntimeReflection
 import org.sqlite.BusyHandler
@@ -11,7 +11,7 @@ import org.sqlite.ProgressHandler
 import org.sqlite.core.NativeDB
 
 @AutomaticFeature
-class JNIReflectionClasses extends Feature with LazyLogging {
+class JNIReflectionClasses extends Feature with Logging {
 
   override def beforeAnalysis(access: Feature.BeforeAnalysisAccess): Unit = {
     try {

@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.crypto
 
-import com.typesafe.scalalogging.LazyLogging
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, OnionCodecs}
+import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -31,7 +31,7 @@ import scala.util.{Failure, Success, Try}
   * Created by fabrice on 13/01/17.
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
   */
-object Sphinx extends LazyLogging {
+object Sphinx extends Logging {
 
   // We use HMAC-SHA256 which returns 32-bytes message authentication codes.
   val MacLength = 32
