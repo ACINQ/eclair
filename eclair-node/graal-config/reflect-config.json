@@ -705,6 +705,17 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.payment.PaymentSettlingOnChain",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSettlingOnChain$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.payment.Relayer",
   "allDeclaredConstructors":true
 },
