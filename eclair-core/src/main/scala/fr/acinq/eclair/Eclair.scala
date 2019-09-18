@@ -46,9 +46,13 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 case class TimestampQueryFilters(from: Long, to: Long)
 
 object TimestampQueryFilters {
+  /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
+  val MaxEpochMilliseconds = Duration.fromNanos(Long.MaxValue).toMillis
+
   def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
-    val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(MaxEpochSeconds)
+    // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
+    val from = from_opt.getOrElse(0L).seconds.toMillis
+    val to = to_opt.map(_.seconds.toMillis).getOrElse(MaxEpochMilliseconds)
 
     TimestampQueryFilters(from, to)
   }
@@ -224,7 +228,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = Future {
     id match {
       case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid).toSeq
-      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayments(paymentHash)
+      case Right(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
     }
   }
 
@@ -253,17 +257,17 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val filter = getDefaultTimestampFilters(from_opt, to_opt)
 
-    appKit.nodeParams.db.payments.listPaymentRequests(filter.from, filter.to)
+    appKit.nodeParams.db.payments.listIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
   }
 
   override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val filter = getDefaultTimestampFilters(from_opt, to_opt)
 
-    appKit.nodeParams.db.payments.listPendingPaymentRequests(filter.from, filter.to)
+    appKit.nodeParams.db.payments.listPendingIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
   }
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
-    appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
+    appKit.nodeParams.db.payments.getIncomingPayment(paymentHash).map(_.paymentRequest)
   }
 
   /**

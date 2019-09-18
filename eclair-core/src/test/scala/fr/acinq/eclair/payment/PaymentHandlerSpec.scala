@@ -19,9 +19,10 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorSystem
 import akka.actor.Status.Failure
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.db.IncomingPaymentStatus
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
@@ -50,9 +51,11 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
-      assert(nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).isDefined)
-      assert(!nodeParams.db.payments.getPendingPaymentRequestAndPreimage(pr.paymentHash).get._2.isExpired)
+      val incoming = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+      assert(incoming.isDefined)
+      assert(incoming.get.status === IncomingPaymentStatus.Pending)
+      assert(!incoming.get.paymentRequest.isExpired)
+      assert(Crypto.sha256(incoming.get.paymentPreimage) === pr.paymentHash)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, TestConstants.emptyOnionPacket)
       sender.send(handler, add)
@@ -60,32 +63,36 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, timestamp = 0))
-      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
+      val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+      assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
     }
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "another coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, expiry, TestConstants.emptyOnionPacket)
       sender.send(handler, add)
       sender.expectMsgType[CMD_FULFILL_HTLC]
       val paymentRelayed = eventListener.expectMsgType[PaymentReceived]
       assert(paymentRelayed.copy(timestamp = 0) === PaymentReceived(amountMsat, add.paymentHash, timestamp = 0))
-      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.paymentHash == pr.paymentHash))
+      val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+      assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
     }
 
     {
       sender.send(handler, ReceivePayment(Some(amountMsat), "bad expiry"))
       val pr = sender.expectMsgType[PaymentRequest]
-      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, cltvExpiry = CltvExpiryDelta(3).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(IncorrectOrUnknownPaymentDetails(amountMsat, nodeParams.currentBlockHeight)))
       eventListener.expectNoMsg(300 milliseconds)
-      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+      assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
     }
   }
 
@@ -168,6 +175,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, add)
 
     sender.expectMsgType[CMD_FAIL_HTLC]
-    assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).isEmpty)
+    val Some(incoming) = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(incoming.paymentRequest.isExpired && incoming.status === IncomingPaymentStatus.Expired)
   }
 }

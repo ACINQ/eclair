@@ -69,12 +69,12 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e9)
     db.add(e10)
 
-    assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toSeconds).toSet === Set(e1.copy(route = Nil), e5.copy(route = Nil), e6))
-    assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).toList === List(e1.copy(route = Nil)))
-    assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).toList === List(e2))
-    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).toList === List(e3))
-    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).size === 1)
-    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).head.txType === "mutual")
+    assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toMillis).toSet === Set(e1.copy(route = Nil), e5.copy(route = Nil), e6))
+    assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e1.copy(route = Nil)))
+    assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e2))
+    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3))
+    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).size === 1)
+    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).head.txType === "mutual")
   }
 
   test("stats") {
@@ -170,9 +170,9 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
-    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, route = Nil)))
+    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, route = Nil)))
     // existing rows in the 'received' table will not contain a fromChannelId anymore
-    assert(migratedDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(pr))
+    assert(migratedDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(pr))
 
     val postMigrationDb = new SqliteAuditDb(connection)
 
@@ -187,8 +187,8 @@ class SqliteAuditDbSpec extends FunSuite {
     postMigrationDb.add(pr1)
 
     // the old 'sent' record will have the UNKNOWN_UUID and an empty route but the new ones will have their actual id
-    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, route = Nil), ps1.copy(route = Nil), ps2.copy(route = Nil)))
-    assert(postMigrationDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(pr, pr1))
+    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, route = Nil), ps1.copy(route = Nil), ps2.copy(route = Nil)))
+    assert(postMigrationDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(pr, pr1))
   }
 
   test("handle migration version 2 -> 4") {
@@ -300,9 +300,9 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     // existing rows in the 'sent' table will use route=NULL as default
-    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(ps.copy(route = Nil)))
+    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(ps.copy(route = Nil)))
     // existing rows in the 'received' table will not contain a fromChannelId anymore
-    assert(migratedDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(pr))
+    assert(migratedDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(pr))
 
     val postMigrationDb = new SqliteAuditDb(connection)
 
@@ -315,8 +315,8 @@ class SqliteAuditDbSpec extends FunSuite {
     postMigrationDb.add(pr1)
 
     // the old 'sent' record will have the UNKNOWN_UUID and an empty route but the new ones will have their actual id
-    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(ps.copy(route = Nil), ps1.copy(route = Nil), ps2.copy(route = Nil)))
-    assert(postMigrationDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) === Seq(pr, pr1))
+    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(ps.copy(route = Nil), ps1.copy(route = Nil), ps2.copy(route = Nil)))
+    assert(postMigrationDb.listReceived(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(pr, pr1))
   }
 
 }

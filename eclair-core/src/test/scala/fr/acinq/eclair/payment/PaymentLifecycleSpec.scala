@@ -72,13 +72,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     val Some(outgoing) = paymentDb.getOutgoingPayment(id)
-    assert(outgoing.copy(createdAt = 0) === OutgoingPayment(id, None, Some(defaultExternalId), defaultPaymentHash, defaultAmountMsat, d, 0, OutgoingPaymentStatus.PENDING, None))
+    assert(outgoing.copy(createdAt = 0) === OutgoingPayment(id, None, Some(defaultExternalId), defaultPaymentHash, defaultAmountMsat, d, 0, None, OutgoingPaymentStatus.Pending))
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
 
     sender.expectMsgType[PaymentSent]
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
   }
 
   test("payment failed (route not found)") { fixture =>
@@ -99,11 +99,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
 
     routerForwarder.forward(router, routeRequest)
     assert(sender.expectMsgType[PaymentFailed].failures === LocalFailure(RouteNotFound) :: Nil)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
   test("payment failed (route too expensive)") { fixture =>
@@ -124,7 +124,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     val Seq(LocalFailure(RouteNotFound)) = sender.expectMsgType[PaymentFailed].failures
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
   test("payment failed (unparsable failure)") { fixture =>
@@ -144,7 +144,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 2)
     sender.send(paymentFSM, request)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
 
     val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
     routerForwarder.expectMsg(RouteRequest(a, d, defaultAmountMsat, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
@@ -168,7 +168,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we allow 2 tries, so we send a 2nd request to the router
     assert(sender.expectMsgType[PaymentFailed].failures === UnreadableRemoteFailure(hops) :: UnreadableRemoteFailure(hops) :: Nil)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED)) // after last attempt the payment is failed
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) // after last attempt the payment is failed
   }
 
   test("payment failed (local error)") { fixture =>
@@ -188,7 +188,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 2)
     sender.send(paymentFSM, request)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
 
     val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
@@ -201,7 +201,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(ChannelDesc(channelId_ab, a, b))))
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING)) // payment is still pending because the error is recoverable
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending)) // payment is still pending because the error is recoverable
   }
 
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { fixture =>
@@ -221,7 +221,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 2)
     sender.send(paymentFSM, request)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
 
     val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
@@ -234,7 +234,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(RouteRequest(a, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(ChannelDesc(channelId_ab, a, b))))
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
   }
 
   test("payment failed (TemporaryChannelFailure)") { fixture =>
@@ -294,7 +294,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 5)
     sender.send(paymentFSM, request)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
 
     val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
@@ -311,7 +311,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // payment lifecycle forwards the embedded channelUpdate to the router
     routerForwarder.expectMsg(channelUpdate_bc_modified)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING)) // 1 failure but not final, the payment is still PENDING
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
     routerForwarder.forward(router)
 
@@ -337,7 +337,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // this time the router can't find a route: game over
     assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(hops2, Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
   def testPermanentFailure(fixture: FixtureParam, failure: FailureMessage): Unit = {
@@ -357,7 +357,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 2)
     sender.send(paymentFSM, request)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
 
     val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
@@ -375,7 +375,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // we allow 2 tries, so we send a 2nd request to the router, which won't find another route
 
     assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(RouteNotFound) :: Nil)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.FAILED))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
   test("payment failed (PermanentChannelFailure)") { fixture =>
@@ -409,9 +409,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.PENDING))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
     val Some(outgoing) = paymentDb.getOutgoingPayment(id)
-    assert(outgoing.copy(createdAt = 0) === OutgoingPayment(id, None, Some(defaultExternalId), paymentHash, defaultAmountMsat, d, 0, OutgoingPaymentStatus.PENDING, None))
+    assert(outgoing.copy(createdAt = 0) === OutgoingPayment(id, None, Some(defaultExternalId), paymentHash, defaultAmountMsat, d, 0, None, OutgoingPaymentStatus.Pending))
     sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, paymentPreimage))
 
     val ps = eventListener.expectMsgType[PaymentSent]
@@ -419,7 +419,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(ps.amount === defaultAmountMsat)
     assert(ps.paymentHash === paymentHash)
     assert(ps.paymentPreimage === paymentPreimage)
-    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.SUCCEEDED))
+    awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
   }
 
   test("payment succeeded to a channel with fees=0") { fixture =>

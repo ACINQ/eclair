@@ -24,60 +24,88 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
+import scala.compat.Platform
+
 trait PaymentsDb {
 
   /** Create a record for a non yet finalized outgoing payment. */
-  def addOutgoingPayment(outgoingPayment: OutgoingPayment)
+  def addOutgoingPayment(outgoingPayment: OutgoingPayment): Unit
 
   /** Update the status of the payment in case of success. */
-  def updateOutgoingPayment(paymentResult: PaymentSent)
+  def updateOutgoingPayment(paymentResult: PaymentSent): Unit
 
   /** Update the status of the payment in case of failure. */
-  def updateOutgoingPayment(paymentResult: PaymentFailed)
+  def updateOutgoingPayment(paymentResult: PaymentFailed): Unit
 
   /** Get an outgoing payment attempt. */
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 
-  /** Get all the outgoing payment attempts to pay the given paymentHash. */
-  def getOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
+  /** List all the outgoing payment attempts that tried to pay the given payment hash. */
+  def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
 
-  /** Get all the outgoing payment attempts in the given time range. */
+  /** List all the outgoing payment attempts in the given time range (milli-seconds). */
   def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment]
 
-  /** Add a new payment request (to receive a payment). */
-  def addPaymentRequest(pr: PaymentRequest, preimage: ByteVector32)
+  /** Add a new expected incoming payment (not yet received). */
+  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit
 
-  /** Get the payment request for the given payment hash, if any. */
-  def getPaymentRequest(paymentHash: ByteVector32): Option[PaymentRequest]
+  /**
+   * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
+   * Note that this function assumes that there is a matching payment request in the DB.
+   */
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = Platform.currentTime): Unit
 
-  /** Get the currently pending payment request for the given payment hash, if any. */
-  def getPendingPaymentRequestAndPreimage(paymentHash: ByteVector32): Option[(ByteVector32, PaymentRequest)]
-
-  /** Get all payment requests (pending, expired and fulfilled) in the given time range. */
-  def listPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
-
-  /** Get pending, non expired payment requests in the given time range. */
-  def listPendingPaymentRequests(from: Long, to: Long): Seq[PaymentRequest]
-
-  /** Add a received payment (assumes there is already a payment request for the given payment hash). */
-  def addIncomingPayment(payment: IncomingPayment)
-
-  /** Get the received payment associated with a given payment hash, if any. */
+  /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
 
-  /** Get all payments received in the given time range. */
+  /** List all incoming payments (pending, expired and succeeded) in the given time range (milli-seconds). */
   def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+
+  /** List all pending (not paid, not expired) incoming payments in the given time range (milli-seconds). */
+  def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+
+  /** List all expired (not paid) incoming payments in the given time range (milli-seconds). */
+  def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+
+  /** List all received (paid) incoming payments in the given time range (milli-seconds). */
+  def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
 
 }
 
 /**
- * Incoming payment object stored in DB.
+ * An incoming payment received by this node.
+ * At first it is in a pending state once the payment request has been generated, then will become either a success (if
+ * we receive a valid HTLC) or a failure (if the payment request expires).
  *
- * @param paymentHash identifier of the payment.
- * @param amount      amount of the payment, in milli-satoshis.
- * @param receivedAt  absolute time in seconds since UNIX epoch when the payment was received.
+ * @param paymentRequest  Bolt 11 payment request.
+ * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
+ * @param status          current status of the payment.
  */
-case class IncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long)
+case class IncomingPayment(paymentRequest: PaymentRequest,
+                           paymentPreimage: ByteVector32,
+                           createdAt: Long,
+                           status: IncomingPaymentStatus)
+
+sealed trait IncomingPaymentStatus
+
+object IncomingPaymentStatus {
+
+  /** Payment is pending (waiting to receive). */
+  case object Pending extends IncomingPaymentStatus
+
+  /** Payment has expired. */
+  case object Expired extends IncomingPaymentStatus
+
+  /**
+   * Payment has been successfully received.
+   *
+   * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+   * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+   */
+  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
+
+}
 
 /**
  * An outgoing payment sent by this node.
@@ -89,12 +117,9 @@ case class IncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, rece
  * @param paymentHash    payment_hash.
  * @param amount         amount of the payment, in milli-satoshis.
  * @param targetNodeId   node ID of the payment recipient.
- * @param createdAt      absolute time in seconds since UNIX epoch when the payment was created.
- * @param status         current status of the payment.
+ * @param createdAt      absolute time in milli-seconds since UNIX epoch when the payment was created.
  * @param paymentRequest Bolt 11 payment request (if paying from an invoice).
- * @param completedAt    absolute time in seconds since UNIX epoch when the payment completed (success of failure).
- * @param successSummary summary of the payment success (if status == "SUCCEEDED").
- * @param failureSummary summary of the payment failure (if status == "FAILED").
+ * @param status         current status of the payment.
  */
 case class OutgoingPayment(id: UUID,
                            parentId: Option[UUID],
@@ -103,21 +128,36 @@ case class OutgoingPayment(id: UUID,
                            amount: MilliSatoshi,
                            targetNodeId: PublicKey,
                            createdAt: Long,
-                           status: OutgoingPaymentStatus.Value,
                            paymentRequest: Option[PaymentRequest],
-                           completedAt: Option[Long] = None,
-                           successSummary: Option[PaymentSuccessSummary] = None,
-                           failureSummary: Option[PaymentFailureSummary] = None)
+                           status: OutgoingPaymentStatus)
 
-object OutgoingPaymentStatus extends Enumeration {
-  val PENDING = Value(1, "PENDING")
-  val SUCCEEDED = Value(2, "SUCCEEDED")
-  val FAILED = Value(3, "FAILED")
+sealed trait OutgoingPaymentStatus
+
+object OutgoingPaymentStatus {
+
+  /** Payment is pending (waiting for the recipient to release the pre-image). */
+  case object Pending extends OutgoingPaymentStatus
+
+  /**
+   * Payment has been successfully sent and the recipient released the pre-image.
+   * We now have a valid proof-of-payment.
+   *
+   * @param paymentPreimage the preimage of the payment_hash.
+   * @param feesPaid        total amount of fees paid to intermediate routing nodes.
+   * @param route           payment route.
+   * @param completedAt     absolute time in milli-seconds since UNIX epoch when the payment was completed.
+   */
+  case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: Long) extends OutgoingPaymentStatus
+
+  /**
+   * Payment has failed and may be retried.
+   *
+   * @param failures    failed payment attempts.
+   * @param completedAt absolute time in milli-seconds since UNIX epoch when the payment was completed.
+   */
+  case class Failed(failures: Seq[FailureSummary], completedAt: Long) extends OutgoingPaymentStatus
+
 }
-
-case class PaymentSuccessSummary(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary])
-
-case class PaymentFailureSummary(failures: Seq[FailureSummary])
 
 /** A minimal representation of a hop in a payment route (suitable to store in a database). */
 case class HopSummary(nodeId: PublicKey, nextNodeId: PublicKey, shortChannelId: Option[ShortChannelId] = None) {

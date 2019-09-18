@@ -30,7 +30,6 @@ import grizzled.slf4j.Logging
 
 import scala.collection.immutable.Queue
 import scala.compat.Platform
-import scala.concurrent.duration._
 
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
@@ -185,9 +184,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
-    using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[PaymentSent] = Queue()
       while (rs.next()) {
@@ -204,9 +203,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
-    using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[PaymentReceived] = Queue()
       while (rs.next()) {
@@ -219,9 +218,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
-    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[PaymentRelayed] = Queue()
       while (rs.next()) {
@@ -237,9 +236,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
-    using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[NetworkFee] = Queue()
       while (rs.next()) {

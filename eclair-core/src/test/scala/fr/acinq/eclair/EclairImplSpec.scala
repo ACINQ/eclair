@@ -237,7 +237,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     auditDb.listSent(anyLong, anyLong) returns Seq.empty
     auditDb.listReceived(anyLong, anyLong) returns Seq.empty
     auditDb.listRelayed(anyLong, anyLong) returns Seq.empty
-    paymentDb.listPaymentRequests(anyLong, anyLong) returns Seq.empty
+    paymentDb.listIncomingPayments(anyLong, anyLong) returns Seq.empty
 
     val databases = mock[Databases]
     databases.audit returns auditDb
@@ -247,15 +247,15 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val eclair = new EclairImpl(kitWithMockAudit)
 
     Await.result(eclair.networkFees(None, None), 10 seconds)
-    auditDb.listNetworkFees(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+    auditDb.listNetworkFees(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once) // assert the call was made only once and with the specified params
 
     Await.result(eclair.audit(None, None), 10 seconds)
-    auditDb.listRelayed(0, MaxEpochSeconds).wasCalled(once)
-    auditDb.listReceived(0, MaxEpochSeconds).wasCalled(once)
-    auditDb.listSent(0, MaxEpochSeconds).wasCalled(once)
+    auditDb.listRelayed(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
+    auditDb.listReceived(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
+    auditDb.listSent(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
 
     Await.result(eclair.allInvoices(None, None), 10 seconds)
-    paymentDb.listPaymentRequests(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+    paymentDb.listIncomingPayments(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once) // assert the call was made only once and with the specified params
   }
 
   test("sendtoroute should pass the parameters correctly") { f =>

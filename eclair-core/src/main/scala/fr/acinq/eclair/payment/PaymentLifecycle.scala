@@ -200,7 +200,7 @@ object PaymentLifecycle {
   case class DefaultPaymentProgressHandler(id: UUID, r: SendPaymentRequest, db: PaymentsDb) extends PaymentProgressHandler {
 
     override def onSend(): Unit = {
-      db.addOutgoingPayment(OutgoingPayment(id, None, r.externalId, r.paymentHash, r.amount, r.targetNodeId, Platform.currentTime, OutgoingPaymentStatus.PENDING, r.paymentRequest))
+      db.addOutgoingPayment(OutgoingPayment(id, None, r.externalId, r.paymentHash, r.amount, r.targetNodeId, Platform.currentTime, r.paymentRequest, OutgoingPaymentStatus.Pending))
     }
 
     override def onSuccess(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit = {
