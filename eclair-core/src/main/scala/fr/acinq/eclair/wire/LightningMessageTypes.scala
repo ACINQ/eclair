@@ -17,13 +17,18 @@
 package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
+
+import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import java.nio.ByteOrder.LITTLE_ENDIAN
+
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
+import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
+
 import scala.util.Try
 
 /**
@@ -128,7 +133,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream[Tlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId {
 
-  lazy val secret: Option[UpdateAddSecretTlv.Secret] = tlvStream.get[UpdateAddSecretTlv.Secret]
+  lazy val secretOpt: Option[Origin] = tlvStream.get[UpdateAddSecretTlv.Secret].map(secret => originCodec.decode(secret.data.toBitVector).require.value)
 }
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,

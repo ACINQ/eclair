@@ -190,7 +190,7 @@ object ChannelCodecs extends Logging {
       ("amountOut" | millisatoshi)).as[Relayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
-  val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+  val UNKNOWN_UUID: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x03, localCodec) // backward compatible

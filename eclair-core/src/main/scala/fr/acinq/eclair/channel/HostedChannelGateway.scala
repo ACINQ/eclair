@@ -37,9 +37,10 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, cmd.remoteNodeId, newShortChannelId, minHostedCltvDelta,
         cmd.localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, cmd.localLCSS.initHostedChannel.channelCapacityMsat)
 
-      val hc = HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, lastCrossSignedState = cmd.localLCSS, allLocalUpdates = 0L, allRemoteUpdates = 0L,
-        localChanges = LocalChanges(Nil, Nil, Nil), remoteUpdates = List.empty, localSpec = CommitmentSpec(Set.empty, feeratePerKw = 0L, toLocal = cmd.localLCSS.localBalanceMsat, toRemote = cmd.localLCSS.remoteBalanceMsat),
-        originChannels = Map.empty[Long, Origin], channelId = cmd.channelId, isHost = true, channelUpdateOpt = Some(channelUpdate), localError = None, remoteError = None)
+      val hc = HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, lastCrossSignedState = cmd.localLCSS,
+        allLocalUpdates = 0L, allRemoteUpdates = 0L, localChanges = LocalChanges(Nil, Nil, Nil), remoteUpdates = List.empty,
+        localSpec = CommitmentSpec(Set.empty, feeratePerKw = 0L, toLocal = cmd.localLCSS.localBalanceMsat, toRemote = cmd.localLCSS.remoteBalanceMsat),
+        channelId = cmd.channelId, isHost = true, channelUpdateOpt = Some(channelUpdate), localError = None, remoteError = None)
 
       nodeParams.db.hostedChannels.addUsedShortChannelId(newShortChannelId)
       nodeParams.db.hostedChannels.addOrUpdateChannel(hc)

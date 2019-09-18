@@ -25,6 +25,8 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import ReplyChannelRangeTlv._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Relayed
+import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import org.scalatest.FunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -54,7 +56,7 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode all channel messages") {
-    val remoteTlvSecret = randomBytes(128)
+    val remoteTlvSecret = UpdateAddSecretTlv.Secret(originCodec.encode(Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)).require.toByteVector)
     val open = OpenChannel(randomBytes32, randomBytes32, 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, 9, CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
     val accept = AcceptChannel(randomBytes32, 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
     val funding_created = FundingCreated(randomBytes32, bin32(0), 3, randomBytes64)
@@ -64,7 +66,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val shutdown = Shutdown(randomBytes32, bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes32, 2 sat, randomBytes64)
     val update_add_htlc = UpdateAddHtlc(randomBytes32, 2, 3 msat, bin32(0), CltvExpiry(4), Sphinx.emptyOnionPacket)
-    val update_add_htlc_tlv = UpdateAddHtlc(randomBytes32, 2, 3 msat, bin32(0), CltvExpiry(4), Sphinx.emptyOnionPacket, TlvStream(UpdateAddSecretTlv.Secret(remoteTlvSecret) :: Nil))
+    val update_add_htlc_tlv = UpdateAddHtlc(randomBytes32, 2, 3 msat, bin32(0), CltvExpiry(4), Sphinx.emptyOnionPacket, TlvStream(remoteTlvSecret :: Nil))
     val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes32, 2, bin32(0))
     val update_fail_htlc = UpdateFailHtlc(randomBytes32, 2, bin(154, 0))
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes32, 2, randomBytes32, 1111)
@@ -114,8 +116,6 @@ class LightningMessageCodecsSpec extends FunSuite {
         assert(msg === decoded.value)
       }
     }
-
-    assert(update_add_htlc_tlv.secret.exists(_.data == remoteTlvSecret))
   }
 
   test("non-reg encoding type") {

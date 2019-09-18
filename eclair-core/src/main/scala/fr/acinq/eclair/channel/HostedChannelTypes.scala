@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.eclair._
 import com.softwaremill.quicklens._
+import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
@@ -44,7 +45,6 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    localChanges: LocalChanges,
                                    remoteUpdates: List[UpdateMessage],
                                    localSpec: CommitmentSpec,
-                                   originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
                                    isHost: Boolean,
                                    channelUpdateOpt: Option[ChannelUpdate],
@@ -98,8 +98,9 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
       return Left(HtlcValueTooSmall(channelId, minimum = lastCrossSignedState.initHostedChannel.htlcMinimumMsat, actual = cmd.amount))
     }
 
-    val add = UpdateAddHtlc(channelId, allLocalUpdates + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    val commitments1 = addLocalProposal(add).copy(originChannels = originChannels + (add.id -> origin))
+    val secret: TlvStream[Tlv] = TlvStream(UpdateAddSecretTlv.Secret(originCodec.encode(origin).require.toByteVector) :: Nil)
+    val add = UpdateAddHtlc(channelId, allLocalUpdates + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, secret)
+    val commitments1 = addLocalProposal(add)
     val outgoingHtlcs = commitments1.nextLocalReduced.htlcs.filter(_.direction == OUT)
 
     if (commitments1.nextLocalReduced.toLocal < 0.msat) {
@@ -161,7 +162,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     localSpec.findHtlcById(fulfill.id, OUT) match {
-      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), originChannels(fulfill.id), htlc.add))
+      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), htlc.add.secretOpt.get, htlc.add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)
     }
@@ -197,7 +198,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def receiveFail(fail: UpdateFailHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addRemoteProposal(fail), originChannels(fail.id), htlc.add))
+      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.secretOpt.get, htlc.add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
 
@@ -208,7 +209,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     }
 
     localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addRemoteProposal(fail), originChannels(fail.id), htlc.add))
+      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.secretOpt.get, htlc.add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
   }

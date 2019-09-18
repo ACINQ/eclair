@@ -10,8 +10,10 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
+import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
+
 import scala.util.Random
 
 class HostedChannelCodecsSpec extends FunSuite {
@@ -27,14 +29,16 @@ class HostedChannelCodecsSpec extends FunSuite {
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
-      onionRoutingPacket = Sphinx.emptyOnionPacket)
+      onionRoutingPacket = Sphinx.emptyOnionPacket,
+      tlvStream = TlvStream(UpdateAddSecretTlv.Secret(originCodec.encode(Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)).require.toByteVector) :: Nil))
     val add2 = UpdateAddHtlc(
       channelId = randomBytes32,
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
-      onionRoutingPacket = Sphinx.emptyOnionPacket)
+      onionRoutingPacket = Sphinx.emptyOnionPacket,
+      tlvStream = TlvStream(UpdateAddSecretTlv.Secret(originCodec.encode(Local(UUID.randomUUID, None)).require.toByteVector) :: Nil))
 
     val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
     val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(add2, add1), List(add1, add2), randomBytes64)
@@ -60,7 +64,6 @@ class HostedChannelCodecsSpec extends FunSuite {
       localChanges = LocalChanges(List(add1, add2), List(add1, add2), Nil),
       remoteUpdates = List(add1, add2),
       localSpec = cs,
-      originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
       channelId = ByteVector32.Zeroes,
       isHost = true,
       channelUpdateOpt = Some(channelUpdate),

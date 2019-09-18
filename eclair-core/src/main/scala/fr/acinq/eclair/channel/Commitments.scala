@@ -66,8 +66,6 @@ trait ChannelCommitments {
 
   val availableBalanceForSend: MilliSatoshi
 
-  val originChannels: Map[Long, Origin] // for outgoing htlcs relayed through us, the id of the previous channel
-
   val channelId: ByteVector32
 
   val announceChannel: Boolean
