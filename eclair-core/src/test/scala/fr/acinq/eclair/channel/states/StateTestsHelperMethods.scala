@@ -118,11 +118,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     (payment_preimage, cmd)
   }
 
-  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe, cltvExpiry: Long = 400144L, preimage: Option[ByteVector32] = None): (ByteVector32, UpdateAddHtlc) = {
-    val R: ByteVector32 = preimage.getOrElse {
-      randomBytes32
-    }
-    val H: ByteVector32 = Crypto.sha256(R)
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe, cltvExpiry: Long = 400144L): (ByteVector32, UpdateAddHtlc) = {
     val sender = TestProbe()
     val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
     val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId, currentBlockHeight)
