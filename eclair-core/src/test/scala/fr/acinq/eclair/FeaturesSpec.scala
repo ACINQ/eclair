@@ -27,12 +27,12 @@ import scodec.bits._
 class FeaturesSpec extends FunSuite {
 
   test("'initial_routing_sync' feature") {
-    assert(hasFeature(hex"08", Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
+    assert(hasFeature(hex"08", INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
   }
 
   test("'data_loss_protect' feature") {
-    assert(hasFeature(hex"01", Features.OPTION_DATA_LOSS_PROTECT_MANDATORY))
-    assert(hasFeature(hex"02", Features.OPTION_DATA_LOSS_PROTECT_OPTIONAL))
+    assert(hasFeature(hex"01", OPTION_DATA_LOSS_PROTECT_MANDATORY))
+    assert(hasFeature(hex"02", OPTION_DATA_LOSS_PROTECT_OPTIONAL))
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
@@ -41,10 +41,15 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("'variable_length_onion' feature") {
-    assert(hasFeature(hex"0100", Features.VARIABLE_LENGTH_ONION_MANDATORY))
+    assert(hasFeature(hex"0100", VARIABLE_LENGTH_ONION_MANDATORY))
     assert(hasVariableLengthOnion(hex"0100"))
-    assert(hasFeature(hex"0200", Features.VARIABLE_LENGTH_ONION_OPTIONAL))
+    assert(hasFeature(hex"0200", VARIABLE_LENGTH_ONION_OPTIONAL))
     assert(hasVariableLengthOnion(hex"0200"))
+  }
+
+  test("'option_static_remotekey feature") {
+    assert(hasFeature(hex"1000", STATIC_REMOTEKEY_MANDATORY))
+    assert(hasFeature(hex"2000", STATIC_REMOTEKEY_OPTIONAL))
   }
 
   test("features compatibility") {
