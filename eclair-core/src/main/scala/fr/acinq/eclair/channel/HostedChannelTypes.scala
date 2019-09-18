@@ -21,11 +21,11 @@ case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHos
 case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
 case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
-case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, localLCSS: LastCrossSignedState) extends HasHostedChanIdCommand
+case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, hostedCommits: HOSTED_DATA_COMMITMENTS) extends HasHostedChanIdCommand
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
-case class HOSTED_DATA_CLIENT_WAIT_HOST_REPLY(refundScriptPubKey: ByteVector) extends HostedData {
+case class HOSTED_DATA_CLIENT_WAIT_HOST_INIT(refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
 
@@ -69,8 +69,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def resetUpdates: HOSTED_DATA_COMMITMENTS =
     copy(allLocalUpdates = lastCrossSignedState.localUpdates + localChanges.signed.size,
-      allRemoteUpdates = lastCrossSignedState.remoteUpdates,
-      remoteUpdates = Nil)
+      allRemoteUpdates = lastCrossSignedState.remoteUpdates, remoteUpdates = Nil)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
@@ -162,7 +161,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     localSpec.findHtlcById(fulfill.id, OUT) match {
-      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), htlc.add.secretOpt.get, htlc.add))
+      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), htlc.add.originOpt.get, htlc.add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)
     }
@@ -198,7 +197,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def receiveFail(fail: UpdateFailHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.secretOpt.get, htlc.add))
+      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.originOpt.get, htlc.add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
 
@@ -209,7 +208,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     }
 
     localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.secretOpt.get, htlc.add))
+      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.originOpt.get, htlc.add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
   }
