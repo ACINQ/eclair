@@ -17,10 +17,10 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId}
 import org.scalatest.FunSuite
 import scodec.bits._
 
@@ -37,24 +37,24 @@ class GraphSpec extends FunSuite {
   )
 
   /**
-    * /--> D --\
-    * A --> B --> C
-    * \-> E/
-    *
-    * @return
-    */
+   * /--> D --\
+   * A --> B --> C
+   * \-> E/
+   *
+   * @return
+   */
   def makeTestGraph() = {
 
     val updates = Seq(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, a, d, 0, 0),
-      makeUpdate(4L, d, c, 0, 0),
-      makeUpdate(5L, c, e, 0, 0),
-      makeUpdate(6L, b, e, 0, 0)
+      makeUpdate(1L, a, b, 0 msat, 0),
+      makeUpdate(2L, b, c, 0 msat, 0),
+      makeUpdate(3L, a, d, 0 msat, 0),
+      makeUpdate(4L, d, c, 0 msat, 0),
+      makeUpdate(5L, c, e, 0 msat, 0),
+      makeUpdate(6L, b, e, 0 msat, 0)
     )
 
-    DirectedGraph.makeGraph(updates.toMap)
+    DirectedGraph().addEdges(updates)
   }
 
   test("instantiate a graph, with vertices and then add edges") {
@@ -72,11 +72,11 @@ class GraphSpec extends FunSuite {
     assert(otherGraph.vertexSet().size === 5)
 
     // add some edges to the graph
-    val (descAB, updateAB) = makeUpdate(1L, a, b, 0, 0)
-    val (descBC, updateBC) = makeUpdate(2L, b, c, 0, 0)
-    val (descAD, updateAD) = makeUpdate(3L, a, d, 0, 0)
-    val (descDC, updateDC) = makeUpdate(4L, d, c, 0, 0)
-    val (descCE, updateCE) = makeUpdate(5L, c, e, 0, 0)
+    val (descAB, updateAB) = makeUpdate(1L, a, b, 0 msat, 0)
+    val (descBC, updateBC) = makeUpdate(2L, b, c, 0 msat, 0)
+    val (descAD, updateAD) = makeUpdate(3L, a, d, 0 msat, 0)
+    val (descDC, updateDC) = makeUpdate(4L, d, c, 0 msat, 0)
+    val (descCE, updateCE) = makeUpdate(5L, c, e, 0 msat, 0)
 
     val graphWithEdges = graph
       .addEdge(descAB, updateAB)
@@ -98,12 +98,12 @@ class GraphSpec extends FunSuite {
 
   test("instantiate a graph adding edges only") {
 
-    val edgeAB = edgeFromDesc(makeUpdate(1L, a, b, 0, 0))
-    val (descBC, updateBC) = makeUpdate(2L, b, c, 0, 0)
-    val (descAD, updateAD) = makeUpdate(3L, a, d, 0, 0)
-    val (descDC, updateDC) = makeUpdate(4L, d, c, 0, 0)
-    val (descCE, updateCE) = makeUpdate(5L, c, e, 0, 0)
-    val (descBE, updateBE) = makeUpdate(6L, b, e, 0, 0)
+    val edgeAB = edgeFromDesc(makeUpdate(1L, a, b, 0 msat, 0))
+    val (descBC, updateBC) = makeUpdate(2L, b, c, 0 msat, 0)
+    val (descAD, updateAD) = makeUpdate(3L, a, d, 0 msat, 0)
+    val (descDC, updateDC) = makeUpdate(4L, d, c, 0 msat, 0)
+    val (descCE, updateCE) = makeUpdate(5L, c, e, 0 msat, 0)
+    val (descBE, updateBE) = makeUpdate(6L, b, e, 0 msat, 0)
 
     val graph = DirectedGraph(edgeAB)
       .addEdge(descAD, updateAD)
@@ -121,10 +121,10 @@ class GraphSpec extends FunSuite {
   test("containsEdge should return true if the graph contains that edge, false otherwise") {
 
     val updates = Seq(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0),
-      makeUpdate(3L, c, d, 0, 0),
-      makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, 0 msat, 0),
+      makeUpdate(2L, b, c, 0 msat, 0),
+      makeUpdate(3L, c, d, 0 msat, 0),
+      makeUpdate(4L, d, e, 0 msat, 0)
     )
 
     val graph = DirectedGraph().addEdges(updates)
@@ -144,10 +144,10 @@ class GraphSpec extends FunSuite {
 
     val graph = makeTestGraph()
 
-    val (descBE, _) = makeUpdate(6L, b, e, 0, 0)
-    val (descCE, _) = makeUpdate(5L, c, e, 0, 0)
-    val (descAD, _) = makeUpdate(3L, a, d, 0, 0)
-    val (descDC, _) = makeUpdate(4L, d, c, 0, 0)
+    val (descBE, _) = makeUpdate(6L, b, e, 0 msat, 0)
+    val (descCE, _) = makeUpdate(5L, c, e, 0 msat, 0)
+    val (descAD, _) = makeUpdate(3L, a, d, 0 msat, 0)
+    val (descDC, _) = makeUpdate(4L, d, c, 0 msat, 0)
 
     assert(graph.edgeSet().size === 6)
 
@@ -161,15 +161,15 @@ class GraphSpec extends FunSuite {
 
     val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(descBE, descCE))
     assert(withoutAnyIncomingEdgeInE.containsVertex(e))
-    assert(withoutAnyIncomingEdgeInE.edgesOf(e).size == 0)
+    assert(withoutAnyIncomingEdgeInE.edgesOf(e).isEmpty)
   }
 
   test("should get an edge given two vertices") {
 
     // contains an edge A --> B
     val updates = Seq(
-      makeUpdate(1L, a, b, 0, 0),
-      makeUpdate(2L, b, c, 0, 0)
+      makeUpdate(1L, a, b, 0 msat, 0),
+      makeUpdate(2L, b, c, 0 msat, 0)
     )
 
     val graph = DirectedGraph().addEdges(updates)
@@ -199,19 +199,19 @@ class GraphSpec extends FunSuite {
     assert(graph.edgesOf(a).size == 2)
 
     //now add a new edge a -> b but with a different channel update and a different ShortChannelId
-    val newEdgeForNewChannel = edgeFromDesc(makeUpdate(15L, a, b, 20, 0))
+    val newEdgeForNewChannel = edgeFromDesc(makeUpdate(15L, a, b, 20 msat, 0))
     val mutatedGraph = graph.addEdge(newEdgeForNewChannel)
 
     assert(mutatedGraph.edgesOf(a).size == 3)
 
     //if the ShortChannelId is the same we replace the edge and the update, this edge have an update with a different 'feeBaseMsat'
-    val edgeForTheSameChannel = edgeFromDesc(makeUpdate(15L, a, b, 30, 0))
+    val edgeForTheSameChannel = edgeFromDesc(makeUpdate(15L, a, b, 30 msat, 0))
     val mutatedGraph2 = mutatedGraph.addEdge(edgeForTheSameChannel)
 
     assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
     assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
 
-    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30)
+    assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30.msat)
   }
 
   test("remove a vertex with incoming edges and check those edges are removed too") {
@@ -234,11 +234,11 @@ class GraphSpec extends FunSuite {
   def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate)): GraphEdge = GraphEdge(tuple._1, tuple._2)
 
   def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = {
-    makeUpdate(shortChannelId, a, b, 0, 0)._1
+    makeUpdate(shortChannelId, a, b, 0 msat, 0)._1
   }
 
   def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = {
-    edgeFromDesc(makeUpdate(shortChannelId, a, b, 0, 0))
+    edgeFromDesc(makeUpdate(shortChannelId, a, b, 0 msat, 0))
   }
 
 }

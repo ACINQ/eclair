@@ -63,7 +63,8 @@ class EarnDotComFeeProviderSpec extends FunSuite with Logging {
       blocks_6 = 230 * 1000,
       blocks_12 = 140 * 1000,
       blocks_36 = 60 * 1000,
-      blocks_72 = 40 * 1000)
+      blocks_72 = 40 * 1000,
+      blocks_144 = 10 * 1000)
     assert(feerates === ref)
   }
 

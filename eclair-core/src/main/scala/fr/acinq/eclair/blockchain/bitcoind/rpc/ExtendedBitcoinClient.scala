@@ -19,8 +19,9 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
+import kamon.Kamon
 import org.json4s.JsonAST._
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -80,6 +81,13 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txId).map(raw => Transaction.read(raw))
+
+  def getTransactionMeta(txId: String)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
+    for {
+      tx_opt <- getTransaction(txId) map(Some(_)) recover { case _ => None }
+      blockchaininfo <- rpcClient.invoke("getblockchaininfo")
+      JInt(timestamp) = blockchaininfo \ "mediantime"
+    } yield GetTxWithMetaResponse(txid = ByteVector32.fromValidHex(txId), tx_opt, timestamp.toLong)
 
   def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
@@ -142,26 +150,36 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
-
-    for {
-      blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
-      txid: String <- rpcClient.invoke("getblock", blockHash).map {
-        case json => Try {
-          val JArray(txs) = json \ "tx"
-          txs(txIndex).extract[String]
-        } getOrElse ByteVector32.Zeroes.toHex
-      }
-      tx <- getRawTransaction(txid)
-      unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
-      fundingTxStatus <- if (unspent) {
-        Future.successful(UtxoStatus.Unspent)
-      } else {
-        // if this returns true, it means that the spending tx is *not* in the blockchain
-        isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
-          case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
+      val span = Kamon.spanBuilder("validate-bitcoin-client").start()
+      for {
+        _ <- Future.successful(0)
+        span0 = Kamon.spanBuilder("getblockhash").start()
+        blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
+        _ = span0.finish()
+        span1 = Kamon.spanBuilder("getblock").start()
+        txid: String <- rpcClient.invoke("getblock", blockHash).map {
+          case json => Try {
+            val JArray(txs) = json \ "tx"
+            txs(txIndex).extract[String]
+          } getOrElse ByteVector32.Zeroes.toHex
         }
-      }
-    } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
+        _ = span1.finish()
+        span2 = Kamon.spanBuilder("getrawtx").start()
+        tx <- getRawTransaction(txid)
+        _ = span2.finish()
+        span3 = Kamon.spanBuilder("utxospendable-mempool").start()
+        unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
+        _ = span3.finish()
+        fundingTxStatus <- if (unspent) {
+          Future.successful(UtxoStatus.Unspent)
+        } else {
+          // if this returns true, it means that the spending tx is *not* in the blockchain
+          isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+            case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
+          }
+        }
+        _ = span.finish()
+      } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
 
   } recover { case t: Throwable => ValidateResult(c, Left(t)) }
 

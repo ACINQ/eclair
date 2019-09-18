@@ -21,7 +21,7 @@ import java.time.LocalDateTime
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.CoinUtils
+import fr.acinq.eclair.{CoinUtils, MilliSatoshi}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumDisconnected, ElectrumReady}
 import fr.acinq.eclair.channel._
@@ -75,7 +75,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
+    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId, _, _) =>
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, temporaryChannelId)
       runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))
@@ -86,7 +86,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
       channelPaneController.updateBalance(currentData.commitments)
       val m1 = m + (channel -> channelPaneController)
-      val totalBalance = MilliSatoshi(m1.values.map(_.getBalance.amount).sum)
+      val totalBalance = m1.values.map(_.getBalance).sum
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
@@ -118,7 +118,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelSignatureReceived(channel, commitments) if m.contains(channel) =>
       val channelPaneController = m(channel)
       channelPaneController.updateBalance(commitments)
-      val totalBalance = MilliSatoshi(m.values.map(_.getBalance.amount).sum)
+      val totalBalance = m.values.map(_.getBalance).sum
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
@@ -129,7 +129,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug(s"channel=${channelPaneController.channelId.getText} to be removed from gui")
       runInGuiThread(() => mainController.channelBox.getChildren.remove(channelPaneController.root))
       val m1 = m - actor
-      val totalBalance = MilliSatoshi(m1.values.map(_.getBalance.amount).sum)
+      val totalBalance = m1.values.map(_.getBalance).sum
       runInGuiThread(() => {
         mainController.refreshTotalBalance(totalBalance)
       })
@@ -187,11 +187,11 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
                 val c = mainController.networkChannelsMap.get(channelUpdate.shortChannelId)
                 if (Announcements.isNode1(channelUpdate.channelFlags)) {
                   c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-                  c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat.toLong)
                   c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
               } else {
                   c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
-                  c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat)
+                  c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat.toLong)
                   c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
                 }
                 mainController.networkChannelsMap.put(channelUpdate.shortChannelId, c)
@@ -200,7 +200,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           }
 
     case p: PaymentSucceeded =>
-      val message = CoinUtils.formatAmountInUnit(MilliSatoshi(p.amountMsat), FxApp.getUnit, withUnit = true)
+      val message = CoinUtils.formatAmountInUnit(p.amount, FxApp.getUnit, withUnit = true)
       mainController.handlers.notification("Payment Sent", message, NOTIFICATION_SUCCESS)
 
     case p: PaymentFailed =>

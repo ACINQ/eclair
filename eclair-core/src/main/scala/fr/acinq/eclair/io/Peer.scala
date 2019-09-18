@@ -25,23 +25,25 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{secureRandom, wire, _}
+import kamon.Kamon
 import scodec.Attempt
 import scodec.bits.ByteVector
+
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 
 /**
-  * Created by PM on 26/08/2016.
-  */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+ * Created by PM on 26/08/2016.
+ */
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -54,7 +56,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels)
+      // When restarting, we will immediately reconnect, but then:
+      // - we don't want all the subsequent reconnection attempts to be synchronized (herd effect)
+      // - we don't want to go through the exponential backoff delay, because we were offline, not them, so there is no
+      // reason to eagerly retry
+      // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
+      val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
+      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, firstNextReconnectionDelay) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {
@@ -80,13 +88,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt.orElse(getPeerAddressFromNodeAnnouncement) match {
         case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
-        case None                    => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
+        case None => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
-          log.info(s"reconnecting to $address")
-          // exponential backoff retry with a finite max
-          setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, d.attempts), 3600) seconds, repeat = false)
-          stay using d.copy(attempts = d.attempts + 1)
+          log.info(s"reconnecting to $address (next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds)")
+          setTimer(RECONNECT_TIMER, Reconnect, d.nextReconnectionDelay, repeat = false)
+          stay using d.copy(nextReconnectionDelay = nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
       }
 
     case Event(Authenticator.Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
@@ -138,15 +145,27 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         if (remoteHasInitialRoutingSync) {
           if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
             // if they support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will send us a query)", remoteNodeId)
+            log.info("peer has set initial routing sync and supports channel range queries, we do nothing (they will send us a query)")
           } else {
             // "old" nodes, do as before
+            log.info("peer requested a full routing table dump")
             router ! GetRoutingState
           }
         }
         if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
-          router ! SendChannelQuery(remoteNodeId, d.transport)
+          // TODO: for now we do not activate extended queries on mainnet
+          val flags_opt = nodeParams.chainHash match {
+            case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
+              Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
+            case _ => None
+          }
+          if (nodeParams.syncWhitelist.isEmpty || nodeParams.syncWhitelist.contains(remoteNodeId)) {
+            log.info(s"sending sync channel range query with flags_opt=$flags_opt")
+            router ! SendChannelQuery(remoteNodeId, d.transport, flags_opt = flags_opt)
+          } else {
+            log.info("not syncing with this peer")
+          }
         }
 
         // let's bring existing/requested channels online
@@ -274,20 +293,20 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
+      val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
       c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
       val temporaryChannelId = randomBytes32
-      val channelFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
-      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(Globals.feeratesPerKw.get.blocks_6)
+      val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
       log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
       stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
       d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
-          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingSatoshis = msg.fundingSatoshis, origin_opt = None)
+          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
           val temporaryChannelId = msg.temporaryChannelId
           log.info(s"accepting a new channel to $remoteNodeId temporaryChannelId=$temporaryChannelId localParams=$localParams")
           channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.transport, d.remoteInit)
@@ -320,7 +339,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(RoutingState(channels, updates, nodes), d: ConnectedData) =>
+    case Event(RoutingState(channels, nodes), d: ConnectedData) =>
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -329,9 +348,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
 
       log.info(s"sending all announcements to {}", remoteNodeId)
-      val channelsSent = send(channels)
+      val channelsSent = send(channels.map(_.ann))
       val nodesSent = send(nodes)
-      val updatesSent = send(updates)
+      val updatesSent = send(channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq))
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
@@ -342,8 +361,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
       /**
-        * Send and count in a single iteration
-        */
+       * Send and count in a single iteration
+       */
       def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[ActorRef]]): Int = msgs.foldLeft(0) {
         case (count, (_, origins)) if origins.contains(self) =>
           // the announcement came from this peer, we don't send it back
@@ -503,15 +522,39 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
     case Event(_: BadMessage, _) => stay // we got disconnected while syncing
   }
 
+  /**
+   * The transition INSTANTIATING -> DISCONNECTED happens in 2 scenarios
+   *   - Manual connection to a new peer: then when(DISCONNECTED) we expect a Peer.Connect from the switchboard
+   *   - Eclair restart: The switchboard creates the peers and sends Init and then Peer.Reconnect to trigger reconnection attempts
+   *
+   * So when we see this transition we NO-OP because we don't want to start a Reconnect timer but the peer will receive the trigger
+   * (Connect/Reconnect) messages from the switchboard.
+   */
   onTransition {
-    case INSTANTIATING -> DISCONNECTED if nodeParams.autoReconnect && nextStateData.address_opt.isDefined => self ! Reconnect // we reconnect right away if we just started the peer
-    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case INSTANTIATING -> DISCONNECTED => ()
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, Random.nextInt(nodeParams.initialRandomReconnectDelay.toMillis.toInt).millis, repeat = false) // we add some randomization to not have peers reconnect to each other exactly at the same time
     case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
-  def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
+  onTransition {
+    case _ -> CONNECTED =>
+      Metrics.connectedPeers.increment()
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
+    case CONNECTED -> DISCONNECTED =>
+      Metrics.connectedPeers.decrement()
+      context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
+  onTermination {
+    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+      // the transition handler won't be fired if we go directly from CONNECTED to closed
+      Metrics.connectedPeers.decrement()
+      context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
+  def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
+    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingAmount)
     val channel = spawnChannel(nodeParams, origin_opt)
     (channel, localParams)
   }
@@ -568,7 +611,7 @@ object Peer {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
-  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
+  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], nextReconnectionDelay: FiniteDuration = 10 seconds) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
@@ -591,10 +634,10 @@ object Peer {
   case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
-    require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
-    require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
-    require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
-    require(pushMsat.amount >= 0, s"pushMsat must be positive")
+    require(fundingSatoshis < Channel.MAX_FUNDING, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING}")
+    require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
+    require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
+    require(pushMsat >= 0.msat, s"pushMsat must be positive")
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum $MinimumFeeratePerKw rate/kw"))
   }
   case object GetPeerInfo
@@ -614,22 +657,28 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
+  object Metrics {
+    val peers = Kamon.rangeSampler("peers.count").withoutTags()
+    val connectedPeers = Kamon.rangeSampler("peers.connected.count").withoutTags()
+    val channels = Kamon.rangeSampler("channels.count").withoutTags()
+  }
+
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     val entropy = new Array[Byte](16)
     secureRandom.nextBytes(entropy)
     val bis = new ByteArrayInputStream(entropy)
     val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, channelKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       channelKeyPath,
-      dustLimitSatoshis = nodeParams.dustLimitSatoshis,
+      dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserveSatoshis = Math.max((nodeParams.reserveToFundingRatio * fundingSatoshis).toLong, nodeParams.dustLimitSatoshis), // BOLT #2: make sure that our reserve is above our dust limit
-      htlcMinimumMsat = nodeParams.htlcMinimumMsat,
+      channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
@@ -639,13 +688,13 @@ object Peer {
   }
 
   /**
-    * Peer may want to filter announcements based on timestamp
-    *
-    * @param gossipTimestampFilter_opt optional gossip timestamp range
-    * @return
-    *           - true if there is a filter and msg has no timestamp, or has one that matches the filter 
-    *           - false otherwise
-    */
+   * Peer may want to filter announcements based on timestamp
+   *
+   * @param gossipTimestampFilter_opt optional gossip timestamp range
+   * @return
+   *           - true if there is a filter and msg has no timestamp, or has one that matches the filter
+   *           - false otherwise
+   */
   def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // check if this message has a timestamp that matches our timestamp filter
     (msg, gossipTimestampFilter_opt) match {
@@ -656,4 +705,9 @@ object Peer {
   }
 
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
+
+  /**
+   * Exponential backoff retry with a finite max
+   */
+  def nextReconnectionDelay(currentDelay: FiniteDuration, maxReconnectInterval: FiniteDuration): FiniteDuration = (2 * currentDelay).min(maxReconnectInterval)
 }

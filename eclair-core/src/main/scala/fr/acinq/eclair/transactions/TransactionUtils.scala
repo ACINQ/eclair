@@ -1,6 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{Crypto, LexicographicalOrdering, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.CltvExpiry
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -14,8 +15,8 @@ object TransactionUtils {
 
   def isLessThan(a: TxIn, b: TxIn): Boolean = isLessThan(a.outPoint, b.outPoint)
 
-  def isLessOrCLTV(a: (TxOut, Option[Long]), b: (TxOut, Option[Long])): Boolean = {
-    val amountComparison = compareAmounts(a._1.amount, b._1.amount)
+  def isLessOrCLTV(a: (TxOut, Option[CltvExpiry]), b: (TxOut, Option[CltvExpiry])): Boolean = {
+    val amountComparison = a._1.amount.compare(b._1.amount)
     if(amountComparison != 0){
       amountComparison < 0
     } else {
@@ -27,8 +28,6 @@ object TransactionUtils {
       }
     }
   }
-
-  def compareAmounts(a: Satoshi, b: Satoshi): Int = a.amount.compareTo(b.amount)
 
   @tailrec
   def lexicographicalOrder(a: ByteVector, b: ByteVector): Int = {
@@ -53,15 +52,15 @@ object TransactionUtils {
     * @param outputsWithHtlcCltvInfo the complete list of the outputs of this transaction, enriched with htlc_cltv info
     * @return
     */
-  def sortByBIP69AndCLTV(tx: Transaction, outputsWithHtlcCltvInfo:Seq[(TxOut, Option[Long])]): (Transaction, Map[Int, Long])= {
+  def sortByBIP69AndCLTV(tx: Transaction, outputsWithHtlcCltvInfo:Seq[(TxOut, Option[CltvExpiry])]): (Transaction, Map[Int, CltvExpiry])= {
     assert(tx.txOut.size == outputsWithHtlcCltvInfo.size, "Unable to sort with incomplete information")
 
     val sortedOutputsAndCltv = outputsWithHtlcCltvInfo.sortWith(isLessOrCLTV)
 
     val indexCltv = sortedOutputsAndCltv.zipWithIndex.map {
       case ((_, Some(cltv)), index) => (index, cltv)
-      case ((_, None), index) => (index, -1L)
-    }.filterNot(_._2 == -1L).toMap
+      case ((_, None), index) => (index, CltvExpiry(-1L))
+    }.filterNot(_._2 == CltvExpiry(-1L)).toMap
 
     val sortedTx = tx.copy(
       txIn = tx.txIn.sortWith(isLessThan),

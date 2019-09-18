@@ -22,7 +22,7 @@ import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.api.FormParamExtractors.{sha256HashUnmarshaller, shortChannelIdUnmarshaller}
 import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
@@ -38,7 +38,7 @@ trait ExtraDirectives extends Directives {
   val paymentHashFormParam = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
   val fromFormParam = "from".as[Long]
   val toFormParam = "to".as[Long]
-  val amountMsatFormParam = "amountMsat".as[Long]
+  val amountMsatFormParam = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam = "invoice".as[PaymentRequest]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found

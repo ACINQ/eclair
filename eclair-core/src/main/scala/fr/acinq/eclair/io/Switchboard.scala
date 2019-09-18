@@ -32,6 +32,7 @@ import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import scala.util.Success
 
@@ -57,7 +58,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     })
     val peers = nodeParams.db.peers.listPeers()
 
-    checkBrokenHtlcsLink(channels, nodeParams.privateKey) match {
+    checkBrokenHtlcsLink(channels, nodeParams.privateKey, nodeParams.globalFeatures) match {
       case Nil => ()
       case brokenHtlcs =>
         val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
@@ -69,17 +70,14 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
       .map {
-        case (remoteNodeId, states) =>
-          val address_opt = peers.get(remoteNodeId).orElse {
-            nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption) // gets the first of the list! TODO improve selection?
-          }
-          (remoteNodeId, states, address_opt)
+        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
       }
       .foreach {
         case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
           val address_opt = nodeaddress_opt.map(_.socketAddress)
-          createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          peer ! Peer.Reconnect
       }
   }
 
@@ -115,8 +113,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case 'peers => sender ! context.children
 
   }
-
-  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
     * Retrieves a peer based on its public key.
@@ -159,6 +155,8 @@ object Switchboard extends Logging {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
 
+  def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
+
   /**
     * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
     * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
@@ -168,7 +166,7 @@ object Switchboard extends Logging {
     *
     * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
     */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
@@ -177,8 +175,8 @@ object Switchboard extends Logging {
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .filter(_.direction == OUT)
       .map(_.add)
-      .map(Relayer.tryParsePacket(_, privateKey))
-      .collect { case Success(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
+      .map(Relayer.decryptPacket(_, privateKey, features))
+      .collect { case Right(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
 
     // Here we do it differently because we need the origin information.
     val relayed_out = channels

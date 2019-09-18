@@ -51,7 +51,7 @@ class SqliteWalletDbSpec extends FunSuite {
 
   def randomHistoryItems = (0 to random.nextInt(100)).map(_ => randomHistoryItem).toList
 
-  def randomProof = GetMerkleResponse(randomBytes32, ((0 until 10).map(_ => randomBytes32)).toList, random.nextInt(100000), 0)
+  def randomProof = GetMerkleResponse(randomBytes32, ((0 until 10).map(_ => randomBytes32)).toList, random.nextInt(100000), 0, None)
 
   def randomPersistentData = {
     val transactions = for (i <- 0 until random.nextInt(100)) yield randomTransaction
