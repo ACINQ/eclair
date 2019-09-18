@@ -80,8 +80,6 @@
                         -H:+ReportUnsupportedElementsAtRuntime
                         -H:+ReportExceptionStackTraces
                         -H:+TraceClassInitialization
-                        <!-- -H:+ReflectionPluginTracing -->
-                        --no-server
                         --initialize-at-build-time
                         <!-- sqlite -->
                         --initialize-at-build-time=org.sqlite.JDBC
@@ -92,10 +90,8 @@
                         --initialize-at-build-time=org.sqlite.Function
                         --initialize-at-build-time=org.sqlite.Function\$Aggregate
                         --initialize-at-build-time=org.sqlite.Function\$Window
-
                         <!-- bitcoin-lib -->
                         --initialize-at-run-time=fr.acinq.bitcoin.Crypto$
-
                         <!-- akka and typesafe config-->
                         --initialize-at-run-time=akka.protobuf.DescriptorProtos
                         --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$EnvVariablesHolder
@@ -110,7 +106,7 @@
                         --initialize-at-run-time=io.netty.util.internal.logging.Log4JLogger
                         <!-- ZMQ -->
                         --initialize-at-run-time=zmq.util.Utils
-
+                        --no-server
                         --no-fallback
                         --allow-incomplete-classpath
                         -J-Xmx4G

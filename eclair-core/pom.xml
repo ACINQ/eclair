@@ -220,11 +220,13 @@
             <groupId>org.graalvm.sdk</groupId>
             <artifactId>graal-sdk</artifactId>
             <version>${graal.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.oracle.substratevm</groupId>
             <artifactId>svm</artifactId>
             <version>${graal.version}</version>
+            <scope>provided</scope>
         </dependency>
         <!-- TESTS -->
         <dependency>
