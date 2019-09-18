@@ -247,6 +247,168 @@
   "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
 },
 {
+  "name":"ch.qos.logback.classic.encoder.PatternLayoutEncoder",
+  "allPublicMethods":true,
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ClassOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ContextNameConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.DateConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ExtendedThrowableProxyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.FileOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LevelConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LineOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LineSeparatorConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LocalSequenceNumberConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LoggerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MDCConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MarkerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MessageConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MethodOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.NopThrowableInformationConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.PropertyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.RelativeTimeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.RootCauseFirstThrowableProxyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ThreadConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ThrowableProxyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.color.HighlightingCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.ConsoleAppender",
+  "allPublicMethods":true,
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"ch.qos.logback.core.pattern.IdentityCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.ReplacingCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BlackCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldBlueCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldCyanCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldGreenCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldMagentaCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldRedCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldWhiteCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldYellowCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.CyanCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.GrayCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.GreenCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.MagentaCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.RedCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.WhiteCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.YellowCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
   "name":"com.fasterxml.jackson.databind.ext.Java7SupportImpl",
   "methods":[{"name":"<init>","parameterTypes":[] }]
 },
@@ -381,6 +543,17 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
+  "name":"fr.acinq.eclair.channel.DATA_NEGOTIATING",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NEGOTIATING$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
   "name":"fr.acinq.eclair.channel.DATA_NORMAL",
   "allDeclaredFields":true,
   "allPublicMethods":true,
@@ -388,83 +561,6 @@
 },
 {
   "name":"fr.acinq.eclair.channel.DATA_NORMAL$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_ACCEPT_CHANNEL",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_ACCEPT_CHANNEL$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CREATED",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CREATED$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_SIGNED",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_SIGNED$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED$",
   "allPublicMethods":true,
   "fields":[{"name":"MODULE$"}]
 },
@@ -480,13 +576,79 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
-  "name":"fr.acinq.eclair.channel.DATA_NEGOTIATING",
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_ACCEPT_CHANNEL",
   "allDeclaredFields":true,
   "allPublicMethods":true,
   "allPublicConstructors":true
 },
 {
-  "name":"fr.acinq.eclair.channel.DATA_NEGOTIATING$",
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_ACCEPT_CHANNEL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CREATED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CREATED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_SIGNED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_SIGNED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL$",
   "allPublicMethods":true,
   "fields":[{"name":"MODULE$"}]
 },
@@ -500,12 +662,6 @@
   "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT$",
   "allPublicMethods":true,
   "fields":[{"name":"MODULE$"}]
-},
-{
-  "name":"fr.acinq.eclair.payment.UsableBalances",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
 },
 {
   "name":"fr.acinq.eclair.channel.LocalChanges",
@@ -683,17 +839,6 @@
   "fields":[{"name":"MODULE$"}]
 },
 {
-  "name":"fr.acinq.eclair.payment.PaymentSent",
-  "allDeclaredFields":true,
-  "allPublicMethods":true,
-  "allPublicConstructors":true
-},
-{
-  "name":"fr.acinq.eclair.payment.PaymentSent$",
-  "allPublicMethods":true,
-  "fields":[{"name":"MODULE$"}]
-},
-{
   "name":"fr.acinq.eclair.payment.PaymentRelayed",
   "allDeclaredFields":true,
   "allPublicMethods":true,
@@ -701,6 +846,17 @@
 },
 {
   "name":"fr.acinq.eclair.payment.PaymentRelayed$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSent",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSent$",
   "allPublicMethods":true,
   "fields":[{"name":"MODULE$"}]
 },
@@ -845,7 +1001,10 @@
 },
 {
   "name":"java.lang.Throwable",
-  "methods":[{"name":"addSuppressed","parameterTypes":["java.lang.Throwable"] }]
+  "methods":[
+    {"name":"addSuppressed","parameterTypes":["java.lang.Throwable"] }, 
+    {"name":"getSuppressed","parameterTypes":[] }
+  ]
 },
 {
   "name":"java.lang.management.ManagementFactory",
@@ -867,6 +1026,9 @@
   "name":"java.nio.DirectByteBuffer",
   "fields":[{"name":"cleaner", "allowUnsafeAccess":true}],
   "methods":[{"name":"<init>","parameterTypes":["long","int"] }]
+},
+{
+  "name":"javax.management.ObjectName"
 },
 {
   "name":"org.sqlite.JDBC"
@@ -915,165 +1077,5 @@
 {
   "name":"sun.reflect.Reflection",
   "methods":[{"name":"getCallerClass","parameterTypes":["int"] }]
-},
-{
-  "name": "ch.qos.logback.classic.pattern.DateConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.MessageConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ThrowableProxyConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.NopThrowableInformationConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ContextNameConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldYellowCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.LoggerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.ReplacingCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldBlueCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.CyanCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.RedCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.WhiteCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.PropertyConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ExtendedThrowableProxyConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.RootCauseFirstThrowableProxyConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.MethodOfCallerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.LevelConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.IdentityCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldWhiteCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.MarkerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldCyanCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldMagentaCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.RelativeTimeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.MagentaCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ClassOfCallerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.LineOfCallerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.FileOfCallerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldGreenCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.LocalSequenceNumberConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.YellowCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ExtendedThrowableProxyConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.color.HighlightingCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.GrayCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.MDCConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ClassOfCallerConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BoldRedCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.GreenCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.core.pattern.color.BlackCompositeConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.ThreadConverter",
-  "allDeclaredConstructors": true
-},
-{
-  "name": "ch.qos.logback.classic.pattern.LineSeparatorConverter",
-  "allDeclaredConstructors": true
 }
 ]
