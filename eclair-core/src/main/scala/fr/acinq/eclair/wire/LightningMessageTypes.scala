@@ -17,15 +17,12 @@
 package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
-import java.nio.charset.StandardCharsets
 import java.nio.ByteOrder.LITTLE_ENDIAN
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
-import fr.acinq.eclair.wire.HostedMessagesCodecs.inFlightHtlcCodec
 import scodec.bits.ByteVector
 import scala.util.Try
 
@@ -308,10 +305,6 @@ case class InitHostedChannel(maxHtlcValueInFlightMsat: UInt64,
                              minimalOnchainRefundAmountSatoshis: Satoshi,
                              initialClientBalanceMsat: MilliSatoshi) extends HostedChannelMessage
 
-case class InFlightHtlc(id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry) {
-  def toUpdateAdd(chanId: ByteVector32) = UpdateAddHtlc(chanId, id, amountMsat, paymentHash, expiry, onionRoutingPacket = Sphinx.emptyOnionPacket)
-}
-
 case class LastCrossSignedState(refundScriptPubKey: ByteVector,
                                 initHostedChannel: InitHostedChannel,
                                 blockDay: Long,
@@ -319,8 +312,8 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
                                 remoteBalanceMsat: MilliSatoshi,
                                 localUpdates: Long,
                                 remoteUpdates: Long,
-                                incomingHtlcs: List[InFlightHtlc],
-                                outgoingHtlcs: List[InFlightHtlc],
+                                incomingHtlcs: List[UpdateAddHtlc],
+                                outgoingHtlcs: List[UpdateAddHtlc],
                                 remoteSignature: ByteVector64) extends HostedChannelMessage {
 
   lazy val reverse: LastCrossSignedState =
@@ -332,8 +325,8 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
       outgoingHtlcs = incomingHtlcs)
 
   lazy val hostedSigHash: ByteVector32 = {
-    val inPayments = incomingHtlcs.map(inFlightHtlcCodec.encode(_).require.toByteVector).sortWith(LexicographicalOrdering.isLessThan)
-    val outPayments = outgoingHtlcs.map(inFlightHtlcCodec.encode(_).require.toByteVector).sortWith(LexicographicalOrdering.isLessThan)
+    val inPayments = incomingHtlcs.map(LightningMessageCodecs.updateAddHtlcCodec.encode(_).require.toByteVector).sortWith(LexicographicalOrdering.isLessThan)
+    val outPayments = outgoingHtlcs.map(LightningMessageCodecs.updateAddHtlcCodec.encode(_).require.toByteVector).sortWith(LexicographicalOrdering.isLessThan)
 
     val preimage =
       refundScriptPubKey ++

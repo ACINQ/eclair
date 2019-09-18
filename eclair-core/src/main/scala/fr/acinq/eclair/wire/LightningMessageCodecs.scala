@@ -309,13 +309,6 @@ object HostedMessagesCodecs {
       (millisatoshi withContext "initialClientBalanceMsat")
   }.as[InitHostedChannel]
 
-  val inFlightHtlcCodec: Codec[InFlightHtlc] = {
-    (uint64overflow withContext "id") ::
-      (millisatoshi withContext "amountMsat") ::
-      (bytes32 withContext "paymentHash") ::
-      (cltvExpiry withContext "expiry")
-  }.as[InFlightHtlc]
-
   val lastCrossSignedStateCodec: Codec[LastCrossSignedState] = {
     (varsizebinarydata withContext "refundScriptPubKey") ::
       (initHostedChannelCodec withContext "initHostedChannel") ::
@@ -324,8 +317,8 @@ object HostedMessagesCodecs {
       (millisatoshi withContext "remoteBalanceMsat") ::
       (uint32 withContext "localUpdates") ::
       (uint32 withContext "remoteUpdates") ::
-      (listOfN(uint16, inFlightHtlcCodec) withContext "incomingHtlcs") ::
-      (listOfN(uint16, inFlightHtlcCodec) withContext "outgoingHtlcs") ::
+      (listOfN(uint16, LightningMessageCodecs.updateAddHtlcCodec) withContext "incomingHtlcs") ::
+      (listOfN(uint16, LightningMessageCodecs.updateAddHtlcCodec) withContext "outgoingHtlcs") ::
       (bytes64 withContext "remoteSignature")
   }.as[LastCrossSignedState]
 

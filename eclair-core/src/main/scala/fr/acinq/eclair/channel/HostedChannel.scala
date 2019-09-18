@@ -3,11 +3,13 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
-import fr.acinq.eclair.wire.{Error, InitHostedChannel, InvokeHostedChannel, LastCrossSignedState, LightningMessage, StateUpdate}
+import fr.acinq.eclair.wire.{ChannelUpdate, Error, InitHostedChannel, InvokeHostedChannel, LastCrossSignedState, LightningMessage, StateUpdate, UpdateMessage}
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
 
 import scala.concurrent.ExecutionContext
-import scala.util.Try
+import scala.util.{Failure, Try}
 
 object HostedChannel {
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef) = Props(new HostedChannel(nodeParams, remoteNodeId, router, relayer))
@@ -20,7 +22,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   startWith(OFFLINE, HostedNothing)
 
   when(OFFLINE) {
-    case Event(data: HOSTED_DATA_COMMITMENTS, HostedNothing | HostedWaitingForShortIdResult) =>
+    case Event(data: HOSTED_DATA_COMMITMENTS, HostedNothing) =>
       stay using data
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
@@ -44,6 +46,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) =>
       goto(OFFLINE)
 
+    // Host flow
+
     case Event(CMD_HOSTED_MESSAGE(channelId, msg: InvokeHostedChannel), HostedNothing) =>
       if (nodeParams.chainHash != msg.chainHash) {
         val message = InvalidChainHash(channelId, local = nodeParams.chainHash, remote = msg.chainHash).getMessage
@@ -61,7 +65,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, msg.refundScriptPubKey) sending init
       }
 
-    case Event(CMD_HOSTED_MESSAGE(channelId, remoteSU: StateUpdate), data: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) =>
+    case Event(CMD_HOSTED_MESSAGE(channelId, remoteSU: StateUpdate), data: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) if !data.waitingForShortId =>
       val localLCSS = LastCrossSignedState(data.refundScriptPubKey, initHostedChannel = data.init, blockDay = remoteSU.blockDay,
         localBalanceMsat = data.init.channelCapacityMsat - data.init.initialClientBalanceMsat, remoteBalanceMsat = data.init.initialClientBalanceMsat,
         localUpdates = 0L, remoteUpdates = 0L, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSignature = remoteSU.localSigOfRemoteLCSS)
@@ -74,12 +78,38 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay using HostedNothing sending Error(channelId, message)
       } else {
         context.parent ! CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId, remoteNodeId, localLCSS)
-        stay using HostedWaitingForShortIdResult
+        stay using data.copy(waitingForShortId = true)
       }
 
-    case Event(data: HOSTED_DATA_COMMITMENTS, HostedWaitingForShortIdResult) =>
-      val localSU = data.lastCrossSignedState.reverse.makeStateUpdate(nodeParams.privateKey)
-      goto(NORMAL) using data replying localSU
+    case Event(commits: HOSTED_DATA_COMMITMENTS, data: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) if data.waitingForShortId =>
+      val localSU = commits.lastCrossSignedState.reverse.makeStateUpdate(nodeParams.privateKey)
+      goto(NORMAL) using commits sending localSU
+
+    // Client flow
+
+    case Event(cmd: CMD_INVOKE_HOSTED_CHANNEL, HostedNothing) =>
+      forwarder ! InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
+      stay using HOSTED_DATA_CLIENT_WAIT_HOST_REPLY(cmd.refundScriptPubKey)
+
+    case Event(CMD_HOSTED_MESSAGE(channelId, msg: InitHostedChannel), data: HOSTED_DATA_CLIENT_WAIT_HOST_REPLY) =>
+      Try {
+        if (msg.liabilityDeadlineBlockdays < minHostedLiabilityBlockdays) throw new ChannelException(channelId, "Their liability deadline is too low")
+        if (msg.initialClientBalanceMsat > msg.channelCapacityMsat) throw new ChannelException(channelId, "Their init balance for us is larger than capacity")
+        if (msg.minimalOnchainRefundAmountSatoshis > minHostedOnChainRefund) throw new ChannelException(channelId, "Their minimal on-chain refund is too high")
+        if (msg.channelCapacityMsat < minHostedOnChainRefund * 2) throw new ChannelException(channelId, "Their proposed channel capacity is too low")
+      } match {
+        case Failure(reason) =>
+          log.debug(s"unacceptable remote parameters while establishing a hosted channel, reason=${reason.getMessage}")
+          goto(CLOSED)
+
+        case _ =>
+          val localLCSS = LastCrossSignedState(data.refundScriptPubKey, msg, blockDay = nodeParams.currentBlockDay,
+            msg.initialClientBalanceMsat, msg.channelCapacityMsat - msg.initialClientBalanceMsat, localUpdates = 0L,
+            remoteUpdates = 0L, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSignature = ByteVector64.Zeroes)
+
+          ???
+      }
+      stay
   }
 
   when(SYNCING) {
@@ -123,4 +153,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     }
 
   }
+
+  def restoreCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = ???
 }

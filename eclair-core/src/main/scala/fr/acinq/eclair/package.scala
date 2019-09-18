@@ -105,6 +105,10 @@ package object eclair {
 
   val minHostedCltvDelta = CltvExpiryDelta(blocksPerDay * 3)
 
+  val minHostedLiabilityBlockdays = 1000
+
+  val minHostedOnChainRefund = Satoshi(1000000)
+
   /**
    * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
    *

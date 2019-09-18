@@ -2,13 +2,12 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.eclair._
-import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.payment.Origin
-import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
+import fr.acinq.eclair.transactions.{CommitmentSpec, IN, OUT}
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
@@ -19,13 +18,12 @@ sealed trait HasHostedChanIdCommand extends HostedCommand {
 case object CMD_KILL_IDLE_HOSTED_CHANNELS extends HostedCommand
 case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHostedChanIdCommand
 case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
-case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey) extends HasHostedChanIdCommand
+case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
 case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, localLCSS: LastCrossSignedState) extends HasHostedChanIdCommand
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
-case object HostedWaitingForShortIdResult extends HostedData
 case class HOSTED_DATA_CLIENT_WAIT_HOST_REPLY(refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
@@ -33,7 +31,10 @@ case class HOSTED_DATA_CLIENT_WAIT_HOST_REPLY(refundScriptPubKey: ByteVector) ex
 case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(hostedDataCommits: HOSTED_DATA_COMMITMENTS) extends HostedData
 
 case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel,
-                                                     refundScriptPubKey: ByteVector) extends HostedData
+                                                     refundScriptPubKey: ByteVector,
+                                                     waitingForShortId: Boolean = false) extends HostedData {
+  require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
+}
 
 
 case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
@@ -46,7 +47,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
                                    isHost: Boolean,
-                                   channelUpdate: ChannelUpdate,
+                                   channelUpdateOpt: Option[ChannelUpdate],
                                    localError: Option[Error],
                                    remoteError: Option[Error]) extends ChannelCommitments with HostedData { me =>
 
@@ -77,19 +78,9 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def nextLocalLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalReduced.htlcs.toList.partition(_.direction == IN)
-    val incoming = for (DirectedHtlc(_, add) <- incomingHtlcs) yield InFlightHtlc(add.id, add.amountMsat, add.paymentHash, add.cltvExpiry)
-    val outgoing = for (DirectedHtlc(_, add) <- outgoingHtlcs) yield InFlightHtlc(add.id, add.amountMsat, add.paymentHash, add.cltvExpiry)
-
-    LastCrossSignedState(lastCrossSignedState.refundScriptPubKey,
-      lastCrossSignedState.initHostedChannel,
-      blockDay,
-      nextLocalReduced.toLocal,
-      nextLocalReduced.toRemote,
-      allLocalUpdates,
-      allRemoteUpdates,
-      incoming,
-      outgoing,
-      ByteVector64.Zeroes)
+    LastCrossSignedState(lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel,
+      blockDay, nextLocalReduced.toLocal, nextLocalReduced.toRemote, allLocalUpdates, allRemoteUpdates,
+      incomingHtlcs.map(_.add), outgoingHtlcs.map(_.add), ByteVector64.Zeroes)
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (HOSTED_DATA_COMMITMENTS, UpdateAddHtlc)] = {

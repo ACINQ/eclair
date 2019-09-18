@@ -8,7 +8,7 @@ import fr.acinq.eclair.db.sqlite.SqliteHostedChannelsDb
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
-import fr.acinq.eclair.wire.{Error, InFlightHtlc, InitHostedChannel, LastCrossSignedState, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{Error, InitHostedChannel, LastCrossSignedState, UpdateAddHtlc}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 import fr.acinq.eclair._
@@ -21,10 +21,6 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
   def bin(len: Int, fill: Byte): ByteVector = ByteVector.fill(len)(fill)
 
   def bin32(fill: Byte) = ByteVector32(bin(32, fill))
-
-  val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
-  val in_flight_htlc = InFlightHtlc(1L, 600000000000L msat, randomBytes32, CltvExpiry(1000L))
-  val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(in_flight_htlc, in_flight_htlc), List(in_flight_htlc, in_flight_htlc), randomBytes64)
 
   val add1 = UpdateAddHtlc(
     channelId = randomBytes32,
@@ -40,6 +36,10 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
     paymentHash = randomBytes32,
     onionRoutingPacket = Sphinx.emptyOnionPacket)
+
+  val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
+  val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(add1, add2), List(add2, add1), randomBytes64)
+
   val htlc1 = DirectedHtlc(direction = IN, add = add1)
   val htlc2 = DirectedHtlc(direction = OUT, add = add2)
   val htlcs = Set(htlc1, htlc2)
@@ -64,7 +64,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     channelId = ByteVector32.Zeroes,
     isHost = false,
-    channelUpdate = channelUpdate,
+    channelUpdateOpt = Some(channelUpdate),
     localError = None,
     remoteError = Some(error))
 
@@ -84,27 +84,18 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
   test("get / insert / update a hosted commits") {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteHostedChannelsDb(sqlite)
-    assert(db.getChannelById(ByteVector32.Zeroes).isEmpty)
+    assert(db.getChannel(ByteVector32.Zeroes).isEmpty)
     val newShortChannelId = ShortChannelId(db.getNewShortChannelId)
-    val hdc1 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId))
+    val hdc1 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId)))
 
-    db.addOrUpdateChannel(hdc1) // insert
+    db.addUsedShortChannelId(newShortChannelId) // mark this short id as used
+    db.addOrUpdateChannel(hdc1) // insert channel data
     db.addOrUpdateChannel(hdc1) // update, same data
-    assert(db.getChannelById(ByteVector32.Zeroes).contains(hdc1))
+    assert(db.getChannel(ByteVector32.Zeroes).contains(hdc1))
 
     val hdc2 = hdc1.copy(allLocalUpdates = 200L)
     db.addOrUpdateChannel(hdc2) // update, new data
-    assert(db.getChannelById(ByteVector32.Zeroes).contains(hdc2))
-    assert(db.getNewShortChannelId == newShortChannelId.toLong + 1) // no short id increase after update
-  }
-
-  test("fail to insert two hosted commits with same short channel id") {
-    val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteHostedChannelsDb(sqlite)
-    val newShortChannelId = ShortChannelId(db.getNewShortChannelId)
-    val hdc1 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId), channelId = ByteVector32.Zeroes)
-    val hdc2 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId), channelId = ByteVector32.One)
-    db.addOrUpdateChannel(hdc1)
-    intercept[org.sqlite.SQLiteException](db.addOrUpdateChannel(hdc2))
+    assert(db.getChannel(ByteVector32.Zeroes).contains(hdc2))
+    assert(db.getNewShortChannelId == newShortChannelId.toLong + 1)
   }
 }
