@@ -802,7 +802,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
-
   test("recv RevokeAndAck (one htlc sent)") { f =>
     import f._
     val sender = TestProbe()
@@ -1327,6 +1326,20 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv UpdateFailHtlc (invalid onion error length)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    // Bob receives a failure with a completely invalid onion error (missing mac)
+    sender.send(bob, CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(260)(42))))
+    sender.expectMsg("ok")
+    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+    assert(fail.id === htlc.id)
+    // We should rectify the packet length before forwarding upstream.
+    assert(fail.reason.length === Sphinx.FailurePacket.PacketLength)
   }
 
   test("recv CMD_UPDATE_FEE") { f =>
