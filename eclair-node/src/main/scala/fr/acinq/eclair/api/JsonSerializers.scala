@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transact
 import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.OutgoingPaymentStatus
+import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
@@ -194,6 +195,18 @@ class KeyPathSerializer extends CustomSerializer[KeyPath](format => ({ null }, {
   case k: KeyPath => JString(k.toString())
 }))
 
+class PeerInfoSerializer extends CustomSerializer[PeerInfo](format => ({ null }, {
+  case p: PeerInfo => JObject(List(
+    JField("nodeId", JString(p.nodeId.toString())),
+    JField("state", JString(p.state)),
+    JField("address", p.address match {
+      case Some(address) => JString(s"${address.getHostString}:${address.getPort}")
+      case None => JNull
+    }),
+    JField("channels", JInt(p.channels))
+  ))
+}))
+
 object JsonSupport extends Json4sSupport {
 
   implicit val serialization = jackson.Serialization
@@ -228,7 +241,8 @@ object JsonSupport extends Json4sSupport {
     new PaymentRequestSerializer +
     new JavaUUIDSerializer +
     new OutgoingPaymentStatusSerializer +
-    new KeyPathSerializer
+    new KeyPathSerializer +
+    new PeerInfoSerializer
 
   case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
     val reverse: Map[String, Class[_]] = custom.map(_.swap)
