@@ -125,7 +125,11 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          amountMsat: MilliSatoshi,
                          paymentHash: ByteVector32,
                          cltvExpiry: CltvExpiry,
-                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
+                         onionRoutingPacket: OnionRoutingPacket,
+                         tlvStream: TlvStream[Tlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId {
+
+  lazy val secret: Option[UpdateAddSecretTlv.Secret] = tlvStream.get[UpdateAddSecretTlv.Secret]
+}
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
