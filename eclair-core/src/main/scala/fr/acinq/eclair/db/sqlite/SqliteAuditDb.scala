@@ -39,7 +39,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   val DB_NAME = "audit"
   val CURRENT_VERSION = 4
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), disableAutoCommit = true) { statement =>
 
     def migration12(statement: Statement) = {
       statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
@@ -98,7 +98,6 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
-
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
   }

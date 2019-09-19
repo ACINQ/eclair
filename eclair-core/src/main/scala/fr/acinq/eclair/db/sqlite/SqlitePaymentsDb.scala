@@ -48,7 +48,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   private val paymentFailuresCodec = discriminated[List[FailureSummary]].by(byte)
     .typecase(0x01, listOfN(uint8, failureSummaryCodec))
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), disableAutoCommit = true) { statement =>
 
     def migration12(statement: Statement) = {
       // Version 2 is "backwards compatible" in the sense that it uses separate tables from version 1 (which used a single "payments" table).

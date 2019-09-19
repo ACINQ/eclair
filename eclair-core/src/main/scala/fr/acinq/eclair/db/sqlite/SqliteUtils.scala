@@ -27,12 +27,20 @@ import scala.collection.immutable.Queue
 object SqliteUtils {
 
   /**
-   * Manages closing of statement
+   * This helper makes sure statements are closed.
+   *
+   * @param disableAutoCommit if set to true, all updates in the block will be run in a transaction.
    */
   def using[T <: Statement, U](statement: T, disableAutoCommit: Boolean = false)(block: T => U): U = {
     try {
       if (disableAutoCommit) statement.getConnection.setAutoCommit(false)
-      block(statement)
+      val res = block(statement)
+      if (disableAutoCommit) statement.getConnection.commit()
+      res
+    } catch {
+      case t: Exception =>
+        if (disableAutoCommit) statement.getConnection.rollback()
+        throw t
     } finally {
       if (disableAutoCommit) statement.getConnection.setAutoCommit(true)
       if (statement != null) statement.close()
