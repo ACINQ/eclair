@@ -32,6 +32,7 @@ import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.{ParallelTestExecution, fixture}
+import scodec.bits._
 
 /**
  * Created by PM on 23/08/2016.
@@ -73,7 +74,11 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val channelVersion = ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
+    val (aliceParams, bobParams) = if(tags.contains("static_remotekey"))
+      (Alice.channelParams.copy(localFeatures = hex"2000"), Bob.channelParams.copy(localFeatures = hex"2000"))
+    else
+      (Alice.channelParams, Bob.channelParams)
+
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
