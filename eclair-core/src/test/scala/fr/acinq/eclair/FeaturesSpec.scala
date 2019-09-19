@@ -48,8 +48,19 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("'option_static_remotekey feature") {
-    assert(hasFeature(hex"1000", STATIC_REMOTEKEY_MANDATORY))
-    assert(hasFeature(hex"2000", STATIC_REMOTEKEY_OPTIONAL))
+    val optionalSupport = hex"2000"
+    val mandatorySupport = hex"1000"
+    val noSupport = hex"0000"
+
+    assert(hasFeature(mandatorySupport, STATIC_REMOTEKEY_MANDATORY))
+    assert(hasFeature(optionalSupport, STATIC_REMOTEKEY_OPTIONAL))
+
+    assert(Features.canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = mandatorySupport) == true)
+    assert(Features.canUseStaticRemoteKey(localFeatures = mandatorySupport, remoteFeatures = optionalSupport) == true)
+    assert(Features.canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = optionalSupport) == true)
+    assert(Features.canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = noSupport) == false)
+    assert(Features.canUseStaticRemoteKey(localFeatures = mandatorySupport, remoteFeatures = mandatorySupport) == true)
+    assert(Features.canUseStaticRemoteKey(localFeatures = noSupport, remoteFeatures = mandatorySupport) == false)
   }
 
   test("features compatibility") {

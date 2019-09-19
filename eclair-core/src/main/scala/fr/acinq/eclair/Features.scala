@@ -53,6 +53,20 @@ object Features {
   def hasVariableLengthOnion(features: ByteVector): Boolean = hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) || hasFeature(features, VARIABLE_LENGTH_ONION_OPTIONAL)
 
   /**
+    * Decides whether we can use STATIC_REMOTEKEY in this connection between local/remote
+    */
+  def canUseStaticRemoteKey(localFeatures: ByteVector, remoteFeatures: ByteVector): Boolean = {
+    val localHasOptional = hasFeature(localFeatures, STATIC_REMOTEKEY_OPTIONAL)
+    val localHasMandatory = hasFeature(localFeatures, STATIC_REMOTEKEY_MANDATORY)
+    val remoteHasOptional = hasFeature(remoteFeatures, STATIC_REMOTEKEY_OPTIONAL)
+    val remoteHasMandatory = hasFeature(remoteFeatures, STATIC_REMOTEKEY_MANDATORY)
+
+    (remoteHasMandatory && (localHasMandatory || localHasOptional))  ||
+    (localHasMandatory && (remoteHasMandatory || remoteHasOptional)) ||
+    (localHasOptional && remoteHasOptional)
+  }
+
+  /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits).
     */
