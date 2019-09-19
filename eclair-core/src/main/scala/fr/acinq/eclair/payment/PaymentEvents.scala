@@ -34,13 +34,34 @@ sealed trait PaymentEvent {
   val timestamp: Long
 }
 
-case class PaymentSent(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop], timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
+  require(parts.nonEmpty, "sent payment is empty")
+  val amount: MilliSatoshi = parts.map(_.amount).sum
+  val feesPaid: MilliSatoshi = parts.map(_.feesPaid).sum
+  val timestamp: Long = parts.map(_.timestamp).min
+}
+
+object PaymentSent {
+
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Seq[Hop], timestamp: Long = Platform.currentTime)
+
+}
 
 case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: Long = Platform.currentTime) extends PaymentEvent
 
 case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentEvent
 
-case class PaymentReceived(amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
+  require(parts.nonEmpty, "received payment is empty")
+  val amount: MilliSatoshi = parts.map(_.amount).sum
+  val timestamp: Long = parts.map(_.timestamp).max
+}
+
+object PaymentReceived {
+
+  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: Long = Platform.currentTime)
+
+}
 
 case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentEvent
 

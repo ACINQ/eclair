@@ -81,7 +81,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               // amount is correct or was not specified in the payment request
               nodeParams.db.payments.receiveIncomingPayment(htlc.paymentHash, htlc.amountMsat)
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
-              context.system.eventStream.publish(PaymentReceived(htlc.amountMsat, htlc.paymentHash))
+              context.system.eventStream.publish(PaymentReceived(htlc.paymentHash, PaymentReceived.PartialPayment(htlc.amountMsat, htlc.channelId) :: Nil))
           }
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, nodeParams.currentBlockHeight)), commit = true)

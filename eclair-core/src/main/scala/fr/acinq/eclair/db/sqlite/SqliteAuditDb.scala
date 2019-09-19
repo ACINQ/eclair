@@ -37,7 +37,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   import ExtendedResultSet._
 
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 4
+  val CURRENT_VERSION = 3
 
   using(sqlite.createStatement(), disableAutoCommit = true) { statement =>
 
@@ -50,42 +50,20 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
     }
 
-    def migration34(statement: Statement) = {
-      statement.executeUpdate("DROP index sent_timestamp_idx")
-      statement.executeUpdate("ALTER TABLE sent RENAME TO _sent_old")
-      statement.executeUpdate("CREATE TABLE sent (id BLOB NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-      statement.executeUpdate("INSERT INTO sent (id, amount_msat, fees_msat, payment_hash, payment_preimage, timestamp) SELECT id, amount_msat, fees_msat, payment_hash, payment_preimage, timestamp FROM _sent_old")
-      statement.executeUpdate("DROP table _sent_old")
-      statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
-
-      statement.executeUpdate("DROP index received_timestamp_idx")
-      statement.executeUpdate("ALTER TABLE received RENAME TO _received_old")
-      statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-      statement.executeUpdate("INSERT INTO received (amount_msat, payment_hash, timestamp) SELECT amount_msat, payment_hash, timestamp FROM _received_old")
-      statement.executeUpdate("DROP table _received_old")
-      statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
-    }
-
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 => // previous version let's migrate
         logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
         migration12(statement)
         migration23(statement)
-        migration34(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case 2 =>
         logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
         migration23(statement)
-        migration34(statement)
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case 3 =>
-        logger.warn(s"migrating db $DB_NAME, found version=3 current=$CURRENT_VERSION")
-        migration34(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (id BLOB NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event STRING NOT NULL, timestamp INTEGER NOT NULL)")
@@ -126,23 +104,30 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def add(e: PaymentSent): Unit =
-    using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.id.toString.getBytes)
-      statement.setLong(2, e.amount.toLong)
-      statement.setLong(3, e.feesPaid.toLong)
-      statement.setBytes(4, e.paymentHash.toArray)
-      statement.setBytes(5, e.paymentPreimage.toArray)
-      statement.setLong(6, e.timestamp)
-
-      statement.executeUpdate()
+    using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      e.parts.foreach(p => {
+        statement.setLong(1, p.amount.toLong)
+        statement.setLong(2, p.feesPaid.toLong)
+        statement.setBytes(3, e.paymentHash.toArray)
+        statement.setBytes(4, e.paymentPreimage.toArray)
+        statement.setBytes(5, p.toChannelId.toArray)
+        statement.setLong(6, p.timestamp)
+        statement.setBytes(7, p.id.toString.getBytes)
+        statement.addBatch()
+      })
+      statement.executeBatch()
     }
 
   override def add(e: PaymentReceived): Unit =
-    using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?)")) { statement =>
-      statement.setLong(1, e.amount.toLong)
-      statement.setBytes(2, e.paymentHash.toArray)
-      statement.setLong(3, e.timestamp)
-      statement.executeUpdate()
+    using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
+      e.parts.foreach(p => {
+        statement.setLong(1, p.amount.toLong)
+        statement.setBytes(2, e.paymentHash.toArray)
+        statement.setBytes(3, p.fromChannelId.toArray)
+        statement.setLong(4, p.timestamp)
+        statement.addBatch()
+      })
+      statement.executeBatch()
     }
 
   override def add(e: PaymentRelayed): Unit =
@@ -190,13 +175,16 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       var q: Queue[PaymentSent] = Queue()
       while (rs.next()) {
         q = q :+ PaymentSent(
-          id = UUID.fromString(rs.getString("id")),
-          amount = MilliSatoshi(rs.getLong("amount_msat")),
-          feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
-          paymentHash = rs.getByteVector32("payment_hash"),
-          paymentPreimage = rs.getByteVector32("payment_preimage"),
-          route = Nil,
-          timestamp = rs.getLong("timestamp"))
+          UUID.fromString(rs.getString("id")),
+          rs.getByteVector32("payment_hash"),
+          rs.getByteVector32("payment_preimage"),
+          Seq(PaymentSent.PartialPayment(
+            UUID.fromString(rs.getString("id")),
+            MilliSatoshi(rs.getLong("amount_msat")),
+            MilliSatoshi(rs.getLong("fees_msat")),
+            rs.getByteVector32("to_channel_id"),
+            Nil, // we don't store the route
+            rs.getLong("timestamp"))))
       }
       q
     }
@@ -209,9 +197,12 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       var q: Queue[PaymentReceived] = Queue()
       while (rs.next()) {
         q = q :+ PaymentReceived(
-          amount = MilliSatoshi(rs.getLong("amount_msat")),
-          paymentHash = rs.getByteVector32("payment_hash"),
-          timestamp = rs.getLong("timestamp"))
+          rs.getByteVector32("payment_hash"),
+          Seq(PaymentReceived.PartialPayment(
+            MilliSatoshi(rs.getLong("amount_msat")),
+            rs.getByteVector32("from_channel_id"),
+            rs.getLong("timestamp")
+          )))
       }
       q
     }

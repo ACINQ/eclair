@@ -74,7 +74,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(preMigrationDb.getIncomingPayment(paymentHash1).isEmpty)
 
     // add a few rows
-    val ps1 = OutgoingPayment(UUID.randomUUID(), None, None, paymentHash1, 12345 msat, alice, 1000, None, OutgoingPaymentStatus.Pending)
+    val ps1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, paymentHash1, 12345 msat, alice, 1000, None, OutgoingPaymentStatus.Pending)
     val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(500 msat), paymentHash1, davePriv, "Some invoice", expirySeconds = None, timestamp = 1)
     val pr1 = IncomingPayment(i1, preimage1, i1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(550 msat, 1100))
 
@@ -110,9 +110,12 @@ class SqlitePaymentsDbSpec extends FunSuite {
     }
 
     // Insert a bunch of old version 2 rows.
-    val ps1 = OutgoingPayment(UUID.randomUUID(), None, None, randomBytes32, 561 msat, PrivateKey(ByteVector32.One).publicKey, 1000, None, OutgoingPaymentStatus.Pending)
-    val ps2 = OutgoingPayment(UUID.randomUUID(), None, None, randomBytes32, 1105 msat, PrivateKey(ByteVector32.One).publicKey, 1010, None, OutgoingPaymentStatus.Failed(Nil, 1050))
-    val ps3 = OutgoingPayment(UUID.randomUUID(), None, None, paymentHash1, 1729 msat, PrivateKey(ByteVector32.One).publicKey, 1040, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, 1060))
+    val id1 = UUID.randomUUID()
+    val id2 = UUID.randomUUID()
+    val id3 = UUID.randomUUID()
+    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32, 561 msat, PrivateKey(ByteVector32.One).publicKey, 1000, None, OutgoingPaymentStatus.Pending)
+    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32, 1105 msat, PrivateKey(ByteVector32.One).publicKey, 1010, None, OutgoingPaymentStatus.Failed(Nil, 1050))
+    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, 1729 msat, PrivateKey(ByteVector32.One).publicKey, 1040, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, 1060))
     val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash1, davePriv, "Some invoice", expirySeconds = None, timestamp = 1)
     val pr1 = IncomingPayment(i1, preimage1, i1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(12345678 msat, 1090))
     val i2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash2, carolPriv, "Another invoice", expirySeconds = Some(30), timestamp = 1)
@@ -199,12 +202,12 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val pr3 = IncomingPayment(i3, preimage3, i3.timestamp.seconds.toMillis, IncomingPaymentStatus.Pending)
     postMigrationDb.addIncomingPayment(i3, pr3.paymentPreimage)
 
-    val ps4 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some("1"), randomBytes32, 123 msat, alice, 1100, Some(i3), OutgoingPaymentStatus.Pending)
-    val ps5 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some("2"), randomBytes32, 456 msat, bob, 1150, Some(i2), OutgoingPaymentStatus.Succeeded(preimage1, 42 msat, Nil, 1180))
-    val ps6 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), Some("3"), randomBytes32, 789 msat, bob, 1250, None, OutgoingPaymentStatus.Failed(Nil, 1300))
+    val ps4 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("1"), randomBytes32, 123 msat, alice, 1100, Some(i3), OutgoingPaymentStatus.Pending)
+    val ps5 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("2"), randomBytes32, 456 msat, bob, 1150, Some(i2), OutgoingPaymentStatus.Succeeded(preimage1, 42 msat, Nil, 1180))
+    val ps6 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("3"), randomBytes32, 789 msat, bob, 1250, None, OutgoingPaymentStatus.Failed(Nil, 1300))
     postMigrationDb.addOutgoingPayment(ps4)
     postMigrationDb.addOutgoingPayment(ps5.copy(status = OutgoingPaymentStatus.Pending))
-    postMigrationDb.updateOutgoingPayment(PaymentSent(ps5.id, ps5.amount, 42 msat, ps5.paymentHash, preimage1, Nil, 1180))
+    postMigrationDb.updateOutgoingPayment(PaymentSent(ps5.parentId, ps5.paymentHash, preimage1, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32, Nil, 1180))))
     postMigrationDb.addOutgoingPayment(ps6.copy(status = OutgoingPaymentStatus.Pending))
     postMigrationDb.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300))
 
@@ -267,9 +270,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
   test("add/retrieve/update outgoing payments") {
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
+    val parentId = UUID.randomUUID()
     val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), paymentHash1, davePriv, "Some invoice", expirySeconds = None, timestamp = 0)
-    val s1 = OutgoingPayment(UUID.randomUUID(), Some(UUID.randomUUID()), None, i1.paymentHash, 123 msat, alice, 100, Some(i1), OutgoingPaymentStatus.Pending)
-    val s2 = OutgoingPayment(UUID.randomUUID(), None, Some("1"), paymentHash2, 456 msat, bob, 200, None, OutgoingPaymentStatus.Pending)
+    val s1 = OutgoingPayment(UUID.randomUUID(), parentId, None, paymentHash1, 123 msat, alice, 100, Some(i1), OutgoingPaymentStatus.Pending)
+    val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some("1"), paymentHash1, 456 msat, bob, 200, None, OutgoingPaymentStatus.Pending)
 
     assert(db.listOutgoingPayments(0, Platform.currentTime).isEmpty)
     db.addOutgoingPayment(s1)
@@ -283,7 +287,9 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.listOutgoingPayments(150, 250).toList == Seq(s2))
     assert(db.getOutgoingPayment(s1.id) === Some(s1))
     assert(db.getOutgoingPayment(UUID.randomUUID()) === None)
-    assert(db.listOutgoingPayments(s2.paymentHash) === Seq(s2))
+    assert(db.listOutgoingPayments(s2.paymentHash) === Seq(s1, s2))
+    assert(db.listOutgoingPayments(s1.id) === Nil)
+    assert(db.listOutgoingPayments(parentId) === Seq(s1, s2))
     assert(db.listOutgoingPayments(ByteVector32.Zeroes) === Nil)
 
     val s3 = s2.copy(id = UUID.randomUUID(), amount = 789 msat, createdAt = 300)
@@ -292,17 +298,25 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addOutgoingPayment(s4)
 
     db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310))
-    assert(db.getOutgoingPayment(s3.id) === Some(s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310))))
+    val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310))
+    assert(db.getOutgoingPayment(s3.id) === Some(ss3))
     db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(new RuntimeException("woops")), RemoteFailure(Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
-    assert(db.getOutgoingPayment(s4.id) === Some(s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", Nil), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, Some(ShortChannelId(43)))))), 320))))
+    val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", Nil), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, Some(ShortChannelId(43)))))), 320))
+    assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
     // can't update again once it's in a final state
-    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(s3.id, s3.amount, 42 msat, s3.paymentHash, preimage1, Nil)))
+    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32, Nil)))))
 
-    db.updateOutgoingPayment(PaymentSent(s1.id, s1.amount, 15 msat, s1.paymentHash, preimage1, Nil, 400))
-    assert(db.getOutgoingPayment(s1.id) === Some(s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400))))
-    db.updateOutgoingPayment(PaymentSent(s2.id, s2.amount, 15 msat, s2.paymentHash, preimage2, Seq(hop_ab, hop_bc), 410))
-    assert(db.getOutgoingPayment(s2.id) === Some(s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage2, 15 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, Some(ShortChannelId(43)))), 410))))
+    val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, Seq(
+      PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32, Nil, 400),
+      PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32, Seq(hop_ab, hop_bc), 410)
+    ))
+    val ss1 = s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400))
+    val ss2 = s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 20 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, Some(ShortChannelId(43)))), 410))
+    db.updateOutgoingPayment(paymentSent)
+    assert(db.getOutgoingPayment(s1.id) === Some(ss1))
+    assert(db.getOutgoingPayment(s2.id) === Some(ss2))
+    assert(db.listOutgoingPayments(parentId) === Seq(ss1, ss2, ss3, ss4))
 
     // can't update again once it's in a final state
     assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentFailed(s1.id, s1.paymentHash, Nil)))

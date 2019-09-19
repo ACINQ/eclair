@@ -61,10 +61,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       // We add many more columns to the sent_payments table.
       statement.executeUpdate("DROP index payment_hash_idx")
       statement.executeUpdate("ALTER TABLE sent_payments RENAME TO _sent_payments_old")
-      statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
+      statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
       // Old rows will be missing a target node id, so we use an easy-to-spot default value.
       val defaultTargetNodeId = PrivateKey(ByteVector32.One).publicKey
-      statement.executeUpdate(s"INSERT INTO sent_payments (id, payment_hash, amount_msat, target_node_id, created_at, completed_at, payment_preimage) SELECT id, payment_hash, amount_msat, X'${defaultTargetNodeId.toString}', created_at, completed_at, preimage FROM _sent_payments_old")
+      statement.executeUpdate(s"INSERT INTO sent_payments (id, parent_id, payment_hash, amount_msat, target_node_id, created_at, completed_at, payment_preimage) SELECT id, id, payment_hash, amount_msat, X'${defaultTargetNodeId.toString}', created_at, completed_at, preimage FROM _sent_payments_old")
       statement.executeUpdate("DROP table _sent_payments_old")
 
       statement.executeUpdate("ALTER TABLE received_payments RENAME TO _received_payments_old")
@@ -93,7 +93,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
 
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
@@ -108,7 +108,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
     using(sqlite.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
-      statement.setString(2, sent.parentId.map(_.toString).orNull)
+      statement.setString(2, sent.parentId.toString)
       statement.setString(3, sent.externalId.orNull)
       statement.setBytes(4, sent.paymentHash.toArray)
       statement.setLong(5, sent.amount.toLong)
@@ -121,12 +121,15 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit =
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, paymentResult.timestamp)
-      statement.setBytes(2, paymentResult.paymentPreimage.toArray)
-      statement.setLong(3, paymentResult.feesPaid.toLong)
-      statement.setBytes(4, paymentRouteCodec.encode(paymentResult.route.map(h => HopSummary(h)).toList).require.toByteArray)
-      statement.setString(5, paymentResult.id.toString)
-      if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as succeeded but already in final status (id=${paymentResult.id})")
+      paymentResult.parts.foreach(p => {
+        statement.setLong(1, p.timestamp)
+        statement.setBytes(2, paymentResult.paymentPreimage.toArray)
+        statement.setLong(3, p.feesPaid.toLong)
+        statement.setBytes(4, paymentRouteCodec.encode(p.route.map(h => HopSummary(h)).toList).require.toByteArray)
+        statement.setString(5, p.id.toString)
+        statement.addBatch()
+      })
+      if (statement.executeBatch().contains(0)) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as succeeded but already in final status (id=${paymentResult.id})")
     }
 
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit =
@@ -140,7 +143,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   private def parseOutgoingPayment(rs: ResultSet): OutgoingPayment = {
     val result = OutgoingPayment(
       UUID.fromString(rs.getString("id")),
-      rs.getStringNullable("parent_id").map(UUID.fromString),
+      UUID.fromString(rs.getString("parent_id")),
       rs.getStringNullable("external_id"),
       rs.getByteVector32("payment_hash"),
       MilliSatoshi(rs.getLong("amount_msat")),
@@ -176,7 +179,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] =
-    using(sqlite.prepareStatement("SELECT id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request, completed_at, payment_preimage, fees_msat, payment_route, failures FROM sent_payments WHERE id = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
       statement.setString(1, id.toString)
       val rs = statement.executeQuery()
       if (rs.next()) {
@@ -186,8 +189,19 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       }
     }
 
+  override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] =
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
+      statement.setString(1, parentId.toString)
+      val rs = statement.executeQuery()
+      var q: Queue[OutgoingPayment] = Queue()
+      while (rs.next()) {
+        q = q :+ parseOutgoingPayment(rs)
+      }
+      q
+    }
+
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] =
-    using(sqlite.prepareStatement("SELECT id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request, completed_at, payment_preimage, fees_msat, payment_route, failures FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       var q: Queue[OutgoingPayment] = Queue()
@@ -198,7 +212,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] =
-    using(sqlite.prepareStatement("SELECT id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request, completed_at, payment_preimage, fees_msat, payment_route, failures FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       val rs = statement.executeQuery()
@@ -241,7 +255,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] =
-    using(sqlite.prepareStatement("SELECT payment_hash, payment_preimage, payment_request, received_msat, created_at, received_at FROM received_payments WHERE payment_hash = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       val rs = statement.executeQuery()
       if (rs.next()) {
@@ -252,7 +266,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    using(sqlite.prepareStatement("SELECT payment_hash, payment_preimage, payment_request, received_msat, created_at, received_at FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       val rs = statement.executeQuery()
@@ -264,7 +278,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    using(sqlite.prepareStatement("SELECT payment_hash, payment_preimage, payment_request, received_msat, created_at, received_at FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       val rs = statement.executeQuery()
@@ -276,7 +290,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    using(sqlite.prepareStatement("SELECT payment_hash, payment_preimage, payment_request, received_msat, created_at, received_at FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       statement.setLong(3, Platform.currentTime)
@@ -289,7 +303,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    using(sqlite.prepareStatement("SELECT payment_hash, payment_preimage, payment_request, received_msat, created_at, received_at FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       statement.setLong(3, Platform.currentTime)

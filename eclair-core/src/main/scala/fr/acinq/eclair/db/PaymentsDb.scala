@@ -40,6 +40,9 @@ trait PaymentsDb {
   /** Get an outgoing payment attempt. */
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 
+  /** List all the outgoing payment attempts that are children of the given id. */
+  def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment]
+
   /** List all the outgoing payment attempts that tried to pay the given payment hash. */
   def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
 
@@ -112,7 +115,7 @@ object IncomingPaymentStatus {
  * At first it is in a pending state, then will become either a success or a failure.
  *
  * @param id             internal payment identifier.
- * @param parentId       internal identifier of a parent payment, if any.
+ * @param parentId       internal identifier of a parent payment, or [[id]] if single-part payment.
  * @param externalId     external payment identifier: lets lightning applications reconcile payments with their own db.
  * @param paymentHash    payment_hash.
  * @param amount         amount of the payment, in milli-satoshis.
@@ -122,7 +125,7 @@ object IncomingPaymentStatus {
  * @param status         current status of the payment.
  */
 case class OutgoingPayment(id: UUID,
-                           parentId: Option[UUID],
+                           parentId: UUID,
                            externalId: Option[String],
                            paymentHash: ByteVector32,
                            amount: MilliSatoshi,

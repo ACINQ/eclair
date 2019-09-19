@@ -432,7 +432,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitCond({
       sender.expectMsgType[PaymentEvent](10 seconds) match {
         case PaymentFailed(_, _, failures, _) => failures == Seq.empty // if something went wrong fail with a hint
-        case PaymentSent(_, _, _, _, _, route, _) => route.exists(_.nodeId == nodes("G").nodeParams.nodeId)
+        case PaymentSent(_, _, _, part :: Nil) => part.route.exists(_.nodeId == nodes("G").nodeParams.nodeId)
         case _ => false
       }
     }, max = 30 seconds, interval = 10 seconds)
