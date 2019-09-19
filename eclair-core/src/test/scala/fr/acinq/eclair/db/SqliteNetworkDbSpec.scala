@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
-import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
@@ -104,6 +104,8 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(node_4.addresses == List(Tor2("aaaqeayeaudaocaj", 42000)))
   }
 
+  def shrink(c: ChannelAnnouncement) = c.copy(bitcoinKey1 = null, bitcoinKey2 = null, bitcoinSignature1 = null, bitcoinSignature2 = null, nodeSignature1 = null, nodeSignature2 = null, chainHash = null, features = null)
+
   def simpleTest(sqlite: Connection) = {
     val db = new SqliteNetworkDb(sqlite)
 
@@ -124,6 +126,10 @@ class SqliteNetworkDbSpec extends FunSuite {
     val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(43), a.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
     val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(44), b.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
 
+    val channel_1_shrunk = shrink(channel_1)
+    val channel_2_shrunk = shrink(channel_2)
+    val channel_3_shrunk = shrink(channel_3)
+
     val txid_1 = randomBytes32
     val txid_2 = randomBytes32
     val txid_3 = randomBytes32
@@ -136,13 +142,13 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None),
-      channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None),
+      channel_2.shortChannelId -> PublicChannel(channel_2_shrunk, txid_2, capacity, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None)))
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None)))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
@@ -153,11 +159,11 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannel(channel_update_2)
     db.updateChannel(channel_update_3)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2)),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, Some(channel_update_3), None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1), Some(channel_update_2)),
+      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, Some(channel_update_3), None)))
     db.removeChannel(channel_3.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2))))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1), Some(channel_update_2))))
   }
 
   test("add/remove/list channels and channel_updates") {
