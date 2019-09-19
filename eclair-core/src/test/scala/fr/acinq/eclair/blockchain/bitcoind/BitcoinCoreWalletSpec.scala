@@ -21,12 +21,12 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{ByteVector32, Block, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, JString}
@@ -45,15 +45,15 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     "eclair.chain" -> "regtest",
     "eclair.spv" -> false,
     "eclair.server.public-ips.1" -> "localhost",
-    "eclair.bitcoind.port" -> 28333,
-    "eclair.bitcoind.rpcport" -> 28332,
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false))
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats.withBigDecimal
+  implicit val formats = DefaultFormats
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -125,7 +125,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
         TxIn(OutPoint(unknownTxids(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL),
         TxIn(OutPoint(unknownTxids(2), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL)
       ),
-      txOut = TxOut(Satoshi(1000000), addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
+      txOut = TxOut(1000000 sat, addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
       lockTime = 0)
 
     // signing it should fail, and the error message should contain the txids of the UTXOs that could not be used
@@ -145,8 +145,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val sender = TestProbe()
 
     wallet.getBalance.pipeTo(sender.ref)
-    //val foo = sender.receiveOne(2 seconds)
-    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+    assert(sender.expectMsgType[Satoshi] > 0.sat)
 
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
@@ -206,7 +205,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val sender = TestProbe()
 
     wallet.getBalance.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+    assert(sender.expectMsgType[Satoshi] > 0.sat)
 
     wallet.getFinalAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
@@ -233,7 +232,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     assert(sender.expectMsgType[Boolean])
 
     wallet.getBalance.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Satoshi] > Satoshi(0))
+    assert(sender.expectMsgType[Satoshi] > 0.sat)
   }
 
   test("detect if tx has been doublespent") {
@@ -258,7 +257,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val tx1 = Transaction.read(signedTx1)
     // let's then generate another tx that double spends the first one
     val inputs = tx1.txIn.map(txIn => Map("txid" -> txIn.outPoint.txid.toString, "vout" -> txIn.outPoint.index)).toArray
-    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount.toLong).sum * 1.0 / 1e8)).pipeTo(sender.ref)
+    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount).sum.toLong * 1.0 / 1e8)).pipeTo(sender.ref)
     val JString(unsignedtx2) = sender.expectMsgType[JValue]
     bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx2).pipeTo(sender.ref)
     val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"

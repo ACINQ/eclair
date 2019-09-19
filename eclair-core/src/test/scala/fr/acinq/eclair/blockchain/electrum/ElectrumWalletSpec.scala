@@ -16,14 +16,15 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.whisk.docker.DockerReadyChecker
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, Transaction, TxOut}
+import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse, SSL}
@@ -37,7 +38,6 @@ import scodec.bits.ByteVector
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-
 
 class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
@@ -88,8 +88,8 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   }
 
   test("wait until wallet is ready") {
-    electrumClient = system.actorOf(Props(new ElectrumClientPool(Set(ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)))))
-    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = Satoshi(5000)))), "wallet")
+    electrumClient = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), Set(ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)))))
+    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat))), "wallet")
     val probe = TestProbe()
     awaitCond({
       probe.send(wallet, GetData)
@@ -113,7 +113,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     awaitCond({
       val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      unconfirmed1 == unconfirmed + Satoshi(100000000L)
+      unconfirmed1 == unconfirmed + 100000000.sat
     }, max = 30 seconds, interval = 1 second)
 
     // confirm our tx
@@ -122,7 +122,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     awaitCond({
       val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      confirmed1 == confirmed + Satoshi(100000000L)
+      confirmed1 == confirmed + 100000000.sat
     }, max = 30 seconds, interval = 1 second)
 
     val GetCurrentReceiveAddressResponse(address1) = getCurrentAddress(probe)
@@ -138,8 +138,8 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.expectMsgType[JValue]
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      confirmed1 == confirmed + Satoshi(250000000L)
+      val GetBalanceResponse(confirmed1, _) = getBalance(probe)
+      confirmed1 == confirmed + 250000000.sat
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -149,7 +149,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     logger.info(s"initial balance: $confirmed $unconfirmed")
 
     // send money to our wallet
-    val amount = Satoshi(750000)
+    val amount = 750000 sat
     val GetCurrentReceiveAddressResponse(address) = getCurrentAddress(probe)
     val tx = Transaction(version = 2,
       txIn = Nil,
@@ -159,14 +159,14 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       ), lockTime = 0L)
     val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val future = for {
-      FundTransactionResponse(tx1, pos, fee) <- btcWallet.fundTransaction(tx, false, 10000)
+      FundTransactionResponse(tx1, _, _) <- btcWallet.fundTransaction(tx, false, 10000)
       SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
       txid <- btcWallet.publishTransaction(tx2)
     } yield txid
-    val txid = Await.result(future, 10 seconds)
+    Await.result(future, 10 seconds)
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      val GetBalanceResponse(_, unconfirmed1) = getBalance(probe)
       unconfirmed1 == unconfirmed + amount + amount
     }, max = 30 seconds, interval = 1 second)
 
@@ -174,7 +174,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.expectMsgType[JValue]
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      val GetBalanceResponse(confirmed1, _) = getBalance(probe)
       confirmed1 == confirmed + amount + amount
     }, max = 30 seconds, interval = 1 second)
   }
@@ -193,27 +193,27 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val JString(txid) = probe.expectMsgType[JValue]
     logger.info(s"$txid sent 1 btc to us at $address")
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      unconfirmed1 - unconfirmed == Satoshi(100000000L)
+      val GetBalanceResponse(_, unconfirmed1) = getBalance(probe)
+      unconfirmed1 - unconfirmed === 100000000L.sat
     }, max = 30 seconds, interval = 1 second)
 
     val TransactionReceived(tx, 0, received, sent, _, _) = listener.receiveOne(5 seconds)
     assert(tx.txid === ByteVector32.fromValidHex(txid))
-    assert(received === Satoshi(100000000))
+    assert(received === 100000000.sat)
 
     logger.info("generating a new block")
     probe.send(bitcoincli, BitcoinReq("generate", 1))
     probe.expectMsgType[JValue]
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
-      confirmed1 - confirmed == Satoshi(100000000L)
+      val GetBalanceResponse(confirmed1, _) = getBalance(probe)
+      confirmed1 - confirmed === 100000000.sat
     }, max = 30 seconds, interval = 1 second)
 
     awaitCond({
       val msg = listener.receiveOne(5 seconds)
       msg match {
-        case TransactionConfidenceChanged(txid, 1, _) => true
+        case TransactionConfidenceChanged(_, 1, _) => true
         case _ => false
       }
     }, max = 30 seconds, interval = 1 second)
@@ -221,14 +221,14 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("send money to someone else (we broadcast)") {
     val probe = TestProbe()
-    val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
+    val GetBalanceResponse(confirmed, _) = getBalance(probe)
 
     // create a tx that sends money to Bitcoin Core's address
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
     probe.send(wallet, CompleteTransaction(tx, 20000))
-    val CompleteTransactionResponse(tx1, fee1, None) = probe.expectMsgType[CompleteTransactionResponse]
+    val CompleteTransactionResponse(tx1, _, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
     logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
@@ -245,9 +245,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      val GetBalanceResponse(confirmed1, _) = getBalance(probe)
       logger.debug(s"current balance is $confirmed1")
-      confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
+      confirmed1 < confirmed - 1.btc && confirmed1 > confirmed - 1.btc - 50000.sat
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -272,9 +272,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.expectMsgType[JValue]
 
     awaitCond({
-      val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
+      val GetBalanceResponse(confirmed1, _) = getBalance(probe)
       logger.info(s"current balance is $confirmed $unconfirmed")
-      confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
+      confirmed1 < confirmed - 1.btc && confirmed1 > confirmed - 1.btc - 50000.sat
     }, max = 30 seconds, interval = 1 second)
   }
 

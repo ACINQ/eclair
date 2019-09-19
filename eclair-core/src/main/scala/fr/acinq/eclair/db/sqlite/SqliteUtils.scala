@@ -138,6 +138,8 @@ object SqliteUtils {
 
   case class ExtendedResultSet(rs: ResultSet) {
 
+    def getBitVectorOpt(columnLabel: String): Option[BitVector] = Option(rs.getBytes(columnLabel)).map(BitVector(_))
+
     def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
 
     def getByteVector32(columnLabel: String): ByteVector32 = ByteVector32(ByteVector(rs.getBytes(columnLabel)))

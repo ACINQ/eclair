@@ -20,45 +20,48 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 import com.google.common.io.Files
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.NodeParams.{WatcherType}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.{Color, NodeAddress}
+import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
 /**
-  * Created by PM on 26/02/2017.
-  */
+ * Created by PM on 26/02/2017.
+ */
 case class NodeParams(keyManager: KeyManager,
+                      private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       globalFeatures: ByteVector,
                       localFeatures: ByteVector,
                       overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
-                      dustLimitSatoshis: Long,
+                      syncWhitelist: Set[PublicKey],
+                      dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
-                      expiryDeltaBlocks: Int,
-                      fulfillSafetyBeforeTimeoutBlocks: Int,
-                      htlcMinimumMsat: Int,
-                      toRemoteDelayBlocks: Int,
-                      maxToLocalDelayBlocks: Int,
+                      expiryDeltaBlocks: CltvExpiryDelta,
+                      fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
+                      htlcMinimum: MilliSatoshi,
+                      toRemoteDelayBlocks: CltvExpiryDelta,
+                      maxToLocalDelayBlocks: CltvExpiryDelta,
                       minDepthBlocks: Int,
-                      feeBaseMsat: Int,
+                      feeBase: MilliSatoshi,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
@@ -74,13 +77,13 @@ case class NodeParams(keyManager: KeyManager,
                       channelFlags: Byte,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
-                      minFundingSatoshis: Long,
+                      minFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int) {
-
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+  def currentBlockHeight: Long = blockCount.get
 }
 
 object NodeParams {
@@ -92,17 +95,17 @@ object NodeParams {
   object ELECTRUM extends WatcherType
 
   /**
-    * Order of precedence for the configuration parameters:
-    * 1) Java environment variables (-D...)
-    * 2) Configuration file eclair.conf
-    * 3) Optionally provided config
-    * 4) Default values in reference.conf
-    */
+   * Order of precedence for the configuration parameters:
+   * 1) Java environment variables (-D...)
+   * 2) Configuration file eclair.conf
+   * 3) Optionally provided config
+   * 4) Default values in reference.conf
+   */
   def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) =
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(overrideDefaults)
-      .withFallback(ConfigFactory.load()).getConfig("eclair")
+      .withFallback(ConfigFactory.load())
 
   def getSeed(datadir: File): ByteVector = {
     val seedPath = new File(datadir, "seed.dat")
@@ -125,7 +128,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -138,7 +141,7 @@ object NodeParams {
       case _ => BITCOIND
     }
 
-    val dustLimitSatoshis = config.getLong("dust-limit-satoshis")
+    val dustLimitSatoshis = Satoshi(config.getLong("dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
       require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
     }
@@ -146,12 +149,12 @@ object NodeParams {
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
-    val maxToLocalCLTV = config.getInt("max-to-local-delay-blocks")
-    val offeredCLTV = config.getInt("to-remote-delay-blocks")
+    val maxToLocalCLTV = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks"))
+    val offeredCLTV = CltvExpiryDelta(config.getInt("to-remote-delay-blocks"))
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
-    val expiryDeltaBlocks = config.getInt("expiry-delta-blocks")
-    val fulfillSafetyBeforeTimeoutBlocks = config.getInt("fulfill-safety-before-timeout-blocks")
+    val expiryDeltaBlocks = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
+    val fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
     require(fulfillSafetyBeforeTimeoutBlocks < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks")
 
     val nodeAlias = config.getString("node-alias")
@@ -163,6 +166,8 @@ object NodeParams {
       val lf = ByteVector.fromValidHex(e.getString("local-features"))
       p -> (gf, lf)
     }.toMap
+
+    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
@@ -188,15 +193,27 @@ object NodeParams {
       claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
     )
 
+    val feeBase = MilliSatoshi(config.getInt("fee-base-msat"))
+    // fee base is in msat but is encoded on 32 bits and not 64 in the BOLTs, which is why it has
+    // to be below 0x100000000 msat which is about 42 mbtc
+    require(feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be below 42 mbtc")
+
+    val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
+      case "uncompressed" => EncodingType.UNCOMPRESSED
+      case "zlib" => EncodingType.COMPRESSED_ZLIB
+    }
+
     NodeParams(
       keyManager = keyManager,
+      blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
       globalFeatures = ByteVector.fromValidHex(config.getString("global-features")),
       localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
       overrideFeatures = overrideFeatures,
-      dustLimitSatoshis = dustLimitSatoshis,
+      syncWhitelist = syncWhitelist,
+      dustLimit = dustLimitSatoshis,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
@@ -207,11 +224,11 @@ object NodeParams {
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
       fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
-      htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
-      toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
-      maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
+      htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat")),
+      toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
+      maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      feeBaseMsat = config.getInt("fee-base-msat"),
+      feeBase = feeBase,
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
@@ -227,14 +244,19 @@ object NodeParams {
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry", TimeUnit.SECONDS), TimeUnit.SECONDS),
-      minFundingSatoshis = config.getLong("min-funding-satoshis"),
+      minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration", TimeUnit.SECONDS), TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
+        networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
         randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
+        requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
+        encodingType = routerSyncEncodingType,
+        channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
+        channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
-        searchMaxCltv = config.getInt("router.path-finding.max-cltv"),
-        searchMaxFeeBaseSat = config.getLong("router.path-finding.fee-threshold-sat"),
+        searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
+        searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
         searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),

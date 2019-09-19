@@ -20,26 +20,28 @@ import com.spotify.docker.client.{DefaultDockerClient, DockerClient}
 import com.whisk.docker.impl.spotify.SpotifyDockerFactory
 import com.whisk.docker.scalatest.DockerTestKit
 import com.whisk.docker.{DockerContainer, DockerFactory}
+import fr.acinq.eclair.TestUtils
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import org.scalatest.Suite
 
 trait ElectrumxService extends DockerTestKit {
-  self: Suite =>
+  self: Suite with BitcoindService =>
 
-  val electrumPort = 47000
+  val electrumPort = TestUtils.availablePort
 
   val electrumxContainer = if (System.getProperty("os.name").startsWith("Linux")) {
     // "host" mode will let the container access the host network on linux
     // we use our own docker image because other images on Docker lag behind and don't yet support 1.4
     DockerContainer("acinq/electrumx")
       .withNetworkMode("host")
-      .withEnv("DAEMON_URL=http://foo:bar@localhost:28332", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
+      .withEnv(s"DAEMON_URL=http://foo:bar@localhost:$bitcoindRpcPort", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
       //.withLogLineReceiver(LogLineReceiver(true, println))
   } else {
     // on windows or oxs, host mode is not available, but from docker 18.03 on host.docker.internal can be used instead
     // host.docker.internal is not (yet ?) available on linux though
     DockerContainer("acinq/electrumx")
       .withPorts(electrumPort -> Some(electrumPort))
-      .withEnv("DAEMON_URL=http://foo:bar@host.docker.internal:28332", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
+      .withEnv(s"DAEMON_URL=http://foo:bar@host.docker.internal:$bitcoindRpcPort", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
       //.withLogLineReceiver(LogLineReceiver(true, println))
   }
 

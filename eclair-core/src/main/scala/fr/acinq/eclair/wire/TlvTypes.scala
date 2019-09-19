@@ -19,14 +19,13 @@ package fr.acinq.eclair.wire
 import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector
 
+import scala.reflect.ClassTag
+
 /**
   * Created by t-bast on 20/06/2019.
   */
 
-// @formatter:off
 trait Tlv
-sealed trait OnionTlv extends Tlv
-// @formatter:on
 
 /**
   * Generic tlv type we fallback to if we don't understand the incoming tlv.
@@ -45,9 +44,18 @@ case class GenericTlv(tag: UInt64, value: ByteVector) extends Tlv
   * @param unknown unknown tlv records.
   * @tparam T the stream namespace is a trait extending the top-level tlv trait.
   */
-case class TlvStream[T <: Tlv](records: Traversable[T], unknown: Traversable[GenericTlv] = Nil)
+case class TlvStream[T <: Tlv](records: Traversable[T], unknown: Traversable[GenericTlv] = Nil) {
+  /**
+    *
+    * @tparam R input type parameter, must be a subtype of the main TLV type
+    * @return the TLV record of type that matches the input type parameter if any (there can be at most one, since BOLTs specify
+    *         that TLV records are supposed to be unique)
+    */
+  def get[R <: T : ClassTag]: Option[R] = records.collectFirst { case r: R => r }
+}
 
 object TlvStream {
+  def empty[T <: Tlv] = TlvStream[T](Nil, Nil)
 
   def apply[T <: Tlv](records: T*): TlvStream[T] = TlvStream(records, Nil)
 

@@ -61,11 +61,11 @@ object ChannelCodecs extends Logging {
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
-      ("toSelfDelay" | uint16) ::
+      ("channelReserve" | satoshi) ::
+      ("htlcMinimum" | millisatoshi) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
@@ -74,11 +74,11 @@ object ChannelCodecs extends Logging {
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
-      ("toSelfDelay" | uint16) ::
+      ("channelReserve" | satoshi) ::
+      ("htlcMinimum" | millisatoshi) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubKey" | publicKey) ::
       ("revocationBasepoint" | publicKey) ::
@@ -105,8 +105,8 @@ object ChannelCodecs extends Logging {
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
       ("feeratePerKw" | uint32) ::
-      ("toLocalMsat" | uint64overflow) ::
-      ("toRemoteMsat" | uint64overflow)).as[CommitmentSpec]
+      ("toLocal" | millisatoshi) ::
+      ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
   val outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 
@@ -186,8 +186,8 @@ object ChannelCodecs extends Logging {
   val relayedCodec: Codec[Relayed] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
-      ("amountMsatIn" | uint64overflow) ::
-      ("amountMsatOut" | uint64overflow)).as[Relayed]
+      ("amountIn" | millisatoshi) ::
+      ("amountOut" | millisatoshi)).as[Relayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")

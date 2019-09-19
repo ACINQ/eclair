@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
@@ -35,8 +35,8 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class AnnouncementsBatchValidationSpec extends FunSuite {
 
@@ -45,8 +45,8 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
   ignore("validate a batch of announcements") {
     import scala.concurrent.ExecutionContext.Implicits.global
 
-    implicit val system = ActorSystem()
-    implicit val sttpBackend  = OkHttpFutureBackend()
+    implicit val system = ActorSystem("test")
+    implicit val sttpBackend = OkHttpFutureBackend()
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
@@ -84,7 +84,7 @@ object AnnouncementsBatchValidationSpec {
     val node2Key = randomKey
     val node1BitcoinKey = randomKey
     val node2BitcoinKey = randomKey
-    val amount = Satoshi(1000000)
+    val amount = 1000000 sat
     // first we publish the funding tx
     val wallet = new BitcoinCoreWallet(extendedBitcoinClient.rpcClient)
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
@@ -104,6 +104,6 @@ object AnnouncementsBatchValidationSpec {
   }
 
   def makeChannelUpdate(c: SimulatedChannel, shortChannelId: ShortChannelId): ChannelUpdate =
-    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100, 500000000L)
+    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, CltvExpiryDelta(10), 1000 msat, 10 msat, 100, 500000000 msat)
 
 }

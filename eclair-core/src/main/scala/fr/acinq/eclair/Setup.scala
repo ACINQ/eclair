@@ -19,13 +19,15 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
@@ -60,6 +62,8 @@ class Setup(datadir: File,
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
+  implicit val timeout = Timeout(30 seconds)
+  implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
   implicit val sttpBackend = OkHttpFutureBackend()
 
@@ -69,7 +73,8 @@ class Setup(datadir: File,
 
 
   datadir.mkdirs()
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val config = appConfig.getConfig("eclair")
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
@@ -80,12 +85,31 @@ class Setup(datadir: File,
     case None => Databases.sqliteJDBC(chaindir)
   }
 
+  /**
+   * This counter holds the current blockchain height.
+   * It is mainly used to calculate htlc expiries.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val blockCount = new AtomicLong(0)
+
+  /**
+   * This holds the current feerates, in satoshi-per-kilobytes.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
+
+  /**
+   * This holds the current feerates, in satoshi-per-kw.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
+
   val feeEstimator = new FeeEstimator {
-    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
-    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+    override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -127,7 +151,7 @@ class Setup(datadir: File,
               val stream = classOf[Setup].getResourceAsStream(addressesFile)
               ElectrumClientPool.readServerAddresses(stream, sslEnabled)
           }
-          val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
+          val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
           Electrum(electrumClient)
         case _ => ???
       }
@@ -142,32 +166,30 @@ class Setup(datadir: File,
           blocks_72 = config.getLong("on-chain-fees.default-feerates.72"),
           blocks_144 = config.getLong("on-chain-fees.default-feerates.144")
         )
-        Globals.feeratesPerKB.set(confDefaultFeerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
+        feeratesPerKB.set(confDefaultFeerates)
+        feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
         case feerates: FeeratesPerKB =>
-          Globals.feeratesPerKB.set(feerates)
-          Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
-          system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${Globals.feeratesPerKB.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
+          feeratesPerKB.set(feerates)
+          feeratesPerKw.set(FeeratesPerKw(feerates))
+          system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
+          logger.info(s"current feeratesPerKB=${feeratesPerKB.get()} feeratesPerKw=${feeratesPerKw.get()}")
           feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future
 
       watcher = bitcoin match {
         case Electrum(electrumClient) =>
-          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
+          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, electrumClient)), "watcher", SupervisorStrategy.Resume))
         case _ => ???
       }
 
