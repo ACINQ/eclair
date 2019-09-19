@@ -71,7 +71,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   def reachNormal(setup: SetupFixture,
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelVersion = if(tags.contains("static_remotekey")) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = if(tags.contains("static_remotekey"))
