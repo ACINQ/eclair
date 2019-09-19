@@ -228,5 +228,6 @@ case class ChannelVersion(bits: BitVector) {
 object ChannelVersion {
   val LENGTH_BITS = 4 * 8
   val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
+  val STATIC_REMOTEKEY = ChannelVersion(BitVector.fill(LENGTH_BITS)(true))
 }
 // @formatter:on

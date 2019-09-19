@@ -26,6 +26,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.{Outcome, Tag}
+import scodec.bits._
 
 import scala.concurrent.duration._
 
@@ -45,11 +46,17 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val channelVersion = if(test.tags.contains("static_remotekey")) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.STANDARD
+    val (aliceParams, bobParams) = if(test.tags.contains("static_remotekey"))
+      (Alice.channelParams.copy(localFeatures = hex"2000"), Bob.channelParams.copy(localFeatures = hex"2000"))
+    else
+      (Alice.channelParams, Bob.channelParams)
+
+    val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
+    val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -64,6 +71,18 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.channelVersion == ChannelVersion.STANDARD)
+    bob2alice.expectMsgType[FundingSigned]
+    bob2blockchain.expectMsgType[WatchSpent]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv FundingCreated (option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    alice2bob.expectMsgType[FundingCreated]
+    alice2bob.forward(bob)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.channelVersion == ChannelVersion.STATIC_REMOTEKEY)
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
