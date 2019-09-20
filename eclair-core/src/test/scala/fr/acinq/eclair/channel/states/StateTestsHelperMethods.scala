@@ -70,7 +70,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   def reachNormal(setup: SetupFixture,
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelVersion = ChannelVersion.STANDARD | ChannelVersion.USE_PUBKEY_KEYPATH
+    val channelVersion = ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)

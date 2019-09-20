@@ -274,7 +274,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-          val channelVersion = ChannelVersion.STANDARD | ChannelVersion.USE_PUBKEY_KEYPATH
+          val channelVersion = ChannelVersion.STANDARD
           val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = nodeParams.minDepthBlocks

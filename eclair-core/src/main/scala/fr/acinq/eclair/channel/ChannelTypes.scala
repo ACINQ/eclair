@@ -235,8 +235,12 @@ object ChannelVersion {
   import scodec.bits._
   val LENGTH_BITS = 4 * 8
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
-  val STANDARD = ZEROES
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
-  val USE_PUBKEY_KEYPATH = STANDARD | ChannelVersion(BitVector.low(LENGTH_BITS).set(USE_PUBKEY_KEYPATH_BIT).reverse)
+
+  def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
+  val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+
+  val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
 }
 // @formatter:on

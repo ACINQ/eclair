@@ -38,7 +38,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
-    val channelVersion = ChannelVersion.STANDARD | ChannelVersion.USE_PUBKEY_KEYPATH
+    val channelVersion = ChannelVersion.STANDARD
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
