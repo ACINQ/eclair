@@ -405,7 +405,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
@@ -421,7 +421,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
-    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
     assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
 

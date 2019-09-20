@@ -35,7 +35,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
-  context.system.eventStream.subscribe(self, classOf[ChannelErrorOccured])
+  context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
 
@@ -74,7 +74,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case e: AvailableBalanceChanged => balanceEventThrottler ! e
 
-    case e: ChannelErrorOccured =>
+    case e: ChannelErrorOccurred =>
       val metric = Kamon.counter("channels.errors")
       e.error match {
         case LocalError(_) if e.isFatal => metric.withTag("origin", "local").withTag("fatal", "yes").increment()
@@ -113,8 +113,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 }
 
 /**
-  * We don't want to log every tiny payment, and we don't want to log probing events.
-  */
+ * We don't want to log every tiny payment, and we don't want to log probing events.
+ */
 class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
 
   import ExecutionContext.Implicits.global
@@ -135,11 +135,11 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
           // we delay the processing of the event in order to smooth variations
           log.info(s"will log balance event in $delay for channelId=${e.channelId}")
           context.system.scheduler.scheduleOnce(delay, self, ProcessEvent(e.channelId))
-          context.become(run(pending + (e.channelId -> (BalanceUpdate(e, e)))))
+          context.become(run(pending + (e.channelId -> BalanceUpdate(e, e))))
         case Some(BalanceUpdate(first, _)) =>
           // we already are about to log a balance event, let's update the data we have
           log.info(s"updating balance data for channelId=${e.channelId}")
-          context.become(run(pending + (e.channelId -> (BalanceUpdate(first, e)))))
+          context.become(run(pending + (e.channelId -> BalanceUpdate(first, e))))
       }
 
     case ProcessEvent(channelId) =>
