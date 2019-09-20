@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import fr.acinq.eclair.channel.ChannelVersion._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
@@ -525,8 +526,8 @@ object Commitments {
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
     val remotePaymentPubkey = channelVersion match {
-      case ChannelVersion.STANDARD => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-      case ChannelVersion.STATIC_REMOTEKEY => remoteParams.paymentBasepoint
+      case STANDARD => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
+      case STATIC_REMOTEKEY => remoteParams.paymentBasepoint
     }
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
@@ -537,8 +538,8 @@ object Commitments {
 
   def makeRemoteTxs(keyManager: KeyManager, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: PublicKey, spec: CommitmentSpec, channelVersion: ChannelVersion): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localPaymentPubkey = channelVersion match {
-      case ChannelVersion.STANDARD => Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
-      case ChannelVersion.STATIC_REMOTEKEY => keyManager.paymentPoint(localParams.channelKeyPath).publicKey
+      case STANDARD => Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
+      case STATIC_REMOTEKEY => keyManager.paymentPoint(localParams.channelKeyPath).publicKey
     }
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)

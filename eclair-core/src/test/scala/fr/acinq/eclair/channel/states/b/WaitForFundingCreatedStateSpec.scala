@@ -36,7 +36,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -62,7 +62,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-      withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, bob2blockchain)))
     }
   }
 
@@ -83,6 +83,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.channelVersion == ChannelVersion.STATIC_REMOTEKEY)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelVersion == ChannelVersion.STATIC_REMOTEKEY)
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
