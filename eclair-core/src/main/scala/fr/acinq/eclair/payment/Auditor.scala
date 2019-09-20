@@ -18,10 +18,13 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.{MilliSatoshi, NodeParams}
-import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, MutualClose, RecoveryClose, RemoteClose, RevokedClose}
+import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
+import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent}
+import kamon.Kamon
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
@@ -32,7 +35,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
-  context.system.eventStream.subscribe(self, classOf[ChannelErrorOccured])
+  context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
 
@@ -40,26 +43,61 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   override def receive: Receive = {
 
-    case e: PaymentSent => db.add(e)
+    case e: PaymentSent =>
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "sent")
+        .record(e.amount.truncateToSatoshi.toLong)
+      db.add(e)
 
-    case e: PaymentReceived => db.add(e)
+    case e: PaymentReceived =>
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "received")
+        .record(e.amount.truncateToSatoshi.toLong)
+      db.add(e)
 
-    case e: PaymentRelayed => db.add(e)
+    case e: PaymentRelayed =>
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "relayed")
+        .withTag("type", "total")
+        .record(e.amountIn.truncateToSatoshi.toLong)
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "relayed")
+        .withTag("type", "fee")
+        .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
+      db.add(e)
 
     case e: NetworkFeePaid => db.add(e)
 
     case e: AvailableBalanceChanged => balanceEventThrottler ! e
 
-    case e: ChannelErrorOccured => db.add(e)
+    case e: ChannelErrorOccurred =>
+      val metric = Kamon.counter("channels.errors")
+      e.error match {
+        case LocalError(_) if e.isFatal => metric.withTag("origin", "local").withTag("fatal", "yes").increment()
+        case LocalError(_) if !e.isFatal => metric.withTag("origin", "local").withTag("fatal", "no").increment()
+        case RemoteError(_) => metric.withTag("origin", "remote").increment()
+      }
+      db.add(e)
 
     case e: ChannelStateChanged =>
+      val metric = Kamon.counter("channels.lifecycle")
+      // NB: order matters!
       e match {
         case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
+          metric.withTag("event", "created").increment()
           db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
+        case ChannelStateChanged(_, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
+        case ChannelStateChanged(_, _, _, _, CLOSING, _) =>
+          metric.withTag("event", "closing").increment()
         case _ => ()
       }
 
     case e: ChannelClosed =>
+      Kamon.counter("channels.lifecycle").withTag("event", "closed").increment()
       val event = e.closingType match {
         case MutualClose => "mutual"
         case LocalClose => "local"
@@ -75,8 +113,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 }
 
 /**
-  * We don't want to log every tiny payment, and we don't want to log probing events.
-  */
+ * We don't want to log every tiny payment, and we don't want to log probing events.
+ */
 class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
 
   import ExecutionContext.Implicits.global
@@ -97,11 +135,11 @@ class BalanceEventThrottler(db: AuditDb) extends Actor with ActorLogging {
           // we delay the processing of the event in order to smooth variations
           log.info(s"will log balance event in $delay for channelId=${e.channelId}")
           context.system.scheduler.scheduleOnce(delay, self, ProcessEvent(e.channelId))
-          context.become(run(pending + (e.channelId -> (BalanceUpdate(e, e)))))
+          context.become(run(pending + (e.channelId -> BalanceUpdate(e, e))))
         case Some(BalanceUpdate(first, _)) =>
           // we already are about to log a balance event, let's update the data we have
           log.info(s"updating balance data for channelId=${e.channelId}")
-          context.become(run(pending + (e.channelId -> (BalanceUpdate(first, e)))))
+          context.become(run(pending + (e.channelId -> BalanceUpdate(first, e))))
       }
 
     case ProcessEvent(channelId) =>

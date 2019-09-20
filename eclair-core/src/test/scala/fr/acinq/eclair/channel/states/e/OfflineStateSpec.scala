@@ -71,7 +71,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -148,7 +148,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -410,7 +410,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
@@ -426,7 +426,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
-    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
     assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
 

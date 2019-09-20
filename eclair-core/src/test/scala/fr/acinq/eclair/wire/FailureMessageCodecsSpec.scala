@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.FailureMessageCodecs._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomBytes64}
 import org.scalatest.FunSuite
 import scodec.bits._
 
@@ -44,10 +44,10 @@ class FailureMessageCodecsSpec extends FunSuite {
   test("encode/decode all failure messages") {
     val msgs: List[FailureMessage] =
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
-        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) :: InvalidOnionPayload(randomBytes32) ::
+        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456 msat, channelUpdate) :: FeeInsufficient(546463 msat, channelUpdate) :: IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: Nil
+        IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: InvalidOnionPayload(UInt64(561), 1105) :: Nil
 
     msgs.foreach {
       msg => {
@@ -83,8 +83,7 @@ class FailureMessageCodecsSpec extends FunSuite {
     val msgs = Map(
       (BADONION | PERM | 4) -> InvalidOnionVersion(randomBytes32),
       (BADONION | PERM | 5) -> InvalidOnionHmac(randomBytes32),
-      (BADONION | PERM | 6) -> InvalidOnionKey(randomBytes32),
-      (BADONION | PERM) -> InvalidOnionPayload(randomBytes32)
+      (BADONION | PERM | 6) -> InvalidOnionKey(randomBytes32)
     )
 
     for ((code, message) <- msgs) {

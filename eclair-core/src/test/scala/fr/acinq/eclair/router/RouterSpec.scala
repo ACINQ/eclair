@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.QueryShortChannelIds
-import fr.acinq.eclair.{CltvExpiryDelta, Globals, LongToBtcAmount, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, randomKey}
 import scodec.bits._
 
 import scala.compat.Platform
@@ -236,6 +236,23 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 8)
   }
 
+  test("send network statistics") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+    sender.send(router, GetNetworkStats)
+    assert(sender.expectMsgType[Option[NetworkStats]] === None)
+
+    // Network statistics should be computed after initial sync
+    router ! SyncProgress(1.0)
+    sender.send(router, GetNetworkStats)
+
+    val Some(stats) = sender.expectMsgType[Option[NetworkStats]]
+    assert(stats.channels === 4)
+    assert(stats.nodes === 6)
+    assert(stats.capacity.median === 1000000.sat)
+    assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(6))
+  }
+
   test("given a pre-computed route add the proper channel updates") { fixture =>
     import fixture._
 
@@ -252,7 +269,7 @@ class RouterSpec extends BaseRouterSpec {
 
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
     import fixture._
-    val blockHeight = Globals.blockCount.get().toInt - 2020
+    val blockHeight = 400000 - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val timestamp = (Platform.currentTime.milliseconds - 14.days - 1.day).toSeconds
@@ -267,7 +284,7 @@ class RouterSpec extends BaseRouterSpec {
     probe.send(router, TickPruneStaleChannels)
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
-    val state = sender.expectMsgType[RoutingState]
+    sender.expectMsgType[RoutingState]
 
     val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat, timestamp = Platform.currentTime.millisecond.toSeconds)
 
@@ -277,4 +294,5 @@ class RouterSpec extends BaseRouterSpec {
     val query = transport.expectMsgType[QueryShortChannelIds]
     assert(query.shortChannelIds.array == List(channelId))
   }
+
 }

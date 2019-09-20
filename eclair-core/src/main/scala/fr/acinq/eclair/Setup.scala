@@ -20,6 +20,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
@@ -81,7 +82,8 @@ class Setup(datadir: File,
   secureRandom.nextInt()
 
   datadir.mkdirs()
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val config = appConfig.getConfig("eclair")
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
@@ -92,12 +94,31 @@ class Setup(datadir: File,
     case None => Databases.sqliteJDBC(chaindir)
   }
 
+  /**
+   * This counter holds the current blockchain height.
+   * It is mainly used to calculate htlc expiries.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val blockCount = new AtomicLong(0)
+
+  /**
+   * This holds the current feerates, in satoshi-per-kilobytes.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
+
+  /**
+   * This holds the current feerates, in satoshi-per-kw.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
+
   val feeEstimator = new FeeEstimator {
-    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
-    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+    override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -135,6 +156,11 @@ class Setup(datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
+        _ <- chain match {
+          case "mainnet" => bitcoinClient.invoke("getrawtransaction", "2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
+          case "testnet" => bitcoinClient.invoke("getrawtransaction", "8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
+          case "regtest" => Future.successful(())
+        }
       } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
@@ -169,7 +195,7 @@ class Setup(datadir: File,
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
           ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 
@@ -192,8 +218,8 @@ class Setup(datadir: File,
           blocks_72 = config.getLong("on-chain-fees.default-feerates.72"),
           blocks_144 = config.getLong("on-chain-fees.default-feerates.144")
         )
-        Globals.feeratesPerKB.set(confDefaultFeerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
+        feeratesPerKB.set(confDefaultFeerates)
+        feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
       minFeeratePerByte = config.getLong("min-feerate")
@@ -207,10 +233,10 @@ class Setup(datadir: File,
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
         case feerates: FeeratesPerKB =>
-          Globals.feeratesPerKB.set(feerates)
-          Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
-          system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${Globals.feeratesPerKB.get()} feeratesPerKw=${Globals.feeratesPerKw.get()}")
+          feeratesPerKB.set(feerates)
+          feeratesPerKw.set(FeeratesPerKw(feerates))
+          system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
+          logger.info(s"current feeratesPerKB=${feeratesPerKB.get()} feeratesPerKw=${feeratesPerKw.get()}")
           feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future
@@ -219,11 +245,11 @@ class Setup(datadir: File,
         case Bitcoind(bitcoinClient) =>
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-          system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
+          system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(blockCount, new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
           zmqBlockConnected.success(Done)
           zmqTxConnected.success(Done)
-          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
+          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, electrumClient)), "watcher", SupervisorStrategy.Resume))
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))

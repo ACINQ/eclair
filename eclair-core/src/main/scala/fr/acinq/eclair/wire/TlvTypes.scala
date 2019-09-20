@@ -25,10 +25,7 @@ import scala.reflect.ClassTag
   * Created by t-bast on 20/06/2019.
   */
 
-// @formatter:off
 trait Tlv
-sealed trait OnionTlv extends Tlv
-// @formatter:on
 
 /**
   * Generic tlv type we fallback to if we don't understand the incoming tlv.

@@ -84,6 +84,7 @@ class TransactionsSpec extends FunSuite with Logging {
     val localDustLimit = 546 sat
     val toLocalDelay = CltvExpiryDelta(144)
     val feeratePerKw = fr.acinq.eclair.MinimumFeeratePerKw
+    val blockHeight = 400000
 
     {
       // ClaimP2WPKHOutputTx
@@ -125,7 +126,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // HtlcPenaltyTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
-      val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket)
+      val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
       val redeemScript = htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)
       val pubKeyScript = write(pay2wsh(redeemScript))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
@@ -140,7 +141,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // ClaimHtlcSuccessTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
-      val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket)
+      val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
@@ -154,7 +155,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // ClaimHtlcTimeoutTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
-      val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket)
+      val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)

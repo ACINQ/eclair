@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
@@ -185,10 +184,6 @@ class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
   case id: UUID => JString(id.toString)
 }))
 
-class OutgoingPaymentStatusSerializer extends CustomSerializer[OutgoingPaymentStatus.Value](format => ({ null }, {
-  case el: OutgoingPaymentStatus.Value => JString(el.toString)
-}))
-
 object JsonSupport extends Json4sSupport {
 
   implicit val serialization = jackson.Serialization
@@ -221,8 +216,7 @@ object JsonSupport extends Json4sSupport {
     new NodeAddressSerializer +
     new DirectionSerializer +
     new PaymentRequestSerializer +
-    new JavaUUIDSerializer +
-    new OutgoingPaymentStatusSerializer
+    new JavaUUIDSerializer
 
   case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
     val reverse: Map[String, Class[_]] = custom.map(_.swap)
