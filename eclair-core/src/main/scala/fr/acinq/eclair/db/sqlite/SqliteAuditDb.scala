@@ -183,7 +183,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
             MilliSatoshi(rs.getLong("amount_msat")),
             MilliSatoshi(rs.getLong("fees_msat")),
             rs.getByteVector32("to_channel_id"),
-            Nil, // we don't store the route
+            None, // we don't store the route
             rs.getLong("timestamp"))))
       }
       q

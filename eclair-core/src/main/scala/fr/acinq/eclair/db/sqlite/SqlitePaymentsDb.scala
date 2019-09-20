@@ -125,7 +125,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         statement.setLong(1, p.timestamp)
         statement.setBytes(2, paymentResult.paymentPreimage.toArray)
         statement.setLong(3, p.feesPaid.toLong)
-        statement.setBytes(4, paymentRouteCodec.encode(p.route.map(h => HopSummary(h)).toList).require.toByteArray)
+        statement.setBytes(4, paymentRouteCodec.encode(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList).require.toByteArray)
         statement.setString(5, p.id.toString)
         statement.addBatch()
       })

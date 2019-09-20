@@ -35,15 +35,17 @@ sealed trait PaymentEvent {
 }
 
 case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
-  require(parts.nonEmpty, "sent payment is empty")
+  require(parts.nonEmpty, "must have at least one subpayment")
   val amount: MilliSatoshi = parts.map(_.amount).sum
   val feesPaid: MilliSatoshi = parts.map(_.feesPaid).sum
-  val timestamp: Long = parts.map(_.timestamp).min
+  val timestamp: Long = parts.map(_.timestamp).min // we use min here because we receive the proof of payment as soon as the first partial payment is fulfilled
 }
 
 object PaymentSent {
 
-  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Seq[Hop], timestamp: Long = Platform.currentTime)
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: Long = Platform.currentTime) {
+    require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
+  }
 
 }
 
@@ -52,9 +54,9 @@ case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[Paym
 case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentEvent
 
 case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
-  require(parts.nonEmpty, "received payment is empty")
+  require(parts.nonEmpty, "must have at least one subpayment")
   val amount: MilliSatoshi = parts.map(_.amount).sum
-  val timestamp: Long = parts.map(_.timestamp).max
+  val timestamp: Long = parts.map(_.timestamp).max // we use max here because we fulfill the payment only once we received all the parts
 }
 
 object PaymentReceived {

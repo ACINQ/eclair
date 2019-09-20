@@ -207,7 +207,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val ps6 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("3"), randomBytes32, 789 msat, bob, 1250, None, OutgoingPaymentStatus.Failed(Nil, 1300))
     postMigrationDb.addOutgoingPayment(ps4)
     postMigrationDb.addOutgoingPayment(ps5.copy(status = OutgoingPaymentStatus.Pending))
-    postMigrationDb.updateOutgoingPayment(PaymentSent(ps5.parentId, ps5.paymentHash, preimage1, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32, Nil, 1180))))
+    postMigrationDb.updateOutgoingPayment(PaymentSent(ps5.parentId, ps5.paymentHash, preimage1, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32, None, 1180))))
     postMigrationDb.addOutgoingPayment(ps6.copy(status = OutgoingPaymentStatus.Pending))
     postMigrationDb.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300))
 
@@ -305,11 +305,11 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
     // can't update again once it's in a final state
-    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32, Nil)))))
+    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32, None)))))
 
     val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, Seq(
-      PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32, Nil, 400),
-      PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32, Seq(hop_ab, hop_bc), 410)
+      PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32, None, 400),
+      PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32, Some(Seq(hop_ab, hop_bc)), 410)
     ))
     val ss1 = s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400))
     val ss2 = s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 20 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, Some(ShortChannelId(43)))), 410))

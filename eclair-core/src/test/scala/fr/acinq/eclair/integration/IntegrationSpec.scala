@@ -51,11 +51,9 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.util.Try
 
 /**
  * Created by PM on 15/03/2017.
@@ -432,7 +430,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitCond({
       sender.expectMsgType[PaymentEvent](10 seconds) match {
         case PaymentFailed(_, _, failures, _) => failures == Seq.empty // if something went wrong fail with a hint
-        case PaymentSent(_, _, _, part :: Nil) => part.route.exists(_.nodeId == nodes("G").nodeParams.nodeId)
+        case PaymentSent(_, _, _, part :: Nil) => part.route.get.exists(_.nodeId == nodes("G").nodeParams.nodeId)
         case _ => false
       }
     }, max = 30 seconds, interval = 10 seconds)

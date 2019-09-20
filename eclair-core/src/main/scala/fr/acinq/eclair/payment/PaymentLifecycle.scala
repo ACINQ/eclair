@@ -78,7 +78,7 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
     case Event("ok", _) => stay
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
-      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.channelId, route)
+      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.channelId, Some(route))
       progressHandler.onSuccess(s, PaymentSent(id, c.paymentHash, fulfill.paymentPreimage, p :: Nil))(context)
       stop(FSM.Normal)
 

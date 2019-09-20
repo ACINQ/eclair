@@ -161,7 +161,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the success on the event stream and update the status in paymentDb
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
-          val result = PaymentSent(id, add.paymentHash, fulfill.paymentPreimage, Seq(PaymentSent.PartialPayment(id, add.amountMsat, feesPaid, add.channelId, Nil)))
+          val result = PaymentSent(id, add.paymentHash, fulfill.paymentPreimage, Seq(PaymentSent.PartialPayment(id, add.amountMsat, feesPaid, add.channelId, None)))
           nodeParams.db.payments.updateOutgoingPayment(result)
           context.system.eventStream.publish(result)
         case Local(_, Some(sender)) =>
