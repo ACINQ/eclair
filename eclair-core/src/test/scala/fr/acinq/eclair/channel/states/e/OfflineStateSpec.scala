@@ -486,7 +486,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
   }
 
-  test("handle feerate changes while offline (disabled flag)", Tag("disable-offline-mismatch")) { f =>
+  test("handle feerate changes while offline (don't close on mismatch)", Tag("disable-offline-mismatch")) { f =>
     import f._
     val sender = TestProbe()
 
