@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
+
 import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 

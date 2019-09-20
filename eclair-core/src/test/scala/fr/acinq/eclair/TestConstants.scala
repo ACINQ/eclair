@@ -77,6 +77,7 @@ object TestConstants {
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         maxFeerateMismatch = 1.5,
+        closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
@@ -154,6 +155,7 @@ object TestConstants {
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         maxFeerateMismatch = 1.0,
+        closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs

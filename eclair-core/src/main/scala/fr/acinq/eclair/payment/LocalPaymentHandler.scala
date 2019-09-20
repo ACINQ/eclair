@@ -19,12 +19,11 @@ package fr.acinq.eclair.payment
 import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
-import fr.acinq.eclair.db.IncomingPayment
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, randomBytes32}
 
-import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 
@@ -49,7 +48,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
-        paymentDb.addPaymentRequest(paymentRequest, paymentPreimage)
+        paymentDb.addIncomingPayment(paymentRequest, paymentPreimage)
         paymentRequest
       } match {
         case Success(paymentRequest) => sender ! paymentRequest
@@ -57,8 +56,11 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       }
 
     case htlc: UpdateAddHtlc =>
-      paymentDb.getPendingPaymentRequestAndPreimage(htlc.paymentHash) match {
-        case Some((paymentPreimage, paymentRequest)) =>
+      paymentDb.getIncomingPayment(htlc.paymentHash) match {
+        case Some(IncomingPayment(_, _, _, status)) if status.isInstanceOf[IncomingPaymentStatus.Received] =>
+          log.warning(s"ignoring incoming payment for paymentHash=${htlc.paymentHash} which has already been paid")
+          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, nodeParams.currentBlockHeight)), commit = true)
+        case Some(IncomingPayment(paymentRequest, paymentPreimage, _, _)) =>
           val minFinalExpiry = paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry(nodeParams.currentBlockHeight)
           // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
           // it must not be greater than two times the requested amount.
@@ -77,10 +79,9 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
             case _ =>
               log.info(s"received payment for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
               // amount is correct or was not specified in the payment request
-              nodeParams.db.payments.addIncomingPayment(IncomingPayment(htlc.paymentHash, htlc.amountMsat, Platform.currentTime))
+              nodeParams.db.payments.receiveIncomingPayment(htlc.paymentHash, htlc.amountMsat)
               sender ! CMD_FULFILL_HTLC(htlc.id, paymentPreimage, commit = true)
-              context.system.eventStream.publish(PaymentReceived(htlc.amountMsat, htlc.paymentHash, htlc.channelId))
-              
+              context.system.eventStream.publish(PaymentReceived(htlc.paymentHash, PaymentReceived.PartialPayment(htlc.amountMsat, htlc.channelId) :: Nil))
           }
         case None =>
           sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, nodeParams.currentBlockHeight)), commit = true)

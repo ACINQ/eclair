@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
@@ -35,7 +35,7 @@ trait AuditDb {
 
   def add(networkFeePaid: NetworkFeePaid)
 
-  def add(channelErrorOccured: ChannelErrorOccured)
+  def add(channelErrorOccurred: ChannelErrorOccurred)
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
@@ -47,7 +47,7 @@ trait AuditDb {
 
   def stats: Seq[Stats]
 
-  def close: Unit
+  def close(): Unit
 
 }
 
