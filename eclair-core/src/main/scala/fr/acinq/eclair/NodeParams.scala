@@ -217,6 +217,7 @@ object NodeParams {
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
         maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
+        closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
       ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),

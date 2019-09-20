@@ -171,27 +171,27 @@ object Helpers {
   }
 
   /**
-   *
-   * @param remoteFeeratePerKw remote fee rate per kiloweight
-   * @param localFeeratePerKw  local fee rate per kiloweight
-   * @return the "normalized" difference between local and remote fee rate, i.e. |remote - local| / avg(local, remote)
-   */
-  def feeRateMismatch(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Double =
-    Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw))
+    *
+    * @param referenceFeePerKw reference fee rate per kiloweight
+    * @param currentFeePerKw   current fee rate per kiloweight
+    * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
+    */
+  def feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
+    Math.abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
 
   def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
     feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
 
   /**
-   *
-   * @param remoteFeeratePerKw      remote fee rate per kiloweight
-   * @param localFeeratePerKw       local fee rate per kiloweight
-   * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
-   * @return true if the difference between local and remote fee rates is too high.
-   *         the actual check is |remote - local| / avg(local, remote) > mismatch ratio
-   */
-  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
-    feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
+    *
+    * @param referenceFeePerKw      reference fee rate per kiloweight
+    * @param currentFeePerKw        current fee rate per kiloweight
+    * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
+    * @return true if the difference between current and reference fee rates is too high.
+    *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
+    */
+  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
+    feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
 
   /**
    *
