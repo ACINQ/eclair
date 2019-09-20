@@ -21,10 +21,10 @@ import java.util.UUID
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccured, NetworkFeePaid}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccurred, NetworkFeePaid}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.{ChannelCodecs, ChannelCodecsSpec}
 import org.scalatest.FunSuite
 
@@ -44,16 +44,21 @@ class SqliteAuditDbSpec extends FunSuite {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteAuditDb(sqlite)
 
-    val e1 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32)
-    val e2 = PaymentReceived(42000 msat, randomBytes32, randomBytes32)
+    val e1 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, PaymentSent.PartialPayment(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, None) :: Nil)
+    val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32)
+    val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32)
+    val e2 = PaymentReceived(randomBytes32, pp2a :: pp2b :: Nil)
     val e3 = PaymentRelayed(42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32)
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes32, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
-    val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32, timestamp = 0)
-    val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
+    val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = 0)
+    val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32, None, timestamp = 1)
+    val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, pp5a :: pp5b :: Nil)
+    val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
+    val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, pp6 :: Nil)
     val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000 msat, ChannelCodecsSpec.commitments)
-    val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, true, false, "mutual")
-    val e9 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
-    val e10 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
+    val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, isFunder = true, isPrivate = false, "mutual")
+    val e9 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
+    val e10 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
 
     db.add(e1)
     db.add(e2)
@@ -66,12 +71,12 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e9)
     db.add(e10)
 
-    assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toSeconds).toSet === Set(e1, e5, e6))
-    assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).toList === List(e1))
-    assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).toList === List(e2))
-    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).toList === List(e3))
-    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).size === 1)
-    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toSeconds).head.txType === "mutual")
+    assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toMillis).toSet === Set(e1, e5.copy(id = pp5a.id, parts = pp5a :: Nil), e5.copy(id = pp5b.id, parts = pp5b :: Nil), e6.copy(id = pp6.id)))
+    assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e1))
+    assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e2.copy(parts = pp2a :: Nil), e2.copy(parts = pp2b :: Nil)))
+    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3))
+    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).size === 1)
+    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).head.txType === "mutual")
   }
 
   test("stats") {
@@ -129,11 +134,12 @@ class SqliteAuditDbSpec extends FunSuite {
       assert(getVersion(statement, "audit", 3) == 1) // we expect version 1
     }
 
-    val ps = PaymentSent(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32)
-    val ps1 = PaymentSent(UUID.randomUUID(), 42001 msat, 1001 msat, randomBytes32, randomBytes32, randomBytes32)
-    val ps2 = PaymentSent(UUID.randomUUID(), 42002 msat, 1002 msat, randomBytes32, randomBytes32, randomBytes32)
-    val e1 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
-    val e2 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
+    val ps = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None) :: Nil)
+    val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 42001 msat, 1001 msat, randomBytes32, None)
+    val pp2 = PaymentSent.PartialPayment(UUID.randomUUID(), 42002 msat, 1002 msat, randomBytes32, None)
+    val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, pp1 :: pp2 :: Nil)
+    val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
+    val e2 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
 
     // add a row (no ID on sent)
     using(connection.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -141,7 +147,7 @@ class SqliteAuditDbSpec extends FunSuite {
       statement.setLong(2, ps.feesPaid.toLong)
       statement.setBytes(3, ps.paymentHash.toArray)
       statement.setBytes(4, ps.paymentPreimage.toArray)
-      statement.setBytes(5, ps.toChannelId.toArray)
+      statement.setBytes(5, ps.parts.head.toChannelId.toArray)
       statement.setLong(6, ps.timestamp)
       statement.executeUpdate()
     }
@@ -152,8 +158,8 @@ class SqliteAuditDbSpec extends FunSuite {
       assert(getVersion(statement, "audit", 3) == 3) // version changed from 1 -> 3
     }
 
-    // existing rows will use 00000000-0000-0000-0000-000000000000 as default
-    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID)))
+    // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
+    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID)))))
 
     val postMigrationDb = new SqliteAuditDb(connection)
 
@@ -162,12 +168,14 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     postMigrationDb.add(ps1)
-    postMigrationDb.add(ps2)
     postMigrationDb.add(e1)
     postMigrationDb.add(e2)
 
     // the old record will have the UNKNOWN_UUID but the new ones will have their actual id
-    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toSeconds) == Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID), ps1, ps2))
+    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(
+      ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID))),
+      ps1.copy(id = pp1.id, parts = pp1 :: Nil),
+      ps1.copy(id = pp2.id, parts = pp2 :: Nil)))
   }
 
   test("handle migration version 2 -> 3") {
@@ -196,8 +204,8 @@ class SqliteAuditDbSpec extends FunSuite {
       assert(getVersion(statement, "audit", 3) == 2) // version 2 is deployed now
     }
 
-    val e1 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), true)
-    val e2 = ChannelErrorOccured(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), true)
+    val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
+    val e2 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
 
     val migratedDb = new SqliteAuditDb(connection)
 

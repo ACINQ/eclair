@@ -476,10 +476,15 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(FinalizeRoute(partialHops), d) =>
-      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs, then select the largest edge between them
-      val edges = partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2).maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat)) }
-      val hops = edges.map(d => Hop(d.desc.a, d.desc.b, d.update)).toSeq
-      sender ! RouteResponse(hops, Set.empty, Set.empty)
+      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
+      partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2) }.toList match {
+        case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
+          val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
+          val hops = selectedEdges.map(d => Hop(d.desc.a, d.desc.b, d.update))
+          sender ! RouteResponse(hops, Set.empty, Set.empty)
+        case _ => // some nodes in the supplied route aren't connected in our graph
+          sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+      }
       stay
 
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, params_opt), d) =>

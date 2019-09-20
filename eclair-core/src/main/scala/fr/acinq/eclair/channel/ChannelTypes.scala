@@ -237,6 +237,6 @@ object ChannelVersion {
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val STANDARD = ZEROES
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
-  val USE_PUBKEY_KEYPATH = STANDARD | ChannelVersion(bin"00000000000000000000000000000001")
+  val USE_PUBKEY_KEYPATH = STANDARD | ChannelVersion(BitVector.low(LENGTH_BITS).set(USE_PUBKEY_KEYPATH_BIT).reverse)
 }
 // @formatter:on
