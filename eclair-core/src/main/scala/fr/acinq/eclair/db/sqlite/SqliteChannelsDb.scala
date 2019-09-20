@@ -42,7 +42,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     statement.execute("PRAGMA foreign_keys = ON")
   }
 
-  using(sqlite.createStatement(), disableAutoCommit = true) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement) = {
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")

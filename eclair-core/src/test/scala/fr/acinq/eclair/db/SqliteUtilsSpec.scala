@@ -41,7 +41,7 @@ class SqliteUtilsSpec extends FunSuite {
       assert(!results.next())
     }
 
-    assertThrows[SQLiteException](using(conn.createStatement(), disableAutoCommit = true) { statement =>
+    assertThrows[SQLiteException](using(conn.createStatement(), inTransaction = true) { statement =>
       statement.executeUpdate("INSERT INTO utils_test VALUES (3, 3)")
       statement.executeUpdate("INSERT INTO utils_test VALUES (1, 3)") // should throw (primary key violation)
     })
@@ -55,7 +55,7 @@ class SqliteUtilsSpec extends FunSuite {
       assert(!results.next())
     }
 
-    using(conn.createStatement(), disableAutoCommit = true) { statement =>
+    using(conn.createStatement(), inTransaction = true) { statement =>
       statement.executeUpdate("INSERT INTO utils_test VALUES (3, 3)")
       statement.executeUpdate("INSERT INTO utils_test VALUES (4, 4)")
     }

@@ -39,7 +39,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   val DB_NAME = "audit"
   val CURRENT_VERSION = 3
 
-  using(sqlite.createStatement(), disableAutoCommit = true) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement) = {
       statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
