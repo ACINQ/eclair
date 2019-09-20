@@ -82,6 +82,23 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
   }
 
+  test("send to route (edges not found in the graph)") { fixture =>
+    import fixture._
+
+    val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
+    val id = UUID.randomUUID()
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, defaultPaymentRequest, nodeParams.db.payments)
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, progressHandler, router, TestProbe().ref))
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
+
+    val brokenRoute = SendPaymentToRoute(randomBytes32, Seq(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey), FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)))
+    sender.send(paymentFSM, brokenRoute)
+    val failureMessage = eventListener.expectMsgType[PaymentFailed].failures.head.asInstanceOf[LocalFailure].t.getMessage
+    assert(failureMessage == "Not all the nodes in the supplied route are connected with public channels")
+  }
+
   test("payment failed (route not found)") { fixture =>
     import fixture._
     val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
