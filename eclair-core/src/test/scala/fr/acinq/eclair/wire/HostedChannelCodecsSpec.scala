@@ -41,7 +41,7 @@ class HostedChannelCodecsSpec extends FunSuite {
       tlvStream = TlvStream(UpdateAddSecretTlv.Secret(originCodec.encode(Local(UUID.randomUUID, None)).require.toByteVector) :: Nil))
 
     val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
-    val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(add2, add1), List(add1, add2), randomBytes64)
+    val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(add2, add1), List(add1, add2), randomBytes64, randomBytes64)
 
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
     val htlc2 = DirectedHtlc(direction = OUT, add = add2)
@@ -61,7 +61,7 @@ class HostedChannelCodecsSpec extends FunSuite {
       lastCrossSignedState = lcss1,
       allLocalUpdates = 100L,
       allRemoteUpdates = 101L,
-      localChanges = LocalChanges(List(add1, add2), List(add1, add2), Nil),
+      localUpdates = List(add1, add2),
       remoteUpdates = List(add1, add2),
       localSpec = cs,
       channelId = ByteVector32.Zeroes,

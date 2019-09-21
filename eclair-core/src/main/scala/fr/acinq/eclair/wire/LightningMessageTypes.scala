@@ -323,15 +323,14 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
                                 remoteUpdates: Long,
                                 incomingHtlcs: List[UpdateAddHtlc],
                                 outgoingHtlcs: List[UpdateAddHtlc],
-                                remoteSignature: ByteVector64) extends HostedChannelMessage {
+                                remoteSigOfLocal: ByteVector64,
+                                localSigOfRemote: ByteVector64) extends HostedChannelMessage {
 
   lazy val reverse: LastCrossSignedState =
-    copy(localUpdates = remoteUpdates,
-      remoteUpdates = localUpdates,
-      localBalanceMsat = remoteBalanceMsat,
-      remoteBalanceMsat = localBalanceMsat,
-      incomingHtlcs = outgoingHtlcs,
-      outgoingHtlcs = incomingHtlcs)
+    copy(localUpdates = remoteUpdates, remoteUpdates = localUpdates,
+      localBalanceMsat = remoteBalanceMsat, remoteBalanceMsat = localBalanceMsat,
+      remoteSigOfLocal = localSigOfRemote, localSigOfRemote = remoteSigOfLocal,
+      incomingHtlcs = outgoingHtlcs, outgoingHtlcs = incomingHtlcs)
 
   lazy val hostedSigHash: ByteVector32 = {
     val inPayments = incomingHtlcs.map(LightningMessageCodecs.updateAddHtlcCodec.encode(_).require.toByteVector).sortWith(LexicographicalOrdering.isLessThan)
@@ -354,9 +353,16 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
     Crypto.sha256(preimage)
   }
 
-  def makeSignature(priv: PrivateKey): ByteVector64 = Crypto.sign(hostedSigHash, priv)
-  def verifyRemoteSignature(pub: PublicKey): Boolean = Crypto.verifySignature(hostedSigHash, remoteSignature, pub)
-  def makeStateUpdate(priv: PrivateKey) = StateUpdate(blockDay, localUpdates, remoteUpdates, makeSignature(priv))
+  def verifyRemoteSig(pubKey: PublicKey): Boolean = Crypto.verifySignature(hostedSigHash, remoteSigOfLocal, pubKey)
+  def withLocalSigOfRemote(priv: PrivateKey): LastCrossSignedState = copy(localSigOfRemote = Crypto.sign(reverse.hostedSigHash, priv))
+
+  def isAhead(remoteLCSS: LastCrossSignedState): Boolean = remoteUpdates > remoteLCSS.localUpdates || localUpdates > remoteLCSS.remoteUpdates
+  def isEven(remoteLCSS: LastCrossSignedState): Boolean = remoteUpdates == remoteLCSS.localUpdates && localUpdates == remoteLCSS.remoteUpdates
+
+  def stateUpdate: StateUpdate = {
+    require(localSigOfRemote != ByteVector64.Zeroes, "Empty localSigOfRemote")
+    StateUpdate(blockDay, localUpdates, remoteUpdates, localSigOfRemote)
+  }
 }
 
 case class StateUpdate(blockDay: Long,

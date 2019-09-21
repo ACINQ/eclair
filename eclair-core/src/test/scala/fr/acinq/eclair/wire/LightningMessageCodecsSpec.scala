@@ -98,10 +98,10 @@ class LightningMessageCodecsSpec extends FunSuite {
     val state_override = StateOverride(50000L, 500000 msat, 70000, 700000, randomBytes64)
 
     val state_update = StateUpdate(50000L, 10, 20, randomBytes64)
-    val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(update_add_htlc_tlv, update_add_htlc), List(update_add_htlc, update_add_htlc_tlv), randomBytes64)
-    val lcss2 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, List(update_add_htlc_tlv, update_add_htlc_tlv), randomBytes64)
-    val lcss3 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(update_add_htlc_tlv, update_add_htlc_tlv), Nil, randomBytes64)
-    val lcss4 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, Nil, randomBytes64)
+    val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(update_add_htlc_tlv, update_add_htlc), List(update_add_htlc, update_add_htlc_tlv), randomBytes64, randomBytes64)
+    val lcss2 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, List(update_add_htlc_tlv, update_add_htlc_tlv), randomBytes64, randomBytes64)
+    val lcss3 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(update_add_htlc_tlv, update_add_htlc_tlv), Nil, randomBytes64, randomBytes64)
+    val lcss4 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, Nil, randomBytes64, randomBytes64)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::

@@ -11,10 +11,10 @@ import scodec.Codec
 object HostedChannelCodecs {
   val HOSTED_DATA_COMMITMENTS_Codec: Codec[HOSTED_DATA_COMMITMENTS] = (
     ("channelVersion" | channelVersionCodec) ::
-      ("lastLocalCrossSignedState" | lastCrossSignedStateCodec) ::
+      ("lastCrossSignedState" | lastCrossSignedStateCodec) ::
       ("allLocalUpdates" | uint64overflow) ::
       ("allRemoteUpdates" | uint64overflow) ::
-      ("localChanges" | localChangesCodec) ::
+      ("localUpdates" | listOfN(uint16, updateMessageCodec)) ::
       ("remoteUpdates" | listOfN(uint16, updateMessageCodec)) ::
       ("localSpec" | commitmentSpecCodec) ::
       ("channelId" | bytes32) ::

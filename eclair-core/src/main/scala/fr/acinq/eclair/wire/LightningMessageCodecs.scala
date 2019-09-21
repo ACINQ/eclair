@@ -321,7 +321,8 @@ object HostedMessagesCodecs {
       (uint32 withContext "remoteUpdates") ::
       (listOfN(uint16, LightningMessageCodecs.updateAddHtlcCodec) withContext "incomingHtlcs") ::
       (listOfN(uint16, LightningMessageCodecs.updateAddHtlcCodec) withContext "outgoingHtlcs") ::
-      (bytes64 withContext "remoteSignature")
+      (bytes64 withContext "remoteSigOfLocal") ::
+      (bytes64 withContext "localSigOfRemote")
   }.as[LastCrossSignedState]
 
   val stateUpdateCodec: Codec[StateUpdate] = {

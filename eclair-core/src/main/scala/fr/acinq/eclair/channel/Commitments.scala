@@ -30,13 +30,6 @@ import fr.acinq.eclair._
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
-
-  def alreadyProposed(id: Long): Boolean = proposed.exists {
-    case u: UpdateFulfillHtlc if id == u.id => true
-    case u: UpdateFailHtlc if id == u.id => true
-    case u: UpdateFailMalformedHtlc if id == u.id => true
-    case _ => false
-  }
 }
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
@@ -146,6 +139,13 @@ object Commitments {
   private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
 
+  def alreadyProposed(bag: List[UpdateMessage], id: Long): Boolean = bag.exists {
+    case u: UpdateFulfillHtlc if id == u.id => true
+    case u: UpdateFailHtlc if id == u.id => true
+    case u: UpdateFailMalformedHtlc if id == u.id => true
+    case _ => false
+  }
+
   /**
    *
    * @param commitments current commitments
@@ -239,7 +239,7 @@ object Commitments {
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.alreadyProposed(htlc.id) =>
+      case Some(htlc) if Commitments.alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
@@ -259,7 +259,7 @@ object Commitments {
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.alreadyProposed(htlc.id) =>
+      case Some(htlc) if Commitments.alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
@@ -275,7 +275,7 @@ object Commitments {
       throw InvalidFailureCode(commitments.channelId)
     }
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.alreadyProposed(htlc.id) =>
+      case Some(htlc) if Commitments.alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(_) =>

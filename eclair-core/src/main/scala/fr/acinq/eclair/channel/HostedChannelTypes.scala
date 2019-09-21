@@ -42,7 +42,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    lastCrossSignedState: LastCrossSignedState,
                                    allLocalUpdates: Long,
                                    allRemoteUpdates: Long,
-                                   localChanges: LocalChanges,
+                                   localUpdates: List[UpdateMessage],
                                    remoteUpdates: List[UpdateMessage],
                                    localSpec: CommitmentSpec,
                                    channelId: ByteVector32,
@@ -51,11 +51,11 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    localError: Option[Error],
                                    remoteError: Option[Error]) extends ChannelCommitments with HostedData { me =>
 
-  lazy val nextLocalReduced: CommitmentSpec = CommitmentSpec.reduce(localSpec, localChanges.proposed ++ localChanges.signed, remoteUpdates)
+  lazy val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, localUpdates, remoteUpdates)
 
-  lazy val availableBalanceForSend: MilliSatoshi = nextLocalReduced.toLocal
+  lazy val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
 
-  lazy val availableBalanceForReceive: MilliSatoshi = nextLocalReduced.toRemote
+  lazy val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
 
   override val announceChannel: Boolean = false
 
@@ -65,21 +65,22 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     me.modify(_.remoteUpdates).using(_ :+ update).modify(_.allRemoteUpdates).using(_ + 1)
 
   def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS =
-    me.modify(_.localChanges.proposed).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
+    me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
 
   def resetUpdates: HOSTED_DATA_COMMITMENTS =
-    copy(allLocalUpdates = lastCrossSignedState.localUpdates + localChanges.signed.size,
-      allRemoteUpdates = lastCrossSignedState.remoteUpdates, remoteUpdates = Nil)
+    copy(remoteUpdates = Nil, localUpdates = Nil,
+      allRemoteUpdates = lastCrossSignedState.remoteUpdates,
+      allLocalUpdates = lastCrossSignedState.localUpdates)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
-      localChanges.signed.collect { case add: UpdateAddHtlc => add }
+      nextLocalSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
   def nextLocalLCSS(blockDay: Long): LastCrossSignedState = {
-    val (incomingHtlcs, outgoingHtlcs) = nextLocalReduced.htlcs.toList.partition(_.direction == IN)
+    val (inHtlcs, outHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
     LastCrossSignedState(lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel,
-      blockDay, nextLocalReduced.toLocal, nextLocalReduced.toRemote, allLocalUpdates, allRemoteUpdates,
-      incomingHtlcs.map(_.add), outgoingHtlcs.map(_.add), ByteVector64.Zeroes)
+      blockDay, nextLocalSpec.toLocal, nextLocalSpec.toRemote, allLocalUpdates, allRemoteUpdates,
+      inHtlcs.map(_.add), outHtlcs.map(_.add), localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes)
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (HOSTED_DATA_COMMITMENTS, UpdateAddHtlc)] = {
@@ -100,10 +101,10 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     val secret: TlvStream[Tlv] = TlvStream(UpdateAddSecretTlv.Secret(originCodec.encode(origin).require.toByteVector) :: Nil)
     val add = UpdateAddHtlc(channelId, allLocalUpdates + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, secret)
     val commitments1 = addLocalProposal(add)
-    val outgoingHtlcs = commitments1.nextLocalReduced.htlcs.filter(_.direction == OUT)
+    val outgoingHtlcs = commitments1.nextLocalSpec.htlcs.filter(_.direction == OUT)
 
-    if (commitments1.nextLocalReduced.toLocal < 0.msat) {
-      return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commitments1.nextLocalReduced.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
+    if (commitments1.nextLocalSpec.toLocal < 0.msat) {
+      return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commitments1.nextLocalSpec.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
     }
 
     val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
@@ -129,10 +130,10 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     }
 
     val commitments1 = addRemoteProposal(add)
-    val incomingHtlcs = commitments1.nextLocalReduced.htlcs.filter(_.direction == IN)
+    val incomingHtlcs = commitments1.nextLocalSpec.htlcs.filter(_.direction == IN)
 
-    if (commitments1.nextLocalReduced.toRemote < 0.msat) {
-      throw InsufficientFunds(channelId, amount = add.amountMsat, missing = -commitments1.nextLocalReduced.toRemote.truncateToSatoshi, reserve = 0 sat, fees = 0 sat)
+    if (commitments1.nextLocalSpec.toRemote < 0.msat) {
+      throw InsufficientFunds(channelId, amount = add.amountMsat, missing = -commitments1.nextLocalSpec.toRemote.truncateToSatoshi, reserve = 0 sat, fees = 0 sat)
     }
 
     val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
@@ -149,7 +150,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HOSTED_DATA_COMMITMENTS, UpdateFulfillHtlc) =
     localSpec.findHtlcById(cmd.id, IN) match {
-      case Some(htlc) if localChanges.alreadyProposed(htlc.add.id) =>
+      case Some(htlc) if Commitments.alreadyProposed(localUpdates, htlc.add.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(channelId, cmd.id)
       case Some(htlc) if htlc.add.paymentHash == Crypto.sha256(cmd.r) =>
@@ -168,7 +169,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (HOSTED_DATA_COMMITMENTS, UpdateFailHtlc) =
     localSpec.findHtlcById(cmd.id, IN) match {
-      case Some(htlc) if localChanges.alreadyProposed(htlc.add.id) =>
+      case Some(htlc) if Commitments.alreadyProposed(localUpdates, htlc.add.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(channelId, cmd.id)
       case Some(htlc) =>
@@ -184,7 +185,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
       throw InvalidFailureCode(channelId)
     }
     localSpec.findHtlcById(cmd.id, IN) match {
-      case Some(htlc) if localChanges.alreadyProposed(htlc.add.id) =>
+      case Some(htlc) if Commitments.alreadyProposed(localUpdates, htlc.add.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(channelId, cmd.id)
       case Some(_) =>
