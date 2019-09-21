@@ -7,7 +7,8 @@ import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.{ForwardAdd, ForwardFail, ForwardFailMalformed, ForwardMessage, Origin}
 import fr.acinq.eclair.transactions.{CommitmentSpec, IN, OUT}
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
@@ -16,12 +17,12 @@ sealed trait HostedCommand
 sealed trait HasHostedChanIdCommand extends HostedCommand {
   def channelId: ByteVector32
 }
-case object CMD_KILL_IDLE_HOSTED_CHANNELS extends HostedCommand
+case object CMD_HOSTED_KILL_IDLE_CHANNELS extends HostedCommand
 case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHostedChanIdCommand
 case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
-case class CMD_INVOKE_HOSTED_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
+case class CMD_HOSTED_INVOKE_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
+case class CMD_HOSTED_REGISTER_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, hostedCommits: HOSTED_DATA_COMMITMENTS) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
-case class CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, hostedCommits: HOSTED_DATA_COMMITMENTS) extends HasHostedChanIdCommand
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
@@ -76,11 +77,15 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
       nextLocalSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
+  def localAndForeignIncomingHtlcs(privKey: PrivateKey): (List[UpdateAddHtlc], List[UpdateAddHtlc]) = lastCrossSignedState.incomingHtlcs.partition {
+    add => Sphinx.PaymentPacket.peel(privKey, add.paymentHash, add.onionRoutingPacket).right.exists(_.isLastPacket)
+  }
+
   def nextLocalLCSS(blockDay: Long): LastCrossSignedState = {
     val (inHtlcs, outHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
     LastCrossSignedState(lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel,
-      blockDay, nextLocalSpec.toLocal, nextLocalSpec.toRemote, allLocalUpdates, allRemoteUpdates,
-      inHtlcs.map(_.add), outHtlcs.map(_.add), localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes)
+      blockDay, nextLocalSpec.toLocal, nextLocalSpec.toRemote, allLocalUpdates, allRemoteUpdates, inHtlcs.map(_.add), outHtlcs.map(_.add),
+      localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes)
   }
 
   def sendAdd(cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (HOSTED_DATA_COMMITMENTS, UpdateAddHtlc)] = {
@@ -109,7 +114,6 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
     val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
     if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
@@ -174,8 +178,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
         throw UnknownHtlcId(channelId, cmd.id)
       case Some(htlc) =>
         val fail = failHtlc(nodeSecret, cmd, htlc.add)
-        val commitments1 = addLocalProposal(fail)
-        (commitments1, fail)
+        (addLocalProposal(fail), fail)
       case None => throw UnknownHtlcId(channelId, cmd.id)
     }
 
@@ -190,8 +193,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
         throw UnknownHtlcId(channelId, cmd.id)
       case Some(_) =>
         val fail = UpdateFailMalformedHtlc(channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-        val commitments1 = addLocalProposal(fail)
-        (commitments1, fail)
+        (addLocalProposal(fail), fail)
       case None => throw UnknownHtlcId(channelId, cmd.id)
     }
   }
@@ -213,4 +215,16 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
   }
+
+  def getForwards: Seq[ForwardMessage] =
+    remoteUpdates collect {
+      case add: UpdateAddHtlc =>
+        ForwardAdd(add)
+      case fail: UpdateFailHtlc =>
+        val add = localSpec.findHtlcById(fail.id, OUT).get.add
+        ForwardFail(fail, add.originOpt.get, add)
+      case fail: UpdateFailMalformedHtlc =>
+        val add = localSpec.findHtlcById(fail.id, OUT).get.add
+        ForwardFailMalformed(fail, add.originOpt.get, add)
+    }
 }

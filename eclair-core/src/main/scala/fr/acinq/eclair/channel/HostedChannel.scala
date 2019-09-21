@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.wire.{Error, InitHostedChannel, InvokeHostedChannel, LastCrossSignedState, LightningMessage, StateUpdate}
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.ForwardAdd
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
 import scodec.bits.ByteVector
 
@@ -74,7 +75,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay using HostedNothing sending Error(channelId, message)
       } else {
         val hostedCommits = restoreCommits(localLCSS, channelId, isHost = true)
-        context.parent ! CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID(channelId, remoteNodeId, hostedCommits)
+        context.parent ! CMD_HOSTED_REGISTER_SHORT_CHANNEL_ID(channelId, remoteNodeId, hostedCommits)
         stay using data.copy(waitingForShortId = true)
       }
 
@@ -83,7 +84,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     // CLIENT FLOW
 
-    case Event(cmd: CMD_INVOKE_HOSTED_CHANNEL, HostedNothing) =>
+    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, HostedNothing) =>
       forwarder ! InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
       stay using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey)
 
@@ -123,17 +124,21 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       // We have expected InitHostedChannel but got LastCrossSignedState so this channel exists already on their side
       // make sure signatures match and if so then become OPEN using remotely supplied state data
 
-      val hostedCommits = restoreCommits(remoteLCSS.reverse, channelId, isHost = false)
+      val restoredHostedCommits = restoreCommits(remoteLCSS.reverse, channelId, isHost = false)
+      val (localHtlcs, foreignHtlcs) = restoredHostedCommits.localAndForeignIncomingHtlcs(nodeParams.privateKey)
       val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(nodeParams.privateKey.publicKey)
       val isLocalSigOk = remoteLCSS.verifyRemoteSig(remoteNodeId)
 
       if (!isLocalSigOk) {
-        localSuspend(hostedCommits, ChannelErrorCodes.ERR_HOSTED_WRONG_LOCAL_SIG)
+        localSuspend(restoredHostedCommits, ChannelErrorCodes.ERR_HOSTED_WRONG_LOCAL_SIG)
       } else if (!isRemoteSigOk) {
-        localSuspend(hostedCommits, ChannelErrorCodes.ERR_HOSTED_WRONG_REMOTE_SIG)
+        localSuspend(restoredHostedCommits, ChannelErrorCodes.ERR_HOSTED_WRONG_REMOTE_SIG)
+      } else if (foreignHtlcs.isEmpty || foreignHtlcs.map(_.id).toSet == nodeParams.db.pendingRelay.listPendingRelay(channelId).map(_.id).toSet) {
+        // Either there are no incoming HTLCs at all, or all of them are local and can be failed/fulfilled, or all relayed HTLCs are failed or fulfilled
+        for (add <- localHtlcs) relayer ! ForwardAdd(add)
+        goto(NORMAL) using restoredHostedCommits storing() sending restoredHostedCommits.lastCrossSignedState.stateUpdate
       } else {
-        goto(NORMAL) using hostedCommits storing() sending hostedCommits.lastCrossSignedState.stateUpdate
-        // TODO: we may have HTLCs to process here
+        localSuspend(restoredHostedCommits, ChannelErrorCodes.ERR_HOSTED_RELAYED_HTLC_WHILE_RESTORING)
       }
   }
 

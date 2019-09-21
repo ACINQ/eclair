@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.Command
+import fr.acinq.eclair.channel.HasHtlcIdCommand
 
 /**
   * This database stores the preimages that we have received from downstream
@@ -33,14 +33,12 @@ import fr.acinq.eclair.channel.Command
   */
 trait PendingRelayDb {
 
-  def addPendingRelay(channelId: ByteVector32, htlcId: Long, cmd: Command)
+  def addPendingRelay(channelId: ByteVector32, cmd: HasHtlcIdCommand)
 
   def removePendingRelay(channelId: ByteVector32, htlcId: Long)
 
-  def listPendingRelay(channelId: ByteVector32): Seq[Command]
+  def listPendingRelay(channelId: ByteVector32): Seq[HasHtlcIdCommand]
 
-  def listPendingRelay(): Set[(ByteVector32, Long)]
-
-  def close(): Unit
+  def listPendingRelay(): Set[(ByteVector32, HasHtlcIdCommand)]
 
 }

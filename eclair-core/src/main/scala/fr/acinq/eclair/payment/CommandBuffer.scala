@@ -35,11 +35,11 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
   override def receive: Receive = {
 
-    case CommandSend(channelId, htlcId, cmd) =>
+    case CommandSend(channelId, cmd) =>
       // save command in db
       register forward Register.Forward(channelId, cmd)
       // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
-      pendingRelay.addPendingRelay(channelId, htlcId, cmd)
+      pendingRelay.addPendingRelay(channelId, cmd)
 
     case CommandAck(channelId, htlcId) =>
       //delete from db
@@ -66,7 +66,7 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
 object CommandBuffer {
 
-  case class CommandSend(channelId: ByteVector32, htlcId: Long, cmd: Command)
+  case class CommandSend(channelId: ByteVector32, cmd: HasHtlcIdCommand)
 
   case class CommandAck(channelId: ByteVector32, htlcId: Long)
 

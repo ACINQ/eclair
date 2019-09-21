@@ -29,12 +29,10 @@ import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
-import fr.acinq.eclair.transactions.{IN, OUT}
+import fr.acinq.eclair.transactions.{DirectedHtlc, IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
-
-import scala.util.Success
 
 /**
   * Ties network connections to peers.
@@ -208,14 +206,14 @@ object Switchboard extends Logging {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
-    val channel2Htlc: Set[(ByteVector32, Long)] =
-    channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .filter(_.direction == OUT)
-      .map(htlc => (htlc.add.channelId, htlc.add.id))
-      .toSet
+    val channel2Htlc: Seq[(ByteVector32, Long)] = for {
+      hasCommitments <- channels
+      DirectedHtlc(OUT, add) <- hasCommitments.commitments.remoteCommit.spec.htlcs
+    } yield (add.channelId, add.id)
 
-    val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
+    val pendingRelay: Set[(ByteVector32, Long)] = for {
+      (chanId, cmd) <- relayDb.listPendingRelay()
+    } yield (chanId, cmd.id)
 
     val toClean = pendingRelay -- channel2Htlc
 

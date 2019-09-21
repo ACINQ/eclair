@@ -100,16 +100,16 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           handleFinal(p) match {
             case Left(cmdFail) =>
               log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=${cmdFail.reason}")
-              commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+              commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
             case Right(addHtlc) =>
               log.debug(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to payment-handler")
-              paymentHandler forward addHtlc
+              paymentHandler ! addHtlc
           }
         case Right(r: RelayPayload) =>
           handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
             case RelayFailure(cmdFail) =>
               log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
-              commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+              commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
             case RelaySuccess(selectedShortChannelId, cmdAdd) =>
               log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=$selectedShortChannelId")
               register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
@@ -118,17 +118,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
-          commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+          commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"couldn't process onion: reason=${failure.message}")
-          val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+          commandBuffer ! CommandBuffer.CommandSend(add.channelId, CMD_FAIL_HTLC(add.id, Right(failure), commit = true))
       }
 
     case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Right(add), _, _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
-      val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
-      commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+      commandBuffer ! CommandBuffer.CommandSend(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
     case Status.Failure(addFailed: AddHtlcFailed) =>
       import addFailed.paymentHash
@@ -151,7 +149,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               val failure = translateError(addFailed)
               val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
               log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmdFail.reason}")
-              commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
+              commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmdFail)
           }
       }
 
@@ -167,8 +165,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(_, Some(sender)) =>
           sender ! fulfill
         case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
-          val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true))
           context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
       }
 
@@ -183,8 +180,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(_, Some(sender)) =>
           sender ! fail
         case Relayed(originChannelId, originHtlcId, _, _) =>
-          val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true))
       }
 
     case ForwardFailMalformed(fail, to, add) =>
@@ -198,8 +194,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case Local(_, Some(sender)) =>
           sender ! fail
         case Relayed(originChannelId, originHtlcId, _, _) =>
-          val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true))
       }
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack

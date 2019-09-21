@@ -97,12 +97,18 @@ object ChannelErrorCodes {
   final val ERR_HOSTED_WRONG_LOCAL_SIG = ByteVector.fromValidHex("0002")
   final val ERR_HOSTED_WRONG_REMOTE_SIG = ByteVector.fromValidHex("0003")
   final val ERR_HOSTED_UPDATE_CLTV_TOO_LOW = ByteVector.fromValidHex("0004")
+  final val ERR_HOSTED_TOO_MANY_STATE_UPDATES = ByteVector.fromValidHex("0005")
+  final val ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC = ByteVector.fromValidHex("0006")
+  final val ERR_HOSTED_RELAYED_HTLC_WHILE_RESTORING = ByteVector.fromValidHex("0007")
 
   val knownHostedCodes: Set[ByteVector] = Set(
     ERR_HOSTED_WRONG_BLOCKDAY,
     ERR_HOSTED_WRONG_LOCAL_SIG,
     ERR_HOSTED_WRONG_REMOTE_SIG,
-    ERR_HOSTED_UPDATE_CLTV_TOO_LOW
+    ERR_HOSTED_UPDATE_CLTV_TOO_LOW,
+    ERR_HOSTED_TOO_MANY_STATE_UPDATES,
+    ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC,
+    ERR_HOSTED_RELAYED_HTLC_WHILE_RESTORING
   )
 
   def toHostedAscii(error: Error): String = if (knownHostedCodes.contains(error.tag)) toAscii(error.taggedData) else toAscii(error.data)

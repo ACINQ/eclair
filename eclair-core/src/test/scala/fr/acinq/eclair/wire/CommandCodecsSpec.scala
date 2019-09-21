@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, Command}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, HasHtlcIdCommand}
 import fr.acinq.eclair.{randomBytes, randomBytes32}
 import org.scalatest.FunSuite
 
@@ -27,18 +27,16 @@ import org.scalatest.FunSuite
 class CommandCodecsSpec extends FunSuite {
 
   test("encode/decode all channel messages") {
-    val msgs: List[Command] =
+    val msgs: List[HasHtlcIdCommand] =
       CMD_FULFILL_HTLC(1573L, randomBytes32) ::
-    CMD_FAIL_HTLC(42456L, Left(randomBytes(145))) ::
-    CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure)) ::
-    CMD_FAIL_MALFORMED_HTLC(7984, randomBytes32, FailureMessageCodecs.BADONION) :: Nil
+      CMD_FAIL_HTLC(42456L, Left(randomBytes(145))) ::
+      CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure)) ::
+      CMD_FAIL_MALFORMED_HTLC(7984, randomBytes32, FailureMessageCodecs.BADONION) :: Nil
 
-    msgs.foreach {
-      case msg => {
-        val encoded = CommandCodecs.cmdCodec.encode(msg).require
-        val decoded = CommandCodecs.cmdCodec.decode(encoded).require
-        assert(msg === decoded.value)
-      }
+    msgs.foreach { msg =>
+      val encoded = CommandCodecs.cmdCodec.encode(msg).require
+      val decoded = CommandCodecs.cmdCodec.decode(encoded).require
+      assert(msg === decoded.value)
     }
   }
 }

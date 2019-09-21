@@ -12,7 +12,7 @@ import fr.acinq.eclair._
 
 class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
-  context.system.scheduler.schedule(initialDelay = 1.hour, interval = 1.hour, receiver = self, message = CMD_KILL_IDLE_HOSTED_CHANNELS)
+  context.system.scheduler.schedule(initialDelay = 1.hour, interval = 1.hour, receiver = self, message = CMD_HOSTED_KILL_IDLE_CHANNELS)
 
   val inMemoryHostedChannels: HashBiMap[ByteVector32, ActorRef] = HashBiMap.create[ByteVector32, ActorRef]
 
@@ -26,7 +26,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
         freshChannel ! cmd
       }
 
-    case cmd: CMD_REGISTER_HOSTED_SHORT_CHANNEL_ID =>
+    case cmd: CMD_HOSTED_REGISTER_SHORT_CHANNEL_ID =>
       val newShortChannelId = ShortChannelId(nodeParams.db.hostedChannels.getNewShortChannelId)
 
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, cmd.remoteNodeId, newShortChannelId,
@@ -38,8 +38,8 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
       nodeParams.db.hostedChannels.addOrUpdateChannel(hostedCommits1)
       sender ! hostedCommits1
 
-    case CMD_KILL_IDLE_HOSTED_CHANNELS =>
-      inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_KILL_IDLE_HOSTED_CHANNELS)
+    case CMD_HOSTED_KILL_IDLE_CHANNELS =>
+      inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_HOSTED_KILL_IDLE_CHANNELS)
 
     case cmd: HasHostedChanIdCommand =>
       Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
