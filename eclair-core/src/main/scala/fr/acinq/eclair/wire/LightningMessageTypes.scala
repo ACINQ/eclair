@@ -130,11 +130,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          amountMsat: MilliSatoshi,
                          paymentHash: ByteVector32,
                          cltvExpiry: CltvExpiry,
-                         onionRoutingPacket: OnionRoutingPacket,
-                         tlvStream: TlvStream[Tlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId {
-
-  lazy val originOpt: Option[Origin] = tlvStream.get[UpdateAddSecretTlv.Secret].map(secret => originCodec.decode(secret.data.toBitVector).require.value)
-}
+                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
@@ -354,9 +350,11 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
   }
 
   def verifyRemoteSig(pubKey: PublicKey): Boolean = Crypto.verifySignature(hostedSigHash, remoteSigOfLocal, pubKey)
+
   def withLocalSigOfRemote(priv: PrivateKey): LastCrossSignedState = copy(localSigOfRemote = Crypto.sign(reverse.hostedSigHash, priv))
 
   def isAhead(remoteLCSS: LastCrossSignedState): Boolean = remoteUpdates > remoteLCSS.localUpdates || localUpdates > remoteLCSS.remoteUpdates
+
   def isEven(remoteLCSS: LastCrossSignedState): Boolean = remoteUpdates == remoteLCSS.localUpdates && localUpdates == remoteLCSS.remoteUpdates
 
   def stateUpdate: StateUpdate = {

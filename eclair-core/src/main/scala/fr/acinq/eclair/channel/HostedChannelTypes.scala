@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.eclair._
 import com.softwaremill.quicklens._
-import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
@@ -46,6 +45,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    localUpdates: List[UpdateMessage],
                                    remoteUpdates: List[UpdateMessage],
                                    localSpec: CommitmentSpec,
+                                   originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
                                    isHost: Boolean,
                                    channelUpdateOpt: Option[ChannelUpdate],
@@ -69,17 +69,13 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
 
   def resetUpdates: HOSTED_DATA_COMMITMENTS =
-    copy(remoteUpdates = Nil, localUpdates = Nil,
-      allRemoteUpdates = lastCrossSignedState.remoteUpdates,
-      allLocalUpdates = lastCrossSignedState.localUpdates)
+    copy(originChannels = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id },
+      allRemoteUpdates = lastCrossSignedState.remoteUpdates, allLocalUpdates = lastCrossSignedState.localUpdates,
+      remoteUpdates = Nil, localUpdates = Nil)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
       nextLocalSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
-
-  def localAndForeignIncomingHtlcs(privKey: PrivateKey): (List[UpdateAddHtlc], List[UpdateAddHtlc]) = lastCrossSignedState.incomingHtlcs.partition {
-    add => Sphinx.PaymentPacket.peel(privKey, add.paymentHash, add.onionRoutingPacket).right.exists(_.isLastPacket)
-  }
 
   def nextLocalLCSS(blockDay: Long): LastCrossSignedState = {
     val (inHtlcs, outHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
@@ -103,9 +99,8 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
       return Left(HtlcValueTooSmall(channelId, minimum = lastCrossSignedState.initHostedChannel.htlcMinimumMsat, actual = cmd.amount))
     }
 
-    val secret: TlvStream[Tlv] = TlvStream(UpdateAddSecretTlv.Secret(originCodec.encode(origin).require.toByteVector) :: Nil)
-    val add = UpdateAddHtlc(channelId, allLocalUpdates + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, secret)
-    val commitments1 = addLocalProposal(add)
+    val add = UpdateAddHtlc(channelId, allLocalUpdates + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
+    val commitments1 = addLocalProposal(add).copy(originChannels = originChannels + (add.id -> origin))
     val outgoingHtlcs = commitments1.nextLocalSpec.htlcs.filter(_.direction == OUT)
 
     if (commitments1.nextLocalSpec.toLocal < 0.msat) {
@@ -166,7 +161,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     localSpec.findHtlcById(fulfill.id, OUT) match {
-      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), htlc.add.originOpt.get, htlc.add))
+      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addRemoteProposal(fulfill), originChannels(fulfill.id), htlc.add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)
     }
@@ -200,7 +195,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def receiveFail(fail: UpdateFailHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.originOpt.get, htlc.add))
+      case Some(htlc) => Right((addRemoteProposal(fail), originChannels(fail.id), htlc.add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
 
@@ -211,7 +206,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
     }
 
     localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addRemoteProposal(fail), htlc.add.originOpt.get, htlc.add))
+      case Some(htlc) => Right((addRemoteProposal(fail), originChannels(fail.id), htlc.add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
   }
@@ -222,9 +217,9 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
         ForwardAdd(add)
       case fail: UpdateFailHtlc =>
         val add = localSpec.findHtlcById(fail.id, OUT).get.add
-        ForwardFail(fail, add.originOpt.get, add)
+        ForwardFail(fail, originChannels(fail.id), add)
       case fail: UpdateFailMalformedHtlc =>
         val add = localSpec.findHtlcById(fail.id, OUT).get.add
-        ForwardFailMalformed(fail, add.originOpt.get, add)
+        ForwardFailMalformed(fail, originChannels(fail.id), add)
     }
 }

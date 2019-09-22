@@ -174,7 +174,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(INPUT_RESTORED(data), _) =>
       log.info(s"restoring channel channelId=${data.channelId}")
-      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data))
+      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data.commitments))
       data match {
         //NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>

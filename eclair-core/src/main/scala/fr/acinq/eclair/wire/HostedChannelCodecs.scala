@@ -17,6 +17,7 @@ object HostedChannelCodecs {
       ("localUpdates" | listOfN(uint16, updateMessageCodec)) ::
       ("remoteUpdates" | listOfN(uint16, updateMessageCodec)) ::
       ("localSpec" | commitmentSpecCodec) ::
+      ("originChannels" | originsMapCodec) ::
       ("channelId" | bytes32) ::
       ("isHost" | bool) ::
       ("channelUpdateOpt" | optional(bool, variableSizeBytes(uint16, channelUpdateCodec))) ::

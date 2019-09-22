@@ -32,7 +32,7 @@ trait ChannelEvent
 
 case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: ByteVector32, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Option[Long]) extends ChannelEvent
 
-case class ChannelRestored(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: ByteVector32, currentData: HasCommitments) extends ChannelEvent
+case class ChannelRestored(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: ByteVector32, commitments: ChannelCommitments) extends ChannelEvent
 
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 

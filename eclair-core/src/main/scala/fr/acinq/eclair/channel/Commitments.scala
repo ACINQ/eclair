@@ -59,6 +59,8 @@ trait ChannelCommitments {
 
   val availableBalanceForSend: MilliSatoshi
 
+  val originChannels: Map[Long, Origin]
+
   val channelId: ByteVector32
 
   val announceChannel: Boolean
