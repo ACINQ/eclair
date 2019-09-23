@@ -97,13 +97,13 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
       decryptPacket(add, nodeParams.privateKey, nodeParams.globalFeatures) match {
         case Right(p: FinalPayload) =>
-          handleFinal(p) match {
-            case Left(cmdFail) =>
+          validateFinal(p) match {
+            case Some(cmdFail) =>
               log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=${cmdFail.reason}")
               commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
-            case Right(addHtlc) =>
+            case None =>
               log.debug(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to payment-handler")
-              paymentHandler forward addHtlc
+              paymentHandler forward p
           }
         case Right(r: RelayPayload) =>
           handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
@@ -254,20 +254,21 @@ object Relayer extends Logging {
     }
 
   /**
-   * Handle an incoming htlc when we are the last node
+   * Validate an incoming htlc when we are the last node.
+   * Verifies that values inside the onion match the HTLC.
    *
    * @param p final payload
    * @return either:
    *         - a CMD_FAIL_HTLC to be sent back upstream
-   *         - an UpdateAddHtlc to forward
+   *         - None if we should forward
    */
-  def handleFinal(p: FinalPayload): Either[CMD_FAIL_HTLC, UpdateAddHtlc] = {
+  def validateFinal(p: FinalPayload): Option[CMD_FAIL_HTLC] = {
     if (p.add.amountMsat < p.payload.amount) {
-      Left(CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectHtlcAmount(p.add.amountMsat)), commit = true))
+      Some(CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectHtlcAmount(p.add.amountMsat)), commit = true))
     } else if (p.add.cltvExpiry != p.payload.expiry) {
-      Left(CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectCltvExpiry(p.add.cltvExpiry)), commit = true))
+      Some(CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectCltvExpiry(p.add.cltvExpiry)), commit = true))
     } else {
-      Right(p.add)
+      None
     }
   }
 

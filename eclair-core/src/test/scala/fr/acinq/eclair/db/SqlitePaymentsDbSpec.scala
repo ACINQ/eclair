@@ -236,8 +236,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val paidInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32, alicePriv, "invoice #5")
     val paidInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32, bobPriv, "invoice #6", expirySeconds = Some(60))
     val receivedAt1 = Platform.currentTime + 1
-    val payment1 = IncomingPayment(paidInvoice1, randomBytes32, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt1))
     val receivedAt2 = Platform.currentTime + 2
+    val payment1 = IncomingPayment(paidInvoice1, randomBytes32, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt2))
     val payment2 = IncomingPayment(paidInvoice2, randomBytes32, paidInvoice2.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(1111 msat, receivedAt2))
 
     db.addIncomingPayment(pendingInvoice1, pendingPayment1.paymentPreimage)
@@ -257,7 +257,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.listReceivedIncomingPayments(0, now) === Nil)
     assert(db.listPendingIncomingPayments(0, now) === Seq(pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
 
-    db.receiveIncomingPayment(paidInvoice1.paymentHash, 561 msat, receivedAt1)
+    db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
+    db.receiveIncomingPayment(paidInvoice1.paymentHash, 100 msat, receivedAt2) // adding another payment to this invoice should sum
     db.receiveIncomingPayment(paidInvoice2.paymentHash, 1111 msat, receivedAt2)
 
     assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1))

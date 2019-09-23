@@ -63,6 +63,7 @@ case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage {
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
 case class InvalidOnionPayload(tag: UInt64, offset: Int) extends Perm { def message = "onion per-hop payload is invalid" }
+case object PaymentTimeout extends FailureMessage { def message = "the complete payment amount was not received within a reasonable time" }
 
 /**
  * We allow remote nodes to send us unknown failure codes (e.g. deprecated failure codes).
@@ -115,7 +116,8 @@ object FailureMessageCodecs {
       .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
       .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
       .typecase(21, provide(ExpiryTooFar))
-      .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload]),
+      .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload])
+      .typecase(23, provide(PaymentTimeout)),
     uint16.xmap(code => {
       val failureMessage = code match {
         // @formatter:off
