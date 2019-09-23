@@ -33,9 +33,9 @@ import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, Transacti
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
-import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
+import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.scalatest.FunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
@@ -71,21 +71,21 @@ class ChannelCodecsSpec extends FunSuite {
     // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
     val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current02 = hex"010000000002a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
-    val current03 = hex"010000000003d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current02 = hex"010000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val current03 = hex"010000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
-    assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy02.bits)))
-    assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, legacy03.bits)))
+    assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
+    assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
     assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
     assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
 
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000000".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
   }
 
   test("encode/decode localparams") {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
-      channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
@@ -323,6 +323,8 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
         .replace(""""toLocal"""", """"toLocalMsat"""")
         .replace(""""toRemote"""", """"toRemoteMsat"""")
+        .replace("fundingKeyPath", "channelKeyPath")
+        .replace(""""version":0,""", "")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -332,6 +334,8 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
         .replace(""""toLocal"""", """"toLocalMsat"""")
         .replace(""""toRemote"""", """"toRemoteMsat"""")
+        .replace("fundingKeyPath", "channelKeyPath")
+        .replace(""""version":0,""", "")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -343,8 +347,8 @@ object ChannelCodecsSpec {
   val keyManager = new LocalKeyManager(ByteVector32(ByteVector.fill(32)(1)), Block.RegtestGenesisBlock.hash)
   val localParams = LocalParams(
     keyManager.nodeId,
-    channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-    dustLimit = 546 sat,
+    fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+    dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50000000),
     channelReserve = 10000 sat,
     htlcMinimum = 10000 msat,
@@ -389,7 +393,7 @@ object ChannelCodecsSpec {
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
   val fundingAmount = fundingTx.txOut(0).amount
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
+  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)

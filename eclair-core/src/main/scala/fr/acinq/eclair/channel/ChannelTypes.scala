@@ -115,13 +115,13 @@ final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, fail
 final case class CMD_ADD_HTLC(amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Either[UUID, UpdateAddHtlc],
                               commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
-final case object CMD_SIGN extends Command
+case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends Command
 final case class CMD_UPDATE_RELAY_FEE(feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends Command
-final case object CMD_FORCECLOSE extends Command
-final case object CMD_GETSTATE extends Command
-final case object CMD_GETSTATEDATA extends Command
-final case object CMD_GETINFO extends Command
+case object CMD_FORCECLOSE extends Command
+case object CMD_GETSTATE extends Command
+case object CMD_GETSTATEDATA extends Command
+case object CMD_GETINFO extends Command
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data)
 
 /*
@@ -141,7 +141,7 @@ case object Nothing extends Data
 
 sealed trait HasCommitments extends Data {
   def commitments: Commitments
-  def channelId = commitments.channelId
+  def channelId: ByteVector32 = commitments.channelId
 }
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
@@ -187,14 +187,14 @@ final case class DATA_CLOSING(commitments: Commitments,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  val spendingTxes: Seq[Transaction] = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
-                             channelKeyPath: DeterministicWallet.KeyPath,
+                             fundingKeyPath: DeterministicWallet.KeyPath,
                              dustLimit: Satoshi,
                              maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                              channelReserve: Satoshi,
@@ -228,9 +228,26 @@ object ChannelFlags {
 
 case class ChannelVersion(bits: BitVector) {
   require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
+
+  def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
+  def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
+  def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
+  def isSet(bit: Int): Boolean = bits.reverse.get(bit)
 }
+
 object ChannelVersion {
+  import scodec.bits._
+
   val LENGTH_BITS: Int = 4 * 8
-  val STANDARD = ChannelVersion(BitVector.fill(LENGTH_BITS)(false))
+
+  val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
+
+  val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+
+  def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
+  val USE_PUBKEY_KEYPATH: ChannelVersion = fromBit(USE_PUBKEY_KEYPATH_BIT)
+
+  val STANDARD: ChannelVersion = ZEROES | USE_PUBKEY_KEYPATH
 }
 // @formatter:on
