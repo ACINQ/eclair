@@ -27,8 +27,8 @@ import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
-import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
+import scala.concurrent.{Future, Promise}
 
 /**
   * Created by PM on 05/07/2016.
