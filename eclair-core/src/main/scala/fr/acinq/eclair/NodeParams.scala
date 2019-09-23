@@ -20,6 +20,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -41,6 +42,7 @@ import scala.concurrent.duration.FiniteDuration
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
+                      private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -80,6 +82,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxPaymentAttempts: Int) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+  def currentBlockHeight: Long = blockCount.get
 }
 
 object NodeParams {
@@ -124,7 +127,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -201,6 +204,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
+      blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -213,6 +217,7 @@ object NodeParams {
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
         maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
+        closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
       ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),

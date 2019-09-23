@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.sql.{Connection, DriverManager}
+import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
@@ -65,6 +66,7 @@ object TestConstants {
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
       keyManager = keyManager,
+      blockCount = new AtomicLong(400000),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -77,6 +79,7 @@ object TestConstants {
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         maxFeerateMismatch = 1.5,
+        closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
@@ -141,6 +144,7 @@ object TestConstants {
 
     def nodeParams = NodeParams(
       keyManager = keyManager,
+      blockCount = new AtomicLong(400000),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
@@ -153,6 +157,7 @@ object TestConstants {
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         maxFeerateMismatch = 1.0,
+        closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
