@@ -220,7 +220,14 @@ object PaymentLifecycle {
   }
 
   // @formatter:off
-  case class ReceivePayment(amount_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None, paymentPreimage: Option[ByteVector32] = None)
+  case class ReceivePayment(amount_opt: Option[MilliSatoshi],
+                            description: String,
+                            expirySeconds_opt: Option[Long] = None,
+                            extraHops: List[List[ExtraHop]] = Nil,
+                            fallbackAddress: Option[String] = None,
+                            paymentPreimage: Option[ByteVector32] = None,
+                            allowMultiPart: Boolean = false)
+
   case class SendPaymentToRoute(paymentHash: ByteVector32, hops: Seq[PublicKey], finalPayload: FinalPayload)
   case class SendPayment(paymentHash: ByteVector32,
                          targetNodeId: PublicKey,
