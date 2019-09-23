@@ -901,22 +901,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // retrieve the channelId of C <--> F6
     val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
 
-    sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
-    val stateDataC = sender.expectMsgType[DATA_NORMAL]
     sender.send(nodes("F6").register, Forward(channelId, CMD_GETSTATEDATA))
-    val stateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val initialStateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val initialCommitmentIndex = initialStateDataF6.commitments.localCommit.index
 
-    val paymentPointC = nodes("C").nodeParams.keyManager.paymentPoint(stateDataC.commitments.localParams.channelKeyPath).publicKey
-    val paymentPointF6 = nodes("F6").nodeParams.keyManager.paymentPoint(stateDataF6.commitments.localParams.channelKeyPath).publicKey
-
-    val remotePointC = stateDataC.commitments.remoteParams.paymentBasepoint
-    val remotePointF6 = stateDataF6.commitments.remoteParams.paymentBasepoint
-
-    assert(paymentPointC == remotePointF6) // C paymentPoint is equal to F6 remote payment basepoint
-    assert(paymentPointF6 == remotePointC) // F6 paymentPoint is equal to C remote payment basepoint
+    // the 'to remote' address is a simple P2WPKH spending to the remote payment basepoint
+    val toRemoteAddress = Script.pay2wpkh(initialStateDataF6.commitments.remoteParams.paymentBasepoint)
 
     // toRemote output of C as seen by F6
-    val Some(toRemoteOutC) = stateDataF6.commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(Script.pay2wpkh(remotePointF6)))
+    val Some(toRemoteOutC) = initialStateDataF6.commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
@@ -930,10 +923,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(ps.id == paymentId)
 
     sender.send(nodes("F6").register, Forward(channelId, CMD_GETSTATEDATA))
-    val commitTx = sender.expectMsgType[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(Script.pay2wpkh(remotePointF6)))
+    val stateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val commitmentIndex = stateDataF6.commitments.localCommit.index
+    val commitTx = stateDataF6.commitments.localCommit.publishableTxs.commitTx.tx
+    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 
-    // script pubkeys of toRemote output remained the same across commits
+    // there is a new commitment index in the channel state
+    assert(commitmentIndex == initialCommitmentIndex + 1)
+
+    // script pubkeys of toRemote output remained the same across commitments
     assert(toRemoteOutC.publicKeyScript == toRemoteOutCNew.publicKeyScript)
 
     // now let's force close the channel and check the toRemote is what we had at the beginning
@@ -947,6 +945,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     sender.send(bitcoincli, BitcoinReq("getrawtransaction", commitTx.txid.toHex))
     val JString(rawTx) = sender.expectMsgType[JValue](10 seconds)
+
+    // the unilateral close contains the static toRemote output
     assert(Transaction.read(rawTx).txOut.exists(_.publicKeyScript == toRemoteOutC.publicKeyScript))
   }
 
