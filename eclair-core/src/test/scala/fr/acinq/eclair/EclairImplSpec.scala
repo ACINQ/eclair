@@ -199,32 +199,32 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None, allowMultiPart = true)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amount_opt === Some(123 msat))
     assert(receive.expirySeconds_opt === Some(456))
     assert(receive.fallbackAddress === Some(fallBackAddressRaw))
+    assert(receive.allowMultiPart)
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None, allowMultiPart = false))
   }
 
-  test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { fixture =>
+  test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
+    import f._
 
-    val paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
-    val kitWithPaymentHandler = fixture.kit.copy(paymentHandler = paymentHandler)
+    val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams)))
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive(description = "some desc", amount_opt = None, expire_opt = None, fallbackAddress_opt = None, paymentPreimage_opt = Some(paymentPreimage))
+    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage), allowMultiPart = false)
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
         case _ => false
       }
     })
-
   }
 
   test("networkFees/audit/allinvoices should use a default to/from filter expressed in seconds") { f =>
