@@ -146,12 +146,18 @@ object Commitments {
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = if (commitments1.localParams.isFunder) commitTxFee(commitments1.remoteParams.dustLimit, reduced) else 0.sat
-    val missing = reduced.toRemote - commitments1.remoteParams.channelReserve - fees
-    if (missing < 0.msat) {
-      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missing.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+    // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
+    val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
+    if (missingForSender < 0.msat) {
+      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
+    } else if (missingForReceiver < 0.msat) {
+      if (commitments.localParams.isFunder) {
+        // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      } else {
+        return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+      }
     }
 
     val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
@@ -181,11 +187,18 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
-    val missing = reduced.toRemote - commitments1.localParams.channelReserve - fees
-    if (missing < 0.msat) {
-      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = fees)
+    // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    val missingForSender = reduced.toRemote - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
+    val missingForReceiver = reduced.toLocal - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
+    if (missingForSender < 0.sat) {
+      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = if (commitments1.localParams.isFunder) 0.sat else fees)
+    } else if (missingForReceiver < 0.sat) {
+      if (commitments.localParams.isFunder) {
+        throw CannotAffordFees(commitments.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees)
+      } else {
+        // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      }
     }
 
     val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
@@ -594,5 +607,3 @@ object Commitments {
        |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }
 }
-
-
