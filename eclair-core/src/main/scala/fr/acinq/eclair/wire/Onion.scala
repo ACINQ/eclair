@@ -106,6 +106,9 @@ object Onion {
     override val totalAmount = records.get[TotalAmount].map(_.amount).getOrElse(amount)
   }
 
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32): FinalPayload =
+    FinalTlvPayload(TlvStream(AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), PaymentSecret(paymentSecret)))
+
 }
 
 object OnionCodecs {
