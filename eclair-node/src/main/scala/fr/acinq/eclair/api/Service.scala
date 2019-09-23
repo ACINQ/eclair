@@ -238,8 +238,8 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("createinvoice") {
-                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
-                            complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
+                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?, "allowMultiPart".as[Boolean].?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt) =>
+                            complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt.getOrElse(false)))
                           }
                         } ~
                         path("getinvoice") {

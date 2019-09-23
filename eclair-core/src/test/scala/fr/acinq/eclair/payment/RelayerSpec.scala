@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Origin.Relayed
 import fr.acinq.eclair.payment.PaymentLifecycle.{buildCommand, buildOnion}
+import fr.acinq.eclair.payment.Relayer.FinalPayload
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, PerHopPayload, RelayTlvPayload}
 import fr.acinq.eclair.wire._
@@ -43,7 +44,6 @@ import scala.concurrent.duration._
 class RelayerSpec extends TestkitBaseClass {
 
   // let's reuse the existing test data
-
   import HtlcGenerationSpec._
   import RelayerSpec._
 
@@ -80,8 +80,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.message.cltvExpiry === expiry_bc)
     assert(fwd.message.upstream === Upstream.Relayed(add_ab))
 
-    sender.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    sender.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("relay an htlc-add with onion tlv payload") { f =>
@@ -109,8 +109,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.message.cltvExpiry === expiry_bc)
     assert(fwd.message.upstream === Upstream.Relayed(add_ab))
 
-    sender.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    sender.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("relay an htlc-add with retries") { f =>
@@ -154,8 +154,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwdFail.message.id === add_ab.id)
     assert(fwdFail.message.reason === Right(TemporaryNodeFailure))
 
-    sender.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    sender.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("relay an htlc-add at the final node to the payment handler") { f =>
@@ -166,11 +166,12 @@ class RelayerSpec extends TestkitBaseClass {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     sender.send(relayer, ForwardAdd(add_ab))
 
-    val htlc = paymentHandler.expectMsgType[UpdateAddHtlc]
-    assert(htlc === add_ab)
+    val fp = paymentHandler.expectMsgType[FinalPayload]
+    assert(fp.add === add_ab)
+    assert(fp.payload === FinalLegacyPayload(finalAmountMsat, finalExpiry))
 
-    sender.expectNoMsg(100 millis)
-    register.expectNoMsg(100 millis)
+    sender.expectNoMsg(50 millis)
+    register.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when we have no channel_update for the next channel") { f =>
@@ -189,8 +190,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwdFail.message.id === add_ab.id)
     assert(fwdFail.message.reason === Right(UnknownNextPeer))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when register returns an error") { f =>
@@ -216,8 +217,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd2.message.id === add_ab.id)
     assert(fwd2.message.reason === Right(UnknownNextPeer))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when the channel is advertised as unusable (down)") { f =>
@@ -235,8 +236,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream === Upstream.Relayed(add_ab))
 
-    sender.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    sender.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
 
     // now tell the relayer that the channel is down and try again
     relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId = channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.nodeId)
@@ -249,8 +250,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab1.id)
     assert(fail.reason === Right(UnknownNextPeer))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when the requested channel is disabled") { f =>
@@ -270,8 +271,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when the onion is malformed") { f =>
@@ -291,8 +292,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
     assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when the onion payload is missing data") { f =>
@@ -315,8 +316,8 @@ class RelayerSpec extends TestkitBaseClass {
       sender.send(relayer, ForwardAdd(add_ab))
 
       register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(expectedErr), commit = true)))
-      register.expectNoMsg(100 millis)
-      paymentHandler.expectNoMsg(100 millis)
+      register.expectNoMsg(50 millis)
+      paymentHandler.expectNoMsg(50 millis)
     }
   }
 
@@ -336,8 +337,8 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(InvalidRealm), commit = true)))
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when amount is below the next hop's requirements") { f =>
@@ -358,8 +359,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(AmountBelowMinimum(cmd.amount, channelUpdate_bc)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when expiry does not match next hop's requirements") { f =>
@@ -378,8 +379,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(IncorrectCltvExpiry(cmd.cltvExpiry, channelUpdate_bc)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail to relay an htlc-add when relay fee isn't sufficient") { f =>
@@ -398,8 +399,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(FeeInsufficient(add_ab.amountMsat, channelUpdate_bc)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { f =>
@@ -419,8 +420,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(FinalIncorrectHtlcAmount(add_ab.amountMsat)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail an htlc-add at the final node when expiry has been modified by second-to-last node") { f =>
@@ -440,8 +441,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(FinalIncorrectCltvExpiry(add_ab.cltvExpiry)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("fail an htlc-add at the final node when the onion payload is missing data") { f =>
@@ -461,8 +462,8 @@ class RelayerSpec extends TestkitBaseClass {
       sender.send(relayer, ForwardAdd(add_ab))
 
       register.expectMsg(Register.Forward(channelId_ab, CMD_FAIL_HTLC(add_ab.id, Right(expectedErr), commit = true)))
-      register.expectNoMsg(100 millis)
-      paymentHandler.expectNoMsg(100 millis)
+      register.expectNoMsg(50 millis)
+      paymentHandler.expectNoMsg(50 millis)
     }
   }
 
@@ -492,8 +493,8 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
+    register.expectNoMsg(50 millis)
+    paymentHandler.expectNoMsg(50 millis)
   }
 
   test("relay an htlc-fulfill") { f =>
