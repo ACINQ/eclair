@@ -148,6 +148,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (increasing balance but still below reserve)", Tag("no_push_msat")) { f =>
+    import f._
+    val sender = TestProbe()
+    // channel starts with all funds on alice's side, alice sends some funds to bob, but not enough to make it go above reserve
+    val h = randomBytes32
+    val add = CMD_ADD_HTLC(50000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    sender.send(alice, add)
+    sender.expectMsg("ok")
+  }
+
   test("recv CMD_ADD_HTLC (insufficient funds)") { f =>
     import f._
     val sender = TestProbe()

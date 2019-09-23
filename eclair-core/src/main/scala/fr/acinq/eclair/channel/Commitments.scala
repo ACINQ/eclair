@@ -187,11 +187,18 @@ object Commitments {
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = if (commitments1.localParams.isFunder) 0.sat else Transactions.commitTxFee(commitments1.localParams.dustLimit, reduced)
-    val missing = reduced.toRemote - commitments1.localParams.channelReserve - fees
-    if (missing < 0.msat) {
-      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missing.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = fees)
+    // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
+    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    val missingForSender = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
+    val missingForReceiver = reduced.toLocal.truncateToSatoshi - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
+    if (missingForSender < 0.sat) {
+      throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missingForSender, reserve = commitments1.localParams.channelReserve, fees = fees)
+    } else if (missingForReceiver < 0.sat) {
+      if (commitments.localParams.isFunder) {
+        throw CannotAffordFees(commitments.channelId, missing = -missingForReceiver, reserve = commitments1.remoteParams.channelReserve, fees = fees)
+      } else {
+        // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      }
     }
 
     val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
