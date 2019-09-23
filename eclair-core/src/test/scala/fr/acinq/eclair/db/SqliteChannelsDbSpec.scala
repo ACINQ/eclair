@@ -26,7 +26,6 @@ import org.scalatest.FunSuite
 import org.sqlite.SQLiteException
 import scodec.bits.ByteVector
 
-
 class SqliteChannelsDbSpec extends FunSuite {
 
   test("init sqlite 2 times in a row") {
