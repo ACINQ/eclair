@@ -41,13 +41,13 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 // @formatter:on
 
 /**
-  * about remoteNextCommitInfo:
-  * we either:
-  * - have built and signed their next commit tx with their next revocation hash which can now be discarded
-  * - have their next per-commitment point
-  * So, when we've signed and sent a commit message and are waiting for their revocation message,
-  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
-  */
+ * about remoteNextCommitInfo:
+ * we either:
+ * - have built and signed their next commit tx with their next revocation hash which can now be discarded
+ * - have their next per-commitment point
+ * So, when we've signed and sent a commit message and are waiting for their revocation message,
+ * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
+ */
 case class Commitments(channelVersion: ChannelVersion,
                        localParams: LocalParams, remoteParams: RemoteParams,
                        channelFlags: Byte,
@@ -67,11 +67,11 @@ case class Commitments(channelVersion: ChannelVersion,
       remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
 
   /**
-    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
-    * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
-    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
-    * and our HTLC success in case of a force-close.
-    */
+   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
+   * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
+   * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
+   * and our HTLC success in case of a force-close.
+   */
   def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
     localCommit.spec.htlcs.collect {
       case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).toLong => htlc.add
@@ -102,12 +102,12 @@ case class Commitments(channelVersion: ChannelVersion,
 object Commitments {
 
   /**
-    * Add a change to our proposed change list.
-    *
-    * @param commitments current commitments.
-    * @param proposal    proposed change to add.
-    * @return an updated commitment instance.
-    */
+   * Add a change to our proposed change list.
+   *
+   * @param commitments current commitments.
+   * @param proposal    proposed change to add.
+   * @return an updated commitment instance.
+   */
   private def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
 

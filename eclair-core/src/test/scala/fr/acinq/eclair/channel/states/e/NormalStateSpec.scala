@@ -44,8 +44,8 @@ import scodec.bits._
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
@@ -496,9 +496,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobMinReceive = Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, htlcSuccessWeight)
     val bobMinOffer = Bob.nodeParams.dustLimit + weight2fee(TestConstants.feeratePerKw, htlcTimeoutWeight)
     val a2b_1 = bobMinReceive + 10.sat // will be in alice and bob tx
-  val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
-  val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx
-  val b2a_2 = bobMinOffer + 10.sat // will be only be in bob tx
+    val a2b_2 = bobMinReceive + 20.sat // will be in alice and bob tx
+    val b2a_1 = aliceMinReceive + 10.sat // will be in alice and bob tx
+    val b2a_2 = bobMinOffer + 10.sat // will be only be in bob tx
     assert(a2b_1 > aliceMinOffer && a2b_1 > bobMinReceive)
     assert(a2b_2 > aliceMinOffer && a2b_2 > bobMinReceive)
     assert(b2a_1 > aliceMinReceive && b2a_1 > bobMinOffer)
@@ -537,7 +537,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val add = CMD_ADD_HTLC(10000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     val epsilons = List(3, 1, 5, 7, 6) // unordered on purpose
-  val htlcCount = epsilons.size
+    val htlcCount = epsilons.size
     for (i <- epsilons) {
       sender.send(alice, add.copy(amount = add.amount + (i * 1000).msat))
       sender.expectMsg("ok")
@@ -1737,7 +1737,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
-  val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+    val watch = alice2blockchain.expectMsgType[WatchConfirmed]
     assert(watch.event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
   }
 
