@@ -152,8 +152,12 @@ object Commitments {
     val missingForReceiver = reduced.toLocal.truncateToSatoshi - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.sat) {
       return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender, reserve = commitments1.remoteParams.channelReserve, fees = fees))
-    } else if (!commitments1.localParams.isFunder && missingForReceiver < 0.sat) {
-      return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+    } else if (missingForReceiver < 0.sat) {
+      if (commitments.localParams.isFunder) {
+        // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      } else {
+        return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+      }
     }
 
     val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
