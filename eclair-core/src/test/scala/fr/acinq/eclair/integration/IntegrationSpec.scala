@@ -119,12 +119,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsgType[JValue](30 seconds)
   }
 
-  def instantiateEclairNode(name: String, config: Config) = {
+  def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
     new PrintWriter(new File(datadir, "eclair.conf")) {
       write(config.root().render())
-      close
+      close()
     }
     implicit val system = ActorSystem(s"system-$name")
     val setup = new Setup(datadir)
@@ -225,7 +225,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int) = {
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
     val sender = TestProbe()
     subset.foreach {
       case (_, setup) =>
@@ -469,7 +469,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     paymentSender.expectMsgType[UUID](30 seconds)
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -556,7 +556,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     paymentSender.expectMsgType[UUID](30 seconds)
 
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -631,7 +631,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -693,7 +693,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentId = paymentSender.expectMsgType[UUID](30 seconds)
 
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -764,7 +764,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("A").paymentInitiator, sendReq)
     val paymentId = sender.expectMsgType[UUID]
     // we forward the htlc to the payment handler
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[Relayer.FinalPayload]
     forwardHandlerF.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sigListener.expectMsgType[ChannelSignatureReceived]
@@ -781,19 +781,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[Relayer.FinalPayload]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[Relayer.FinalPayload]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(120000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[Relayer.FinalPayload]
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[Relayer.FinalPayload]
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
@@ -805,19 +805,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimagse
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage1 = sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
