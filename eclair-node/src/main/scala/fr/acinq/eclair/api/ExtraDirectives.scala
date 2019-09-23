@@ -16,18 +16,22 @@
 
 package fr.acinq.eclair.api
 
-import akka.http.scaladsl.marshalling.ToResponseMarshaller
-import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
-import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
-import fr.acinq.eclair.api.FormParamExtractors.{sha256HashUnmarshaller, shortChannelIdUnmarshaller}
-import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
+import FormParamExtractors._
+import JsonSupport.serialization
+import JsonSupport.json4sJacksonFormats
+import shapeless.HNil
+import spray.http.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
+import spray.httpx.marshalling.Marshaller
+import spray.routing.directives.OnCompleteFutureMagnet
+import spray.routing.{Directive1, Directives, MalformedFormFieldRejection}
+
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
+import scala.concurrent.ExecutionContext.Implicits.global
 
 trait ExtraDirectives extends Directives {
 
@@ -42,17 +46,18 @@ trait ExtraDirectives extends Directives {
   val invoiceFormParam = "invoice".as[PaymentRequest]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
-  def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {
+  def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: Marshaller[T]) = onComplete(OnCompleteFutureMagnet(fut)) {
     case Success(Some(t)) => complete(t)
     case Success(None) =>
-      complete(HttpResponse(NotFound).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found"))))
+      complete(HttpResponse(StatusCodes.NotFound).withEntity(HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("Not found")))))
     case Failure(_) => reject
   }
 
-  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {
-    case (None, None) => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
-    case (Some(channelId), None) => provide(Left(channelId))
-    case (None, Some(shortChannelId)) => provide(Right(shortChannelId))
+  import shapeless.::
+  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).hflatMap {
+    case None :: None :: HNil => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
+    case Some(channelId) :: None :: HNil => provide(Left(channelId))
+    case None :: Some(shortChannelId) :: HNil => provide(Right(shortChannelId))
     case _ => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
   }
 
