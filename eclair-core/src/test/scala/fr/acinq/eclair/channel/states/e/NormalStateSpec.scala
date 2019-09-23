@@ -189,7 +189,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 40000.msat)
 
     // actual test begins
-    // at this point alice has minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
+    // at this point alice has the minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
     val add = CMD_ADD_HTLC(MilliSatoshi(120000000), randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(bob, add)
     val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680.sat, 10000.sat, 10680.sat)
