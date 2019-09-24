@@ -966,27 +966,77 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
 ```json
 [
   {
-    "id": "89922845-e6a7-4038-8a74-d3e4fcd625b8",
-    "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
-    "preimage": "bac250cbbc1996e593be6e59537130fa8ff437439e98cbb746eea978f2d4815b",
-    "amount": 1000001,
-    "createdAt": 1560952129178,
-    "completedAt": 1560952132515,
-    "status": "SUCCEEDED"
+    "id": "10886b3c-1803-415e-b97d-84d1003cda31",
+    "parentId": "10886b3c-1803-415e-b97d-84d1003cda31",
+    "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+    "amount": 10000,
+    "targetNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+    "createdAt": 1569337970908,
+    "paymentRequest": {
+      "prefix": "lnbcrt",
+      "timestamp": 1569337848,
+      "nodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+      "serialized": "lnbcrt100n1pwc5v0cpp5sdkg090gz8lqxphmflhrac7sck3998w54jgddt9yh4067fnep2fsdqqxqrrssk43qe645fs02f84dem2hu7as56c23q928qreslvq65qlpa540gpx9qpgtf8fk9pqqgu7q9g7qgrs8q8g9r7jq0de62nx9dlpk8dh2msqpr894s",
+      "description": "",
+      "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+      "expiry": 3600,
+      "amount": 10000
+    },
+    "status": {
+      "failures": [
+        {
+          "failureType": {
+            "name": "Remote"
+          },
+          "failureMessage": "incorrect payment details or unknown payment hash",
+          "failedRoute": [
+            {
+              "nodeId": "02a9d7232139779a93c72eda7d9519957f7bc6c802d8618ca5a75c0b87ebfbc76f",
+              "nextNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+              "shortChannelId": "1702x2x1"
+            }
+          ]
+        }
+      ],
+      "completedAt": 1569337971168
+    }
   },
   {
-    "id": "e4227601-38b3-404e-9aa0-75a829e9bec0",
-    "paymentHash": "f68cd4fcf0b62cbc22d45abcbeab9ae3d6a08aa89a8484aee23cc9835e4ab095",
-    "amount": 1000001,
-    "createdAt": 1560952129178,
-    "completedAt": 1560952132515,
-    "status": "FAILED"
+    "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
+    "parentId": "c85d70da-d159-4a36-938a-c3d2f967f730",
+    "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+    "amount": 10000,
+    "targetNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+    "createdAt": 1569337870892,
+    "paymentRequest": {
+      "prefix": "lnbcrt",
+      "timestamp": 1569337848,
+      "nodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+      "serialized": "lnbcrt100n1pwc5v0cpp5sdkg090gz8lqxphmflhrac7sck3998w54jgddt9yh4067fnep2fsdqqxqrrssk43qe645fs02f84dem2hu7as56c23q928qreslvq65qlpa540gpx9qpgtf8fk9pqqgu7q9g7qgrs8q8g9r7jq0de62nx9dlpk8dh2msqpr894s",
+      "description": "",
+      "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+      "expiry": 3600,
+      "amount": 10000
+    },
+    "status": {
+      "paymentPreimage": "62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4",
+      "feesPaid": 0,
+      "route": [
+        {
+          "nodeId": "02a9d7232139779a93c72eda7d9519957f7bc6c802d8618ca5a75c0b87ebfbc76f",
+          "nextNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+          "shortChannelId": "1702x2x1"
+        }
+      ],
+      "completedAt": 1569337871061
+    }
   }
 ]
 ```
 
-Returns a list of attempts to send an outgoing payment, the possible statuses are PENDING, FAILED and SUCCEEDED. The API can 
-be queried by `paymentHash` OR by `uuid`, if the latter is used the API returns a list containing at most one element.
+Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment attempt. If 
+ the attempt was unsuccessful the `status` field contains a non empty array of detiled failures descriptions.The API can 
+be queried by `paymentHash` OR by `uuid`.
 
 ### HTTP Request
 
@@ -1011,9 +1061,22 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
 
 ```json
 {
-  "paymentHash": "587593ec3511dbefda58735695d3e615aca1db671ecd79b6b89884c498fe4e4f",
-  "amount": 250000,
-  "receivedAt": 1555407387
+  "paymentRequest": {
+    "prefix": "lnbcrt",
+    "timestamp": 1569338266,
+    "nodeId": "02a9d7232139779a93c72eda7d9519957f7bc6c802d8618ca5a75c0b87ebfbc76f",
+    "serialized": "lnbcrt10n1pwc5vu6pp52fc79qjkhuz3rys6z87ptxztycyn0a9lgt59htp3h3x602yud0psdq9v9ekgxqrafsdcup549hwl3xkpz4fw6zcsfkng85sswhavn06xlg7jg5tudhj96y9t5ujeudsw2tgchej52ke0u8a8eah0gnkgjtuv4al477gjnuthsplgn8kw",
+    "description": "asd",
+    "paymentHash": "5271e28256bf0511921a11fc15984b260937f4bf42e85bac31bc4da7a89c6bc3",
+    "expiry": 30000,
+    "amount": 1000
+  },
+  "paymentPreimage": "69d56a778eca1619d19d4efc4dbe014ef64005338cb9f6cb88d47e4bac7abc30",
+  "createdAt": 1569338266000,
+  "status": {
+    "amount": 1000,
+    "receivedAt": 1569338275797
+  }
 }
 ```
 
@@ -1242,21 +1305,31 @@ eclair-cli audit
 {
    "sent":[
       {
-         "amount":150000,
-         "feesPaid":1015,
-         "paymentHash":"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3",
-         "paymentPreimage":"14b0c3443226f8a570332737501e0945910e44778ad1740b6f036f8016fb9982",
-         "toChannelId":"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-         "timestamp":1553527391064
+        "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
+        "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+        "paymentPreimage": "62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4",
+        "parts": [
+          {
+            "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
+            "amount": 10000,
+            "feesPaid": 0,
+            "toChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
+            "timestamp": 1569337871061
+          }
+        ]
       }
    ],
    "received":[
-      {
-         "amount":150000,
-         "paymentHash":"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3",
-         "fromChannelId":"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-         "timestamp":1553527391064
-      }
+    {
+      "paymentHash": "5271e28256bf0511921a11fc15984b260937f4bf42e85bac31bc4da7a89c6bc3",
+      "parts": [
+        {
+          "amount": 1000,
+          "fromChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
+          "timestamp": 1569338275801
+        }
+      ]
+    }
    ],
    "relayed":[
       {
