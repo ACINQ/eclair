@@ -236,11 +236,14 @@ object ChannelVersion {
   val LENGTH_BITS = 4 * 8
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+  val USE_STATIC_REMOTEKEY_BIT = 1
 
   def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
   val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+  val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
 
   val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
+  val STATIC_REMOTEKEY = STANDARD | USE_STATIC_REMOTEKEY // USE_PUBKEY_KEYPATH + USE_STATIC_REMOTEKEY
 }
 // @formatter:on
