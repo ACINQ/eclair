@@ -36,7 +36,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   val DB_NAME = "network"
   val CURRENT_VERSION = 2
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         // channel_update are cheap to retrieve, so let's just wipe them out and they'll get resynced
@@ -142,7 +142,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), disableAutoCommit = true) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
       shortChannelIds.foreach(shortChannelId => {
         statement.setLong(1, shortChannelId.toLong)
         statement.addBatch()

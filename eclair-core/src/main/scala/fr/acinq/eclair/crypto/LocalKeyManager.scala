@@ -137,9 +137,9 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     Transactions.sign(tx, currentKey)
   }
 
-  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64) = {
+  override def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64) = {
     val localNodeSecret = nodeKey.privateKey
-    val localFundingPrivKey = fundingPrivateKey(channelKeyPath).privateKey
+    val localFundingPrivKey = privateKeys.get(fundingKeyPath).privateKey
     Announcements.signChannelAnnouncement(chainHash, shortChannelId, localNodeSecret, remoteNodeId, localFundingPrivKey, remoteFundingKey, features)
   }
 }

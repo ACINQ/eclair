@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.scalatest.Outcome
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
