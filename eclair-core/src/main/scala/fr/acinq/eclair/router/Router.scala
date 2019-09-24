@@ -36,8 +36,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import kamon.Kamon
-import kamon.context.Context
 import shapeless.HNil
 
 import scala.annotation.tailrec
@@ -463,9 +461,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           val timestamps_opt = routingMessage.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
           val checksums_opt = routingMessage.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
 
-          val shortChannelIdAndFlags = Kamon.runWithSpan(Kamon.spanBuilder("compute-flags").start(), finishSpan = true) {
-            loop(shortChannelIds.array, timestamps_opt, checksums_opt)
-          }
+      val shortChannelIdAndFlags = loop(shortChannelIds.array, timestamps_opt, checksums_opt)
 
           val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
             case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
@@ -648,9 +644,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 }
 
 object Router {
-
-  val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
-  val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
 
   def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 

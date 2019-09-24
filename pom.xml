@@ -68,7 +68,6 @@
         <sttp.version>1.3.9</sttp.version>
         <bitcoinlib.version>0.15</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
-        <kamon.version>2.0.0</kamon.version>
     </properties>
 
     <build>
