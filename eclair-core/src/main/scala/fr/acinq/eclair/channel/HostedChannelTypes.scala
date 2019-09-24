@@ -6,7 +6,6 @@ import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{ForwardAdd, ForwardFail, ForwardFailMalformed, ForwardMessage, Origin}
 import fr.acinq.eclair.transactions.{CommitmentSpec, IN, OUT}
 import fr.acinq.eclair.wire._
@@ -68,10 +67,15 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
   def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS =
     me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
 
-  def resetUpdates: HOSTED_DATA_COMMITMENTS =
-    copy(originChannels = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id },
-      allRemoteUpdates = lastCrossSignedState.remoteUpdates, allLocalUpdates = lastCrossSignedState.localUpdates,
-      remoteUpdates = Nil, localUpdates = Nil)
+  def withResetUpdates: HOSTED_DATA_COMMITMENTS = {
+    val originChannels1 = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id }
+    copy(originChannels = originChannels1, allRemoteUpdates = lastCrossSignedState.remoteUpdates, allLocalUpdates = lastCrossSignedState.localUpdates, remoteUpdates = Nil, localUpdates = Nil)
+  }
+
+  def withResetUpdatesExceptAdd: HOSTED_DATA_COMMITMENTS = {
+    val localUpdates1 = localUpdates.collect { case add: UpdateAddHtlc => add }
+    copy(allLocalUpdates = lastCrossSignedState.localUpdates + localUpdates1.size, allRemoteUpdates = lastCrossSignedState.remoteUpdates, localUpdates = localUpdates1, remoteUpdates = Nil)
+  }
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
