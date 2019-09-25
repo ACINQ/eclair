@@ -184,7 +184,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
   }
 
-  test("issue eclair-mobile #211") {
+  test("check that issue #1146 is fixed") {
     val state3 = addFunds(state, state.changeKeys(0), 0.5 btc)
 
     val pub1 = state.accountKeys(0).publicKey
@@ -198,8 +198,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
 
     val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
-    val (state4, tx2, fee2) = state3.completeTransaction(tx1, 750, 0 sat, dustLimit, true)
-    println(tx2.txOut)
+    assert(Try(state3.completeTransaction(tx1, 750, 0 sat, dustLimit, true)).isSuccess)
   }
 
   test("fuzzy test") {

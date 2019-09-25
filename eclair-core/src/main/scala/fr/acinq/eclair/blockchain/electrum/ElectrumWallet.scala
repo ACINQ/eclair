@@ -954,6 +954,7 @@ object ElectrumWallet {
       // this way we minimize the number of utxos in the wallet, and so we minimize the fees we'll pay for them
       val unlocked2 = unlocked1.sortBy(_.item.value)
 
+      // computes the fee what we would have to pay for our tx with our candidate utxos and an optional change output
       def computeFee(candidates: Seq[Utxo], change: Option[TxOut]): Satoshi = {
         val tx1 = addUtxosWithDummySig(tx, candidates)
         val tx2 = change.map(o => tx1.addOutput(o)).getOrElse(tx1)
@@ -969,6 +970,7 @@ object ElectrumWallet {
             // not enough funds to send amount and pay fees even without a change output
             throw new IllegalArgumentException("insufficient funds")
           case total if total - amount - computeFee(current, None) < Satoshi(0) =>
+            // not enough funds, try with an additional input
             loop(remaining.head +: current, remaining.tail)
           case total if total - amount - computeFee(current, None) <= dustLimit =>
             // change output would be below dust, we don't add one and just overpay fees
@@ -976,21 +978,24 @@ object ElectrumWallet {
           case total if total - amount - computeFee(current, Some(dummyChange)) <= dustLimit && remaining.isEmpty =>
             // change output is above dust limit but cannot pay for it's own fee, and we have no more utxos => we overpay a bit
             (current, None)
-          case total if total - amount - computeFee(current, Some(dummyChange)) <= dustLimit => loop(remaining.head +: current, remaining.tail)
+          case total if total - amount - computeFee(current, Some(dummyChange)) <= dustLimit =>
+            // try with an additional input
+            loop(remaining.head +: current, remaining.tail)
           case total =>
             val fee = computeFee(current, Some(dummyChange))
-            val change = dummyChange.copy(amount = total - amount -fee) // TxOut(totalAmount(current) - amount - fee, computePublicKeyScript(currentChangeKey.publicKey))
+            val change = dummyChange.copy(amount = total - amount -fee)
             (current, Some(change))
         }
       }
 
       val (selected, change_opt) = loop(Seq.empty[Utxo], unlocked2)
+
       // sign our tx
       val tx1 = addUtxosWithDummySig(tx, selected)
       val tx2 = change_opt.map(out => tx1.addOutput(out)).getOrElse(tx1)
       val tx3 = signTransaction(tx2)
 
-      // and add the completed tx to the lokcs
+      // and add the completed tx to the locks
       val data1 = this.copy(locks = this.locks + tx3)
       val fee = selected.map(s => Satoshi(s.item.value)).sum - tx3.txOut.map(_.amount).sum
 
