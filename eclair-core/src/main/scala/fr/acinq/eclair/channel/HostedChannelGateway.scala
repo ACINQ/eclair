@@ -34,7 +34,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
         nodeParams.feeProportionalMillionth, cmd.hostedCommits.lastCrossSignedState.initHostedChannel.channelCapacityMsat)
 
       val hostedCommits1 = cmd.hostedCommits.copy(channelUpdateOpt = Some(channelUpdate))
-      nodeParams.db.hostedChannels.addUsedShortChannelId(newShortChannelId)
+      nodeParams.db.hostedChannels.markShortChannelIdAsUsed(newShortChannelId)
       nodeParams.db.hostedChannels.addOrUpdateChannel(hostedCommits1)
       sender ! hostedCommits1
 

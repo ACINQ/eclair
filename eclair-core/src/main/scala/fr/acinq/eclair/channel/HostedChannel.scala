@@ -93,7 +93,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(commits1: HOSTED_DATA_COMMITMENTS, commits: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) if commits.waitingForShortId =>
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commits1.channelId, commits1.channelUpdateOpt.get.shortChannelId))
       context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, commits1.channelId, commits1.channelId))
-      goto(NORMAL) using commits1 sending commits1.lastCrossSignedState.stateUpdate
+      goto(NORMAL) using commits1 storing() sending commits1.lastCrossSignedState.stateUpdate
 
     // CLIENT FLOW
 

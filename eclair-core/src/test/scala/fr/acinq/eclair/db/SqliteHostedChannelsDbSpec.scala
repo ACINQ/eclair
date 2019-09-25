@@ -78,8 +78,8 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
   test("same getNewShortChannelId 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteHostedChannelsDb(sqlite)
-    assert(db.getNewShortChannelId == 1)
-    assert(db.getNewShortChannelId == 1)
+    assert(db.getNewShortChannelId === 1)
+    assert(db.getNewShortChannelId === 1)
   }
 
   test("get / insert / update a hosted commits") {
@@ -89,7 +89,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     val newShortChannelId = ShortChannelId(db.getNewShortChannelId)
     val hdc1 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId)))
 
-    db.addUsedShortChannelId(newShortChannelId) // mark this short id as used
+    db.markShortChannelIdAsUsed(newShortChannelId) // mark this short id as used
     db.addOrUpdateChannel(hdc1) // insert channel data
     db.addOrUpdateChannel(hdc1) // update, same data
     assert(db.getChannel(ByteVector32.Zeroes).contains(hdc1))
@@ -97,6 +97,33 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     val hdc2 = hdc1.copy(allLocalUpdates = 200L)
     db.addOrUpdateChannel(hdc2) // update, new data
     assert(db.getChannel(ByteVector32.Zeroes).contains(hdc2))
-    assert(db.getNewShortChannelId == newShortChannelId.toLong + 1)
+    assert(db.getNewShortChannelId === newShortChannelId.toLong + 1)
+  }
+
+  test("list hot channels (with HTLCs in-flight)") {
+    val sqlite = TestConstants.sqliteInMemory()
+    val db = new SqliteHostedChannelsDb(sqlite)
+    val newShortChannelId1 = ShortChannelId(db.getNewShortChannelId)
+    db.markShortChannelIdAsUsed(newShortChannelId1)
+    val newShortChannelId2 = ShortChannelId(db.getNewShortChannelId)
+    db.markShortChannelIdAsUsed(newShortChannelId2)
+    val newShortChannelId3 = ShortChannelId(db.getNewShortChannelId)
+    db.markShortChannelIdAsUsed(newShortChannelId3)
+
+    val hdc1 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId1)), channelId = randomBytes32)
+    val hdc2 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId2)), channelId = randomBytes32)
+    val hdc3 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId3)), channelId = randomBytes32,
+      localUpdates = Nil, remoteUpdates = Nil, localSpec = CommitmentSpec(
+      htlcs = Set.empty,
+      feeratePerKw = 0L,
+      toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
+    ))
+
+    db.addOrUpdateChannel(hdc1)
+    db.addOrUpdateChannel(hdc2)
+    db.addOrUpdateChannel(hdc3)
+
+    assert(db.listHotChannels() === Set(hdc1, hdc2))
   }
 }

@@ -10,7 +10,9 @@ trait HostedChannelsDb {
 
   def getChannel(channelId: ByteVector32): Option[HOSTED_DATA_COMMITMENTS]
 
-  def addUsedShortChannelId(shortChannelId: ShortChannelId): Unit
+  def listHotChannels(): Set[HOSTED_DATA_COMMITMENTS]
+
+  def markShortChannelIdAsUsed(shortChannelId: ShortChannelId): Unit
 
   def getNewShortChannelId: Long
 

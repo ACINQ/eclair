@@ -6,7 +6,7 @@ import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.payment.{ForwardAdd, ForwardFail, ForwardFailMalformed, ForwardMessage, Origin}
+import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, IN, OUT}
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
@@ -65,11 +65,9 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def getError: Option[Error] = localError.orElse(remoteError)
 
-  def addRemoteProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS =
-    me.modify(_.remoteUpdates).using(_ :+ update).modify(_.allRemoteUpdates).using(_ + 1)
+  def addRemoteProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS = me.modify(_.remoteUpdates).using(_ :+ update).modify(_.allRemoteUpdates).using(_ + 1)
 
-  def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS =
-    me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
+  def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS = me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
