@@ -188,7 +188,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
         Local.revocation_pubkey, Local.toSelfDelay,
-        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+        Local.delayed_payment_privkey.publicKey, Right(Remote.payment_privkey.publicKey),
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         spec)
 
@@ -218,7 +218,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
         Local.revocation_pubkey, Local.toSelfDelay,
-        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+        Local.delayed_payment_privkey.publicKey, Right(Remote.payment_privkey.publicKey),
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         spec)
 

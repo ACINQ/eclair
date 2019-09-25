@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Satoshi, Transaction}
 import scodec.bits.ByteVector
 
@@ -29,6 +30,8 @@ trait EclairWallet {
   def getBalance: Future[Satoshi]
 
   def getFinalAddress: Future[String]
+
+  def dumpPrivKey(address: String, prefix: Byte): Future[PrivateKey]
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]
 

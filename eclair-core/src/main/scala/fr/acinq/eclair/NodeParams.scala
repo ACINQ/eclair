@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Base58, Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
@@ -83,6 +83,12 @@ case class NodeParams(keyManager: KeyManager,
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
   def currentBlockHeight: Long = blockCount.get
+  def base58KeyPrefix = chainHash match {
+    case Block.RegtestGenesisBlock.hash => Base58.Prefix.SecretKeyTestnet
+    case Block.SegnetGenesisBlock.hash => Base58.Prefix.SecretKeySegnet
+    case Block.TestnetGenesisBlock.hash => Base58.Prefix.SecretKeyTestnet
+    case Block.LivenetGenesisBlock.hash => Base58.Prefix.SecretKey
+  }
 }
 
 object NodeParams {

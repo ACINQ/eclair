@@ -20,12 +20,16 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
+import fr.acinq.eclair
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, NodeParams, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
+
+import scala.concurrent.Await
 
 
 /**
@@ -200,7 +204,18 @@ final case class LocalParams(nodeId: PublicKey,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              globalFeatures: ByteVector,
-                             localFeatures: ByteVector)
+                             localFeatures: ByteVector) {
+
+  // FIXME: this is temporary
+  def localPaymentBasepoint(wallet: EclairWallet, nodeParams: NodeParams) = {
+    import scala.concurrent.duration._
+    val address = eclair.scriptPubKeyToAddress(defaultFinalScriptPubKey)
+    require(defaultFinalScriptPubKey == Script.write(eclair.addressToPublicKeyScript(address, nodeParams.chainHash)))
+    val privKey = Await.result(wallet.dumpPrivKey(address, nodeParams.base58KeyPrefix), 30 seconds)
+    privKey.publicKey
+  }
+
+}
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
