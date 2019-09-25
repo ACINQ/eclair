@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.addressToPublicKeyScript
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
@@ -33,6 +33,8 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
   override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
 
   override def getFinalAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
+
+  override def dumpPrivKey(address: String, prefix: Byte): Future[Crypto.PrivateKey] = ???
 
   def getXpub: Future[GetXpubResponse] = (wallet ? GetXpub).mapTo[GetXpubResponse]
 
