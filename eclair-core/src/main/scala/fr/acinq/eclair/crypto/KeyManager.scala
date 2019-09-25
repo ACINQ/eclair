@@ -112,7 +112,7 @@ object KeyManager {
     * @return a BIP32 path
     */
   def channelKeyPath(fundingPubKey: PublicKey) : DeterministicWallet.KeyPath = {
-    val buffer = fundingPubKey.hash160.take(8)
+    val buffer = fundingPubKey.hash160.take(16)
     val bis = new ByteArrayInputStream(buffer.toArray)
     DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
   }
