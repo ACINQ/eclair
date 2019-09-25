@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
 import org.scalatest.FunSuite
 import scodec.bits._
 
@@ -56,5 +56,13 @@ class LocalKeyManagerSpec extends FunSuite {
     val keyPath = KeyPath(1L :: Nil)
     assert(keyManager1.fundingPublicKey(keyPath) != keyManager2.fundingPublicKey(keyPath))
     assert(keyManager1.commitmentPoint(keyPath, 1) != keyManager2.commitmentPoint(keyPath, 1))
+  }
+
+  test("compute channel key path from funding keys") {
+    // if this test fails it means that we don't generate the same channel key path from the same funding pubkey, which
+    // will break existing channels !
+    val pub = PrivateKey(ByteVector32.fromValidHex("01" * 32)).publicKey
+    val keyPath = KeyManager.channelKeyPath(pub)
+    assert(keyPath.toString() == "m/2041577608/1982247572/689197082'/1288840885")
   }
 }
