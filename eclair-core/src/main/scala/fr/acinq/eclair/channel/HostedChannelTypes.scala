@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.payment.Origin
-import fr.acinq.eclair.transactions.{CommitmentSpec, IN, OUT}
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
@@ -61,6 +61,8 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   lazy val withResetLocalUpdates: HOSTED_DATA_COMMITMENTS = copy(originChannels = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id }, localUpdates = Nil, allLocalUpdates = lastCrossSignedState.localUpdates)
 
+  lazy val allInFlightHtlcs: Set[DirectedHtlc] = localSpec.htlcs ++ nextLocalSpec.htlcs
+
   override val announceChannel: Boolean = false
 
   def getError: Option[Error] = localError.orElse(remoteError)
@@ -69,9 +71,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS = me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
-    localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
-      nextLocalSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = allInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
   def nextLocalLCSS(blockDay: Long): LastCrossSignedState = {
     val (inHtlcs, outHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)

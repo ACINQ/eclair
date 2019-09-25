@@ -38,14 +38,11 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
       nodeParams.db.hostedChannels.addOrUpdateChannel(hostedCommits1)
       sender ! hostedCommits1
 
-    case CMD_HOSTED_KILL_IDLE_CHANNELS =>
-      inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_HOSTED_KILL_IDLE_CHANNELS)
+    case CMD_HOSTED_KILL_IDLE_CHANNELS => inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_HOSTED_KILL_IDLE_CHANNELS)
 
-    case cmd: HasHostedChanIdCommand =>
-      Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
+    case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
 
-    case Terminated(channelRef) =>
-      inMemoryHostedChannels.inverse.remove(channelRef)
+    case Terminated(channelRef) => inMemoryHostedChannels.inverse.remove(channelRef)
   }
 }
 
