@@ -61,7 +61,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   lazy val withResetLocalUpdates: HOSTED_DATA_COMMITMENTS = copy(originChannels = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id }, localUpdates = Nil, allLocalUpdates = lastCrossSignedState.localUpdates)
 
-  lazy val allInFlightHtlcs: Set[DirectedHtlc] = localSpec.htlcs ++ nextLocalSpec.htlcs
+  lazy val currentAndNextInFlight: Set[DirectedHtlc] = localSpec.htlcs ++ nextLocalSpec.htlcs
 
   override val announceChannel: Boolean = false
 
@@ -71,7 +71,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS = me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = allInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlight.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
   def nextLocalLCSS(blockDay: Long): LastCrossSignedState = {
     val (inHtlcs, outHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)

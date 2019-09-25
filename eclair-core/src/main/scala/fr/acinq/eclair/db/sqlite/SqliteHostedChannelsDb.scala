@@ -30,12 +30,12 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
     val data = HOSTED_DATA_COMMITMENTS_Codec.encode(state).require.toByteArray
     using (sqlite.prepareStatement("UPDATE local_hosted_channels SET data=?, in_flight_htlcs=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
-      update.setLong(2, state.allInFlightHtlcs.size)
+      update.setLong(2, state.currentAndNextInFlight.size)
       update.setBytes(3, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?)")) { statement =>
           statement.setBytes(1, state.channelId.toArray)
-          statement.setLong(2, state.allInFlightHtlcs.size)
+          statement.setLong(2, state.currentAndNextInFlight.size)
           statement.setBytes(3, data)
           statement.executeUpdate()
         }
