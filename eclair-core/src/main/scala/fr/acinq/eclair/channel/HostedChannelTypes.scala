@@ -21,6 +21,7 @@ case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: P
 case class CMD_HOSTED_INVOKE_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
 case class CMD_HOSTED_REGISTER_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, hostedCommits: HOSTED_DATA_COMMITMENTS) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
+case class CMD_HOSTED_OVERRIDE(channelId: ByteVector32, newLocalBalance: MilliSatoshi) extends HasHostedChanIdCommand
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
@@ -28,14 +29,13 @@ case class HOSTED_DATA_CLIENT_WAIT_HOST_INIT(refundScriptPubKey: ByteVector) ext
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
 
-case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(hostedDataCommits: HOSTED_DATA_COMMITMENTS) extends HostedData
+case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits: HOSTED_DATA_COMMITMENTS) extends HostedData
 
 case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel,
                                                      refundScriptPubKey: ByteVector,
                                                      waitingForShortId: Boolean = false) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
-
 
 case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    lastCrossSignedState: LastCrossSignedState,
@@ -57,6 +57,10 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
 
+  lazy val withResetRemoteUpdates: HOSTED_DATA_COMMITMENTS = copy(remoteUpdates = Nil, allRemoteUpdates = lastCrossSignedState.remoteUpdates)
+
+  lazy val withResetLocalUpdates: HOSTED_DATA_COMMITMENTS = copy(originChannels = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id }, localUpdates = Nil, allLocalUpdates = lastCrossSignedState.localUpdates)
+
   override val announceChannel: Boolean = false
 
   def getError: Option[Error] = localError.orElse(remoteError)
@@ -66,16 +70,6 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def addLocalProposal(update: UpdateMessage): HOSTED_DATA_COMMITMENTS =
     me.modify(_.localUpdates).using(_ :+ update).modify(_.allLocalUpdates).using(_ + 1)
-
-  def withResetUpdates: HOSTED_DATA_COMMITMENTS = {
-    val originChannels1 = originChannels -- localUpdates.collect { case add: UpdateAddHtlc => add.id }
-    copy(originChannels = originChannels1, allRemoteUpdates = lastCrossSignedState.remoteUpdates, allLocalUpdates = lastCrossSignedState.localUpdates, remoteUpdates = Nil, localUpdates = Nil)
-  }
-
-  def withResetUpdatesExceptAdd: HOSTED_DATA_COMMITMENTS = {
-    val localUpdates1 = localUpdates.collect { case add: UpdateAddHtlc => add }
-    copy(allLocalUpdates = lastCrossSignedState.localUpdates + localUpdates1.size, allRemoteUpdates = lastCrossSignedState.remoteUpdates, localUpdates = localUpdates1, remoteUpdates = Nil)
-  }
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
     localSpec.htlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add } ++
@@ -214,16 +208,4 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
   }
-
-  def getForwards: Seq[ForwardMessage] =
-    remoteUpdates collect {
-      case add: UpdateAddHtlc =>
-        ForwardAdd(add)
-      case fail: UpdateFailHtlc =>
-        val add = localSpec.findHtlcById(fail.id, OUT).get.add
-        ForwardFail(fail, originChannels(fail.id), add)
-      case fail: UpdateFailMalformedHtlc =>
-        val add = localSpec.findHtlcById(fail.id, OUT).get.add
-        ForwardFailMalformed(fail, originChannels(fail.id), add)
-    }
 }
