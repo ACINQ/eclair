@@ -59,10 +59,10 @@ class LocalKeyManagerSpec extends FunSuite {
   }
 
   test("compute channel key path from funding keys") {
-    // if this test fails it means that we don't generate the same chanel key path from the same funding pubkey, which
+    // if this test fails it means that we don't generate the same channel key path from the same funding pubkey, which
     // will break existing channels !
     val pub = PrivateKey(ByteVector32.fromValidHex("01" * 32)).publicKey
     val keyPath = KeyManager.channelKeyPath(pub)
-    assert(keyPath.toString() == "m/2041577608/1982247572")
+    assert(keyPath.toString() == "m/2041577608/1982247572/689197082'/1288840885")
   }
 }
