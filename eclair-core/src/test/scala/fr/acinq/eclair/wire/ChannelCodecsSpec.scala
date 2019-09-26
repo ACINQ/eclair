@@ -374,7 +374,8 @@ object ChannelCodecsSpec {
     htlcMinimum = 10000 msat,
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
-    localPaymentBasepoint = Transactions.PlaceHolderPubKey,
+    defaultFinalScriptPubKey = ByteVector.empty,
+    localPaymentBasepoint = None,
     isFunder = true,
     globalFeatures = hex"dead",
     localFeatures = hex"beef")

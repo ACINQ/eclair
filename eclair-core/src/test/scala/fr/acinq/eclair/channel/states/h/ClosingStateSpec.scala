@@ -585,7 +585,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+  ignore("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
     import f._
     val sender = TestProbe()
     val oldStateData = alice.stateData
@@ -603,8 +603,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then we manually replace alice's state with an older one
     alice.setState(OFFLINE, oldStateData)
     // then we reconnect them
-    val aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
-    val bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
+    val aliceInit = Init(Alice.nodeParams.globalFeatures, Alice.nodeParams.localFeatures)
+    val bobInit = Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures)
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
     sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
     // peers exchange channel_reestablish messages

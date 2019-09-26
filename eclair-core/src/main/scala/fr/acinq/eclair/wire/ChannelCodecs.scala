@@ -268,11 +268,11 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  val commitmentsCodecParam: Codec[Commitments] = (
+  val commitmentsCodec: Codec[Commitments] = (
     ("channelVersion" | channelVersionCodec) >>:~ { version =>
           (version match {
             case ChannelVersion.STATIC_REMOTEKEY => "localParams" | localParamsCodecWithPoint
-            case ChannelVersion.STANDARD => "localParams" | localParamsCodecLegacy
+            case _ => "localParams" | localParamsCodecLegacy
           }) ::
           ("remoteParams" | remoteParamsCodec) ::
           ("channelFlags" | byte) ::
@@ -288,23 +288,6 @@ object ChannelCodecs extends Logging {
           ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
           ("channelId" | bytes32)
     }).as[Commitments]
-
-  val commitmentsCodec: Codec[Commitments] = (
-      ("channelVersion" | channelVersionCodec) ::
-      ("localParams" | localParamsCodecLegacy) ::
-      ("remoteParams" | remoteParamsCodec) ::
-      ("channelFlags" | byte) ::
-      ("localCommit" | localCommitCodec) ::
-      ("remoteCommit" | remoteCommitCodec) ::
-      ("localChanges" | localChangesCodec) ::
-      ("remoteChanges" | remoteChangesCodec) ::
-      ("localNextHtlcId" | uint64overflow) ::
-      ("remoteNextHtlcId" | uint64overflow) ::
-      ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
-      ("commitInput" | inputInfoCodec) ::
-      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::
