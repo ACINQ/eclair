@@ -930,32 +930,6 @@ object ElectrumWallet {
 
     /**
      *
-     * @param amount                amount we want to pay
-     * @param allowSpendUnconfirmed if true, use unconfirmed utxos
-     * @return a set of utxos with a total value that is greater than amount
-     */
-    def chooseUtxos(amount: Satoshi, allowSpendUnconfirmed: Boolean): Seq[Utxo] = {
-      @tailrec
-      def select(chooseFrom: Seq[Utxo], selected: Set[Utxo]): Set[Utxo] = {
-        if (totalAmount(selected) >= amount) selected
-        else if (chooseFrom.isEmpty) throw new IllegalArgumentException("insufficient funds")
-        else select(chooseFrom.tail, selected + chooseFrom.head)
-      }
-
-      // select utxos that are not locked by pending txs
-      val lockedOutputs = locks.map(_.txIn.map(_.outPoint)).flatten
-      val unlocked = utxos.filterNot(utxo => lockedOutputs.contains(utxo.outPoint))
-      val unlocked1 = if (allowSpendUnconfirmed) unlocked else unlocked.filter(_.item.height > 0)
-
-      // sort utxos by amount, in increasing order
-      // this way we minimize the number of utxos in the wallet, and so we minimize the fees we'll pay for them
-      val unlocked2 = unlocked1.sortBy(_.item.value)
-      val selected = select(unlocked2, Set())
-      selected.toSeq
-    }
-
-    /**
-     *
      * @param tx           input tx that has no inputs
      * @param feeRatePerKw fee rate per kiloweight
      * @param minimumFee   minimum fee
@@ -971,35 +945,61 @@ object ElectrumWallet {
       val amount = tx.txOut.map(_.amount).sum
       require(amount > dustLimit, "amount to send is below dust limit")
 
-      // start with a hefty fee estimate
-      val utxos = chooseUtxos(amount + Transactions.weight2fee(feeRatePerKw, 1000), allowSpendUnconfirmed)
-      val spent = totalAmount(utxos)
+      // select utxos that are not locked by pending txs
+      val lockedOutputs = locks.map(_.txIn.map(_.outPoint)).flatten
+      val unlocked = utxos.filterNot(utxo => lockedOutputs.contains(utxo.outPoint))
+      val unlocked1 = if (allowSpendUnconfirmed) unlocked else unlocked.filter(_.item.height > 0)
 
-      // add utxos, and sign with dummy sigs
-      val tx1 = addUtxosWithDummySig(tx, utxos)
+      // sort utxos by amount, in increasing order
+      // this way we minimize the number of utxos in the wallet, and so we minimize the fees we'll pay for them
+      val unlocked2 = unlocked1.sortBy(_.item.value)
 
-      // compute the actual fee that we should pay
-      val fee1 = {
-        // add a dummy change output, which will be needed most of the time
-        val tx2 = tx1.addOutput(TxOut(amount, computePublicKeyScript(currentChangeKey.publicKey)))
+      // computes the fee what we would have to pay for our tx with our candidate utxos and an optional change output
+      def computeFee(candidates: Seq[Utxo], change: Option[TxOut]): Satoshi = {
+        val tx1 = addUtxosWithDummySig(tx, candidates)
+        val tx2 = change.map(o => tx1.addOutput(o)).getOrElse(tx1)
         Transactions.weight2fee(feeRatePerKw, tx2.weight())
       }
 
-      // add change output only if non-dust, otherwise change is added to the fee
-      val (tx2, fee2, pos) = (spent - amount - fee1) match {
-        case dustChange if dustChange < dustLimit => (tx1, fee1 + dustChange, -1) // if change is below dust we add it to fees
-        case change => (tx1.addOutput(TxOut(change, computePublicKeyScript(currentChangeKey.publicKey))), fee1, 1) // change output index is always 1
+      val dummyChange = TxOut(Satoshi(0), computePublicKeyScript(currentChangeKey.publicKey))
+
+      @tailrec
+      def loop(current: Seq[Utxo], remaining: Seq[Utxo]) : (Seq[Utxo], Option[TxOut]) = {
+        totalAmount(current) match {
+          case total if total - amount - computeFee(current, None) < Satoshi(0) && remaining.isEmpty =>
+            // not enough funds to send amount and pay fees even without a change output
+            throw new IllegalArgumentException("insufficient funds")
+          case total if total - amount - computeFee(current, None) < Satoshi(0) =>
+            // not enough funds, try with an additional input
+            loop(remaining.head +: current, remaining.tail)
+          case total if total - amount - computeFee(current, None) <= dustLimit =>
+            // change output would be below dust, we don't add one and just overpay fees
+            (current, None)
+          case total if total - amount - computeFee(current, Some(dummyChange)) <= dustLimit && remaining.isEmpty =>
+            // change output is above dust limit but cannot pay for it's own fee, and we have no more utxos => we overpay a bit
+            (current, None)
+          case total if total - amount - computeFee(current, Some(dummyChange)) <= dustLimit =>
+            // try with an additional input
+            loop(remaining.head +: current, remaining.tail)
+          case total =>
+            val fee = computeFee(current, Some(dummyChange))
+            val change = dummyChange.copy(amount = total - amount -fee)
+            (current, Some(change))
+        }
       }
 
+      val (selected, change_opt) = loop(Seq.empty[Utxo], unlocked2)
+
       // sign our tx
+      val tx1 = addUtxosWithDummySig(tx, selected)
+      val tx2 = change_opt.map(out => tx1.addOutput(out)).getOrElse(tx1)
       val tx3 = signTransaction(tx2)
-      //Transaction.correctlySpends(tx3, utxos.map(utxo => utxo.outPoint -> TxOut(Satoshi(utxo.item.value), computePublicKeyScript(utxo.key.publicKey))).toMap, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-      // and add the completed tx to the lokcs
+      // and add the completed tx to the locks
       val data1 = this.copy(locks = this.locks + tx3)
-      val fee3 = spent - tx3.txOut.map(_.amount).sum
+      val fee = selected.map(s => Satoshi(s.item.value)).sum - tx3.txOut.map(_.amount).sum
 
-      (data1, tx3, fee3)
+      (data1, tx3, fee)
     }
 
     def signTransaction(tx: Transaction): Transaction = {
