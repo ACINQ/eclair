@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Base58, Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
