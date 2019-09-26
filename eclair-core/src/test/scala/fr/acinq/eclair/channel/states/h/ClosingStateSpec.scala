@@ -85,7 +85,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       }
     } else {
       within(30 seconds) {
-        reachNormal(setup)
+        reachNormal(setup, test.tags)
         val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
@@ -584,6 +584,54 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0, claimMainTx)
     awaitCond(alice.stateName == CLOSED)
   }
+
+  ignore("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    val sender = TestProbe()
+    val oldStateData = alice.stateData
+    val (ra1, htlca1) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
+    // then we manually replace alice's state with an older one
+    alice.setState(OFFLINE, oldStateData)
+    // then we reconnect them
+    val aliceInit = Init(Alice.nodeParams.globalFeatures, Alice.nodeParams.localFeatures)
+    val bobInit = Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    // alice then realizes it has an old state...
+    bob2alice.forward(alice)
+    // ... and ask bob to publish its current commitment
+    val error = alice2bob.expectMsgType[Error]
+    assert(new String(error.data.toArray) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+    // alice now waits for bob to publish its commitment
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+    // bob is nice and publishes its commitment
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+    // alice is able to claim its main output
+    val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].futureRemoteCommitPublished.isDefined)
+
+    // actual test starts here
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0, claimMainTx)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
 
   test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { f =>
     import f._
