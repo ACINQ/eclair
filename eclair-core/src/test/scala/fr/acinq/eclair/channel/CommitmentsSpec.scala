@@ -70,11 +70,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - fee)
 
-    val (ac2, commit1) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac1, alice.underlyingActor.nodeParams.keyManager)
+    val (ac2, commit1) = sendCommit(ac1, alice.underlyingActor.nodeParams.keyManager)
     assert(ac2.availableBalanceForSend == a - p - fee)
     assert(ac2.availableBalanceForReceive == b)
 
-    val (bc2, revocation1) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
+    val (bc2, revocation1) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - fee)
 
@@ -82,11 +82,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac3.availableBalanceForSend == a - p - fee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val (bc3, commit2) = sendCommit(wallet, bob.underlyingActor.nodeParams, bc2, bob.underlyingActor.nodeParams.keyManager)
+    val (bc3, commit2) = sendCommit(bc2, bob.underlyingActor.nodeParams.keyManager)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - fee)
 
-    val (ac4, revocation2) = receiveCommit(wallet, alice.underlyingActor.nodeParams, ac3, commit2, alice.underlyingActor.nodeParams.keyManager)
+    val (ac4, revocation2) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.keyManager)
     assert(ac4.availableBalanceForSend == a - p - fee)
     assert(ac4.availableBalanceForReceive == b)
 
@@ -103,11 +103,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac5.availableBalanceForSend == a - p - fee)
     assert(ac5.availableBalanceForReceive == b + p)
 
-    val (bc6, commit3) = sendCommit(wallet, bob.underlyingActor.nodeParams, bc5, bob.underlyingActor.nodeParams.keyManager)
+    val (bc6, commit3) = sendCommit(bc5, bob.underlyingActor.nodeParams.keyManager)
     assert(bc6.availableBalanceForSend == b + p)
     assert(bc6.availableBalanceForReceive == a - p - fee)
 
-    val (ac6, revocation3) = receiveCommit(wallet, alice.underlyingActor.nodeParams, ac5, commit3, alice.underlyingActor.nodeParams.keyManager)
+    val (ac6, revocation3) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.keyManager)
     assert(ac6.availableBalanceForSend == a - p)
     assert(ac6.availableBalanceForReceive == b + p)
 
@@ -115,11 +115,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc7.availableBalanceForSend == b + p)
     assert(bc7.availableBalanceForReceive == a - p)
 
-    val (ac7, commit4) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac6, alice.underlyingActor.nodeParams.keyManager)
+    val (ac7, commit4) = sendCommit(ac6, alice.underlyingActor.nodeParams.keyManager)
     assert(ac7.availableBalanceForSend == a - p)
     assert(ac7.availableBalanceForReceive == b + p)
 
-    val (bc8, revocation4) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc7, commit4, bob.underlyingActor.nodeParams.keyManager)
+    val (bc8, revocation4) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.keyManager)
     assert(bc8.availableBalanceForSend == b + p)
     assert(bc8.availableBalanceForReceive == a - p)
 
@@ -154,11 +154,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - fee)
 
-    val (ac2, commit1) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac1, alice.underlyingActor.nodeParams.keyManager)
+    val (ac2, commit1) = sendCommit(ac1, alice.underlyingActor.nodeParams.keyManager)
     assert(ac2.availableBalanceForSend == a - p - fee)
     assert(ac2.availableBalanceForReceive == b)
 
-    val (bc2, revocation1) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
+    val (bc2, revocation1) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - fee)
 
@@ -166,11 +166,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac3.availableBalanceForSend == a - p - fee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val (bc3, commit2) = sendCommit(wallet, bob.underlyingActor.nodeParams, bc2, bob.underlyingActor.nodeParams.keyManager)
+    val (bc3, commit2) = sendCommit(bc2, bob.underlyingActor.nodeParams.keyManager)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - fee)
 
-    val (ac4, revocation2) = receiveCommit(wallet, alice.underlyingActor.nodeParams, ac3, commit2, alice.underlyingActor.nodeParams.keyManager)
+    val (ac4, revocation2) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.keyManager)
     assert(ac4.availableBalanceForSend == a - p - fee)
     assert(ac4.availableBalanceForReceive == b)
 
@@ -187,11 +187,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac5.availableBalanceForSend == a - p - fee)
     assert(ac5.availableBalanceForReceive == b)
 
-    val (bc6, commit3) = sendCommit(wallet, bob.underlyingActor.nodeParams, bc5, bob.underlyingActor.nodeParams.keyManager)
+    val (bc6, commit3) = sendCommit(bc5, bob.underlyingActor.nodeParams.keyManager)
     assert(bc6.availableBalanceForSend == b)
     assert(bc6.availableBalanceForReceive == a - p - fee)
 
-    val (ac6, revocation3) = receiveCommit(wallet, alice.underlyingActor.nodeParams, ac5, commit3, alice.underlyingActor.nodeParams.keyManager)
+    val (ac6, revocation3) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.keyManager)
     assert(ac6.availableBalanceForSend == a)
     assert(ac6.availableBalanceForReceive == b)
 
@@ -199,11 +199,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc7.availableBalanceForSend == b)
     assert(bc7.availableBalanceForReceive == a)
 
-    val (ac7, commit4) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac6, alice.underlyingActor.nodeParams.keyManager)
+    val (ac7, commit4) = sendCommit(ac6, alice.underlyingActor.nodeParams.keyManager)
     assert(ac7.availableBalanceForSend == a)
     assert(ac7.availableBalanceForReceive == b)
 
-    val (bc8, revocation4) = receiveCommit(wallet, alice.underlyingActor.nodeParams, bc7, commit4, bob.underlyingActor.nodeParams.keyManager)
+    val (bc8, revocation4) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.keyManager)
     assert(bc8.availableBalanceForSend == b)
     assert(bc8.availableBalanceForReceive == a)
 
@@ -259,11 +259,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac3.availableBalanceForSend == a - p1 - fee - p2 - fee)
     assert(ac3.availableBalanceForReceive == b - p3)
 
-    val (ac4, commit1) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac3, alice.underlyingActor.nodeParams.keyManager)
+    val (ac4, commit1) = sendCommit(ac3, alice.underlyingActor.nodeParams.keyManager)
     assert(ac4.availableBalanceForSend == a - p1 - fee - p2 - fee)
     assert(ac4.availableBalanceForReceive == b - p3)
 
-    val (bc4, revocation1) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc3, commit1, bob.underlyingActor.nodeParams.keyManager)
+    val (bc4, revocation1) = receiveCommit(bc3, commit1, bob.underlyingActor.nodeParams.keyManager)
     assert(bc4.availableBalanceForSend == b - p3)
     assert(bc4.availableBalanceForReceive == a - p1 - fee - p2 - fee)
 
@@ -271,11 +271,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac5.availableBalanceForSend == a - p1 - fee - p2 - fee)
     assert(ac5.availableBalanceForReceive == b - p3)
 
-    val (bc5, commit2) = sendCommit(wallet, bob.underlyingActor.nodeParams, bc4, bob.underlyingActor.nodeParams.keyManager)
+    val (bc5, commit2) = sendCommit(bc4, bob.underlyingActor.nodeParams.keyManager)
     assert(bc5.availableBalanceForSend == b - p3)
     assert(bc5.availableBalanceForReceive == a - p1 - fee - p2 - fee)
 
-    val (ac6, revocation2) = receiveCommit(wallet, bob.underlyingActor.nodeParams, ac5, commit2, alice.underlyingActor.nodeParams.keyManager)
+    val (ac6, revocation2) = receiveCommit(ac5, commit2, alice.underlyingActor.nodeParams.keyManager)
     assert(ac6.availableBalanceForSend == a - p1 - fee - p2 - fee - fee) // alice has acknowledged b's hltc so it needs to pay the fee for it
     assert(ac6.availableBalanceForReceive == b - p3)
 
@@ -283,11 +283,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc6.availableBalanceForSend == b - p3)
     assert(bc6.availableBalanceForReceive == a - p1 - fee - p2 - fee - fee)
 
-    val (ac7, commit3) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac6, alice.underlyingActor.nodeParams.keyManager)
+    val (ac7, commit3) = sendCommit(ac6, alice.underlyingActor.nodeParams.keyManager)
     assert(ac7.availableBalanceForSend == a - p1 - fee - p2 - fee - fee)
     assert(ac7.availableBalanceForReceive == b - p3)
 
-    val (bc7, revocation3) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc6, commit3, bob.underlyingActor.nodeParams.keyManager)
+    val (bc7, revocation3) = receiveCommit(bc6, commit3, bob.underlyingActor.nodeParams.keyManager)
     assert(bc7.availableBalanceForSend == b - p3)
     assert(bc7.availableBalanceForReceive == a - p1 - fee - p2 - fee - fee)
 
@@ -322,11 +322,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc10.availableBalanceForSend == b + p1 - p3)
     assert(bc10.availableBalanceForReceive == a - p1 - fee - p2 - fee + p3) // the fee for p3 disappears
 
-    val (ac12, commit4) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac11, alice.underlyingActor.nodeParams.keyManager)
+    val (ac12, commit4) = sendCommit(ac11, alice.underlyingActor.nodeParams.keyManager)
     assert(ac12.availableBalanceForSend == a - p1 - fee - p2 - fee + p3)
     assert(ac12.availableBalanceForReceive == b + p1 - p3)
 
-    val (bc11, revocation4) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc10, commit4, bob.underlyingActor.nodeParams.keyManager)
+    val (bc11, revocation4) = receiveCommit(bc10, commit4, bob.underlyingActor.nodeParams.keyManager)
     assert(bc11.availableBalanceForSend == b + p1 - p3)
     assert(bc11.availableBalanceForReceive == a - p1 - fee - p2 - fee + p3)
 
@@ -334,11 +334,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(ac13.availableBalanceForSend == a - p1 - fee - p2 - fee + p3)
     assert(ac13.availableBalanceForReceive == b + p1 - p3)
 
-    val (bc12, commit5) = sendCommit(wallet, bob.underlyingActor.nodeParams, bc11, bob.underlyingActor.nodeParams.keyManager)
+    val (bc12, commit5) = sendCommit(bc11, bob.underlyingActor.nodeParams.keyManager)
     assert(bc12.availableBalanceForSend == b + p1 - p3)
     assert(bc12.availableBalanceForReceive == a - p1 - fee - p2 - fee + p3)
 
-    val (ac14, revocation5) = receiveCommit(wallet, alice.underlyingActor.nodeParams, ac13, commit5, alice.underlyingActor.nodeParams.keyManager)
+    val (ac14, revocation5) = receiveCommit(ac13, commit5, alice.underlyingActor.nodeParams.keyManager)
     assert(ac14.availableBalanceForSend == a - p1 + p3)
     assert(ac14.availableBalanceForReceive == b + p1 - p3)
 
@@ -346,11 +346,11 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc13.availableBalanceForSend == b + p1 - p3)
     assert(bc13.availableBalanceForReceive == a - p1 + p3)
 
-    val (ac15, commit6) = sendCommit(wallet, alice.underlyingActor.nodeParams, ac14, alice.underlyingActor.nodeParams.keyManager)
+    val (ac15, commit6) = sendCommit(ac14, alice.underlyingActor.nodeParams.keyManager)
     assert(ac15.availableBalanceForSend == a - p1 + p3)
     assert(ac15.availableBalanceForReceive == b + p1 - p3)
 
-    val (bc14, revocation6) = receiveCommit(wallet, bob.underlyingActor.nodeParams, bc13, commit6, bob.underlyingActor.nodeParams.keyManager)
+    val (bc14, revocation6) = receiveCommit(bc13, commit6, bob.underlyingActor.nodeParams.keyManager)
     assert(bc14.availableBalanceForSend == b + p1 - p3)
     assert(bc14.availableBalanceForReceive == a - p1 + p3)
 

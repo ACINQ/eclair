@@ -16,10 +16,11 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, ByteVector32, Crypto, OutPoint, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
 import scodec.bits.ByteVector
+import scodec.bits._
 
 import scala.concurrent.Future
 
@@ -34,9 +35,7 @@ class TestWallet extends EclairWallet {
 
   override def getFinalAddress: Future[String] = Future.successful("bcrt1qwcv8naajwn8fjhu8z59q9e6ucrqr068rlcenux")
 
-  override def dumpPrivKey(address: String, prefix: Byte): Future[Crypto.PrivateKey] = Future.successful(
-    PrivateKey.fromBase58("cV7d4L4uYfEpeCZrZ52geCBjbkZiSJYefVLmHNGbRECs87Zwikgb", prefix)._1
-  )
+  override def getPubkeyForAddress(address: String): Future[Crypto.PublicKey] = Future.successful(PublicKey(hex"028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12"))
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] =
     Future.successful(TestWallet.makeDummyFundingTx(pubkeyScript, amount, feeRatePerKw))

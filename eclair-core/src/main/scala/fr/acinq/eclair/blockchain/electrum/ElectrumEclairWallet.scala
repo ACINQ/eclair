@@ -34,7 +34,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
 
   override def getFinalAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
 
-  override def dumpPrivKey(address: String, prefix: Byte): Future[Crypto.PrivateKey] = ???
+  override def getPubkeyForAddress(address: String): Future[Crypto.PublicKey] = (wallet ? GetCurrentAddressPubkey).mapTo[GetCurrentAddressPubkeyResponse].map(_.publicKey)
 
   def getXpub: Future[GetXpubResponse] = (wallet ? GetXpub).mapTo[GetXpubResponse]
 

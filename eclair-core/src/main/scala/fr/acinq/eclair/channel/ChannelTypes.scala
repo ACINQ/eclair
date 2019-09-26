@@ -203,18 +203,37 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
+                             localPaymentBasepoint: Option[PublicKey],
                              globalFeatures: ByteVector,
-                             localFeatures: ByteVector) {
+                             localFeatures: ByteVector)
 
-  // FIXME: this is temporary
-  def localPaymentBasepoint(wallet: EclairWallet, nodeParams: NodeParams) = {
-    import scala.concurrent.duration._
-    val address = eclair.scriptPubKeyToAddress(defaultFinalScriptPubKey)
-    require(defaultFinalScriptPubKey == Script.write(eclair.addressToPublicKeyScript(address, nodeParams.chainHash)))
-    val privKey = Await.result(wallet.dumpPrivKey(address, nodeParams.base58KeyPrefix), 30 seconds)
-    privKey.publicKey
-  }
+object LocalParams {
 
+  def apply(nodeId: PublicKey,
+            fundingKeyPath: DeterministicWallet.KeyPath,
+            dustLimit: Satoshi,
+            maxHtlcValueInFlightMsat: UInt64,
+            channelReserve: Satoshi,
+            htlcMinimum: MilliSatoshi,
+            toSelfDelay: CltvExpiryDelta,
+            maxAcceptedHtlcs: Int,
+            isFunder: Boolean,
+            localPaymentBasepoint: PublicKey,
+            globalFeatures: ByteVector,
+            localFeatures: ByteVector): LocalParams = new LocalParams(
+    nodeId,
+    fundingKeyPath,
+    dustLimit,
+    maxHtlcValueInFlightMsat,
+    channelReserve,
+    htlcMinimum,
+    toSelfDelay,
+    maxAcceptedHtlcs,
+    isFunder,
+    Script.write(Script.pay2wpkh(localPaymentBasepoint)),
+    Some(localPaymentBasepoint),
+    globalFeatures,
+    localFeatures)
 }
 
 final case class RemoteParams(nodeId: PublicKey,
