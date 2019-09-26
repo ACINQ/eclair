@@ -627,7 +627,6 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSED, 10 seconds)
   }
 
-
   test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)

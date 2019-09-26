@@ -83,12 +83,6 @@ case class NodeParams(keyManager: KeyManager,
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
   def currentBlockHeight: Long = blockCount.get
-  def base58KeyPrefix = chainHash match {
-    case Block.RegtestGenesisBlock.hash => Base58.Prefix.SecretKeyTestnet
-    case Block.SegnetGenesisBlock.hash => Base58.Prefix.SecretKeySegnet
-    case Block.TestnetGenesisBlock.hash => Base58.Prefix.SecretKeyTestnet
-    case Block.LivenetGenesisBlock.hash => Base58.Prefix.SecretKey
-  }
 }
 
 object NodeParams {
