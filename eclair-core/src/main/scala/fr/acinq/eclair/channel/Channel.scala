@@ -31,7 +31,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 import ChannelVersion._
-import fr.acinq.eclair
 
 import scala.compat.Platform
 import scala.concurrent.{Await, ExecutionContext}

@@ -238,13 +238,6 @@ object Helpers {
     Await.result(pubKeyF, 40 seconds)
   }
 
-  def getFinalScriptPubKey(wallet: EclairWallet, chainHash: ByteVector32): ByteVector = {
-    import scala.concurrent.duration._
-    val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
-
-    Script.write(addressToPublicKeyScript(finalAddress, chainHash))
-  }
-
   object Funding {
 
     def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
