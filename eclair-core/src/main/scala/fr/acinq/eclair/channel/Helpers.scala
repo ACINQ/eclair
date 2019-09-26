@@ -31,6 +31,7 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
 import scodec.bits.ByteVector
+import ChannelVersion._
 
 import scala.compat.Platform
 import scala.concurrent.Await
@@ -224,6 +225,17 @@ object Helpers {
     val result = toRemoteSatoshis > commitments.remoteParams.channelReserve
     log.debug(s"toRemoteSatoshis=$toRemoteSatoshis reserve=${commitments.remoteParams.channelReserve} aboveReserve=$result for remoteCommitNumber=${remoteCommit.index}")
     result
+  }
+
+  def getWalletPaymentBasepoint(wallet: EclairWallet): PublicKey = {
+    import scala.concurrent.duration._
+    import scala.concurrent.ExecutionContext.Implicits.global
+
+    val pubKeyF = for {
+      address <- wallet.getFinalAddress
+      pubKey <- wallet.getPubkeyForAddress(address)
+    } yield pubKey
+    Await.result(pubKeyF, 40 seconds)
   }
 
   def getFinalScriptPubKey(wallet: EclairWallet, chainHash: ByteVector32): ByteVector = {
@@ -577,7 +589,6 @@ object Helpers {
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
       val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
       val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
 
       // we need to use a rather high fee for htlc-claim because we compete with the counterparty
@@ -628,14 +639,20 @@ object Helpers {
      */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
-      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+      val localPubkey = commitments.channelVersion match {
+        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => keyManager.paymentPoint(channelKeyPath).publicKey
+        case _ => Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+      }
 
       val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit,
           localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+        val sig = commitments.channelVersion match {
+          case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath))
+          case _ => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+        }
         Transactions.addSigs(claimMain, localPubkey, sig)
       })
 
@@ -685,7 +702,10 @@ object Helpers {
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
             val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+            val sig = commitments.channelVersion match {
+              case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath))
+              case _ => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+            }
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
 

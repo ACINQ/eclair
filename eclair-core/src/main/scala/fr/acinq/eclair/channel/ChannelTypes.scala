@@ -20,12 +20,16 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
+import fr.acinq.eclair
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, NodeParams, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
+
+import scala.concurrent.Await
 
 
 /**
@@ -199,8 +203,38 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
+                             localPaymentBasepoint: Option[PublicKey],
                              globalFeatures: ByteVector,
                              localFeatures: ByteVector)
+
+object LocalParams {
+
+  def apply(nodeId: PublicKey,
+            fundingKeyPath: DeterministicWallet.KeyPath,
+            dustLimit: Satoshi,
+            maxHtlcValueInFlightMsat: UInt64,
+            channelReserve: Satoshi,
+            htlcMinimum: MilliSatoshi,
+            toSelfDelay: CltvExpiryDelta,
+            maxAcceptedHtlcs: Int,
+            isFunder: Boolean,
+            localPaymentBasepoint: PublicKey,
+            globalFeatures: ByteVector,
+            localFeatures: ByteVector): LocalParams = new LocalParams(
+    nodeId,
+    fundingKeyPath,
+    dustLimit,
+    maxHtlcValueInFlightMsat,
+    channelReserve,
+    htlcMinimum,
+    toSelfDelay,
+    maxAcceptedHtlcs,
+    isFunder,
+    Script.write(Script.pay2wpkh(localPaymentBasepoint)),
+    Some(localPaymentBasepoint),
+    globalFeatures,
+    localFeatures)
+}
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
@@ -236,11 +270,14 @@ object ChannelVersion {
   val LENGTH_BITS = 4 * 8
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+  val USE_STATIC_REMOTEKEY_BIT = 1
 
   def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
   val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+  val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
 
   val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
+  val STATIC_REMOTEKEY = STANDARD | USE_STATIC_REMOTEKEY // USE_PUBKEY_KEYPATH + USE_STATIC_REMOTEKEY
 }
 // @formatter:on
