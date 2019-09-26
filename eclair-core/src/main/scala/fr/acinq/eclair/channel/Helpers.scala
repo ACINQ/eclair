@@ -620,10 +620,21 @@ object Helpers {
         })
       }.toSeq.flatten
 
-      claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
-        claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
-        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
-      )
+      channelVersion match {
+        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+          RemoteCommitPublished(
+            commitTx = tx,
+            claimMainOutputTx = None,
+            claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+            claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx },
+            irrevocablySpent = Map.empty
+          )
+        case _ =>
+          claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
+          claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+          claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+        )
+      }
     }
 
     /**
@@ -639,20 +650,12 @@ object Helpers {
      */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
-      val localPubkey = commitments.channelVersion match {
-        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => keyManager.paymentPoint(channelKeyPath).publicKey
-        case _ => Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-      }
-
+      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
       val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
-
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit,
           localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = commitments.channelVersion match {
-          case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath))
-          case _ => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
-        }
+        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
         Transactions.addSigs(claimMain, localPubkey, sig)
       })
 
@@ -702,10 +705,7 @@ object Helpers {
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
             val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-            val sig = commitments.channelVersion match {
-              case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath))
-              case _ => keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
-            }
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
 
@@ -740,7 +740,10 @@ object Helpers {
 
           RevokedCommitPublished(
             commitTx = tx,
-            claimMainOutputTx = mainTx.map(_.tx),
+            claimMainOutputTx = channelVersion match {
+              case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => None
+              case _ => mainTx.map(_.tx)
+            },
             mainPenaltyTx = mainPenaltyTx.map(_.tx),
             htlcPenaltyTxs = htlcPenaltyTxs.map(_.tx),
             claimHtlcDelayedPenaltyTxs = Nil, // we will generate and spend those if they publish their HtlcSuccessTx or HtlcTimeoutTx

@@ -2048,16 +2048,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
-    val remotePerCommitmentPoint = d.commitments.channelVersion match {
+    d.commitments.channelVersion match {
       case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
-        val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
-        keyManager.paymentPoint(channelKeyPath).publicKey //
-      case _ => d.remoteChannelReestablish.myCurrentPerCommitmentPoint.get // if we are in this state, then this field is defined
+        val remoteCommitPublished = RemoteCommitPublished(commitTx, None, List.empty, List.empty, Map.empty)
+        val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+        goto(CLOSING) using nextData storing()
+      case _ =>
+        val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint.get // if we are in this state, then this field is defined
+        val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+        val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+        goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
     }
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-    val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-
-    goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
   }
 
   def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {

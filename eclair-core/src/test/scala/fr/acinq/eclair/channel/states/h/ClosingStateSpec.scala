@@ -585,7 +585,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSED)
   }
 
-  ignore("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
     import f._
     val sender = TestProbe()
     val oldStateData = alice.stateData
@@ -620,16 +620,11 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // bob is nice and publishes its commitment
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
-    // alice is able to claim its main output
-    val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
-    Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].futureRemoteCommitPublished.isDefined)
-
-    // actual test starts here
+    // using option_static_remotekey alice doesn't need to swipe her output
+    awaitCond(alice.stateName == CLOSING, 10 seconds)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0, claimMainTx)
-    awaitCond(alice.stateName == CLOSED)
+    // after the commit tx is confirmed the channel is closed, no claim transactions needed
+    awaitCond(alice.stateName == CLOSED, 10 seconds)
   }
 
 
