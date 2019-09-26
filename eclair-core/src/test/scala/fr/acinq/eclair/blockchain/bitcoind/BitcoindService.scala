@@ -53,7 +53,7 @@ trait BitcoindService extends Logging {
   val INTEGRATION_TMP_DIR = new File(TestUtils.BUILD_DIRECTORY, s"integration-${UUID.randomUUID()}")
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.17.1/bin/bitcoind")
+  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.18.1/bin/bitcoind")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
   var bitcoind: Process = null
@@ -107,7 +107,9 @@ trait BitcoindService extends Logging {
       }
     }, max = 3 minutes, interval = 2 seconds)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 150))
+    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = sender.expectMsgType[JValue]
+    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 150, address))
     val JArray(res) = sender.expectMsgType[JValue](3 minutes)
     assert(res.size == 150)
     awaitCond({

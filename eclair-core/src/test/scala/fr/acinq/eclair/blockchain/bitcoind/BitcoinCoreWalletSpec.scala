@@ -28,8 +28,8 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonR
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST._
-import org.json4s.{DefaultFormats, JString}
+import org.json4s.JsonAST.{JString, _}
+import org.json4s.{DefaultFormats}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.collection.JavaConversions._
@@ -275,7 +275,9 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(false)
     // let's confirm tx2
-    sender.send(bitcoincli, BitcoinReq("generate", 1))
+    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = sender.expectMsgType[JValue]
+    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     sender.expectMsgType[JValue](10 seconds)
     // this time tx1 has been double spent
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
