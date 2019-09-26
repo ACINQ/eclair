@@ -131,7 +131,7 @@ object TestConstants {
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      localPaymentBasepoint = PrivateKey(randomBytes32).publicKey,
       isFunder = true,
       fundingSatoshis).copy(
       channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
@@ -209,7 +209,7 @@ object TestConstants {
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      localPaymentBasepoint = PrivateKey(randomBytes32).publicKey,
       isFunder = false,
       fundingSatoshis).copy(
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
