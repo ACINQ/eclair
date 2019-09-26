@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire
 import java.util.UUID
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
@@ -32,6 +33,8 @@ import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import shapeless.::
+import shapeless.HNil
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -59,7 +62,7 @@ object ChannelCodecs extends Logging {
     // field and don't support additional features which is why all bits are set to 0.
   )
 
-  val localParamsCodec: Codec[LocalParams] = (
+  val localParamsCodecLegacy: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
@@ -70,8 +73,61 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
+      ("localPaymentBasepoint" | provide[Option[PublicKey]](None)) ::
       ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[LocalParams]
+
+  val localParamsCodecWithPoint: Codec[LocalParams] = (
+    ("nodeId" | publicKey) ::
+      ("channelPath" | keyPathCodec) ::
+      ("dustLimit" | satoshi) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserve" | satoshi) ::
+      ("htlcMinimum" | millisatoshi) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("isFunder" | bool) ::
+      ("localPaymentBasepoint" | publicKey) ::
+      ("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata)).xmap({
+        case nodeId ::
+          fundingKeyPath ::
+          dustLimit ::
+          maxHtlcValueInFlightMsat ::
+          channelReserve ::
+          htlcMinimum ::
+          toSelfDelay ::
+          maxAcceptedHtlcs ::
+          isFunder ::
+          localPaymentBasepoint ::
+          globalFeatures ::
+          localFeatures :: HNil => LocalParams(
+            nodeId,
+            fundingKeyPath,
+            dustLimit,
+            maxHtlcValueInFlightMsat,
+            channelReserve,
+            htlcMinimum,
+            toSelfDelay,
+            maxAcceptedHtlcs,
+            isFunder,
+            localPaymentBasepoint,
+            globalFeatures,
+            localFeatures
+        )
+  }, { g => g.nodeId ::
+            g.fundingKeyPath ::
+            g.dustLimit ::
+            g.maxHtlcValueInFlightMsat ::
+            g.channelReserve ::
+            g.htlcMinimum ::
+            g.toSelfDelay ::
+            g.maxAcceptedHtlcs ::
+            g.isFunder ::
+            g.localPaymentBasepoint.get ::
+            g.globalFeatures ::
+            g.localFeatures :: HNil
+  })
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
@@ -213,21 +269,25 @@ object ChannelCodecs extends Logging {
   )
 
   val commitmentsCodec: Codec[Commitments] = (
-      ("channelVersion" | channelVersionCodec) ::
-      ("localParams" | localParamsCodec) ::
-      ("remoteParams" | remoteParamsCodec) ::
-      ("channelFlags" | byte) ::
-      ("localCommit" | localCommitCodec) ::
-      ("remoteCommit" | remoteCommitCodec) ::
-      ("localChanges" | localChangesCodec) ::
-      ("remoteChanges" | remoteChangesCodec) ::
-      ("localNextHtlcId" | uint64overflow) ::
-      ("remoteNextHtlcId" | uint64overflow) ::
-      ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
-      ("commitInput" | inputInfoCodec) ::
-      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
+    ("channelVersion" | channelVersionCodec) >>:~ { version =>
+          (version match {
+            case ChannelVersion.STATIC_REMOTEKEY => "localParams" | localParamsCodecWithPoint
+            case _ => "localParams" | localParamsCodecLegacy
+          }) ::
+          ("remoteParams" | remoteParamsCodec) ::
+          ("channelFlags" | byte) ::
+          ("localCommit" | localCommitCodec) ::
+          ("remoteCommit" | remoteCommitCodec) ::
+          ("localChanges" | localChangesCodec) ::
+          ("remoteChanges" | remoteChangesCodec) ::
+          ("localNextHtlcId" | uint64overflow) ::
+          ("remoteNextHtlcId" | uint64overflow) ::
+          ("originChannels" | originsMapCodec) ::
+          ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
+          ("commitInput" | inputInfoCodec) ::
+          ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
+          ("channelId" | bytes32)
+    }).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::

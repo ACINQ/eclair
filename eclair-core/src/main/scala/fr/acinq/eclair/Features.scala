@@ -35,6 +35,9 @@ object Features {
   val VARIABLE_LENGTH_ONION_MANDATORY = 8
   val VARIABLE_LENGTH_ONION_OPTIONAL = 9
 
+  val STATIC_REMOTEKEY_MANDATORY = 12
+  val STATIC_REMOTEKEY_OPTIONAL = 13
+
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
 
@@ -48,6 +51,20 @@ object Features {
    * We may implement this distinction later, but for now both flags are interpreted as an optional support.
    */
   def hasVariableLengthOnion(features: ByteVector): Boolean = hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) || hasFeature(features, VARIABLE_LENGTH_ONION_OPTIONAL)
+
+  /**
+    * We can use STATIC_REMOTEKEY if both peer have at least optional support.
+    */
+  def canUseStaticRemoteKey(localFeatures: ByteVector, remoteFeatures: ByteVector): Boolean = {
+    val localHasOptional = hasFeature(localFeatures, STATIC_REMOTEKEY_OPTIONAL)
+    val localHasMandatory = hasFeature(localFeatures, STATIC_REMOTEKEY_MANDATORY)
+    val remoteHasOptional = hasFeature(remoteFeatures, STATIC_REMOTEKEY_OPTIONAL)
+    val remoteHasMandatory = hasFeature(remoteFeatures, STATIC_REMOTEKEY_MANDATORY)
+
+    (remoteHasMandatory && (localHasMandatory || localHasOptional))  ||
+    (localHasMandatory && (remoteHasMandatory || remoteHasOptional)) ||
+    (localHasOptional && remoteHasOptional)
+  }
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
