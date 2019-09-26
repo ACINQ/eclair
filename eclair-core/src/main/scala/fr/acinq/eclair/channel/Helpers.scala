@@ -574,7 +574,8 @@ object Helpers {
 
     /**
      *
-     * Claim all the HTLCs that we've received from their current commit tx
+     * Claim all the HTLCs that we've received from their current commit tx, if the channel used option_static_remotekey
+     * we don't claim our main output.
      *
      * @param commitments  our commitment data, which include payment preimages
      * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
@@ -639,7 +640,7 @@ object Helpers {
 
     /**
      *
-     * Claim our Main output only
+     * Claim our Main output only, should not be used it option_static_remotekey was negotiated
      *
      * @param commitments              either our current commitment data in case of usual remote uncooperative closing
      *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
@@ -683,8 +684,12 @@ object Helpers {
       //val fundingPubKey = commitments.localParams.fundingPubKey(keyManager)
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
+      val localPaymentPoint = channelVersion match {
+        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
+        case _ => keyManager.paymentPoint(channelKeyPath).publicKey
+      }
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, keyManager.paymentPoint(channelKeyPath).publicKey)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       log.warning(s"a revoked commit has been published with txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
@@ -703,11 +708,16 @@ object Helpers {
           val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 2)
 
           // first we will claim our main output right away
-          val mainTx = generateTx("claim-p2wpkh-output")(Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
-            Transactions.addSigs(claimMain, localPubkey, sig)
-          })
+          val mainTx = channelVersion match {
+            case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+              log.info(s"channel uses option_static_remotekey, not claiming our p2wpkh output")
+              None
+            case _ => generateTx("claim-p2wpkh-output")(Try {
+              val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
+              val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+              Transactions.addSigs(claimMain, localPubkey, sig)
+            })
+          }
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
@@ -740,10 +750,7 @@ object Helpers {
 
           RevokedCommitPublished(
             commitTx = tx,
-            claimMainOutputTx = channelVersion match {
-              case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => None
-              case _ => mainTx.map(_.tx)
-            },
+            claimMainOutputTx = mainTx.map(_.tx),
             mainPenaltyTx = mainPenaltyTx.map(_.tx),
             htlcPenaltyTxs = htlcPenaltyTxs.map(_.tx),
             claimHtlcDelayedPenaltyTxs = Nil, // we will generate and spend those if they publish their HtlcSuccessTx or HtlcTimeoutTx
