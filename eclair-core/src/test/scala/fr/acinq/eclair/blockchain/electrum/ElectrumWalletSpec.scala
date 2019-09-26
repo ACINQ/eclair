@@ -82,7 +82,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 150))
+    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = sender.expectMsgType[JValue]
+    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 150, address))
     sender.expectMsgType[JValue](30 seconds)
     DockerReadyChecker.LogLineContains("INFO:BlockProcessor:height: 151").looped(attempts = 15, delay = 1 second)
   }
@@ -117,7 +119,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
 
     // confirm our tx
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
@@ -133,8 +137,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     logger.info(s"sending 0.5 btc to $address1")
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address1, 0.5))
     probe.expectMsgType[JValue]
-
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
@@ -170,7 +173,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       unconfirmed1 == unconfirmed + amount + amount
     }, max = 30 seconds, interval = 1 second)
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
@@ -202,7 +207,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     assert(received === 100000000.sat)
 
     logger.info("generating a new block")
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
@@ -235,7 +242,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, BroadcastTransaction(tx1))
     val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
@@ -268,7 +277,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, BroadcastTransaction(tx1))
     val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 1, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
@@ -326,7 +337,9 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, IsDoubleSpent(tx2))
     probe.expectMsg(IsDoubleSpentResponse(tx2, false))
 
-    probe.send(bitcoincli, BitcoinReq("generate", 2))
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 2, generatingAddress))
     probe.expectMsgType[JValue]
 
     awaitCond({
