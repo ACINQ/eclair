@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -77,6 +78,10 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   override def getFinalAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
   } yield address
+
+  override def getPubkeyForAddress(address: String): Future[Crypto.PublicKey] = for {
+    JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
+  } yield PublicKey(ByteVector.fromValidHex(rawKey))
 
   private def signTransactionOrUnlock(tx: Transaction): Future[SignTransactionResponse] = {
     val f = signTransaction(tx)

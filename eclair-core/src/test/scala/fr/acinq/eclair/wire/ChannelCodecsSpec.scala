@@ -93,12 +93,32 @@ class ChannelCodecsSpec extends FunSuite {
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+      localPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
-    val encoded = localParamsCodec.encode(o).require
-    val decoded = localParamsCodec.decode(encoded).require
+    val encoded = localParamsCodecLegacy.encode(o).require
+    val decoded = localParamsCodecLegacy.decode(encoded).require
+    assert(o.localPaymentBasepoint.isEmpty)
     assert(o === decoded.value)
+
+    val o1 = LocalParams(
+      nodeId = randomKey.publicKey,
+      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
+      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
+      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
+      localPaymentBasepoint = PrivateKey(randomBytes32).publicKey,
+      isFunder = Random.nextBoolean(),
+      globalFeatures = randomBytes(256),
+      localFeatures = randomBytes(256))
+    val encoded1 = localParamsCodecWithPoint.encode(o1).require
+    val decoded1 = localParamsCodecWithPoint.decode(encoded1).require
+    assert(o1.localPaymentBasepoint.isDefined)
+    assert(o1 === decoded1.value)
   }
 
   test("encode/decode remoteparams") {
@@ -355,6 +375,7 @@ object ChannelCodecsSpec {
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
+    localPaymentBasepoint = None,
     isFunder = true,
     globalFeatures = hex"dead",
     localFeatures = hex"beef")
