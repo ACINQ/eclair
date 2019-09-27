@@ -184,7 +184,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
-    val (commitTx, htlcOutputInfo) = {
+    val (commitTx, specItems) = {
       val (tx, htlcOutInfo) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
@@ -240,8 +240,8 @@ class TestVectorsSpec extends FunSuite with Logging {
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
       Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      htlcOutputInfo,
-      spec
+      spec,
+      specItems
     )
 
     logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")

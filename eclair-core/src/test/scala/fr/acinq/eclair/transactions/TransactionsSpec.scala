@@ -220,7 +220,7 @@ class TransactionsSpec extends FunSuite with Logging {
       toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
 
     val commitTxNumber = 0x404142434445L
-    val (commitTx, htlcOutputInfo) = {
+    val (commitTx, specItems) = {
       val (txinfo, htlcOutInfo) = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
@@ -234,7 +234,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val check = ((commitTx.tx.txIn.head.sequence & 0xffffff) << 24) | (commitTx.tx.lockTime & 0xffffff)
       assert((check ^ num) == commitTxNumber)
     }
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, htlcOutputInfo, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec, specItems)
 
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
     assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
@@ -374,7 +374,7 @@ class TransactionsSpec extends FunSuite with Logging {
       Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
     }
 
-    val htlcOut1 :: htlcOut2 :: htlcOut3 :: tail = commitTx.tx.txOut
+    val htlcOut1 :: htlcOut2 :: htlcOut3 :: tail = commitTx.tx.txOut.toList
 
     assert(htlcOut1.amount == 10000000.sat) // htlc1 first because of the smallest amount (BIP69)
     assert(htlcOut2.amount == 20000000.sat) // htlc2 and htlc3 have the same amount

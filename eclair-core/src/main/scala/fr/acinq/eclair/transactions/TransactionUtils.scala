@@ -1,7 +1,6 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{Crypto, LexicographicalOrdering, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.CltvExpiry
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -15,19 +14,23 @@ object TransactionUtils {
 
   def isLessThan(a: TxIn, b: TxIn): Boolean = isLessThan(a.outPoint, b.outPoint)
 
-  def isLessOrCLTV(a: (TxOut, Option[CltvExpiry]), b: (TxOut, Option[CltvExpiry])): Boolean = {
-    val amountComparison = a._1.amount.compare(b._1.amount)
+  def isLessOrCLTV(a: (SpecItem, TxOut), b: (SpecItem, TxOut)): Boolean = {
+    val amountComparison = a._2.amount.compare(b._2.amount)
     if(amountComparison != 0){
       amountComparison < 0
     } else {
-      val lexicographicalComparison = lexicographicalOrder(a._1.publicKeyScript, b._1.publicKeyScript)
-      if(lexicographicalComparison == 0 && a._2.isDefined && b._2.isDefined) {
-        a._2.get < b._2.get // compare the CLTVs
+      val lexicographicalComparison = lexicographicalOrder(a._2.publicKeyScript, b._2.publicKeyScript)
+      if(lexicographicalComparison == 0){
+        (a._1, b._1) match {
+          case (DirectedHtlc(OUT, addA), DirectedHtlc(OUT, addB)) => addA.cltvExpiry < addB.cltvExpiry
+          case _ => lexicographicalComparison < 0
+        }
       } else {
         lexicographicalComparison < 0
       }
     }
   }
+
 
   @tailrec
   def lexicographicalOrder(a: ByteVector, b: ByteVector): Int = {
@@ -49,25 +52,21 @@ object TransactionUtils {
     * Returns a tuple with: sorted_transaction and a map of htlc output index and their cltv - applies only to outputs of offered HTLCs
     *
     * @param tx
-    * @param outputsWithHtlcCltvInfo the complete list of the outputs of this transaction, enriched with htlc_cltv info
+    * @param specItems
     * @return
     */
-  def sortByBIP69AndCLTV(tx: Transaction, outputsWithHtlcCltvInfo:Seq[(TxOut, Option[CltvExpiry])]): (Transaction, Map[Int, CltvExpiry])= {
-    assert(tx.txOut.size == outputsWithHtlcCltvInfo.size, "Unable to sort with incomplete information")
+  def sortByBIP69AndCLTV(tx: Transaction, specItems: Seq[(SpecItem, TxOut)]): (Transaction, Seq[(SpecItem, Int)])= {
+    assert(tx.txOut.size == specItems.size, "Unable to sort with incomplete information")
 
-    val sortedOutputsAndCltv = outputsWithHtlcCltvInfo.sortWith(isLessOrCLTV)
-
-    val indexCltv = sortedOutputsAndCltv.zipWithIndex.map {
-      case ((_, Some(cltv)), index) => (index, cltv)
-      case ((_, None), index) => (index, CltvExpiry(-1L))
-    }.filterNot(_._2 == CltvExpiry(-1L)).toMap
+    val sortedSpecItems = specItems.sortWith(isLessOrCLTV)
 
     val sortedTx = tx.copy(
       txIn = tx.txIn.sortWith(isLessThan),
-      txOut = sortedOutputsAndCltv.map(_._1)
+      txOut = sortedSpecItems.map(_._2)
     )
 
-    (sortedTx, indexCltv)
+    val specItemsWithIndex = sortedSpecItems.zipWithIndex.map(el => (el._1._1, el._2))
+    (sortedTx, specItemsWithIndex)
   }
 
 
