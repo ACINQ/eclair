@@ -24,10 +24,13 @@ import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi,
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
-import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.wire.{OnionRoutingPacket, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshi, TestConstants, randomBytes32, _}
+import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
+import scodec.bits._
 
 import scala.io.Source
 import scala.util.{Failure, Random, Success, Try}
@@ -37,6 +40,20 @@ import scala.util.{Failure, Random, Success, Try}
  */
 
 class TransactionsSpec extends FunSuite with Logging {
+
+  val localFundingPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val remoteFundingPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val localRevocationPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val localPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val localDelayedPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val remotePaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val localHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val remoteHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
+  val commitInput = Funding.makeFundingInputInfo(randomBytes32, 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+  val toLocalDelay = 144
+  val localDustLimit = Satoshi(546)
+  val feeratePerKw = 22000
 
   test("encode/decode sequence and locktime (one example)") {
 
@@ -203,11 +220,11 @@ class TransactionsSpec extends FunSuite with Logging {
       toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
 
     val commitTxNumber = 0x404142434445L
-    val commitTx = {
-      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+    val (commitTx, specItems) = {
+      val (txinfo, htlcOutInfo) = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
-      Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
+      (Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig), htlcOutInfo)
     }
 
     {
@@ -217,7 +234,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val check = ((commitTx.tx.txIn.head.sequence & 0xffffff) << 24) | (commitTx.tx.lockTime & 0xffffff)
       assert((check ^ num) == commitTxNumber)
     }
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec, specItems)
 
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
     assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
@@ -312,6 +329,61 @@ class TransactionsSpec extends FunSuite with Logging {
       assert(checkSpendable(signed).isSuccess)
     }
 
+  }
+
+  test("sort the htlc outputs using BIP69") {
+
+    val localFundingPriv = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" :+ 1.toByte)
+    val remoteFundingPriv = PrivateKey(hex"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2" :+ 1.toByte)
+    val localRevocationPriv = PrivateKey(hex"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3" :+ 1.toByte)
+    val localPaymentPriv = PrivateKey(hex"a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4" :+ 1.toByte)
+    val localDelayedPaymentPriv = PrivateKey(hex"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5" :+ 1.toByte)
+    val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6" :+ 1.toByte)
+    val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7" :+ 1.toByte)
+    val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8" :+ 1.toByte)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(hex"a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9").publicKey))
+    val commitInput = Funding.makeFundingInputInfo(ByteVector32(hex"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val toLocalDelay = CltvExpiryDelta(144)
+    val localDustLimit = Satoshi(546)
+    val feeratePerKw = 22000
+
+
+    // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
+    // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
+    val paymentPreimage1 = ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")
+    val paymentPreimage2 = ByteVector32(hex"2222222222222222222222222222222222222222222222222222222222222222")
+    val paymentPreimage3 = ByteVector32(hex"3333333333333333333333333333333333333333333333333333333333333333")
+    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, millibtc2satoshi(MilliBtc(100)).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 1, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val spec = CommitmentSpec(
+      htlcs = Set(
+        DirectedHtlc(IN, htlc1),
+        DirectedHtlc(IN, htlc2),
+        DirectedHtlc(IN, htlc3)
+      ),
+      feeratePerKw = feeratePerKw,
+      toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
+      toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
+
+    val commitTxNumber = 0x404142434446L
+    val commitTx = {
+      val (txinfo, _) = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+      val localSig = Transactions.sign(txinfo, localPaymentPriv)
+      val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
+      Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
+    }
+
+    val htlcOut1 :: htlcOut2 :: htlcOut3 :: tail = commitTx.tx.txOut.toList
+
+    assert(htlcOut1.amount == 10000000.sat) // htlc1 first because of the smallest amount (BIP69)
+    assert(htlcOut2.amount == 20000000.sat) // htlc2 and htlc3 have the same amount
+    assert(htlcOut3.amount == 20000000.sat)
+
+    //htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
+    assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
+    assert(htlcOut2.publicKeyScript.toHex == "002001ced9e8dad97b85eb0b7d101f7a79587fa890b79ffa7cf98cff1812444b8fe8")
+    assert(htlcOut3.publicKeyScript.toHex == "0020d9a3e115fe05f3438f2ca36668f63567488c4ff940abebd674e68f4effa6cf73")
   }
 
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {

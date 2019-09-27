@@ -29,7 +29,11 @@ case object IN extends Direction { def opposite = OUT }
 case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
-case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
+
+sealed trait SpecItem
+case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc) extends SpecItem
+case object ToLocal extends SpecItem
+case object ToRemote extends SpecItem
 
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
   val totalFunds = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum

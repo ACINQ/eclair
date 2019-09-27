@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.transactions
 
+import java.io.{ByteArrayOutputStream, OutputStream}
+
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -182,8 +184,8 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
-    val commitTx = {
-      val tx = Transactions.makeCommitTx(
+    val (commitTx, specItems) = {
+      val (tx, htlcOutInfo) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -195,7 +197,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
 
-      Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
+      (Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig), htlcOutInfo)
     }
 
     val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)
@@ -213,7 +215,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     })
 
     {
-      val tx = Transactions.makeCommitTx(
+      val (tx, _) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -238,7 +240,9 @@ class TestVectorsSpec extends FunSuite with Logging {
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
       Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      spec)
+      spec,
+      specItems
+    )
 
     logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
     val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)
@@ -481,5 +485,30 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
     assert(htlcTxs.map(_.tx).toSet == check)
+  }
+
+  // NOT IN THE SPEC YET
+  test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
+    val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
+
+    val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
+
+    val someHtlc = Seq(
+      DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket)),
+      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket))
+    )
+
+    val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = 253, toLocal = 6988000000L.msat, toRemote = 3000000000L.msat)
+
+    val (commitTx, htlcTxs) = run(spec)
+
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+    assert(commitTx.tx.txOut.length == 5)
+
+    assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
+    assert(htlcTxs.map(_.tx).apply(0) == Transaction.read(results(name)("output htlc_success_tx 0")))
+    assert(htlcTxs.map(_.tx).apply(1) == Transaction.read(results(name)("output htlc_timeout_tx 1")))
+    assert(htlcTxs.map(_.tx).apply(2) == Transaction.read(results(name)("output htlc_timeout_tx 2")))
   }
 }
