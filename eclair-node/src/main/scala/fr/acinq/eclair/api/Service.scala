@@ -34,9 +34,8 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
-import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.{PaymentFailed, PaymentReceived, PaymentRequest, _}
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -50,16 +49,6 @@ trait Service extends ExtraDirectives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
   import JsonSupport.{formats, marshaller, serialization}
-
-  // used to send typed messages over the websocket
-  val formatsWithTypeHint = formats.withTypeHintFieldName("type") +
-    CustomTypeHints(Map(
-      classOf[PaymentSent] -> "payment-sent",
-      classOf[PaymentRelayed] -> "payment-relayed",
-      classOf[PaymentReceived] -> "payment-received",
-      classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
-      classOf[PaymentFailed] -> "payment-failed"
-    ))
 
   def password: String
 
@@ -99,13 +88,11 @@ trait Service extends ExtraDirectives with Logging {
     actorSystem.actorOf(Props(new Actor {
 
       override def preStart: Unit = {
-        context.system.eventStream.subscribe(self, classOf[PaymentFailed])
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
       }
 
       def receive: Receive = {
-        case message: PaymentFailed => flowInput.offer(serialization.write(message)(formatsWithTypeHint))
-        case message: PaymentEvent => flowInput.offer(serialization.write(message)(formatsWithTypeHint))
+        case message: PaymentEvent => flowInput.offer(serialization.write(message))
       }
 
     }))
