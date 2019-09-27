@@ -82,8 +82,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 150))
-    sender.expectMsgType[JValue](30 seconds)
+    generateBlocks(bitcoincli, 150, timeout = 30 seconds)
     DockerReadyChecker.LogLineContains("INFO:BlockProcessor:height: 151").looped(attempts = 15, delay = 1 second)
   }
 
@@ -117,9 +116,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
 
     // confirm our tx
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
-
+    generateBlocks(bitcoincli, 1)
     awaitCond({
       val GetBalanceResponse(confirmed1, unconfirmed1) = getBalance(probe)
       confirmed1 == confirmed + 100000000.sat
@@ -133,9 +130,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     logger.info(s"sending 0.5 btc to $address1")
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address1, 0.5))
     probe.expectMsgType[JValue]
-
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 1)
 
     awaitCond({
       val GetBalanceResponse(confirmed1, _) = getBalance(probe)
@@ -170,9 +165,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       unconfirmed1 == unconfirmed + amount + amount
     }, max = 30 seconds, interval = 1 second)
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
-
+    generateBlocks(bitcoincli, 1)
     awaitCond({
       val GetBalanceResponse(confirmed1, _) = getBalance(probe)
       confirmed1 == confirmed + amount + amount
@@ -202,9 +195,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     assert(received === 100000000.sat)
 
     logger.info("generating a new block")
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
-
+    generateBlocks(bitcoincli, 1)
     awaitCond({
       val GetBalanceResponse(confirmed1, _) = getBalance(probe)
       confirmed1 - confirmed === 100000000.sat
@@ -235,8 +226,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, BroadcastTransaction(tx1))
     val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 1)
 
     awaitCond({
       probe.send(bitcoincli, BitcoinReq("getreceivedbyaddress", address))
@@ -268,8 +258,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, BroadcastTransaction(tx1))
     val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 1)
 
     awaitCond({
       val GetBalanceResponse(confirmed1, _) = getBalance(probe)
@@ -326,8 +315,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, IsDoubleSpent(tx2))
     probe.expectMsg(IsDoubleSpentResponse(tx2, false))
 
-    probe.send(bitcoincli, BitcoinReq("generate", 2))
-    probe.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 2)
 
     awaitCond({
       probe.send(wallet, GetData)
