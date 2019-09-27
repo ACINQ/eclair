@@ -43,10 +43,10 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestConstants, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JValue}
-import org.json4s.{DefaultFormats}
+import org.json4s.DefaultFormats
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
@@ -115,10 +115,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 150, address))
-    sender.expectMsgType[JValue](30 seconds)
+    generateBlocks(bitcoincli, 150, timeout = 30 seconds)
   }
 
   def instantiateEclairNode(name: String, config: Config) = {
@@ -216,10 +213,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
 
     // confirming the funding tx
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 2, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 2)
 
     within(60 seconds) {
       var count = 0
@@ -251,10 +245,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   test("wait for network announcements") {
     val sender = TestProbe()
     // generating more blocks so that all funding txes are buried under at least 6 blocks
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 4, address))
-    sender.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 4)
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
@@ -506,10 +497,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we then fulfill the htlc, which will make F redeem it on-chain
     sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we then generate one block so that the htlc success tx gets written to the blockchain
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 1)
     // C will extract the preimage from the blockchain and fulfill the payment upstream
     paymentSender.expectMsgType[PaymentSent](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
@@ -519,8 +507,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       res.filter(_ \ "address" == JString(finalAddressF)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we then generate enough blocks so that C gets its main delayed output
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 145, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 145)
     // and C will have its main output
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
@@ -529,8 +516,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 2, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 2)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
@@ -592,14 +578,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we then generate one block so that the htlc success tx gets written to the blockchain
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 1, Some(address))
     // C will extract the preimage from the blockchain and fulfill the payment upstream
     paymentSender.expectMsgType[PaymentSent](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     // we then generate enough blocks so that F gets its htlc-success delayed output
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 145, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 145, Some(address))
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
@@ -614,8 +598,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 2, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 22)
@@ -652,12 +635,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 11, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 11, Some(address))
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     awaitCond({
-      sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, address))
-      sender.expectMsgType[JValue](10 seconds)
+      generateBlocks(bitcoincli, 1, Some(address))
       paymentSender.msgAvailable
     }, max = 30 seconds, interval = 1 second)
     // this will fail the htlc
@@ -667,8 +648,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 150, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 150, Some(address))
     // at this point C should have 2 recv transactions: its main output and the htlc timeout
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
@@ -677,8 +657,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 2, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 20)
@@ -719,12 +698,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 11, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 11, Some(address))
     // we generate more blocks for the claim-htlc-timeout to reach enough confirmations
     awaitCond({
-      sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, address))
-      sender.expectMsgType[JValue](10 seconds)
+      generateBlocks(bitcoincli, 1, Some(address))
       paymentSender.msgAvailable
     }, max = 30 seconds, interval = 1 second)
     // this will fail the htlc
@@ -734,7 +711,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(failed.failures.size === 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 145, address))
+    generateBlocks(bitcoincli, 145, Some(address))
     sender.expectMsgType[JValue](10 seconds)
     // at this point C should have 2 recv transactions: its main output and the htlc timeout
     awaitCond({
@@ -744,7 +721,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 2, address))
+    generateBlocks(bitcoincli, 2, Some(address))
     sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
@@ -851,9 +828,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     Transaction.correctlySpends(htlcSuccess, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     Transaction.correctlySpends(htlcTimeout, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // we then generate blocks to make the htlc timeout (nothing will happen in the channel because all of them have already been fulfilled)
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 20, address))
+    generateBlocks(bitcoincli, 20)
     sender.expectMsgType[JValue](10 seconds)
     // then we publish F's revoked transactions
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", revokedCommitTx.toString()))
@@ -870,7 +845,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       (receivedByC diff previouslyReceivedByC).size == 6
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 2, address))
+    generateBlocks(bitcoincli, 2)
     sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
@@ -888,13 +863,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val channels = for (i <- 0 until 242) yield {
       // let's generate a block every 10 txs so that we can compute short ids
       if (i % 10 == 0) {
-        sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, address))
-        sender.expectMsgType[JValue](10 seconds)
+        generateBlocks(bitcoincli, 1, Some(address))
       }
       AnnouncementsBatchValidationSpec.simulateChannel
     }
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 1, address))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 1, Some(address))
     logger.info(s"simulated ${channels.size} channels")
 
     val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
