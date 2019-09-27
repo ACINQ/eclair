@@ -663,8 +663,8 @@ object Peer {
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
-    val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
-    val fundingKeyPath = DeterministicWallet.KeyPath(Seq(secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL, last))
+    // we use 128 bits of random data to generate our key path
+    val fundingKeyPath = DeterministicWallet.KeyPath(Seq(secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL))
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, fundingKeyPath)
   }
 
