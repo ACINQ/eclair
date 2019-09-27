@@ -21,7 +21,6 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair._
-import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
@@ -34,8 +33,6 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   test("deserialize Map[OutPoint, ByteVector]") {
     val output1 = OutPoint(ByteVector32(hex"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
     val output2 = OutPoint(ByteVector32(hex"3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
-
-
     val map = Map(
       output1 -> hex"dead",
       output2 -> hex"beef"
@@ -76,14 +73,12 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   }
 
   test("type hints") {
-    implicit val formats = JsonSupport.formats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
     val e1 = PaymentSettlingOnChain(UUID.randomUUID, 42 msat, randomBytes32)
-    assert(Serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
+    assert(Serialization.writePretty(e1)(JsonSupport.formats).contains("\"type\" : \"payment-settling-onchain\""))
   }
 
   test("transaction serializer") {
-    implicit val formats = JsonSupport.formats
     val tx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
-    assert(JsonSupport.serialization.write(tx) == "{\"txid\":\"3ef63b5d297c9dcf93f33b45b9f102733c36e8ef61da1ccf2bc132a10584be18\",\"tx\":\"0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800\"}")
+    assert(JsonSupport.serialization.write(tx)(JsonSupport.formats) == "{\"txid\":\"3ef63b5d297c9dcf93f33b45b9f102733c36e8ef61da1ccf2bc132a10584be18\",\"tx\":\"0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800\"}")
   }
 }
