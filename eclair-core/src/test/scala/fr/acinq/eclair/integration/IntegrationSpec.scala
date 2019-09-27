@@ -843,7 +843,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
     generateBlocks(bitcoincli, 2)
-    sender.expectMsgType[JValue](10 seconds)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     // this will remove the channel
