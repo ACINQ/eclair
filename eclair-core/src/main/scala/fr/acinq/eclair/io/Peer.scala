@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.{KeyManager, TransportHandler}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{secureRandom, wire, _}
@@ -664,7 +664,7 @@ object Peer {
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
     // we use 128 bits of random data to generate our key path
-    val fundingKeyPath = DeterministicWallet.KeyPath(Seq(secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL, secureRandom.nextInt() & 0xFFFFFFFFL))
+    val fundingKeyPath = KeyManager.fundingKeyPath(Seq(secureRandom.nextInt(), secureRandom.nextInt(), secureRandom.nextInt(), secureRandom.nextInt()), isFunder)
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, fundingKeyPath)
   }
 

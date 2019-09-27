@@ -32,7 +32,7 @@ trait KeyManager {
 
   def nodeId: PublicKey
 
-  def fundingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
+  def fundingPublicKey(keyPath: DeterministicWallet.KeyPath, channelVersion: ChannelVersion): ExtendedPublicKey
 
   def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
@@ -48,74 +48,85 @@ trait KeyManager {
 
   def channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)) {
     // deterministic mode: use the funding pubkey to compute the channel key path
-    KeyManager.channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
+    KeyManager.channelKeyPath(fundingPublicKey(localParams.fundingKeyPath, channelVersion))
   } else {
     // legacy mode:  we reuse the funding key path as our channel key path
     localParams.fundingKeyPath
   }
 
   /**
-    *
-    * @param tx        input transaction
-    * @param publicKey extended public key
-    * @return a signature generated with the private key that matches the input
-    *         extended public key
-    */
+   *
+   * @param tx        input transaction
+   * @param publicKey extended public key
+   * @return a signature generated with the private key that matches the input
+   *         extended public key
+   */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector64
 
   /**
-    * This method is used to spend funds send to htlc keys/delayed keys
-    *
-    * @param tx          input transaction
-    * @param publicKey   extended public key
-    * @param remotePoint remote point
-    * @return a signature generated with a private key generated from the input keys's matching
-    *         private key and the remote point.
-    */
+   * This method is used to spend funds send to htlc keys/delayed keys
+   *
+   * @param tx          input transaction
+   * @param publicKey   extended public key
+   * @param remotePoint remote point
+   * @return a signature generated with a private key generated from the input keys's matching
+   *         private key and the remote point.
+   */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey): ByteVector64
 
   /**
-    * Ths method is used to spend revoked transactions, with the corresponding revocation key
-    *
-    * @param tx           input transaction
-    * @param publicKey    extended public key
-    * @param remoteSecret remote secret
-    * @return a signature generated with a private key generated from the input keys's matching
-    *         private key and the remote secret.
-    */
+   * Ths method is used to spend revoked transactions, with the corresponding revocation key
+   *
+   * @param tx           input transaction
+   * @param publicKey    extended public key
+   * @param remoteSecret remote secret
+   * @return a signature generated with a private key generated from the input keys's matching
+   *         private key and the remote secret.
+   */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64
 
   /**
-    * Sign a channel announcement message
-    *
-    * @param fundingKeyPath BIP32 path of the funding public key
-    * @param chainHash chain hash
-    * @param shortChannelId short channel id
-    * @param remoteNodeId remote node id
-    * @param remoteFundingKey remote funding pubkey
-    * @param features channel features
-    * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
-    *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
-    */
+   * Sign a channel announcement message
+   *
+   * @param fundingKeyPath   BIP32 path of the funding public key
+   * @param chainHash        chain hash
+   * @param shortChannelId   short channel id
+   * @param remoteNodeId     remote node id
+   * @param remoteFundingKey remote funding pubkey
+   * @param features         channel features
+   * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
+   *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
+   */
   def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64)
 }
 
 object KeyManager {
   /**
-    * Create a BIP32 path from a public key. This path will be used to derive channel keys. 
-    * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
-    * - connect to your peer and use DLP to get them to publish their remote commit tx
-    * - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
-    * - recompute your channel keys and spend your output  
-    *
-    * @param fundingPubKey funding public key
-    * @return a BIP32 path
-    */
-  def channelKeyPath(fundingPubKey: PublicKey) : DeterministicWallet.KeyPath = {
+   * Create a BIP32 path from a public key. This path will be used to derive channel keys.
+   * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
+   * - connect to your peer and use DLP to get them to publish their remote commit tx
+   * - retrieve the commit tx from the bitcoin network, extract your funding pubkey from its witness data
+   * - recompute your channel keys and spend your output
+   *
+   * @param fundingPubKey funding public key
+   * @return a BIP32 path
+   */
+  def channelKeyPath(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
     val buffer = fundingPubKey.hash160.take(16)
     val bis = new ByteArrayInputStream(buffer.toArray)
     DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
   }
 
-  def channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey) : DeterministicWallet.KeyPath = channelKeyPath(fundingPubKey.publicKey)
+  def channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): DeterministicWallet.KeyPath = channelKeyPath(fundingPubKey.publicKey)
+
+  def fundingKeyPath(entropy: ByteVector, isFunder: Boolean): DeterministicWallet.KeyPath = {
+    fundingKeyPath(Seq(entropy.drop(0).take(4).toInt(false), entropy.drop(4).take(4).toInt(false), entropy.drop(8).take(4).toInt(false), entropy.drop(12).take(4).toInt(false)), isFunder)
+  }
+
+  def fundingKeyPath(entropy: Seq[Int], isFunder: Boolean): DeterministicWallet.KeyPath = {
+    require(entropy.length == 4)
+    val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
+    DeterministicWallet.KeyPath(entropy.map(_ & 0xFFFFFFFFL) ++ Seq(DeterministicWallet.hardened(0), last))
+  }
+
 }
