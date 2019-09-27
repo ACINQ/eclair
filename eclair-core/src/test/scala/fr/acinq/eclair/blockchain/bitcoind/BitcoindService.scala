@@ -107,16 +107,26 @@ trait BitcoindService extends Logging {
       }
     }, max = 3 minutes, interval = 2 seconds)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    sender.send(bitcoincli, BitcoinReq("generatetoaddress", 150, address))
-    val JArray(res) = sender.expectMsgType[JValue](3 minutes)
-    assert(res.size == 150)
+    generateBlocks(bitcoincli, 150)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("getbalance"))
       val JDecimal(balance) = sender.expectMsgType[JDecimal](30 seconds)
       balance > 100
     }, max = 3 minutes, interval = 2 second)
+  }
+
+  def generateBlocks(bitcoinCli: ActorRef, blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
+    val sender = TestProbe()
+    val addressToUse = address match {
+      case Some(addr) => addr
+      case None =>
+        sender.send(bitcoinCli, BitcoinReq("getnewaddress"))
+        val JString(address) = sender.expectMsgType[JValue](timeout)
+        address
+    }
+    sender.send(bitcoinCli, BitcoinReq("generatetoaddress", blockCount, addressToUse))
+    val JArray(blocks) = sender.expectMsgType[JValue](timeout)
+    assert(blocks.size == blockCount)
   }
 
 }

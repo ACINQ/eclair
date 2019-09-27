@@ -73,11 +73,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     val listener = TestProbe()
     probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
-    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(generatingAddress) = probe.expectMsgType[JValue]
-    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 3, generatingAddress))
-    listener.expectNoMsg(1 second)
-    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 2, generatingAddress))
+    generateBlocks(bitcoincli, 5)
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid.toHex === txid)
     system.stop(watcher)
@@ -122,12 +118,8 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]
-    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(generatingAddress) = probe.expectMsgType[JValue]
-    probe.send(bitcoincli, BitcoinReq("generatetoaddress", 2, generatingAddress))
-    val blocks = probe.expectMsgType[JValue]
-    val JArray(List(JString(block1), JString(block2))) = blocks
-    val spent = listener.expectMsgType[WatchEventSpent](20 seconds)
+    generateBlocks(bitcoincli, 2)
+    listener.expectMsgType[WatchEventSpent](20 seconds)
     system.stop(watcher)
   }
 
