@@ -89,7 +89,8 @@ class LightningMessageCodecsSpec extends FunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L)
 
-    val invoke_hosted_channel = InvokeHostedChannel(randomBytes32, bin(47, 0))
+    val invoke_hosted_channel1 = InvokeHostedChannel(randomBytes32, bin(47, 0))
+    val invoke_hosted_channel2 = InvokeHostedChannel(randomBytes32, bin(47, 0), bin(112, 0))
     val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
     val state_override = StateOverride(50000L, 500000 msat, 70000, 700000, randomBytes64)
 
@@ -103,7 +104,7 @@ class LightningMessageCodecsSpec extends FunSuite {
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
         channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish ::
-        invoke_hosted_channel :: init_hosted_channel :: lcss1 :: lcss2 :: lcss3 :: lcss4 :: state_override :: state_update :: Nil
+        invoke_hosted_channel1 :: invoke_hosted_channel2 :: init_hosted_channel :: lcss1 :: lcss2 :: lcss3 :: lcss4 :: state_override :: state_update :: Nil
 
     msgs.foreach {
       msg => {

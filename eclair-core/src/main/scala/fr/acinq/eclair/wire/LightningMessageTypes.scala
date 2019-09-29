@@ -291,16 +291,13 @@ object ReplyChannelRange {
 }
 
 
-case class GossipTimestampFilter(chainHash: ByteVector32,
-                                 firstTimestamp: Long,
-                                 timestampRange: Long) extends RoutingMessage with HasChainHash
+case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long) extends RoutingMessage with HasChainHash
 
 // Hosted message types
 
 trait HostedChannelMessage extends ChannelMessage
 
-case class InvokeHostedChannel(chainHash: ByteVector32,
-                               refundScriptPubKey: ByteVector) extends HostedChannelMessage
+case class InvokeHostedChannel(chainHash: ByteVector32, refundScriptPubKey: ByteVector, secret: ByteVector = ByteVector.empty) extends HostedChannelMessage
 
 case class InitHostedChannel(maxHtlcValueInFlightMsat: UInt64,
                              htlcMinimumMsat: MilliSatoshi,
@@ -363,13 +360,6 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
   }
 }
 
-case class StateUpdate(blockDay: Long,
-                       localUpdates: Long,
-                       remoteUpdates: Long,
-                       localSigOfRemoteLCSS: ByteVector64) extends HostedChannelMessage
+case class StateUpdate(blockDay: Long, localUpdates: Long, remoteUpdates: Long, localSigOfRemoteLCSS: ByteVector64) extends HostedChannelMessage
 
-case class StateOverride(blockDay: Long,
-                         localBalanceMsat: MilliSatoshi,
-                         localUpdates: Long,
-                         remoteUpdates: Long,
-                         localSigOfRemoteLCSS: ByteVector64) extends HostedChannelMessage
+case class StateOverride(blockDay: Long, localBalanceMsat: MilliSatoshi, localUpdates: Long, remoteUpdates: Long, localSigOfRemoteLCSS: ByteVector64) extends HostedChannelMessage

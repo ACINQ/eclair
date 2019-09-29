@@ -7,7 +7,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair._
 import com.softwaremill.quicklens._
 import fr.acinq.eclair.blockchain.CurrentBlockCount
-import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFail, ForwardFailMalformed, ForwardFulfill, Local, Origin, Relayed}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, OUT}
 import scodec.bits.ByteVector
@@ -68,7 +68,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
             htlcMinimumMsat = nodeParams.htlcMinimum, maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
             channelCapacityMsat = 100000000000L msat, liabilityDeadlineBlockdays = minHostedLiabilityBlockdays,
             minimalOnchainRefundAmountSatoshis = minHostedOnChainRefund, initialClientBalanceMsat = 50000000L msat)
-
         stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, msg.refundScriptPubKey) sending init
       }
 
@@ -78,7 +77,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           localBalanceMsat = data.init.channelCapacityMsat - data.init.initialClientBalanceMsat, remoteBalanceMsat = data.init.initialClientBalanceMsat,
           localUpdates = 0L, remoteUpdates = 0L, incomingHtlcs = Nil, outgoingHtlcs = Nil, remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS,
           localSigOfRemote = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
-
       if (math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) > 1) {
         val message = InvalidBlockDay(channelId, nodeParams.currentBlockDay, remoteSU.blockDay).getMessage
         stay using HostedNothing sending Error(channelId, message)
@@ -97,7 +95,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       stay using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending invoke
 
     case Event(CMD_HOSTED_MESSAGE(channelId, init: InitHostedChannel), data: HOSTED_DATA_CLIENT_WAIT_HOST_INIT) =>
-      sanityCheck(channelId) {
+      proceedOrGoCLOSED(channelId) {
         if (init.liabilityDeadlineBlockdays < minHostedLiabilityBlockdays) throw new ChannelException(channelId, "Their liability deadline is too low")
         if (init.initialClientBalanceMsat > init.channelCapacityMsat) throw new ChannelException(channelId, "Their init balance for us is larger than capacity")
         if (init.minimalOnchainRefundAmountSatoshis > minHostedOnChainRefund) throw new ChannelException(channelId, "Their minimal on-chain refund is too high")
@@ -107,19 +105,17 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           LastCrossSignedState(data.refundScriptPubKey, initHostedChannel = init, blockDay = nodeParams.currentBlockDay, localBalanceMsat = init.initialClientBalanceMsat,
             remoteBalanceMsat = init.channelCapacityMsat - init.initialClientBalanceMsat, localUpdates = 0L, remoteUpdates = 0L, incomingHtlcs = Nil, outgoingHtlcs = Nil,
             localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
-
         val commits = restoreEmptyCommits(locallySignedLCSS, channelId, isHost = false)
         stay using HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits) sending locallySignedLCSS.stateUpdate
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), data: HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE) =>
       val fullySignedLCSS = data.commits.lastCrossSignedState.copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
-      sanityCheck(data.commits.channelId) {
+      proceedOrGoCLOSED(data.commits.channelId) {
         val isRightRemoteUpdateNumber = data.commits.lastCrossSignedState.remoteUpdates == remoteSU.localUpdates
         val isRightLocalUpdateNumber = data.commits.lastCrossSignedState.localUpdates == remoteSU.remoteUpdates
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
         val isRemoteSigOk = fullySignedLCSS.verifyRemoteSig(remoteNodeId)
-
         if (!isBlockdayAcceptable) throw new ChannelException(data.commits.channelId, "Their blockday is wrong")
         if (!isRightRemoteUpdateNumber) throw new ChannelException(data.commits.channelId, "Their remote update number is wrong")
         if (!isRightLocalUpdateNumber) throw new ChannelException(data.commits.channelId, "Their local update number is wrong")
@@ -280,7 +276,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS)
       // Remote peer may send a few identical updates, so only react if signature is different
       if commits.lastCrossSignedState.remoteSigOfLocal != remoteSU.localSigOfRemoteLCSS =>
-
       if (stateUpdateAttempts > 16) {
         localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TOO_MANY_STATE_UPDATES)
       } else {
@@ -307,40 +302,41 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
-      val recreatedCompleteLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil,
-        localBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat,
-        remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates,
-        blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
-
-      sanityCheck(commits.channelId) {
-        val isRemoteSigOk = recreatedCompleteLocalLCSS.verifyRemoteSig(remoteNodeId)
+      val completeLocalLCSS =
+        commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil,
+          localBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat,
+          remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates,
+          blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
+      proceedOrGoCLOSED(commits.channelId) {
+        val isRemoteSigOk = completeLocalLCSS.verifyRemoteSig(remoteNodeId)
         val isBlockdayAcceptable = math.abs(remoteSO.blockDay - nodeParams.currentBlockDay) <= 1
         val isRightLocalUpdateNumber = remoteSO.localUpdates > commits.lastCrossSignedState.remoteUpdates
         val isRightRemoteUpdateNumber = remoteSO.remoteUpdates > commits.lastCrossSignedState.localUpdates
         if (!isRemoteSigOk) throw new ChannelException(commits.channelId, "Provided remote override signature is wrong")
-        if (recreatedCompleteLocalLCSS.localBalanceMsat < 0.msat) throw new ChannelException(commits.channelId, "Provided updated local balance is larger than capacity")
+        if (completeLocalLCSS.localBalanceMsat < 0.msat) throw new ChannelException(commits.channelId, "Provided updated local balance is larger than capacity")
         if (!isRightLocalUpdateNumber) throw new ChannelException(commits.channelId, "Provided local update number from remote override is wrong")
         if (!isRightRemoteUpdateNumber) throw new ChannelException(commits.channelId, "Provided remote update number from remote override is wrong")
         if (!isBlockdayAcceptable) throw new ChannelException(commits.channelId, "Remote override blockday is not acceptable")
       } {
-        goto(NORMAL) using restoreEmptyCommits(recreatedCompleteLocalLCSS, commits.channelId, isHost = false) storing() sending recreatedCompleteLocalLCSS.stateUpdate
+        val commits1 = restoreEmptyCommits(completeLocalLCSS, commits.channelId, isHost = false)
+        goto(NORMAL) using commits1 storing() sending completeLocalLCSS.stateUpdate
       }
 
     case Event(CMD_HOSTED_OVERRIDE(_, newLocalBalance), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
-      val recreatedLocallySignedLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil,
-        localBalanceMsat = newLocalBalance, remoteBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - newLocalBalance,
-        localUpdates = commits.lastCrossSignedState.localUpdates + 1, remoteUpdates = commits.lastCrossSignedState.remoteUpdates + 1,
-        blockDay = nodeParams.currentBlockDay, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
-
-      val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = recreatedLocallySignedLocalLCSS.localBalanceMsat,
-        localUpdates = recreatedLocallySignedLocalLCSS.localUpdates, remoteUpdates = recreatedLocallySignedLocalLCSS.remoteUpdates,
-        localSigOfRemoteLCSS = recreatedLocallySignedLocalLCSS.localSigOfRemote)
-
-      stay sending localSO using restoreEmptyCommits(recreatedLocallySignedLocalLCSS, commits.channelId, isHost = true)
+      val locallySignedLocalLCSS =
+        commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
+          remoteBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - newLocalBalance,
+          localUpdates = commits.lastCrossSignedState.localUpdates + 1, remoteUpdates = commits.lastCrossSignedState.remoteUpdates + 1,
+          blockDay = nodeParams.currentBlockDay, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
+      val localSO =
+        StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = locallySignedLocalLCSS.localBalanceMsat,
+          localUpdates = locallySignedLocalLCSS.localUpdates, remoteUpdates = locallySignedLocalLCSS.remoteUpdates,
+          localSigOfRemoteLCSS = locallySignedLocalLCSS.localSigOfRemote)
+      stay using restoreEmptyCommits(locallySignedLocalLCSS, commits.channelId, isHost = true) sending localSO
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       val commits1 = commits.modify(_.lastCrossSignedState.remoteSigOfLocal).setTo(remoteSU.localSigOfRemoteLCSS)
-      sanityCheck(commits1.channelId) {
+      proceedOrGoCLOSED(commits1.channelId) {
         val isRemoteSigOk = commits1.lastCrossSignedState.verifyRemoteSig(remoteNodeId)
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
         val isRightLocalUpdateNumber = remoteSU.localUpdates == commits1.lastCrossSignedState.remoteUpdates
@@ -359,7 +355,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       nextStateData match {
         case commits: HOSTED_DATA_COMMITMENTS if state != NORMAL && nextState == NORMAL =>
           context.system.eventStream.publish(LocalChannelUpdate(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId, None, commits.channelUpdate, commits))
-          if (commits.isHost) forwarder ! commits.channelUpdate
+          forwarder ! commits.channelUpdate
         case commits: HOSTED_DATA_COMMITMENTS if nextState != NORMAL =>
           context.system.eventStream.publish(LocalChannelDown(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId))
         case _ =>
@@ -397,14 +393,16 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   def restoreEmptyCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = {
     val localCommitmentSpec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat)
-    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
-    HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty, channelId, isHost, channelUpdate, localError = None, remoteError = None)
+    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
+      localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
+    HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
+      channelId, isHost, channelUpdate, localError = None, remoteError = None)
   }
 
-  def sanityCheck(channelId: ByteVector32)(check: => Unit)(whenPassed: => HostedFsmState): HostedFsmState =
+  def proceedOrGoCLOSED(channelId: ByteVector32)(check: => Unit)(whenPassed: => HostedFsmState): HostedFsmState =
     Try(check) match {
       case Failure(reason) =>
-        log.debug(s"sanity check failed, reason=${reason.getMessage}")
+        log.error(s"sanity check failed, reason=${reason.getMessage}, suspending with data=$stateData")
         goto(CLOSED) sending Error(channelId, ByteVector.view(reason.getMessage.getBytes))
       case _ =>
         whenPassed
@@ -471,4 +469,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     if (timedoutHtlcs.isEmpty || commits.getError.isDefined) stay
     else localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
   }
+
+  initialize()
 }
