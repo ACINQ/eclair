@@ -12,7 +12,7 @@ import fr.acinq.eclair._
 
 class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
-  context.system.scheduler.schedule(initialDelay = 1.hour, interval = 1.hour, receiver = self, message = CMD_HOSTED_KILL_IDLE_CHANNELS)
+  context.system.scheduler.schedule(initialDelay = 1.hour, interval = 1.hour, receiver = self, message = CMD_HOSTED_REMOVE_IDLE_CHANNELS)
 
   val inMemoryHostedChannels: HashBiMap[ByteVector32, ActorRef] = HashBiMap.create[ByteVector32, ActorRef]
 
@@ -38,7 +38,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
       nodeParams.db.hostedChannels.addOrUpdateChannel(hostedCommits1)
       sender ! hostedCommits1
 
-    case CMD_HOSTED_KILL_IDLE_CHANNELS => inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_HOSTED_KILL_IDLE_CHANNELS)
+    case CMD_HOSTED_REMOVE_IDLE_CHANNELS => inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_HOSTED_REMOVE_IDLE_CHANNELS)
 
     case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
 

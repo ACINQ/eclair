@@ -57,10 +57,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
 
   val hdc = HOSTED_DATA_COMMITMENTS(channelVersion = ChannelVersion.STANDARD,
     lastCrossSignedState = lcss1,
-    allLocalUpdates = 100L,
-    allRemoteUpdates = 101L,
-    localUpdates = List(add1, add2),
-    remoteUpdates = List(add1, add2),
+    futureUpdates = List(Right(add1), Left(add2)),
     originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     localSpec = cs,
     channelId = ByteVector32.Zeroes,
@@ -94,7 +91,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     db.addOrUpdateChannel(hdc1) // update, same data
     assert(db.getChannel(ByteVector32.Zeroes).contains(hdc1))
 
-    val hdc2 = hdc1.copy(allLocalUpdates = 200L)
+    val hdc2 = hdc1.copy(futureUpdates = Nil)
     db.addOrUpdateChannel(hdc2) // update, new data
     assert(db.getChannel(ByteVector32.Zeroes).contains(hdc2))
     assert(db.getNewShortChannelId === newShortChannelId.toLong + 1)
@@ -113,7 +110,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     val hdc1 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId1)), channelId = randomBytes32)
     val hdc2 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId2)), channelId = randomBytes32)
     val hdc3 = hdc.copy(channelUpdateOpt = Some(channelUpdate.copy(shortChannelId = newShortChannelId3)), channelId = randomBytes32,
-      localUpdates = Nil, remoteUpdates = Nil, localSpec = CommitmentSpec(
+      futureUpdates = Nil, localSpec = CommitmentSpec(
       htlcs = Set.empty,
       feeratePerKw = 0L,
       toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),

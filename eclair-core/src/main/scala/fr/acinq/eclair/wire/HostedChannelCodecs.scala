@@ -12,10 +12,7 @@ object HostedChannelCodecs {
   val HOSTED_DATA_COMMITMENTS_Codec: Codec[HOSTED_DATA_COMMITMENTS] = (
     ("channelVersion" | channelVersionCodec) ::
       ("lastCrossSignedState" | lastCrossSignedStateCodec) ::
-      ("allLocalUpdates" | uint64overflow) ::
-      ("allRemoteUpdates" | uint64overflow) ::
-      ("localUpdates" | listOfN(uint16, updateMessageCodec)) ::
-      ("remoteUpdates" | listOfN(uint16, updateMessageCodec)) ::
+      ("futureUpdates" | listOfN(uint8, either(bool, updateMessageCodec, updateMessageCodec))) ::
       ("localSpec" | commitmentSpecCodec) ::
       ("originChannels" | originsMapCodec) ::
       ("channelId" | bytes32) ::
