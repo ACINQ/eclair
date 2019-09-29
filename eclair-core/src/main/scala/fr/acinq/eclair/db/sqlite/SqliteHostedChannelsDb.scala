@@ -20,23 +20,24 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS used_short_channel_ids (short_channel_id INTEGER PRIMARY KEY)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, in_flight_htlcs INTEGER NOT NULL, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_htlcs INTEGER NOT NULL, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_in_flight_htlcs_idx ON local_hosted_channels(in_flight_htlcs)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_channel_id_idx ON local_hosted_channels(channel_id)")
   }
 
   override def addOrUpdateChannel(state: HOSTED_DATA_COMMITMENTS): Unit = {
     val data = HOSTED_DATA_COMMITMENTS_Codec.encode(state).require.toByteArray
-    using (sqlite.prepareStatement("UPDATE local_hosted_channels SET data=?, in_flight_htlcs=? WHERE channel_id=?")) { update =>
-      update.setBytes(1, data)
+    using (sqlite.prepareStatement("UPDATE local_hosted_channels SET short_channel_id=?, in_flight_htlcs=?, data=? WHERE channel_id=?")) { update =>
+      update.setLong(1, state.channelUpdate.shortChannelId.toLong)
       update.setLong(2, state.currentAndNextInFlight.size)
-      update.setBytes(3, state.channelId.toArray)
+      update.setBytes(3, data)
+      update.setBytes(4, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, state.channelId.toArray)
-          statement.setLong(2, state.currentAndNextInFlight.size)
-          statement.setBytes(3, data)
+          statement.setLong(2, state.channelUpdate.shortChannelId.toLong)
+          statement.setLong(3, state.currentAndNextInFlight.size)
+          statement.setBytes(4, data)
           statement.executeUpdate()
         }
       }
@@ -67,24 +68,6 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
         q = q :+ decodedData.require.value
       }
       q.toSet
-    }
-  }
-
-  override def markShortChannelIdAsUsed(shortChannelId: ShortChannelId): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO used_short_channel_ids VALUES (?)")) { statement =>
-      statement.setLong(1, shortChannelId.toLong)
-      statement.executeUpdate()
-    }
-  }
-
-  override def getNewShortChannelId: Long = {
-    using(sqlite.prepareStatement("SELECT MAX(short_channel_id) as current FROM used_short_channel_ids")) { statement =>
-      val rs = statement.executeQuery()
-      if (rs.next()) {
-        rs.getLong("current") + 1
-      } else {
-        1
-      }
     }
   }
 }

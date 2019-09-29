@@ -18,7 +18,6 @@ case object CMD_HOSTED_REMOVE_IDLE_CHANNELS extends HostedCommand
 case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHostedChanIdCommand
 case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
 case class CMD_HOSTED_INVOKE_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
-case class CMD_HOSTED_REGISTER_SHORT_CHANNEL_ID(channelId: ByteVector32, remoteNodeId: PublicKey, hostedCommits: HOSTED_DATA_COMMITMENTS) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
 case class CMD_HOSTED_OVERRIDE(channelId: ByteVector32, newLocalBalance: MilliSatoshi) extends HasHostedChanIdCommand
 
@@ -30,9 +29,7 @@ case class HOSTED_DATA_CLIENT_WAIT_HOST_INIT(refundScriptPubKey: ByteVector) ext
 
 case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits: HOSTED_DATA_COMMITMENTS) extends HostedData
 
-case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel,
-                                                     refundScriptPubKey: ByteVector,
-                                                     waitingForShortId: Boolean = false) extends HostedData {
+case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel, refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
 
@@ -43,7 +40,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
                                    isHost: Boolean,
-                                   channelUpdateOpt: Option[ChannelUpdate],
+                                   channelUpdate: ChannelUpdate,
                                    localError: Option[Error],
                                    remoteError: Option[Error]) extends ChannelCommitments with HostedData { me =>
 

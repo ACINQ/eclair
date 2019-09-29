@@ -42,7 +42,6 @@ class HostedChannelCodecsSpec extends FunSuite {
 
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
     val htlc2 = DirectedHtlc(direction = OUT, add = add2)
-    val htlcs = Set(htlc1, htlc2)
     val cs = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       feeratePerKw = 0L,
@@ -61,7 +60,7 @@ class HostedChannelCodecsSpec extends FunSuite {
       localSpec = cs,
       channelId = ByteVector32.Zeroes,
       isHost = true,
-      channelUpdateOpt = Some(channelUpdate),
+      channelUpdate = channelUpdate,
       localError = None,
       remoteError = Some(error))
 

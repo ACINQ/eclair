@@ -3,12 +3,11 @@ package fr.acinq.eclair.channel
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import com.google.common.collect.HashBiMap
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.NodeParams
+
 import scala.concurrent.ExecutionContext
-import fr.acinq.eclair.{NodeParams, ShortChannelId}
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
-import fr.acinq.eclair._
 
 class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
@@ -25,18 +24,6 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
         context.watch(freshChannel)
         freshChannel ! cmd
       }
-
-    case cmd: CMD_HOSTED_REGISTER_SHORT_CHANNEL_ID =>
-      val newShortChannelId = ShortChannelId(nodeParams.db.hostedChannels.getNewShortChannelId)
-
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, cmd.remoteNodeId, newShortChannelId,
-        minHostedCltvDelta, cmd.hostedCommits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase,
-        nodeParams.feeProportionalMillionth, cmd.hostedCommits.lastCrossSignedState.initHostedChannel.channelCapacityMsat)
-
-      val hostedCommits1 = cmd.hostedCommits.copy(channelUpdateOpt = Some(channelUpdate))
-      nodeParams.db.hostedChannels.markShortChannelIdAsUsed(newShortChannelId)
-      nodeParams.db.hostedChannels.addOrUpdateChannel(hostedCommits1)
-      sender ! hostedCommits1
 
     case CMD_HOSTED_REMOVE_IDLE_CHANNELS => inMemoryHostedChannels.values().asScala.foreach(_ ! CMD_HOSTED_REMOVE_IDLE_CHANNELS)
 
