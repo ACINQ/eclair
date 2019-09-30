@@ -47,9 +47,9 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("correct values for availableForSend/availableForReceive (success case)") { f =>
     import f._
 
-    val a = 772760000 msat // initial balance alice
-    val b = 190000000 msat // initial balance bob
     val fee = 1720000 msat // fee due to the additional htlc output
+    val a = (772760000 msat) - fee // initial balance alice
+    val b = (190000000 msat) - fee // initial balance bob
     val p = 42000000 msat // a->b payment
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -131,9 +131,9 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("correct values for availableForSend/availableForReceive (failure case)") { f =>
     import f._
 
-    val a = 772760000 msat // initial balance alice
-    val b = 190000000 msat // initial balance bob
     val fee = 1720000 msat // fee due to the additional htlc output
+    val a = (772760000 msat) - fee // initial balance alice
+    val b = (190000000 msat) - fee // initial balance bob
     val p = 42000000 msat // a->b payment
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -215,9 +215,9 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("correct values for availableForSend/availableForReceive (multiple htlcs)") { f =>
     import f._
 
-    val a = 772760000 msat // initial balance alice
-    val b = 190000000 msat // initial balance bob
     val fee = 1720000 msat // fee due to the additional htlc output
+    val a = (772760000 msat) - fee // initial balance alice
+    val b = (190000000 msat) - fee // initial balance bob
     val p1 = 10000000 msat // a->b payment
     val p2 = 20000000 msat // a->b payment
     val p3 = 40000000 msat // b->a payment

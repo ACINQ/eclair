@@ -88,14 +88,17 @@ case class Commitments(channelVersion: ChannelVersion,
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
+    // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
     val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else 0.msat
-    (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
+    // We also need to take into account the fact that adding an htlc increases the commit tx fee (regardless of which side is funding).
+    (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat - htlcFee(reduced.feeratePerKw)).max(0 msat)
   }
 
   lazy val availableBalanceForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val feesMsat = if (localParams.isFunder) 0.msat else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
-    (reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
+    // We need to take into account the fact that adding an htlc increases the commit tx fee (regardless of which side is funding).
+    (reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat - htlcFee(reduced.feeratePerKw)).max(0 msat)
   }
 }
 
