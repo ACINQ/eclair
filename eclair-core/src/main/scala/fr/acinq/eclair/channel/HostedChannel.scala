@@ -29,8 +29,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   startWith(OFFLINE, HostedNothing)
 
   when(OFFLINE) {
-    case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
-
     case Event(data: HOSTED_DATA_COMMITMENTS, HostedNothing) => stay using data
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
@@ -49,10 +47,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(WAIT_FOR_INIT_INTERNAL) {
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE)
-
-    // HOST FLOW
-
     case Event(CMD_HOSTED_MESSAGE(channelId, msg: InvokeHostedChannel), HostedNothing) =>
       if (nodeParams.chainHash != msg.chainHash) {
         val message = InvalidChainHash(channelId, local = nodeParams.chainHash, remote = msg.chainHash).getMessage
@@ -140,11 +134,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(SYNCING) {
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
-
-    case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
-
-    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) => handleIncomingFulfill(fulfill, commits)
+    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
+      goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
 
     case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       // We are host and they have initialized a hosted channel, send our LCSS and wait for their reply
@@ -193,11 +184,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(NORMAL) {
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
-
-    case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
-
-    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) => handleIncomingFulfill(fulfill, commits)
+    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
+      goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
 
     case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.sendFulfill(c)) match {
@@ -290,12 +278,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(CLOSED) {
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
-
-    case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
-
-    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) => handleIncomingFulfill(fulfill, commits)
-
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
       val completeLocalLCSS =
         commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil,
@@ -348,8 +330,36 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   whenUnhandled {
-    case Event(CMD_HOSTED_MESSAGE(_, remoteError: Error), commits: HOSTED_DATA_COMMITMENTS) =>
-      goto(CLOSED) using commits.copy(remoteError = Some(remoteError)) storing()
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE)
+
+    case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
+      val timedoutOutgoingHtlcs = commits.timedOutOutgoingHtlcs(c.blockCount)
+      failLocalAddsAfterHeight(timedoutOutgoingHtlcs, commits)
+      if (timedoutOutgoingHtlcs.nonEmpty && commits.getError.isEmpty && stateName == OFFLINE) {
+        // CurrentBlockCount may arrive while we are in OFFLINE state, stay OFFLINE in this case
+        val error = Error(commits.channelId, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
+        stay using commits.copy(localError = Some(error)) storing()
+      } else if (timedoutOutgoingHtlcs.nonEmpty && commits.getError.isEmpty) {
+        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
+      } else {
+        stay
+      }
+
+    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
+      Try(commits.receiveFulfill(fulfill)) match {
+        case Failure(cause) =>
+          localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFulfill(fulfill, origin, htlc)
+          stay using commitments1 storing()
+        case Success(Left(_)) =>
+          stay
+      }
+
+    case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
+      log.info(s"rejecting htlc request in state=$stateName in a hosted channel")
+      // This may happen if CMD_ADD_HTLC has been issued while this channel was NORMAL but became OFFLINE/CLOSED by the time it went through
+      handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), origin(c), None, Some(c)), c)
   }
 
   onTransition {
@@ -426,16 +436,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     stay replying Status.Failure(cause)
   }
 
-  def handleIncomingFulfill(fulfill: UpdateFulfillHtlc, commits: HOSTED_DATA_COMMITMENTS): HostedFsmState = {
-    Try(commits.receiveFulfill(fulfill)) match {
-      case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
-      case Success(Right((commitments1, origin, htlc))) =>
-        relayer ! ForwardFulfill(fulfill, origin, htlc)
-        stay using commitments1 storing()
-      case Success(Left(_)) => stay
-    }
-  }
-
   def syncAndResendAdds(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[Either[UpdateMessage, UpdateMessage]], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
     // Filter out local UpdateAddHtlc, re-assign correct update numbers to each of them, re-send LCSS + UpdateAddHtlc, forget their updates
     val outgoingAddLeftovers = for (Left(localAdd: UpdateAddHtlc) <- leftovers) yield localAdd
@@ -475,16 +475,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       reason = HtlcTimedout(commits.channelId, Set(add))
       error = AddHtlcFailed(commits.channelId, add.paymentHash, reason, origin, None, None)
     } relayer ! error
-  }
-
-  def handleNewBlock(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS): HostedFsmState = {
-    val timedoutOutgoingHtlcs = commits.timedOutOutgoingHtlcs(c.blockCount)
-    failLocalAddsAfterHeight(timedoutOutgoingHtlcs, commits)
-    if (timedoutOutgoingHtlcs.nonEmpty && commits.getError.isEmpty) {
-      localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
-    } else {
-      stay
-    }
   }
 
   initialize()
