@@ -254,32 +254,6 @@ object Transactions {
                    localPaymentBasePoint: PublicKey,
                    remotePaymentBasePoint: PublicKey,
                    localIsFunder: Boolean,
-                   localDustLimit: Satoshi,
-                   localRevocationPubkey: PublicKey,
-                   toLocalDelay: CltvExpiryDelta,
-                   localDelayedPaymentPubkey: PublicKey,
-                   remotePaymentPubkey: PublicKey,
-                   localHtlcPubkey: PublicKey,
-                   remoteHtlcPubkey: PublicKey,
-                   spec: CommitmentSpec): CommitTx = {
-    val outputs = makeCommitTxOutputs(localIsFunder, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
-    val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
-    val (sequence, locktime) = encodeTxNumber(txnumber)
-
-    val tx = Transaction(
-      version = 2,
-      txIn = TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = sequence) :: Nil,
-      txOut = outputs.map(_.output),
-      lockTime = locktime)
-
-    CommitTx(commitTxInput, tx)
-  }
-
-  def makeCommitTx(commitTxInput: InputInfo,
-                   commitTxNumber: Long,
-                   localPaymentBasePoint: PublicKey,
-                   remotePaymentBasePoint: PublicKey,
-                   localIsFunder: Boolean,
                    outputs: IndexedSeq[CommitmentOutputLink]): CommitTx = {
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)

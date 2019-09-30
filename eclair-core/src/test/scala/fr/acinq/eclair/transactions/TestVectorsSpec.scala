@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.transactions
 
-import java.io.{ByteArrayOutputStream, OutputStream}
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -184,15 +182,17 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
+    val outputs = Transactions.makeCommitTxOutputs(
+      true, Local.dustLimit, Local.revocation_pubkey, Local.toSelfDelay,
+      Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
+      spec)
+
     val commitTx = {
       val tx = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
-        true, Local.dustLimit,
-        Local.revocation_pubkey, Local.toSelfDelay,
-        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
-        Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-        spec)
+        true, outputs)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
@@ -213,12 +213,6 @@ class TestVectorsSpec extends FunSuite with Logging {
           else logger.info(s"# HTLC ${if (htlcs(index).direction == OUT) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
-
-    val outputs = Transactions.makeCommitTxOutputs(
-      true, Local.dustLimit, Local.revocation_pubkey, Local.toSelfDelay,
-      Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
-      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      spec)
 
     {
       val tx = Transactions.makeCommitTx(
