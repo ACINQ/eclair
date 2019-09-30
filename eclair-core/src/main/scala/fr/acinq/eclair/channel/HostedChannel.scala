@@ -36,19 +36,17 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   when(OFFLINE) {
     case Event(data: HOSTED_DATA_COMMITMENTS, HostedNothing) => stay using data
 
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
+
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
       goto(WAIT_FOR_INIT_INTERNAL)
-
-    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
 
     case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS)
       if commits.currentAndNextInFlight.size == commits.timedOutOutgoingHtlcs(nodeParams.currentBlockHeight).size =>
       // We may have pending cross-signed HTLCs in this state, make sure they all have been resolved by scheduling a timer
       setTimer("TickRemoveIdleTimeout", TickRemoveIdleTimeout, 10.minutes, repeat = false)
       stay
-
-    case Event(TickRemoveIdleTimeout, _) => stop(FSM.Normal)
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, commits: HOSTED_DATA_COMMITMENTS) =>
       forwarder ! cmd.transport
@@ -59,6 +57,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       } else {
         goto(SYNCING) sending InvokeHostedChannel(nodeParams.chainHash, commits.lastCrossSignedState.refundScriptPubKey)
       }
+
+    case Event(TickRemoveIdleTimeout, _) => stop(FSM.Normal)
   }
 
   when(WAIT_FOR_INIT_INTERNAL) {
