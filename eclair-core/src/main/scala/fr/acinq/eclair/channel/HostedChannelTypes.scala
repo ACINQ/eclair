@@ -42,7 +42,9 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
                                    isHost: Boolean,
                                    channelUpdate: ChannelUpdate,
                                    localError: Option[Error],
-                                   remoteError: Option[Error]) extends ChannelCommitments with HostedData { me =>
+                                   remoteError: Option[Error],
+                                   overriddenBalanceProposal: Option[MilliSatoshi] // Closed channel override can be initiated by Host, a new proposed balance should be retained if this happens
+                                  ) extends ChannelCommitments with HostedData { me =>
 
   lazy val (nextLocalUpdates, nextRemoteUpdates, nextTotalLocal, nextTotalRemote) =
     futureUpdates.foldLeft((List.empty[UpdateMessage], List.empty[UpdateMessage], lastCrossSignedState.localUpdates, lastCrossSignedState.remoteUpdates)) {

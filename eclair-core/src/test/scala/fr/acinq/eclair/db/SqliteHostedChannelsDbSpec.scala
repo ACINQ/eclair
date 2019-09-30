@@ -43,7 +43,6 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
 
   val htlc1 = DirectedHtlc(direction = IN, add = add1)
   val htlc2 = DirectedHtlc(direction = OUT, add = add2)
-  val htlcs = Set(htlc1, htlc2)
   val cs = CommitmentSpec(
     htlcs = Set(htlc1, htlc2),
     feeratePerKw = 0L,
@@ -64,7 +63,8 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     isHost = false,
     channelUpdate = channelUpdate,
     localError = None,
-    remoteError = Some(error))
+    remoteError = Some(error),
+    overriddenBalanceProposal = Some(MilliSatoshi(1000000L)))
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()

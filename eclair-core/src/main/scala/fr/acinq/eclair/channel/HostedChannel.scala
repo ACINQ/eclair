@@ -40,7 +40,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, commits: HOSTED_DATA_COMMITMENTS) =>
       forwarder ! cmd.transport
-      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, isFunder = true, commits.channelId, commits))
       if (commits.isHost) {
         goto(SYNCING)
       } else if (commits.getError.isDefined) {
@@ -66,8 +65,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         val init =
           InitHostedChannel(maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
             htlcMinimumMsat = nodeParams.htlcMinimum, maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-            channelCapacityMsat = 100000000000L msat, liabilityDeadlineBlockdays = minHostedLiabilityBlockdays,
-            minimalOnchainRefundAmountSatoshis = minHostedOnChainRefund, initialClientBalanceMsat = 50000000L msat)
+            channelCapacityMsat = defaultHostedChanCapacity, liabilityDeadlineBlockdays = minHostedLiabilityBlockdays,
+            minimalOnchainRefundAmountSatoshis = maxHostedOnChainRefund, initialClientBalanceMsat = defaultHostedInitialClientBalance)
         stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, msg.refundScriptPubKey) sending init
       }
 
@@ -98,8 +97,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       proceedOrGoCLOSED(channelId) {
         if (init.liabilityDeadlineBlockdays < minHostedLiabilityBlockdays) throw new ChannelException(channelId, "Their liability deadline is too low")
         if (init.initialClientBalanceMsat > init.channelCapacityMsat) throw new ChannelException(channelId, "Their init balance for us is larger than capacity")
-        if (init.minimalOnchainRefundAmountSatoshis > minHostedOnChainRefund) throw new ChannelException(channelId, "Their minimal on-chain refund is too high")
-        if (init.channelCapacityMsat < minHostedOnChainRefund * 2) throw new ChannelException(channelId, "Their proposed channel capacity is too low")
+        if (init.minimalOnchainRefundAmountSatoshis > maxHostedOnChainRefund) throw new ChannelException(channelId, "Their minimal on-chain refund is too high")
+        if (init.channelCapacityMsat < maxHostedOnChainRefund) throw new ChannelException(channelId, "Their proposed channel capacity is too low")
       } {
         val locallySignedLCSS =
           LastCrossSignedState(data.refundScriptPubKey, initHostedChannel = init, blockDay = nodeParams.currentBlockDay, localBalanceMsat = init.initialClientBalanceMsat,
@@ -148,11 +147,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       // We are host and they have initialized a hosted channel, send our LCSS and wait for their reply
-      forwarder ! commits.lastCrossSignedState
       if (commits.getError.isDefined) {
         goto(CLOSED) sending commits.getError.get
       } else {
-        stay
+        stay sending commits.lastCrossSignedState
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteLCSS: LastCrossSignedState), commits: HOSTED_DATA_COMMITMENTS) =>
@@ -332,19 +330,22 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = locallySignedLocalLCSS.localBalanceMsat,
           localUpdates = locallySignedLocalLCSS.localUpdates, remoteUpdates = locallySignedLocalLCSS.remoteUpdates,
           localSigOfRemoteLCSS = locallySignedLocalLCSS.localSigOfRemote)
-      stay using restoreEmptyCommits(locallySignedLocalLCSS, commits.channelId, isHost = true) sending localSO
+      val commits1 = restoreEmptyCommits(locallySignedLocalLCSS, commits.channelId, isHost = true).copy(overriddenBalanceProposal = Some(newLocalBalance))
+      stay using commits1 sending localSO
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
-      val commits1 = commits.modify(_.lastCrossSignedState.remoteSigOfLocal).setTo(remoteSU.localSigOfRemoteLCSS)
+      val commits1 = commits.modify(_.lastCrossSignedState.remoteSigOfLocal).setTo(remoteSU.localSigOfRemoteLCSS).copy(overriddenBalanceProposal = None)
       proceedOrGoCLOSED(commits1.channelId) {
         val isRemoteSigOk = commits1.lastCrossSignedState.verifyRemoteSig(remoteNodeId)
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
         val isRightLocalUpdateNumber = remoteSU.localUpdates == commits1.lastCrossSignedState.remoteUpdates
         val isRightRemoteUpdateNumber = remoteSU.remoteUpdates == commits1.lastCrossSignedState.localUpdates
+        val isCorrectBalance = commits.overriddenBalanceProposal.contains(commits1.lastCrossSignedState.localBalanceMsat)
         if (!isRemoteSigOk) throw new ChannelException(commits1.channelId, "Provided remote override signature is wrong")
         if (!isRightLocalUpdateNumber) throw new ChannelException(commits1.channelId, "Provided local update number from remote override is wrong")
         if (!isRightRemoteUpdateNumber) throw new ChannelException(commits1.channelId, "Provided remote update number from remote override is wrong")
         if (!isBlockdayAcceptable) throw new ChannelException(commits1.channelId, "Remote override blockday is not acceptable")
+        if (!isCorrectBalance) throw new ChannelException(commits1.channelId, "Balance mismatch when doing remote override")
       } {
         goto(NORMAL) using commits1 storing()
       }
@@ -396,7 +397,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
       localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
     HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
-      channelId, isHost, channelUpdate, localError = None, remoteError = None)
+      channelId, isHost, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
   }
 
   def proceedOrGoCLOSED(channelId: ByteVector32)(check: => Unit)(whenPassed: => HostedFsmState): HostedFsmState =

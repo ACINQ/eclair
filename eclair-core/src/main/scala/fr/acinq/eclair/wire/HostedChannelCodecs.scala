@@ -2,14 +2,14 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.channel.HOSTED_DATA_COMMITMENTS
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.wire.CommonCodecs.{uint64overflow, bytes32}
+import fr.acinq.eclair.wire.CommonCodecs.{millisatoshi, bytes32}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{errorCodec, channelUpdateCodec}
 import fr.acinq.eclair.wire.HostedMessagesCodecs.lastCrossSignedStateCodec
 import scodec.codecs._
 import scodec.Codec
 
 object HostedChannelCodecs {
-  val HOSTED_DATA_COMMITMENTS_Codec: Codec[HOSTED_DATA_COMMITMENTS] = (
+  val HOSTED_DATA_COMMITMENTS_Codec: Codec[HOSTED_DATA_COMMITMENTS] = {
     ("channelVersion" | channelVersionCodec) ::
       ("lastCrossSignedState" | lastCrossSignedStateCodec) ::
       ("futureUpdates" | listOfN(uint8, either(bool, updateMessageCodec, updateMessageCodec))) ::
@@ -19,6 +19,7 @@ object HostedChannelCodecs {
       ("isHost" | bool) ::
       ("channelUpdateOpt" | variableSizeBytes(uint16, channelUpdateCodec)) ::
       ("localError" | optional(bool, errorCodec)) ::
-      ("remoteError" | optional(bool, errorCodec))
-    ).as[HOSTED_DATA_COMMITMENTS]
+      ("remoteError" | optional(bool, errorCodec)) ::
+      ("overriddenBalanceProposal" | optional(bool, millisatoshi))
+  }.as[HOSTED_DATA_COMMITMENTS]
 }
