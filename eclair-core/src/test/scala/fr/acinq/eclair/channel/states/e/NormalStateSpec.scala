@@ -184,15 +184,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC (HTLC dips remote funder below reserve)") { f =>
     import f._
     val sender = TestProbe()
-    addHtlc(MilliSatoshi(771000000), alice, bob, alice2bob, bob2alice)
+    addHtlc(771000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 40000.msat)
 
     // actual test begins
     // at this point alice has the minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
-    val add = CMD_ADD_HTLC(MilliSatoshi(120000000), randomBytes32, CltvExpiry(400144), Sphinx.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(120000000 msat, randomBytes32, CltvExpiry(400144), Sphinx.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(bob, add)
-    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680.sat, 10000.sat, 10680.sat)
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680 sat, 10000 sat, 10680 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(add))))
   }
 
