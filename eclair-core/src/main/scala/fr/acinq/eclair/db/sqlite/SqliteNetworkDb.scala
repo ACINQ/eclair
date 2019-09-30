@@ -20,11 +20,11 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.PublicChannel
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import fr.acinq.eclair.{NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 import scodec.Codec
 import scodec.bits.ByteVector
@@ -33,8 +33,8 @@ import scala.collection.immutable.SortedMap
 
 class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends NetworkDb with Logging {
 
-  import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
+  import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 2
@@ -78,7 +78,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
     ("signature" | provide(null.asInstanceOf[ByteVector64])) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         // channel_update are cheap to retrieve, so let's just wipe them out and they'll get resynced
@@ -184,7 +184,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
   }
 
   override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), disableAutoCommit = true) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
       shortChannelIds.foreach(shortChannelId => {
         statement.setLong(1, shortChannelId.toLong)
         statement.addBatch()

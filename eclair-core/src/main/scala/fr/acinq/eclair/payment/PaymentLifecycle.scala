@@ -18,17 +18,18 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.actor.{ActorContext, ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.blockchain.WatchEventSpentBasic
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
+import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion._
 import fr.acinq.eclair.wire._
@@ -41,22 +42,23 @@ import scala.util.{Failure, Success}
 /**
  * Created by PM on 26/08/2016.
  */
-class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
-  val paymentsDb = nodeParams.db.payments
+class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressHandler, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
+
+  val id = progressHandler.id
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       val send = SendPayment(c.paymentHash, c.hops.last, c.finalPayload, maxAttempts = 1)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.finalPayload.amount, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
       router ! FinalizeRoute(c.hops)
+      progressHandler.onSend()
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams)
-      paymentsDb.addOutgoingPayment(OutgoingPayment(id, c.paymentHash, None, c.finalPayload.amount, Platform.currentTime, None, OutgoingPaymentStatus.PENDING))
+      progressHandler.onSend()
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -69,18 +71,16 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
-      reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ LocalFailure(t)))
-      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+      progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))(context)
       stop(FSM.Normal)
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
-    case Event("ok", _) => stay()
+    case Event("ok", _) => stay
 
-    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, hops)) =>
-      paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.SUCCEEDED, preimage = Some(fulfill.paymentPreimage))
-      reply(s, PaymentSucceeded(id, cmd.amount, c.paymentHash, fulfill.paymentPreimage, hops))
-      context.system.eventStream.publish(PaymentSent(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, cmd.paymentHash, fulfill.paymentPreimage, fulfill.channelId))
+    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
+      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.channelId, Some(route))
+      progressHandler.onSuccess(s, PaymentSent(id, c.paymentHash, fulfill.paymentPreimage, p :: Nil))(context)
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
@@ -88,8 +88,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-          reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ RemoteFailure(hops, e)))
-          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ RemoteFailure(hops, e)))(context)
           stop(FSM.Normal)
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
@@ -102,8 +101,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
               UnreadableRemoteFailure(hops)
           }
           log.warning(s"too many failed attempts, failing the payment")
-          reply(s, PaymentFailed(id, c.paymentHash, failures = failures :+ failure))
-          paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
+          progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ failure))(context)
           stop(FSM.Normal)
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
@@ -130,7 +128,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
                 log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
                 val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
                 router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
-              case Some(u) if hasAlreadyFailedOnce(nodeId, failures) =>
+              case Some(u) if PaymentFailure.hasAlreadyFailedOnce(nodeId, failures) =>
                 // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
                 log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=$u new=${failureMessage.update}")
                 val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
@@ -184,8 +182,7 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures)
         case _ =>
           if (failures.size + 1 >= c.maxAttempts) {
-            paymentsDb.updateOutgoingPayment(id, OutgoingPaymentStatus.FAILED)
-            reply(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
+            progressHandler.onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))(context)
             stop(FSM.Normal)
           } else {
             log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
@@ -194,15 +191,11 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
             goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
           }
       }
+
   }
 
   whenUnhandled {
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
-  }
-
-  def reply(to: ActorRef, e: PaymentResult): Unit = {
-    to ! e
-    context.system.eventStream.publish(e)
   }
 
   initialize()
@@ -210,7 +203,39 @@ class PaymentLifecycle(nodeParams: NodeParams, id: UUID, router: ActorRef, regis
 
 object PaymentLifecycle {
 
-  def props(nodeParams: NodeParams, id: UUID, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, id, router, register)
+  def props(nodeParams: NodeParams, progressHandler: PaymentProgressHandler, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, progressHandler, router, register)
+
+  /** This handler notifies other components of payment progress. */
+  trait PaymentProgressHandler {
+    val id: UUID
+
+    // @formatter:off
+    def onSend(): Unit
+    def onSuccess(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit
+    def onFailure(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit
+    // @formatter:on
+  }
+
+  /** Normal payments are stored in the payments DB and emit payment events. */
+  case class DefaultPaymentProgressHandler(id: UUID, r: SendPaymentRequest, db: PaymentsDb) extends PaymentProgressHandler {
+
+    override def onSend(): Unit = {
+      db.addOutgoingPayment(OutgoingPayment(id, id, r.externalId, r.paymentHash, r.amount, r.targetNodeId, Platform.currentTime, r.paymentRequest, OutgoingPaymentStatus.Pending))
+    }
+
+    override def onSuccess(sender: ActorRef, result: PaymentSent)(ctx: ActorContext): Unit = {
+      db.updateOutgoingPayment(result)
+      sender ! result
+      ctx.system.eventStream.publish(result)
+    }
+
+    override def onFailure(sender: ActorRef, result: PaymentFailed)(ctx: ActorContext): Unit = {
+      db.updateOutgoingPayment(result)
+      sender ! result
+      ctx.system.eventStream.publish(result)
+    }
+
+  }
 
   // @formatter:off
   case class ReceivePayment(amount_opt: Option[MilliSatoshi], description: String, expirySeconds_opt: Option[Long] = None, extraHops: List[List[ExtraHop]] = Nil, fallbackAddress: Option[String] = None, paymentPreimage: Option[ByteVector32] = None)
@@ -223,14 +248,6 @@ object PaymentLifecycle {
                          routeParams: Option[RouteParams] = None) {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
   }
-
-  sealed trait PaymentResult
-  case class PaymentSucceeded(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, paymentPreimage: ByteVector32, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
-  sealed trait PaymentFailure
-  case class LocalFailure(t: Throwable) extends PaymentFailure
-  case class RemoteFailure(route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
-  case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
-  case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure]) extends PaymentResult
 
   sealed trait Data
   case object WaitingForRequest extends Data
@@ -287,27 +304,6 @@ object PaymentLifecycle {
   }
 
   /**
-   * Rewrites a list of failures to retrieve the meaningful part.
-   * <p>
-   * If a list of failures with many elements ends up with a LocalFailure RouteNotFound, this RouteNotFound failure
-   * should be removed. This last failure is irrelevant information. In such a case only the n-1 attempts were rejected
-   * with a **significant reason** ; the final RouteNotFound error provides no meaningful insight.
-   * <p>
-   * This method should be used by the user interface to provide a non-exhaustive but more useful feedback.
-   *
-   * @param failures a list of payment failures for a payment
-   */
-  def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
-    failures.map {
-      case LocalFailure(AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
-      case other => other
-    } match {
-      case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures
-      case other => other
-    }
-  }
-
-  /**
    * This method retrieves the channel update that we used when we built a route.
    * It just iterates over the hops, but there are at most 20 of them.
    *
@@ -315,12 +311,4 @@ object PaymentLifecycle {
    */
   def getChannelUpdateForNode(nodeId: PublicKey, hops: Seq[Hop]): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
 
-  /**
-   * This allows us to detect if a bad node always answers with a new update (e.g. with a slightly different expiry or fee)
-   * in order to mess with us.
-   */
-  def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
-    failures
-      .collectFirst { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
-      .isDefined
 }

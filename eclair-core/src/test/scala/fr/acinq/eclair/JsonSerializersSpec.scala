@@ -37,7 +37,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("ChannelVersion serialization") {
-    assert(write(ChannelVersion.STANDARD) ===  """"00000000000000000000000000000000"""")
+    assert(write(ChannelVersion.STANDARD) ===  """"00000000000000000000000000000001"""")
   }
 
   test("Direction serialization") {
@@ -48,7 +48,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
   test("serialize LocalParams") {
     val localParams = LocalParams(
       nodeId = randomKey.publicKey,
-      channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L, 42L, 42L, 42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
