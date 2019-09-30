@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair._
-import com.softwaremill.quicklens._
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
@@ -141,9 +140,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(SYNCING) {
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
+
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
 
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
+    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) => handleIncomingFulfill(fulfill, commits)
 
     case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       // We are host and they have initialized a hosted channel, send our LCSS and wait for their reply
@@ -192,9 +193,22 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(NORMAL) {
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
+
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
 
-    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
+    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) => handleIncomingFulfill(fulfill, commits)
+
+    case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
+      Try(commits.sendFulfill(c)) match {
+        case Success((commitments1, fulfill)) =>
+          if (c.commit) self ! CMD_SIGN
+          stay using commitments1 replying "ok" sending fulfill
+        case Failure(cause) =>
+          // we can clean up the command right away in case of failure
+          relayer ! CommandBuffer.CommandAck(commits.channelId, c.id)
+          handleCommandError(cause, c)
+      }
 
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.sendAdd(c, origin(c), nodeParams.currentBlockHeight)) match {
@@ -209,26 +223,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       Try(commits.receiveAdd(add)) match {
         case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(commitments1) => stay using commitments1
-      }
-
-    case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
-      Try(commits.sendFulfill(c)) match {
-        case Success((commitments1, fulfill)) =>
-          if (c.commit) self ! CMD_SIGN
-          stay using commitments1 replying "ok" sending fulfill
-        case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          relayer ! CommandBuffer.CommandAck(commits.channelId, c.id)
-          handleCommandError(cause, c)
-      }
-
-    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
-      Try(commits.receiveFulfill(fulfill)) match {
-        case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
-        case Success(Right((commitments1, origin, htlc))) =>
-          relayer ! ForwardFulfill(fulfill, origin, htlc)
-          stay using commitments1
-        case Success(Left(_)) => stay
       }
 
     case Event(c: CMD_FAIL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
@@ -296,7 +290,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(CLOSED) {
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _: HOSTED_DATA_COMMITMENTS) => goto(OFFLINE)
+
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) => handleNewBlock(c, commits)
+
+    case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) => handleIncomingFulfill(fulfill, commits)
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
       val completeLocalLCSS =
@@ -323,11 +321,12 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_OVERRIDE(_, newLocalBalance), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, newLocalBalance)
+      val commits1 = commits.copy(overriddenBalanceProposal = Some(newLocalBalance))
       val localSO =
         StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
           localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
           localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
-      stay using commits.copy(overriddenBalanceProposal = Some(newLocalBalance)) sending localSO
+      stay using commits1 sending localSO
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.overriddenBalanceProposal.isDefined =>
       val completeOverridingLCSS = makeOverridingLocallySignedLCSS(commits, commits.overriddenBalanceProposal.get).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
@@ -346,6 +345,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         val commits1 = restoreEmptyCommits(completeOverridingLCSS, commits.channelId, isHost = true)
         goto(NORMAL) using commits1 storing()
       }
+  }
+
+  whenUnhandled {
+    case Event(CMD_HOSTED_MESSAGE(_, remoteError: Error), commits: HOSTED_DATA_COMMITMENTS) =>
+      goto(CLOSED) using commits.copy(remoteError = Some(remoteError)) storing()
   }
 
   onTransition {
@@ -422,8 +426,19 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     stay replying Status.Failure(cause)
   }
 
+  def handleIncomingFulfill(fulfill: UpdateFulfillHtlc, commits: HOSTED_DATA_COMMITMENTS): HostedFsmState = {
+    Try(commits.receiveFulfill(fulfill)) match {
+      case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
+      case Success(Right((commitments1, origin, htlc))) =>
+        relayer ! ForwardFulfill(fulfill, origin, htlc)
+        stay using commitments1 storing()
+      case Success(Left(_)) => stay
+    }
+  }
+
   def syncAndResendAdds(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[Either[UpdateMessage, UpdateMessage]], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
-    val outgoingAddLeftovers = leftovers.collect { case Left(localAdd: UpdateAddHtlc) => localAdd }
+    // Filter out local UpdateAddHtlc, re-assign correct update numbers to each of them, re-send LCSS + UpdateAddHtlc, forget their updates
+    val outgoingAddLeftovers = for (Left(localAdd: UpdateAddHtlc) <- leftovers) yield localAdd
     val outgoingAddLeftovers1 = for (idx <- outgoingAddLeftovers.indices.toList) yield outgoingAddLeftovers(idx).copy(id = lcss.localUpdates + 1 + idx)
     val commits1 = commits.copy(futureUpdates = outgoingAddLeftovers1.map(Left.apply), lastCrossSignedState = lcss, localSpec = spec)
     for (msg <- lcss +: outgoingAddLeftovers1) forwarder ! msg
