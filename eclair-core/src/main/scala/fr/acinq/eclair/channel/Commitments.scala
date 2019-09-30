@@ -88,27 +88,41 @@ case class Commitments(channelVersion: ChannelVersion,
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
-    // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
-    val feesMsat = if (localParams.isFunder) commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi else 0.msat
-    val balance = (reduced.toRemote - remoteParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
-    // We also need to take into account the fact that adding an htlc increases the commit tx fee if it's not trimmed.
-    if (localParams.isFunder && balance >= offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
-      (balance - htlcOutputFee(reduced.feeratePerKw)).max(0 msat)
+    val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0 msat)
+    if (localParams.isFunder) {
+      // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
+      val commitFees = commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi
+      val htlcFees = htlcOutputFee(reduced.feeratePerKw)
+      if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
+        // htlc will be trimmed
+        (balanceNoFees - commitFees).max(0 msat)
+      } else {
+        // htlc will have an output in the commitment tx, so there will be additional fees.
+        (balanceNoFees - commitFees - htlcFees).max(0 msat)
+      }
     } else {
-      balance
+      // The fundee doesn't pay on-chain fees.
+      balanceNoFees
     }
   }
 
   lazy val availableBalanceForReceive: MilliSatoshi = {
     val reduced = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
-    val feesMsat = if (localParams.isFunder) 0.msat else commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
-    val balance = (reduced.toRemote - localParams.channelReserve.toMilliSatoshi - feesMsat).max(0 msat)
-    // We also need to take into account the fact that adding an htlc increases the commit tx fee if it's not trimmed.
-    if (!localParams.isFunder && balance >= receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
-      (balance - htlcOutputFee(reduced.feeratePerKw)).max(0 msat)
+    val balanceNoFees = (reduced.toRemote - localParams.channelReserve).max(0 msat)
+    if (localParams.isFunder) {
+      // The fundee doesn't pay on-chain fees so we don't take those into account when receiving.
+      balanceNoFees
     } else {
-      balance
+      // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
+      val commitFees = commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
+      val htlcFees = htlcOutputFee(reduced.feeratePerKw)
+      if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
+        // htlc will be trimmed
+        (balanceNoFees - commitFees).max(0 msat)
+      } else {
+        // htlc will have an output in the commitment tx, so there will be additional fees.
+        (balanceNoFees - commitFees - htlcFees).max(0 msat)
+      }
     }
   }
 }
