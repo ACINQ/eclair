@@ -95,6 +95,7 @@ object Transactions {
    * these values are defined in the RFC
    */
   val commitWeight = 724
+  val htlcWeight = 172
   val htlcTimeoutWeight = 663
   val htlcSuccessWeight = 703
 
@@ -134,10 +135,13 @@ object Transactions {
       .toSeq
   }
 
+  /** Fee for an un-trimmed HTLC. */
+  def htlcFee(feeratePerKw: Long): Satoshi = weight2fee(feeratePerKw, htlcWeight)
+
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
-    val weight = commitWeight + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    val weight = commitWeight + htlcWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
     weight2fee(spec.feeratePerKw, weight)
   }
 

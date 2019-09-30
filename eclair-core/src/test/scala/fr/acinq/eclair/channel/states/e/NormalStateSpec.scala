@@ -172,27 +172,27 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC (insufficient funds, missing 1 msat)") { f =>
     import f._
     val sender = TestProbe()
-    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
-    sender.send(bob, add)
+    sender.send(alice, add)
 
-    val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 10000 sat, fees = 0 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    val error = InsufficientFunds(channelId(bob), amount = add.amount, missing = 0 sat, reserve = 20000 sat, fees = 8960 sat)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
   test("recv CMD_ADD_HTLC (HTLC dips remote funder below reserve)") { f =>
     import f._
     val sender = TestProbe()
-    addHtlc(MilliSatoshi(771000000), alice, bob, alice2bob, bob2alice)
+    addHtlc(771000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 40000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 0.msat)
 
     // actual test begins
     // at this point alice has the minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
-    val add = CMD_ADD_HTLC(MilliSatoshi(120000000), randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(120000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
     sender.send(bob, add)
-    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680.sat, 10000.sat, 10680.sat)
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680 sat, 10000 sat, 10680 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Local(add.upstream.left.get, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(add))))
   }
 
