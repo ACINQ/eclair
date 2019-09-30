@@ -200,22 +200,22 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       Try(commits.sendAdd(c, origin(c), nodeParams.currentBlockHeight)) match {
         case Success(Right((commitments1, add))) =>
           if (c.commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, commitments1) sending add
+          stay using commitments1 replying "ok" sending add
         case Success(Left(error)) => handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, error, origin(c), Some(commits.channelUpdate), Some(c)), c)
         case Failure(cause) => handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, cause, origin(c), Some(commits.channelUpdate), Some(c)), c)
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, add: UpdateAddHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveAdd(add)) match {
+        case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(commitments1) => stay using commitments1
-        case Failure(cause) => localSuspend(commits, cause)
       }
 
     case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.sendFulfill(c)) match {
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, commitments1) sending fulfill
+          stay using commitments1 replying "ok" sending fulfill
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
           relayer ! CommandBuffer.CommandAck(commits.channelId, c.id)
@@ -224,19 +224,18 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFulfill(fulfill)) match {
+        case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(Right((commitments1, origin, htlc))) =>
-          // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using commitments1
         case Success(Left(_)) => stay
-        case Failure(cause) => localSuspend(commits, cause)
       }
 
     case Event(c: CMD_FAIL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.sendFail(c, nodeParams.privateKey)) match {
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, commitments1) sending fail
+          stay using commitments1 replying "ok" sending fail
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
           relayer ! CommandBuffer.CommandAck(commits.channelId, c.id)
@@ -247,7 +246,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       Try(commits.sendFailMalformed(c)) match {
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, commitments1) sending fail
+          stay using commitments1 replying "ok" sending fail
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
           relayer ! CommandBuffer.CommandAck(commits.channelId, c.id)
@@ -256,16 +255,16 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_MESSAGE(_, fail: UpdateFailHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFail(fail)) match {
+        case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(Right((commitments1, _, _))) => stay using commitments1
         case Success(Left(_)) => stay
-        case Failure(cause) => localSuspend(commits, cause)
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, fail: UpdateFailMalformedHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFailMalformed(fail)) match {
+        case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(Right((commitments1, _, _))) => stay using commitments1
         case Success(Left(_)) => stay
-        case Failure(cause) => localSuspend(commits, cause)
       }
 
     case Event(CMD_SIGN, commits: HOSTED_DATA_COMMITMENTS) if commits.nextLocalUpdates.nonEmpty || commits.nextRemoteUpdates.nonEmpty =>
@@ -316,37 +315,35 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         if (!isRightRemoteUpdateNumber) throw new ChannelException(commits.channelId, "Provided remote update number from remote override is wrong")
         if (!isBlockdayAcceptable) throw new ChannelException(commits.channelId, "Remote override blockday is not acceptable")
       } {
+        ackPendingFailsAndFulfills(commits.nextLocalUpdates)
+        failLocalAddsAfterHeight(commits.timedOutOutgoingHtlcs(blockheight = 0L), commits)
         val commits1 = restoreEmptyCommits(completeLocalLCSS, commits.channelId, isHost = false)
         goto(NORMAL) using commits1 storing() sending completeLocalLCSS.stateUpdate
       }
 
     case Event(CMD_HOSTED_OVERRIDE(_, newLocalBalance), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
-      val locallySignedLocalLCSS =
-        commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
-          remoteBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - newLocalBalance,
-          localUpdates = commits.lastCrossSignedState.localUpdates + 1, remoteUpdates = commits.lastCrossSignedState.remoteUpdates + 1,
-          blockDay = nodeParams.currentBlockDay, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
+      val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, newLocalBalance)
       val localSO =
-        StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = locallySignedLocalLCSS.localBalanceMsat,
-          localUpdates = locallySignedLocalLCSS.localUpdates, remoteUpdates = locallySignedLocalLCSS.remoteUpdates,
-          localSigOfRemoteLCSS = locallySignedLocalLCSS.localSigOfRemote)
-      val commits1 = restoreEmptyCommits(locallySignedLocalLCSS, commits.channelId, isHost = true).copy(overriddenBalanceProposal = Some(newLocalBalance))
-      stay using commits1 sending localSO
+        StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
+          localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
+          localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
+      stay using commits.copy(overriddenBalanceProposal = Some(newLocalBalance)) sending localSO
 
-    case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
-      val commits1 = commits.modify(_.lastCrossSignedState.remoteSigOfLocal).setTo(remoteSU.localSigOfRemoteLCSS).copy(overriddenBalanceProposal = None)
-      proceedOrGoCLOSED(commits1.channelId) {
-        val isRemoteSigOk = commits1.lastCrossSignedState.verifyRemoteSig(remoteNodeId)
+    case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.overriddenBalanceProposal.isDefined =>
+      val completeOverridingLCSS = makeOverridingLocallySignedLCSS(commits, commits.overriddenBalanceProposal.get).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
+      proceedOrGoCLOSED(commits.channelId) {
+        val isRemoteSigOk = completeOverridingLCSS.verifyRemoteSig(remoteNodeId)
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
-        val isRightLocalUpdateNumber = remoteSU.localUpdates == commits1.lastCrossSignedState.remoteUpdates
-        val isRightRemoteUpdateNumber = remoteSU.remoteUpdates == commits1.lastCrossSignedState.localUpdates
-        val isCorrectBalance = commits.overriddenBalanceProposal.contains(commits1.lastCrossSignedState.localBalanceMsat)
-        if (!isRemoteSigOk) throw new ChannelException(commits1.channelId, "Provided remote override signature is wrong")
-        if (!isRightLocalUpdateNumber) throw new ChannelException(commits1.channelId, "Provided local update number from remote override is wrong")
-        if (!isRightRemoteUpdateNumber) throw new ChannelException(commits1.channelId, "Provided remote update number from remote override is wrong")
-        if (!isBlockdayAcceptable) throw new ChannelException(commits1.channelId, "Remote override blockday is not acceptable")
-        if (!isCorrectBalance) throw new ChannelException(commits1.channelId, "Balance mismatch when doing remote override")
+        val isRightLocalUpdateNumber = remoteSU.localUpdates == completeOverridingLCSS.remoteUpdates
+        val isRightRemoteUpdateNumber = remoteSU.remoteUpdates == completeOverridingLCSS.localUpdates
+        if (!isRemoteSigOk) throw new ChannelException(commits.channelId, "Provided remote override signature is wrong")
+        if (!isRightLocalUpdateNumber) throw new ChannelException(commits.channelId, "Provided local update number from remote override is wrong")
+        if (!isRightRemoteUpdateNumber) throw new ChannelException(commits.channelId, "Provided remote update number from remote override is wrong")
+        if (!isBlockdayAcceptable) throw new ChannelException(commits.channelId, "Remote override blockday is not acceptable")
       } {
+        ackPendingFailsAndFulfills(commits.nextLocalUpdates)
+        failLocalAddsAfterHeight(commits.timedOutOutgoingHtlcs(blockheight = 0L), commits)
+        val commits1 = restoreEmptyCommits(completeOverridingLCSS, commits.channelId, isHost = true)
         goto(NORMAL) using commits1 storing()
       }
   }
@@ -400,6 +397,12 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       channelId, isHost, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
   }
 
+  def makeOverridingLocallySignedLCSS(commits: HOSTED_DATA_COMMITMENTS, newLocalBalance: MilliSatoshi): LastCrossSignedState =
+    commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
+      remoteBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - newLocalBalance,
+      localUpdates = commits.lastCrossSignedState.localUpdates + 1, remoteUpdates = commits.lastCrossSignedState.remoteUpdates + 1,
+      blockDay = nodeParams.currentBlockDay, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
+
   def proceedOrGoCLOSED(channelId: ByteVector32)(check: => Unit)(whenPassed: => HostedFsmState): HostedFsmState =
     Try(check) match {
       case Failure(reason) =>
@@ -409,17 +412,15 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         whenPassed
     }
 
-  def localSuspend(commits: HOSTED_DATA_COMMITMENTS, err: Throwable): HostedFsmState =
-    localSuspend(commits, ByteVector.view(err.getMessage.getBytes))
-
   def localSuspend(commits: HOSTED_DATA_COMMITMENTS, errCode: ByteVector): HostedFsmState = {
-    val localError = Error(channelId = commits.channelId, data = errCode)
-    val commits1 = commits.copy(localError = Some(localError))
-    goto(CLOSED) using commits1 storing() sending localError
+    val commits1 = commits.copy(localError = Some(Error(commits.channelId, errCode)))
+    goto(CLOSED) using commits1 storing() sending commits1.localError.get
   }
 
-  def handleCommandSuccess(sender: ActorRef, commits: HOSTED_DATA_COMMITMENTS): HostedFsmState =
-    stay using commits replying "ok"
+  def handleCommandError(cause: Throwable, cmd: Command): HostedFsmState = {
+    log.warning(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
+    stay replying Status.Failure(cause)
+  }
 
   def syncAndResendAdds(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[Either[UpdateMessage, UpdateMessage]], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
     val outgoingAddLeftovers = leftovers.collect { case Left(localAdd: UpdateAddHtlc) => localAdd }
@@ -430,18 +431,14 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     commits1
   }
 
-  def handleCommandError(cause: Throwable, cmd: Command): HostedFsmState = {
-    log.warning(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
-    stay replying Status.Failure(cause)
+  def ackPendingFailsAndFulfills(updates: List[UpdateMessage]): Unit = updates.collect {
+    case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+    case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+    case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
   }
 
   def resolveUpdates(commits: HOSTED_DATA_COMMITMENTS, nextCommits: HOSTED_DATA_COMMITMENTS): HOSTED_DATA_COMMITMENTS = {
-    commits.nextLocalUpdates.collect {
-      case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-      case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-      case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-    }
-
+    ackPendingFailsAndFulfills(commits.nextLocalUpdates)
     commits.nextRemoteUpdates.collect {
       case add: UpdateAddHtlc =>
         relayer ! ForwardAdd(add)
@@ -452,23 +449,27 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         val add = commits.localSpec.findHtlcById(fail.id, OUT).get.add
         relayer ! ForwardFailMalformed(fail, commits.originChannels(fail.id), add)
     }
-
     val completedOutgoingHtlcs = commits.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id) -- nextCommits.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id)
     nextCommits.copy(originChannels = nextCommits.originChannels -- completedOutgoingHtlcs, futureUpdates = Nil)
   }
 
-  def handleNewBlock(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS): HostedFsmState = {
-    val timedoutHtlcs = commits.timedOutOutgoingHtlcs(c.blockCount)
-
+  def failLocalAddsAfterHeight(adds: Set[UpdateAddHtlc], commits: HOSTED_DATA_COMMITMENTS): Unit = {
     for {
-      add <- timedoutHtlcs
+      add <- adds
       origin <- commits.originChannels.get(add.id)
       reason = HtlcTimedout(commits.channelId, Set(add))
       error = AddHtlcFailed(commits.channelId, add.paymentHash, reason, origin, None, None)
     } relayer ! error
+  }
 
-    if (timedoutHtlcs.isEmpty || commits.getError.isDefined) stay
-    else localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
+  def handleNewBlock(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS): HostedFsmState = {
+    val timedoutOutgoingHtlcs = commits.timedOutOutgoingHtlcs(c.blockCount)
+    failLocalAddsAfterHeight(timedoutOutgoingHtlcs, commits)
+    if (timedoutOutgoingHtlcs.nonEmpty && commits.getError.isEmpty) {
+      localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
+    } else {
+      stay
+    }
   }
 
   initialize()
