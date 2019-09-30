@@ -236,7 +236,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 8)
   }
 
-  test("send network statistics") { fixture =>
+  ignore("send network statistics") { fixture =>
     import fixture._
     val sender = TestProbe()
     sender.send(router, GetNetworkStats)
@@ -265,7 +265,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(response.hops.map(_.nodeId).toList == preComputedRoute.dropRight(1).toList)
     assert(response.hops.last.nextNodeId == preComputedRoute.last)
     // On Android we strip the signatures and chain hash
-    assert(response.hops.map(_.lastUpdate).toList == List(channelUpdate_ab.copy(signature = null, chainHash = null), channelUpdate_bc.copy(signature = null, chainHash = null), channelUpdate_cd.copy(signature = null, chainHash = null)))
+    assert(response.hops.map(_.lastUpdate).toList == List(channelUpdate_ab.copy(signature = null), channelUpdate_bc.copy(signature = null), channelUpdate_cd.copy(signature = null)))
   }
 
   ignore("ask for channels that we marked as stale for which we receive a new update") { fixture =>

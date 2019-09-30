@@ -20,25 +20,63 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.PublicChannel
-import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
+import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 import scodec.Codec
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedMap
 
-class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
+class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends NetworkDb with Logging {
 
-  import SqliteUtils._
   import SqliteUtils.ExtendedResultSet._
-  import SqliteNetworkDb.channelAnnouncementCodec
+  import SqliteUtils._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 2
+
+  import fr.acinq.eclair.wire.CommonCodecs._
+  import scodec.codecs._
+
+  // on Android we prune as many fields as possible to save memory
+  val channelAnnouncementWitnessCodec =
+    ("features" | provide(null.asInstanceOf[ByteVector])) ::
+      ("chainHash" | provide(null.asInstanceOf[ByteVector32])) ::
+      ("shortChannelId" | shortchannelid) ::
+      ("nodeId1" | publicKey) ::
+      ("nodeId2" | publicKey) ::
+      ("bitcoinKey1" | provide(null.asInstanceOf[PublicKey])) ::
+      ("bitcoinKey2" | provide(null.asInstanceOf[PublicKey])) ::
+      ("unknownFields" | bytes)
+
+  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
+    ("nodeSignature1" | provide(null.asInstanceOf[ByteVector64])) ::
+      ("nodeSignature2" | provide(null.asInstanceOf[ByteVector64])) ::
+      ("bitcoinSignature1" | provide(null.asInstanceOf[ByteVector64])) ::
+      ("bitcoinSignature2" | provide(null.asInstanceOf[ByteVector64])) ::
+      channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
+
+  val channelUpdateWitnessCodec =
+    ("chainHash" | provide(chainHash)) ::
+      ("shortChannelId" | shortchannelid) ::
+      ("timestamp" | uint32) ::
+      (("messageFlags" | byte) >>:~ { messageFlags =>
+        ("channelFlags" | byte) ::
+          ("cltvExpiryDelta" | cltvExpiryDelta) ::
+          ("htlcMinimumMsat" | millisatoshi) ::
+          ("feeBaseMsat" | millisatoshi32) ::
+          ("feeProportionalMillionths" | uint32) ::
+          ("htlcMaximumMsat" | conditional((messageFlags & 1) != 0, millisatoshi)) ::
+          ("unknownFields" | bytes)
+      })
+
+  val channelUpdateCodec: Codec[ChannelUpdate] = (
+    ("signature" | provide(null.asInstanceOf[ByteVector64])) ::
+      channelUpdateWitnessCodec).as[ChannelUpdate]
 
   using(sqlite.createStatement()) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
@@ -170,27 +208,4 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def close(): Unit = sqlite.close
-}
-
-object SqliteNetworkDb {
-  import scodec.codecs._
-  import fr.acinq.eclair.wire.CommonCodecs._
-
-  // on Android we prune as many fields as possible to save memory
-  val channelAnnouncementWitnessCodec =
-    ("features" | provide(null.asInstanceOf[ByteVector])) ::
-      ("chainHash" | provide(null.asInstanceOf[ByteVector32])) ::
-      ("shortChannelId" | shortchannelid) ::
-      ("nodeId1" | publicKey) ::
-      ("nodeId2" | publicKey) ::
-      ("bitcoinKey1" | provide(null.asInstanceOf[PublicKey])) ::
-      ("bitcoinKey2" | provide(null.asInstanceOf[PublicKey])) ::
-      ("unknownFields" | bytes)
-
-  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
-    ("nodeSignature1" | provide(null.asInstanceOf[ByteVector64])) ::
-      ("nodeSignature2" | provide(null.asInstanceOf[ByteVector64])) ::
-      ("bitcoinSignature1" | provide(null.asInstanceOf[ByteVector64])) ::
-      ("bitcoinSignature2" | provide(null.asInstanceOf[ByteVector64])) ::
-      channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 }

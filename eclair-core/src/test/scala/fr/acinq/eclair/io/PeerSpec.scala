@@ -262,13 +262,15 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
   }
 
-  test("sync if no whitelist is defined") { f =>
+  // ignored on Android
+  ignore("sync if no whitelist is defined") { f =>
     import f._
     val remoteInit = wire.Init(Bob.nodeParams.globalFeatures, bin"10000000".toByteVector) // bob support channel range queries
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = true)
   }
 
-  test("sync if whitelist contains peer", Tag("sync-whitelist-bob")) { f =>
+  // ignored on Android
+  ignore("sync if whitelist contains peer", Tag("sync-whitelist-bob")) { f =>
     import f._
     val remoteInit = wire.Init(Bob.nodeParams.globalFeatures, bin"10000000".toByteVector) // bob support channel range queries
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = true)

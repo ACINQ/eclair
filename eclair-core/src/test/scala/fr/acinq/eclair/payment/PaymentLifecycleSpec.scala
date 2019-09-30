@@ -24,7 +24,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchEventSpentBasic, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, Channel, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
@@ -336,6 +336,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val paymentDb = nodeParams.db.payments
     val relayer = TestProbe()
     val routerForwarder = TestProbe()
+    routerForwarder.ignoreMsg { case _: WatchEventSpentBasic => true }
     val id = UUID.randomUUID()
     val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, id, routerForwarder.ref, relayer.ref))
     val monitor = TestProbe()
@@ -427,9 +428,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
     router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bg)
     router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_gb)
-    watcher.expectMsg(ValidateRequest(chan_bg))
+    // not on Android: watcher.expectMsg(ValidateRequest(chan_bg))
     watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-    watcher.expectMsgType[WatchSpentBasic]
+    //not on Android:  watcher.expectMsgType[WatchSpentBasic]
 
     // actual test begins
     val paymentFSM = system.actorOf(PaymentLifecycle.props(nodeParams, UUID.randomUUID(), router, TestProbe().ref))

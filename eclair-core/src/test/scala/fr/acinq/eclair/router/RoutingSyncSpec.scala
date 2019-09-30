@@ -29,7 +29,7 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.scalatest.{FunSuiteLike, ParallelTestExecution}
+import org.scalatest.{FunSuiteLike, Ignore, ParallelTestExecution}
 import scodec.bits.HexStringSyntax
 
 import scala.collection.immutable.TreeMap
@@ -37,7 +37,9 @@ import scala.collection.{SortedSet, immutable, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-
+//TODO: re-enable this using a modified version of the old test
+// as is it won't work on because on Android router just ignore querier
+@Ignore
 class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with ParallelTestExecution {
 
   import RoutingSyncSpec._
