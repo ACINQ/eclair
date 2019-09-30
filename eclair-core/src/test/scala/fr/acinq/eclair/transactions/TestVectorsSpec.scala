@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import java.io.{ByteArrayOutputStream, OutputStream}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
@@ -184,8 +184,8 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
-    val (commitTx, htlcOutputInfo) = {
-      val (tx, htlcOutInfo) = Transactions.makeCommitTx(
+    val commitTx = {
+      val tx = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -197,7 +197,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
 
-      (Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig), htlcOutInfo)
+      Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
     val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)
@@ -214,15 +214,17 @@ class TestVectorsSpec extends FunSuite with Logging {
       }
     })
 
+    val outputs = Transactions.makeCommitTxOutputs(
+      true, Local.dustLimit, Local.revocation_pubkey, Local.toSelfDelay,
+      Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
+      spec)
+
     {
-      val (tx, _) = Transactions.makeCommitTx(
+      val tx = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
-        true, Local.dustLimit,
-        Local.revocation_pubkey, Local.toSelfDelay,
-        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
-        Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-        spec)
+        true, outputs)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       logger.info(s"# local_signature = ${local_sig.dropRight(1).toHex}")
@@ -239,9 +241,8 @@ class TestVectorsSpec extends FunSuite with Logging {
       Local.dustLimit,
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
-      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      htlcOutputInfo,
-      spec
+      spec.feeratePerKw,
+      outputs
     )
 
     logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")

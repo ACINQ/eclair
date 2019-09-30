@@ -219,12 +219,14 @@ class TransactionsSpec extends FunSuite with Logging {
       toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
       toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
 
+    val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+
     val commitTxNumber = 0x404142434445L
-    val (commitTx, htlcOutputInfo) = {
-      val (txinfo, htlcOutInfo) = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+    val commitTx = {
+      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
-      (Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig), htlcOutInfo)
+      Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
     }
 
     {
@@ -234,7 +236,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val check = ((commitTx.tx.txIn.head.sequence & 0xffffff) << 24) | (commitTx.tx.lockTime & 0xffffff)
       assert((check ^ num) == commitTxNumber)
     }
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, htlcOutputInfo, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs)
 
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
     assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
@@ -368,7 +370,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     val commitTxNumber = 0x404142434446L
     val commitTx = {
-      val (txinfo, _) = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
       Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
