@@ -302,9 +302,9 @@ object JsonSupport extends Json4sSupport {
     new NodeAddressSerializer +
     new DirectionSerializer +
     new PaymentRequestSerializer +
-    new JavaUUIDSerializer).withTypeHintFieldName("type") +
+    new JavaUUIDSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
-    CustomTypeHints.paymentEvent
+    CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
 
 }
