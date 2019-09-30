@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.{OnionRoutingPacket, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshi, TestConstants, randomBytes32, _}
+import fr.acinq.eclair.{MilliSatoshi, randomBytes32, _}
 import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
@@ -146,7 +146,7 @@ class TransactionsSpec extends FunSuite with Logging {
       val redeemScript = htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)
       val pubKeyScript = write(pay2wsh(redeemScript))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
-      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, outputsAlreadyUsed = Set.empty, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
+      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx, 0, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
       assert(htlcPenaltyWeight == weight)
@@ -158,9 +158,11 @@ class TransactionsSpec extends FunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
+      val spec = CommitmentSpec(Set(DirectedHtlc(OUT,htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
+      val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
-      val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+      val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
       assert(claimHtlcSuccessWeight == weight)
@@ -172,9 +174,11 @@ class TransactionsSpec extends FunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
+      val spec = CommitmentSpec(Set(DirectedHtlc(IN, htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
+      val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
-      val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+      val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
       assert(claimHtlcTimeoutWeight == weight)
@@ -265,7 +269,7 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends local->remote htlc1/htlc3 output directly in case of success
       for ((htlc, paymentPreimage) <- (htlc1, paymentPreimage1) :: (htlc3, paymentPreimage3) :: Nil) {
-        val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+        val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
         val localSig = sign(claimHtlcSuccessTx, remoteHtlcPriv)
         val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage)
         assert(checkSpendable(signed).isSuccess)
@@ -306,7 +310,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     {
       // remote spends remote->local htlc output directly in case of timeout
-      val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, outputsAlreadyUsed = Set.empty, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
+      val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
       val localSig = sign(claimHtlcTimeoutTx, remoteHtlcPriv)
       val signed = addSigs(claimHtlcTimeoutTx, localSig)
       assert(checkSpendable(signed).isSuccess)
@@ -315,7 +319,11 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends offered HTLC output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash)))
-      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, outputsAlreadyUsed = Set.empty, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+      val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
+        case (CommitmentOutputLink(_, _, DirectedHtlc(_, someHtlc)), _) => someHtlc.id == htlc1.id
+        case _ => false
+      }.map(_._2)
+      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = sign(htlcPenaltyTx, localRevocationPriv)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
       assert(checkSpendable(signed).isSuccess)
@@ -324,7 +332,11 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends received HTLC output with revocation key
       val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
-      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, outputsAlreadyUsed = Set.empty, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+      val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
+        case (CommitmentOutputLink(_, _, DirectedHtlc(_, someHtlc)), _) => someHtlc.id == htlc2.id
+        case _ => false
+      }.map(_._2)
+      val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = sign(htlcPenaltyTx, localRevocationPriv)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
       assert(checkSpendable(signed).isSuccess)
