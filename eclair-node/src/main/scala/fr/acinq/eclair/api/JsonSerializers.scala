@@ -20,9 +20,9 @@ import java.net.InetSocketAddress
 import java.util.UUID
 
 import com.google.common.net.HostAndPort
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.PaymentRequest
@@ -30,10 +30,10 @@ import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, TypeHints, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, Formats, TypeHints, jackson}
 import scodec.bits.ByteVector
+import spray.httpx.{Json4sJacksonSupport, Json4sSupport}
 
 /**
   * JSON Serializers.
@@ -61,14 +61,6 @@ class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
 
 class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
   case x: MilliSatoshi => JInt(x.toLong)
-}))
-
-class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ({ null }, {
-  case x: CltvExpiry => JLong(x.toLong)
-}))
-
-class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](format => ({ null }, {
-  case x: CltvExpiryDelta => JInt(x.toInt)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
@@ -184,19 +176,17 @@ class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
   case id: UUID => JString(id.toString)
 }))
 
-object JsonSupport extends Json4sSupport {
+object JsonSupport extends Json4sJacksonSupport {
 
-  implicit val serialization = jackson.Serialization
+  override val serialization = org.json4s.jackson.Serialization
 
-  implicit val formats = org.json4s.DefaultFormats +
+  override implicit val json4sJacksonFormats = org.json4s.DefaultFormats +
     new ByteVectorSerializer +
     new ByteVector32Serializer +
     new ByteVector64Serializer +
     new UInt64Serializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
-    new CltvExpirySerializer +
-    new CltvExpiryDeltaSerializer +
     new ShortChannelIdSerializer +
     new StateSerializer +
     new ShaChainSerializer +
@@ -227,6 +217,5 @@ object JsonSupport extends Json4sSupport {
     })
     override def classFor(hint: String): Option[Class[_]] = reverse.get(hint)
   }
-
 
 }

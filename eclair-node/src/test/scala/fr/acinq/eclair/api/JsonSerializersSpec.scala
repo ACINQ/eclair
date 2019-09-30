@@ -72,17 +72,17 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   test("Payment Request") {
     val ref = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
     val pr = PaymentRequest.read(ref)
-    JsonSupport.serialization.write(pr)(JsonSupport.formats) shouldBe """{"prefix":"lnbc","timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","serialized":"lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"amount":250000000}"""
+    JsonSupport.serialization.write(pr)(JsonSupport.json4sJacksonFormats) shouldBe """{"prefix":"lnbc","timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","serialized":"lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"amount":250000000}"""
   }
 
   test("type hints") {
-    implicit val formats = JsonSupport.formats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
+    implicit val formats = JsonSupport.json4sJacksonFormats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
     val e1 = PaymentSettlingOnChain(UUID.randomUUID, 42 msat, randomBytes32)
     assert(Serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
   }
 
   test("transaction serializer") {
-    implicit val formats = JsonSupport.formats
+    implicit val formats = JsonSupport.json4sJacksonFormats
     val tx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
     assert(JsonSupport.serialization.write(tx) == "{\"txid\":\"3ef63b5d297c9dcf93f33b45b9f102733c36e8ef61da1ccf2bc132a10584be18\",\"tx\":\"0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800\"}")
   }
