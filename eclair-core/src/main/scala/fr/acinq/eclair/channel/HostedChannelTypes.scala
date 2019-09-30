@@ -70,10 +70,8 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
-    LastCrossSignedState(lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel,
-      blockDay, nextLocalSpec.toLocal, nextLocalSpec.toRemote, nextTotalLocal, nextTotalRemote,
-      incomingHtlcs = incomingHtlcs.map(_.add), outgoingHtlcs = outgoingHtlcs.map(_.add),
-      localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes)
+    LastCrossSignedState(lastCrossSignedState.refundScriptPubKey, lastCrossSignedState.initHostedChannel, blockDay, nextLocalSpec.toLocal, nextLocalSpec.toRemote,
+      nextTotalLocal, nextTotalRemote, incomingHtlcs.map(_.add), outgoingHtlcs.map(_.add), localSigOfRemote = ByteVector64.Zeroes, remoteSigOfLocal = ByteVector64.Zeroes)
   }
 
   // Rebuild all messaging and state history starting from local LCSS,

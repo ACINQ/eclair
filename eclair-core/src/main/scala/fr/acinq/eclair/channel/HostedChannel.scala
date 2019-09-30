@@ -11,6 +11,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, OUT}
 import scodec.bits.ByteVector
 
+import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 
@@ -18,13 +19,16 @@ object HostedChannel {
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef) = Props(new HostedChannel(nodeParams, remoteNodeId, router, relayer))
 }
 
-class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, HostedData] with FSMDiagnosticActorLogging[State, HostedData] {
+class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef)
+                   (implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, HostedData] with FSMDiagnosticActorLogging[State, HostedData] {
 
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
 
   val forwarder: ActorRef = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
   private var stateUpdateAttempts: Int = 0
+
+  case object TickRemoveIdleTimeout
 
   startWith(OFFLINE, HostedNothing)
 
@@ -34,6 +38,16 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
       goto(WAIT_FOR_INIT_INTERNAL)
+
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
+
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS)
+      if commits.currentAndNextInFlight.size == commits.timedOutOutgoingHtlcs(nodeParams.currentBlockHeight).size =>
+      // We may have pending cross-signed HTLCs in this state, make sure they all have been resolved by scheduling a timer
+      setTimer("TickRemoveIdleTimeout", TickRemoveIdleTimeout, 10.minutes, repeat = false)
+      stay
+
+    case Event(TickRemoveIdleTimeout, _) => stop(FSM.Normal)
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, commits: HOSTED_DATA_COMMITMENTS) =>
       forwarder ! cmd.transport
