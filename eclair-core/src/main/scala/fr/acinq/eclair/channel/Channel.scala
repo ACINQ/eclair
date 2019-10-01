@@ -38,8 +38,8 @@ import scala.util.{Failure, Success, Try}
 
 
 /**
-  * Created by PM on 20/08/2015.
-  */
+ * Created by PM on 20/08/2015.
+ */
 
 object Channel {
   def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef]) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer, origin_opt))
@@ -638,7 +638,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! ForwardFulfill(fulfill, origin, htlc)
+          relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
@@ -989,7 +989,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! ForwardFulfill(fulfill, origin, htlc)
+          relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
@@ -1105,7 +1105,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           cancelTimer(RevocationTimeout.toString)
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
           forwards.foreach {
-            case forwardAdd: ForwardAdd =>
+            case forwardAdd: Relayer.ForwardAdd =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug(s"closing in progress: failing ${forwardAdd.add}")
               self ! CMD_FAIL_HTLC(forwardAdd.add.id, Right(PermanentChannelFailure), commit = true)
@@ -1268,7 +1268,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(fulfill.id) match {
           case Some(origin) =>
             log.info(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
-            relayer ! ForwardFulfill(fulfill, origin, htlc)
+            relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
           case None =>
             // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
@@ -1713,8 +1713,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
 
   /**
-    * This function is used to return feedback to user at channel opening
-    */
+   * This function is used to return feedback to user at channel opening
+   */
   def replyToUser(message: Either[Channel.ChannelError, String]): Unit = {
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
@@ -1738,17 +1738,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * This is used to check for the commitment fees when the channel is not operational but we have something at stake
-    * @param c the new feerates
-    * @param d the channel commtiments
-    * @return
-    */
+   * This is used to check for the commitment fees when the channel is not operational but we have something at stake
+   *
+   * @param c the new feerates
+   * @param d the channel commtiments
+   * @return
+   */
   def handleOfflineFeerate(c: CurrentFeerates, d: HasCommitments) = {
     val networkFeeratePerKw = c.feeratesPerKw.feePerBlock(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the fees are too high we risk to not be able to confirm our current commitment
-    if(networkFeeratePerKw > currentFeeratePerKw && Helpers.isFeeDiffTooHigh(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)){
-      if(nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
+    if (networkFeeratePerKw > currentFeeratePerKw && Helpers.isFeeDiffTooHigh(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+      if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
         log.warning(s"closing OFFLINE ${d.channelId} due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
         handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
       } else {
@@ -1775,9 +1776,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * When we are funder, we use this function to detect when our funding tx has been double-spent (by another transaction
-    * that we made for some reason). If the funding tx has been double spent we can forget about the channel.
-    */
+   * When we are funder, we use this function to detect when our funding tx has been double-spent (by another transaction
+   * that we made for some reason). If the funding tx has been double spent we can forget about the channel.
+   */
   def checkDoubleSpent(fundingTx: Transaction): Unit = {
     log.debug(s"checking status of funding tx txid=${fundingTx.txid}")
     wallet.doubleSpent(fundingTx).onComplete {
@@ -1973,8 +1974,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * This helper method will publish txes only if they haven't yet reached minDepth
-    */
+   * This helper method will publish txes only if they haven't yet reached minDepth
+   */
   def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach { tx =>
@@ -1985,8 +1986,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * This helper method will watch txes only if they haven't yet reached minDepth
-    */
+   * This helper method will watch txes only if they haven't yet reached minDepth
+   */
   def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
@@ -1994,8 +1995,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
-    */
+   * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
+   */
   def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchSpent(self, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
@@ -2219,8 +2220,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * This helper function runs the state's default event handlers, and react to exceptions by unilaterally closing the channel
-    */
+   * This helper function runs the state's default event handlers, and react to exceptions by unilaterally closing the channel
+   */
   def handleExceptions(s: StateFunction): StateFunction = {
     case event if s.isDefinedAt(event) =>
       try {
@@ -2268,9 +2269,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
 
     /**
-      * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
-      * particularly useful to publish transactions only after we are sure that the state has been persisted.
-      */
+     * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
+     * particularly useful to publish transactions only after we are sure that the state has been persisted.
+     */
     def calling(f: => Unit): FSM.State[fr.acinq.eclair.channel.State, Data] = {
       f
       state

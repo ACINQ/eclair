@@ -240,13 +240,17 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     sender.send(router, GetNetworkStats)
-    assert(sender.expectMsgType[Option[NetworkStats]] === None)
+    sender.expectMsg(GetNetworkStatsResponse(None))
 
     // Network statistics should be computed after initial sync
     router ! SyncProgress(1.0)
-    sender.send(router, GetNetworkStats)
+    awaitCond({
+      sender.send(router, GetNetworkStats)
+      sender.expectMsgType[GetNetworkStatsResponse].stats.isDefined
+    })
 
-    val Some(stats) = sender.expectMsgType[Option[NetworkStats]]
+    sender.send(router, GetNetworkStats)
+    val GetNetworkStatsResponse(Some(stats)) = sender.expectMsgType[GetNetworkStatsResponse]
     assert(stats.channels === 4)
     assert(stats.nodes === 6)
     assert(stats.capacity.median === 1000000.sat)
