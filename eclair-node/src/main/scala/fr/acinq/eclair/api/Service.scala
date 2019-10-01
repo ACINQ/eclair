@@ -225,9 +225,9 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("sendtoroute") {
-                          formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?) {
-                            (amountMsat, paymentHash, finalCltvExpiry, route, externalId_opt) =>
-                              complete(eclairApi.sendToRoute(externalId_opt, route, amountMsat, paymentHash, CltvExpiryDelta(finalCltvExpiry)))
+                          formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?, invoiceFormParam.?) {
+                            (amountMsat, paymentHash, finalCltvExpiry, route, externalId_opt, invoice_opt) =>
+                              complete(eclairApi.sendToRoute(externalId_opt, route, amountMsat, paymentHash, CltvExpiryDelta(finalCltvExpiry), invoice_opt))
                           }
                         } ~
                         path("getsentinfo") {
