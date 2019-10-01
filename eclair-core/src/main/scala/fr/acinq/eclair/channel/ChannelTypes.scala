@@ -208,7 +208,7 @@ final case class LocalParams(nodeId: PublicKey,
 
 object LocalParams {
 
-  def apply(nodeId: PublicKey,
+  def makeLocalParamsWithStaticRemoteKey(nodeId: PublicKey,
             fundingKeyPath: DeterministicWallet.KeyPath,
             dustLimit: Satoshi,
             maxHtlcValueInFlightMsat: UInt64,

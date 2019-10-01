@@ -56,14 +56,9 @@ object Features {
     * We can use STATIC_REMOTEKEY if both peer have at least optional support.
     */
   def canUseStaticRemoteKey(localFeatures: ByteVector, remoteFeatures: ByteVector): Boolean = {
-    val localHasOptional = hasFeature(localFeatures, STATIC_REMOTEKEY_OPTIONAL)
-    val localHasMandatory = hasFeature(localFeatures, STATIC_REMOTEKEY_MANDATORY)
-    val remoteHasOptional = hasFeature(remoteFeatures, STATIC_REMOTEKEY_OPTIONAL)
-    val remoteHasMandatory = hasFeature(remoteFeatures, STATIC_REMOTEKEY_MANDATORY)
-
-    (remoteHasMandatory && (localHasMandatory || localHasOptional))  ||
-    (localHasMandatory && (remoteHasMandatory || remoteHasOptional)) ||
-    (localHasOptional && remoteHasOptional)
+    val localSupport = hasFeature(localFeatures, STATIC_REMOTEKEY_OPTIONAL) || hasFeature(localFeatures, STATIC_REMOTEKEY_MANDATORY)
+    val remoteSupport = hasFeature(remoteFeatures, STATIC_REMOTEKEY_OPTIONAL) || hasFeature(remoteFeatures, STATIC_REMOTEKEY_MANDATORY)
+    localSupport && remoteSupport
   }
 
   /**

@@ -101,7 +101,7 @@ object ChannelCodecs extends Logging {
           isFunder ::
           localPaymentBasepoint ::
           globalFeatures ::
-          localFeatures :: HNil => LocalParams(
+          localFeatures :: HNil => LocalParams.makeLocalParamsWithStaticRemoteKey(
             nodeId,
             fundingKeyPath,
             dustLimit,

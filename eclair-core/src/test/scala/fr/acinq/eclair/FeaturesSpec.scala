@@ -55,12 +55,12 @@ class FeaturesSpec extends FunSuite {
     assert(hasFeature(mandatorySupport, STATIC_REMOTEKEY_MANDATORY))
     assert(hasFeature(optionalSupport, STATIC_REMOTEKEY_OPTIONAL))
 
-    assert(Features.canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = mandatorySupport) == true)
-    assert(Features.canUseStaticRemoteKey(localFeatures = mandatorySupport, remoteFeatures = optionalSupport) == true)
-    assert(Features.canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = optionalSupport) == true)
-    assert(Features.canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = noSupport) == false)
-    assert(Features.canUseStaticRemoteKey(localFeatures = mandatorySupport, remoteFeatures = mandatorySupport) == true)
-    assert(Features.canUseStaticRemoteKey(localFeatures = noSupport, remoteFeatures = mandatorySupport) == false)
+    assert(canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = mandatorySupport))
+    assert(canUseStaticRemoteKey(localFeatures = mandatorySupport, remoteFeatures = optionalSupport))
+    assert(canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = optionalSupport))
+    assert(!canUseStaticRemoteKey(localFeatures = optionalSupport, remoteFeatures = noSupport))
+    assert(canUseStaticRemoteKey(localFeatures = mandatorySupport, remoteFeatures = mandatorySupport))
+    assert(!canUseStaticRemoteKey(localFeatures = noSupport, remoteFeatures = mandatorySupport))
   }
 
   test("features compatibility") {

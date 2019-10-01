@@ -102,7 +102,7 @@ class ChannelCodecsSpec extends FunSuite {
     assert(o.localPaymentBasepoint.isEmpty)
     assert(o === decoded.value)
 
-    val o1 = LocalParams(
+    val o1 = LocalParams.makeLocalParamsWithStaticRemoteKey(
       nodeId = randomKey.publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),

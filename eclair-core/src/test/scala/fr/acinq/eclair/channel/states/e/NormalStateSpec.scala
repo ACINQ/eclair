@@ -22,7 +22,7 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
@@ -41,6 +41,7 @@ import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, _}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 /**
@@ -54,7 +55,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val testWallet = if(test.tags.contains("static_remotekey")){
+      val randomKey = PrivateKey(randomBytes32).publicKey
+      new TestWallet{
+        override def getPubkeyForAddress(address: String): Future[Crypto.PublicKey] = Future.successful(randomKey)
+        override def getFinalAddress: Future[String] = Future.successful({
+          val scriptPubKey = Script.write(Script.pay2wpkh(randomKey))
+          Bech32.encodeWitnessAddress("bcrt", 0, scriptPubKey)
+        })
+      }
+    } else {
+      new TestWallet
+    }
+    val setup = init(wallet = testWallet)
     import setup._
     within(30 seconds) {
       reachNormal(setup, test.tags)

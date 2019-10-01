@@ -673,7 +673,7 @@ object Peer {
   }
 
   def makeChannelParams(nodeParams: NodeParams, localPaymentBasepoint: PublicKey, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
-    LocalParams(
+    LocalParams.makeLocalParamsWithStaticRemoteKey(
       nodeParams.nodeId,
       fundingKeyPath,
       dustLimit = nodeParams.dustLimit,
