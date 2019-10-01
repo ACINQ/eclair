@@ -452,51 +452,55 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
+      Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
+        Kamon.runWithSpan(Kamon.spanBuilder("reply-channel-range").start(), finishSpan = true) {
 
-      @tailrec
-      def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
-        ids match {
-          case Nil => acc.reverse
-          case head :: tail =>
-            val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, nodeParams.routerConf.requestNodeAnnouncements)
-            // 0 means nothing to query, just don't include it
-            val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
-            loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
+          @tailrec
+          def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
+            ids match {
+              case Nil => acc.reverse
+              case head :: tail =>
+                val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, nodeParams.routerConf.requestNodeAnnouncements)
+                // 0 means nothing to query, just don't include it
+                val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
+                loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
+            }
+          }
+
+          val timestamps_opt = routingMessage.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
+          val checksums_opt = routingMessage.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
+
+          val shortChannelIdAndFlags = {
+            loop(shortChannelIds.array, timestamps_opt, checksums_opt)
+          }
+
+          val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
+            case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
+              val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeChannelAnnouncement(flag)) 1 else 0)
+              val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
+              (c1, u1)
+          }
+          log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
+          // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
+          val replies = shortChannelIdAndFlags
+            .grouped(nodeParams.routerConf.channelQueryChunkSize)
+            .map(chunk => QueryShortChannelIds(chainHash,
+              shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
+              if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
+                TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag)))
+              else
+                TlvStream.empty
+            ))
+            .toList
+          val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
+          // we only send a reply right away if there were no pending requests
+          replynow_opt.foreach(transport ! _)
+          val progress = syncProgress(sync1)
+          context.system.eventStream.publish(progress)
+          self ! progress
+          stay using d.copy(sync = sync1)
         }
       }
-
-      val timestamps_opt = routingMessage.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
-      val checksums_opt = routingMessage.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
-
-      val shortChannelIdAndFlags = {
-        loop(shortChannelIds.array, timestamps_opt, checksums_opt)
-      }
-
-      val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
-        case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
-          val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeChannelAnnouncement(flag)) 1 else 0)
-          val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
-          (c1, u1)
-      }
-      log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
-      // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
-      val replies = shortChannelIdAndFlags
-        .grouped(nodeParams.routerConf.channelQueryChunkSize)
-        .map(chunk => QueryShortChannelIds(chainHash,
-          shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
-          if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
-            TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag)))
-          else
-            TlvStream.empty
-        ))
-        .toList
-      val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
-      // we only send a reply right away if there were no pending requests
-      replynow_opt.foreach(transport ! _)
-      val progress = syncProgress(sync1)
-      context.system.eventStream.publish(progress)
-      self ! progress
-      stay using d.copy(sync = sync1)
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
