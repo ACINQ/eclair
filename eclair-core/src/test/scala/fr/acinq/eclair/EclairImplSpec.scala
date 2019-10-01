@@ -199,32 +199,32 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None, allowMultiPart = true)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amount_opt === Some(123 msat))
     assert(receive.expirySeconds_opt === Some(456))
     assert(receive.fallbackAddress === Some(fallBackAddressRaw))
+    assert(receive.allowMultiPart)
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None, allowMultiPart = false))
   }
 
-  test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { fixture =>
+  test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
+    import f._
 
-    val paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
-    val kitWithPaymentHandler = fixture.kit.copy(paymentHandler = paymentHandler)
+    val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams)))
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive(description = "some desc", amount_opt = None, expire_opt = None, fallbackAddress_opt = None, paymentPreimage_opt = Some(paymentPreimage))
+    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage), allowMultiPart = false)
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
         case _ => false
       }
     })
-
   }
 
   test("networkFees/audit/allinvoices should use a default to/from filter expressed in seconds") { f =>
@@ -263,7 +263,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val eclair = new EclairImpl(kit)
-    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey, "Some invoice")
+    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123), Some(pr))
 
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === Some("42"))
@@ -271,6 +272,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     assert(send.amount === 1234.msat)
     assert(send.finalExpiryDelta === CltvExpiryDelta(123))
     assert(send.paymentHash === ByteVector32.One)
+    assert(send.paymentRequest === Some(pr))
   }
 
 }
