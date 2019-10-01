@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
+import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
@@ -66,8 +67,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   // we override the default because these test were designed to use cost-optimized routes
   val integrationTestRouteParams = Some(RouteParams(
     randomize = false,
-    maxFeeBase = MilliSatoshi(Long.MaxValue),
-    maxFeePct = Double.MaxValue,
+    maxFeeBase = 21000 msat,
+    maxFeePct = 0.03,
     routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
     routeMaxLength = ROUTE_MAX_LENGTH,
     ratios = Some(WeightRatios(
@@ -431,6 +432,32 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
         case _ => false
       }
     }, max = 30 seconds, interval = 10 seconds)
+  }
+
+  test("send an HTLC B->D using multi-part payment") {
+    val sender = TestProbe()
+    val amount = 1000000000L.msat
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill", allowMultiPart = true))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+
+    sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 5, paymentRequest = Some(pr)))
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId)
+    assert(paymentSent.paymentHash === pr.paymentHash)
+    assert(paymentSent.parts.length > 1)
+    assert(paymentSent.amount === amount)
+    assert(paymentSent.feesPaid > 0.msat)
+    assert(paymentSent.parts.forall(p => p.id != paymentSent.id))
+    assert(paymentSent.parts.forall(p => p.route.isDefined))
+
+    val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(paymentParts.length == paymentSent.parts.length)
+    assert(paymentParts.map(_.amount).sum === amount)
+    assert(paymentParts.forall(p => p.parentId == paymentId))
+    assert(paymentParts.forall(p => p.parentId != p.id))
+    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat))
   }
 
   /**
