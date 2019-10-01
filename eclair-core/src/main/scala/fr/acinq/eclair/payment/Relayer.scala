@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
@@ -45,7 +46,10 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
+case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, lastUpdate: ChannelUpdate) {
+  override def toString = s"Channel($shortChannelId, $remoteNodeId, $canSend, $canReceive, $isPublic)"
+}
+case class UsableBalances(balances: Seq[UsableBalance])
 // @formatter:on
 
 /**
@@ -68,14 +72,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
     case GetUsableBalances =>
-      sender ! channelUpdates.values
+      sender ! UsableBalances(channelUpdates.values
         .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
-        .map(o => UsableBalances(
+        .map(o => UsableBalance(
           remoteNodeId = o.nextNodeId,
           shortChannelId = o.channelUpdate.shortChannelId,
           canSend = o.commitments.availableBalanceForSend,
           canReceive = o.commitments.availableBalanceForReceive,
-          isPublic = o.commitments.announceChannel))
+          isPublic = o.commitments.announceChannel,
+          lastUpdate = o.channelUpdate)).toSeq)
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
@@ -134,11 +139,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       import addFailed.paymentHash
       addFailed.origin match {
         case Local(id, None) =>
-          // we sent the payment, but we probably restarted and the reference to the original sender was lost,
-          // we publish the failure on the event stream and update the status in paymentDb
-          val result = PaymentFailed(id, paymentHash, Nil)
-          nodeParams.db.payments.updateOutgoingPayment(result)
-          context.system.eventStream.publish(result)
+          handleLocalPaymentAfterRestart(PaymentFailed(id, paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! Status.Failure(addFailed)
         case Relayed(originChannelId, originHtlcId, _, _) =>
@@ -158,12 +159,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFulfill(fulfill, to, add) =>
       to match {
         case Local(id, None) =>
-          // we sent the payment, but we probably restarted and the reference to the original sender was lost,
-          // we publish the success on the event stream and update the status in paymentDb
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
-          val result = PaymentSent(id, add.paymentHash, fulfill.paymentPreimage, Seq(PaymentSent.PartialPayment(id, add.amountMsat, feesPaid, add.channelId, None)))
-          nodeParams.db.payments.updateOutgoingPayment(result)
-          context.system.eventStream.publish(result)
+          handleLocalPaymentAfterRestart(PaymentSent(id, add.paymentHash, fulfill.paymentPreimage, Seq(PaymentSent.PartialPayment(id, add.amountMsat, feesPaid, add.channelId, None))))
         case Local(_, Some(sender)) =>
           sender ! fulfill
         case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
@@ -175,11 +172,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFail(fail, to, add) =>
       to match {
         case Local(id, None) =>
-          // we sent the payment, but we probably restarted and the reference to the original sender was lost
-          // we publish the failure on the event stream and update the status in paymentDb
-          val result = PaymentFailed(id, add.paymentHash, Nil)
-          nodeParams.db.payments.updateOutgoingPayment(result)
-          context.system.eventStream.publish(result)
+          handleLocalPaymentAfterRestart(PaymentFailed(id, add.paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! fail
         case Relayed(originChannelId, originHtlcId, _, _) =>
@@ -190,11 +183,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFailMalformed(fail, to, add) =>
       to match {
         case Local(id, None) =>
-          // we sent the payment, but we probably restarted and the reference to the original sender was lost
-          // we publish the failure on the event stream and update the status in paymentDb
-          val result = PaymentFailed(id, add.paymentHash, Nil)
-          nodeParams.db.payments.updateOutgoingPayment(result)
-          context.system.eventStream.publish(result)
+          handleLocalPaymentAfterRestart(PaymentFailed(id, add.paymentHash, Nil))
         case Local(_, Some(sender)) =>
           sender ! fail
         case Relayed(originChannelId, originHtlcId, _, _) =>
@@ -205,6 +194,37 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
     case "ok" => () // ignoring responses from channels
+  }
+
+  /**
+   * It may happen that we sent a payment and then re-started before the payment completed.
+   * When we receive the HTLC fulfill/fail associated to that payment, the payment FSM that generated them doesn't exist
+   * anymore so we need to reconcile the database.
+   */
+  def handleLocalPaymentAfterRestart(paymentResult: PaymentEvent): Unit = paymentResult match {
+    case e: PaymentFailed =>
+      nodeParams.db.payments.updateOutgoingPayment(e)
+      // Since payments can be multi-part, we only emit the payment failed event once all child payments have failed.
+      nodeParams.db.payments.getOutgoingPayment(e.id).foreach(p => {
+        val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
+        if (payments.forall(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) {
+          context.system.eventStream.publish(PaymentFailed(p.parentId, e.paymentHash, Nil))
+        }
+      })
+    case e: PaymentSent =>
+      nodeParams.db.payments.updateOutgoingPayment(e)
+      // Since payments can be multi-part, we only emit the payment sent event once all child payments have settled.
+      nodeParams.db.payments.getOutgoingPayment(e.id).foreach(p => {
+        val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
+        if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
+          val succeeded = payments.collect {
+            case OutgoingPayment(id, _, _, _, amount, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
+              PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
+          }
+          context.system.eventStream.publish(PaymentSent(p.parentId, e.paymentHash, e.paymentPreimage, succeeded))
+        }
+      })
+    case _ =>
   }
 
 }
