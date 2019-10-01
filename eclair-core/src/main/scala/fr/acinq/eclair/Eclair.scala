@@ -88,7 +88,7 @@ trait Eclair {
 
   def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def sendToRoute(externalId_opt: Option[String], route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID]
+  def sendToRoute(externalId_opt: Option[String], route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta, invoice_opt: Option[PaymentRequest] = None)(implicit timeout: Timeout): Future[UUID]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse]
 
@@ -110,7 +110,7 @@ trait Eclair {
 
   def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
 
-  def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]]
+  def usableBalances()(implicit timeout: Timeout): Future[UsableBalances]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -193,10 +193,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amount, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def sendToRoute(externalId_opt: Option[String], route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID] = {
+  override def sendToRoute(externalId_opt: Option[String], route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta, invoice_opt: Option[PaymentRequest] = None)(implicit timeout: Timeout): Future[UUID] = {
     externalId_opt match {
       case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException("externalId is too long: cannot exceed 66 characters"))
-      case _ => (appKit.paymentInitiator ? SendPaymentRequest(amount, paymentHash, route.last, 1, finalCltvExpiryDelta, None, externalId_opt, route)).mapTo[UUID]
+      case _ => (appKit.paymentInitiator ? SendPaymentRequest(amount, paymentHash, route.last, 1, finalCltvExpiryDelta, invoice_opt, externalId_opt, route)).mapTo[UUID]
     }
   }
 
@@ -227,7 +227,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = Future {
     id match {
-      case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid).toSeq
+      case Left(uuid) => appKit.nodeParams.db.payments.listOutgoingPayments(uuid)
       case Right(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
     }
   }
@@ -288,5 +288,5 @@ class EclairImpl(appKit: Kit) extends Eclair {
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
-  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
+  override def usableBalances()(implicit timeout: Timeout): Future[UsableBalances] = (appKit.relayer ? GetUsableBalances).mapTo[UsableBalances]
 }
