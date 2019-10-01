@@ -44,7 +44,7 @@ object NetworkStats {
    * Computes various network statistics (expensive).
    * Network statistics won't change noticeably very quickly, so this should not be re-computed too often.
    */
-  def apply(publicChannels: Seq[PublicChannel]): Option[NetworkStats] = {
+  def computeStats(publicChannels: Seq[PublicChannel]): Option[NetworkStats] = {
     // We need at least one channel update to be able to compute stats.
     if (publicChannels.isEmpty || publicChannels.flatMap(pc => getChannelUpdateField(pc, _ => true)).isEmpty) {
       None
