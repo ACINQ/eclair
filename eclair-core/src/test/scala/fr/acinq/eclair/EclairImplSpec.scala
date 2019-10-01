@@ -263,7 +263,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val eclair = new EclairImpl(kit)
-    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey, "Some invoice")
+    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123), Some(pr))
 
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === Some("42"))
@@ -271,6 +272,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     assert(send.amount === 1234.msat)
     assert(send.finalExpiryDelta === CltvExpiryDelta(123))
     assert(send.paymentHash === ByteVector32.One)
+    assert(send.paymentRequest === Some(pr))
   }
 
 }
