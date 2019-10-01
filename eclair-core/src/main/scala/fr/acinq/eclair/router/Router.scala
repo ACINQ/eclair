@@ -108,8 +108,8 @@ case class RouteRequest(source: PublicKey,
 
 case class FinalizeRoute(hops: Seq[PublicKey])
 
-case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
-  require(hops.nonEmpty, "route cannot be empty")
+case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+  require(allowEmpty || hops.nonEmpty, "route cannot be empty")
 }
 
 // @formatter:off
@@ -121,6 +121,8 @@ case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
 
 case object GetNetworkStats
+
+case class GetNetworkStatsResponse(stats: Option[NetworkStats])
 
 case object GetRoutingState
 
@@ -273,7 +275,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(GetNetworkStats, d: Data) =>
-      sender ! d.stats
+      sender ! GetNetworkStatsResponse(d.stats)
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>

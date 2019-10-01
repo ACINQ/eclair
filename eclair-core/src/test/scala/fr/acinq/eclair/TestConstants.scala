@@ -37,6 +37,7 @@ import scala.concurrent.duration._
  */
 object TestConstants {
 
+  val defaultBlockHeight = 400000
   val globalFeatures = hex"0200" // variable_length_onion
   val fundingSatoshis = 1000000L sat
   val pushMsat = 200000000L msat
@@ -66,7 +67,7 @@ object TestConstants {
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
       keyManager = keyManager,
-      blockCount = new AtomicLong(400000),
+      blockCount = new AtomicLong(defaultBlockHeight),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -106,6 +107,7 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
+      multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
@@ -144,7 +146,7 @@ object TestConstants {
 
     def nodeParams = NodeParams(
       keyManager = keyManager,
-      blockCount = new AtomicLong(400000),
+      blockCount = new AtomicLong(defaultBlockHeight),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
@@ -184,6 +186,7 @@ object TestConstants {
       channelFlags = 1,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
+      multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
