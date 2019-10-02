@@ -134,7 +134,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
-                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId{
+                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId {
 
   lazy val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
 }
