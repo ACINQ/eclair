@@ -983,6 +983,7 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
       "amount": 10000
     },
     "status": {
+      "type": "failed",
       "failures": [
         {
           "failureType": {
@@ -1019,6 +1020,7 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
       "amount": 10000
     },
     "status": {
+      "type": "sent",
       "paymentPreimage": "62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4",
       "feesPaid": 0,
       "route": [
@@ -1034,9 +1036,9 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
 ]
 ```
 
-Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment attempt. If 
- the attempt was unsuccessful the `status` field contains a non empty array of detiled failures descriptions.The API can 
-be queried by `paymentHash` OR by `uuid`.
+Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment
+attempt. If the attempt was unsuccessful the `status` field contains a non empty array of detailed failures descriptions.
+The API can be queried by `paymentHash` OR by `uuid`.
 
 ### HTTP Request
 
@@ -1074,6 +1076,7 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
   "paymentPreimage": "69d56a778eca1619d19d4efc4dbe014ef64005338cb9f6cb88d47e4bac7abc30",
   "createdAt": 1569338266000,
   "status": {
+    "type": "received",
     "amount": 1000,
     "receivedAt": 1569338275797
   }
