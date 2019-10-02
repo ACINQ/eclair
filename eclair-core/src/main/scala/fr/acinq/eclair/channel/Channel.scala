@@ -166,7 +166,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
         paymentBasepoint = channelVersion match {
           case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-          case STANDARD => keyManager.paymentPoint(channelKeyPath).publicKey
+          case _ => keyManager.paymentPoint(channelKeyPath).publicKey
         },
         delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
@@ -297,7 +297,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
             paymentBasepoint = channelVersion match {
               case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-              case STANDARD => keyManager.paymentPoint(channelKeyPath).publicKey
+              case _ => keyManager.paymentPoint(channelKeyPath).publicKey
             },
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
