@@ -75,11 +75,12 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
 
-  override def getFinalAddress: Future[String] = for {
+  override def getReceiveAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
   } yield address
 
-  override def getPubkeyForAddress(address: String): Future[Crypto.PublicKey] = for {
+  override def getReceivePubkey: Future[Crypto.PublicKey] = for {
+    address <- getReceiveAddress
     JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
   } yield PublicKey(ByteVector.fromValidHex(rawKey))
 

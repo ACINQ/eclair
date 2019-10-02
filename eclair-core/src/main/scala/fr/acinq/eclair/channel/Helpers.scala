@@ -228,14 +228,7 @@ object Helpers {
   }
 
   def getWalletPaymentBasepoint(wallet: EclairWallet): PublicKey = {
-    import scala.concurrent.duration._
-    import scala.concurrent.ExecutionContext.Implicits.global
-
-    val pubKeyF = for {
-      address <- wallet.getFinalAddress
-      pubKey <- wallet.getPubkeyForAddress(address)
-    } yield pubKey
-    Await.result(pubKeyF, 40 seconds)
+    Await.result(wallet.getReceivePubkey, 40 seconds)
   }
 
   object Funding {

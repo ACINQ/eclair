@@ -29,9 +29,9 @@ trait EclairWallet {
 
   def getBalance: Future[Satoshi]
 
-  def getFinalAddress: Future[String]
+  def getReceiveAddress: Future[String]
 
-  def getPubkeyForAddress(address: String): Future[PublicKey]
+  def getReceivePubkey: Future[PublicKey]
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]
 

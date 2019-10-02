@@ -58,8 +58,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val testWallet = if(test.tags.contains("static_remotekey")){
       val randomKey = PrivateKey(randomBytes32).publicKey
       new TestWallet{
-        override def getPubkeyForAddress(address: String): Future[Crypto.PublicKey] = Future.successful(randomKey)
-        override def getFinalAddress: Future[String] = Future.successful({
+        override def getReceivePubkey: Future[Crypto.PublicKey] = Future.successful(randomKey)
+        override def getReceiveAddress: Future[String] = Future.successful({
           val scriptPubKey = Script.write(Script.pay2wpkh(randomKey))
           Bech32.encodeWitnessAddress("bcrt", 0, scriptPubKey)
         })
