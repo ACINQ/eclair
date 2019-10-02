@@ -20,7 +20,7 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_htlcs INTEGER NOT NULL, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_outgoing INTEGER NOT NULL, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_in_flight_outgoing_idx ON local_hosted_channels(in_flight_outgoing)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_channel_id_idx ON local_hosted_channels(channel_id)")
   }

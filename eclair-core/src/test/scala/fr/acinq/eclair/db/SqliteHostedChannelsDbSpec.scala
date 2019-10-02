@@ -98,12 +98,8 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     val hdc1 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId1), channelId = randomBytes32)
     val hdc2 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId2), channelId = randomBytes32)
     val hdc3 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId3), channelId = randomBytes32,
-      futureUpdates = Nil, localSpec = CommitmentSpec(
-      htlcs = Set.empty,
-      feeratePerKw = 0L,
-      toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
-    ))
+      futureUpdates = Nil, localSpec = CommitmentSpec(htlcs = Set(htlc1), feeratePerKw = 0L, toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+        toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))))
 
     db.addOrUpdateChannel(hdc1)
     db.addOrUpdateChannel(hdc2)
