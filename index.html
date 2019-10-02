@@ -1488,6 +1488,7 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"failed"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"failures"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
         </span><span class="p">{</span><span class="w">
           </span><span class="s2">"failureType"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -1524,6 +1525,7 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sent"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"feesPaid"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
       </span><span class="s2">"route"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
@@ -1538,9 +1540,9 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment attempt. If 
- the attempt was unsuccessful the <code>status</code> field contains a non empty array of detiled failures descriptions.The API can 
-be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
+<p>Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment
+attempt. If the attempt was unsuccessful the <code>status</code> field contains a non empty array of detailed failures descriptions.
+The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
 <h3 id='http-request-19'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getsentinfo</code></p>
 <h3 id='parameters-17'>Parameters</h3>
@@ -1587,6 +1589,7 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
   </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"69d56a778eca1619d19d4efc4dbe014ef64005338cb9f6cb88d47e4bac7abc30"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569338266000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"received"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"receivedAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569338275797</span><span class="w">
   </span><span class="p">}</span><span class="w">
