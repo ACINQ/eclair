@@ -97,8 +97,8 @@ class ChannelCodecsSpec extends FunSuite {
       isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
-    val encoded = localParamsCodecLegacy.encode(o).require
-    val decoded = localParamsCodecLegacy.decode(encoded).require
+    val encoded = localParamsCodec(ChannelVersion.ZEROES).encode(o).require
+    val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require
     assert(o.localPaymentBasepoint.isEmpty)
     assert(o === decoded.value)
 
@@ -115,8 +115,8 @@ class ChannelCodecsSpec extends FunSuite {
       isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
-    val encoded1 = localParamsCodecWithPoint.encode(o1).require
-    val decoded1 = localParamsCodecWithPoint.decode(encoded1).require
+    val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
+    val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require
     assert(o1.localPaymentBasepoint.isDefined)
     assert(o1 === decoded1.value)
   }
