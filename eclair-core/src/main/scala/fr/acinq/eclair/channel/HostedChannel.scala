@@ -35,15 +35,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
 
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allTimedoutResolved(nodeParams.currentBlockHeight - 6) => stop(FSM.Normal)
+
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
       goto(WAIT_FOR_INIT_INTERNAL)
-
-    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS)
-      if commits.currentAndNextInFlight.size == commits.timedOutOutgoingHtlcs(nodeParams.currentBlockHeight).size =>
-      // CMD_HOSTED_REMOVE_IDLE_CHANNELS may arrive before CurrentBlockCount, make sure all timedout HTLCs are handled
-      failTimedoutOutgoing(nodeParams.currentBlockHeight, commits)
-      stop(FSM.Normal)
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, commits: HOSTED_DATA_COMMITMENTS) =>
       forwarder ! cmd.transport
@@ -65,11 +61,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(WAIT_FOR_INIT_INTERNAL) {
-    case Event(CMD_HOSTED_MESSAGE(channelId, msg: InvokeHostedChannel), HostedNothing) =>
-      if (nodeParams.chainHash != msg.chainHash) {
-        val message = InvalidChainHash(channelId, local = nodeParams.chainHash, remote = msg.chainHash).getMessage
+    case Event(CMD_HOSTED_MESSAGE(channelId, invoke: InvokeHostedChannel), HostedNothing) =>
+      if (nodeParams.chainHash != invoke.chainHash) {
+        val message = InvalidChainHash(channelId, local = nodeParams.chainHash, remote = invoke.chainHash).getMessage
         stay sending Error(channelId, message)
-      } else if (!Helpers.Closing.isValidFinalScriptPubkey(msg.refundScriptPubKey)) {
+      } else if (!Helpers.Closing.isValidFinalScriptPubkey(invoke.refundScriptPubKey)) {
         val message = InvalidFinalScript(channelId).getMessage
         stay sending Error(channelId, message)
       } else {
@@ -78,7 +74,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
             htlcMinimumMsat = nodeParams.htlcMinimum, maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
             channelCapacityMsat = defaultHostedChanCapacity, liabilityDeadlineBlockdays = minHostedLiabilityBlockdays,
             minimalOnchainRefundAmountSatoshis = maxHostedOnChainRefund, initialClientBalanceMsat = defaultHostedInitialClientBalance)
-        stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, msg.refundScriptPubKey) sending init
+        stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, invoke.refundScriptPubKey) sending init
       }
 
     case Event(CMD_HOSTED_MESSAGE(channelId, remoteSU: StateUpdate), data: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) =>
@@ -258,7 +254,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       }
 
     case Event(CMD_SIGN, commits: HOSTED_DATA_COMMITMENTS) if commits.nextLocalUpdates.nonEmpty || commits.nextRemoteUpdates.nonEmpty =>
-      stay storing() sending commits.nextLocalUnsignedLCSS(nodeParams.currentBlockDay).withLocalSigOfRemote(nodeParams.privateKey).stateUpdate
+      val localSU = commits.nextLocalUnsignedLCSS(nodeParams.currentBlockDay).withLocalSigOfRemote(nodeParams.privateKey).stateUpdate
+      stay storing() sending localSU
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS)
       // Remote peer may send a few identical updates, so only react if signature is different
