@@ -62,6 +62,8 @@ case class Commitments(channelVersion: ChannelVersion,
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
 
+  require(channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) && localParams.localPaymentBasepoint.isDefined, s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
+
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
