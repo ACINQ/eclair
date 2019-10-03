@@ -85,7 +85,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       }
     } else {
       within(30 seconds) {
-        reachNormal(setup)
+        reachNormal(setup, test.tags)
         val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
@@ -540,6 +540,22 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv BITCOIN_TX_CONFIRMED (remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
+    val bobCommitTx = bobCommitTxes.last.commitTx.tx
+    assert(bobCommitTx.txOut.size == 2) // two main outputs
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+
+    // alice won't create a claimMainOutputTx because her main output is already spendable by the wallet
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimMainOutputTx.isEmpty)
+    assert(alice.stateName == CLOSING)
+    // once the remote commit is confirmed the channel is definitively closed
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
   test("recv BITCOIN_TX_CONFIRMED (future remote commit)") { f =>
     import f._
     val sender = TestProbe()
@@ -585,6 +601,48 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    val sender = TestProbe()
+    val oldStateData = alice.stateData
+    val (ra1, htlca1) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
+    // then we manually replace alice's state with an older one
+    alice.setState(OFFLINE, oldStateData)
+    // then we reconnect them
+    val aliceInit = Init(Alice.nodeParams.globalFeatures, Alice.nodeParams.localFeatures)
+    val bobInit = Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    // alice then realizes it has an old state...
+    bob2alice.forward(alice)
+    // ... and ask bob to publish its current commitment
+    val error = alice2bob.expectMsgType[Error]
+    assert(new String(error.data.toArray) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+    // alice now waits for bob to publish its commitment
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+    // bob is nice and publishes its commitment
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+    // using option_static_remotekey alice doesn't need to swipe her output
+    awaitCond(alice.stateName == CLOSING, 10 seconds)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
+    // after the commit tx is confirmed the channel is closed, no claim transactions needed
+    awaitCond(alice.stateName == CLOSED, 10 seconds)
+  }
+
   test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
@@ -599,6 +657,26 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[PublishAsap] // htlc-penalty
     alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
+    alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+    alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
+    alice2blockchain.expectNoMsg(1 second)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].copy(revokedCommitPublished = Nil) == initialState)
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
+    // bob publishes one of his revoked txes
+    val bobRevokedTx = bobCommitTxes.head.commitTx.tx
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
+
+    // alice publishes and watches the penalty tx, but she won't claim her main output (claim-main)
+    alice2blockchain.expectMsgType[PublishAsap] // main-penalty
+    alice2blockchain.expectMsgType[PublishAsap] // htlc-penalty
+    alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
     alice2blockchain.expectNoMsg(1 second)
