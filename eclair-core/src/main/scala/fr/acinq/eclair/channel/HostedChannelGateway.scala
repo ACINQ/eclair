@@ -17,12 +17,15 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
 
   override def receive: Receive = {
     case cmd: CMD_HOSTED_INPUT_RECONNECTED =>
-      Option(inMemoryHostedChannels.get(cmd.channelId)) getOrElse {
-        val freshChannel = context.actorOf(HostedChannel.props(nodeParams, cmd.remoteNodeId, router, relayer))
-        nodeParams.db.hostedChannels.getChannel(cmd.channelId).foreach(freshChannel ! _)
-        inMemoryHostedChannels.put(cmd.channelId, freshChannel)
-        context.watch(freshChannel)
-        freshChannel ! cmd
+      Option(inMemoryHostedChannels.get(cmd.channelId)) match {
+        case Some(channel) =>
+          channel ! cmd
+        case None =>
+          val channel = context.actorOf(HostedChannel.props(nodeParams, cmd.remoteNodeId, router, relayer))
+          nodeParams.db.hostedChannels.getChannel(cmd.channelId).foreach(channel ! _)
+          inMemoryHostedChannels.put(cmd.channelId, channel)
+          context.watch(channel)
+          channel ! cmd
       }
 
     case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
