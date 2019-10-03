@@ -342,8 +342,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, BroadcastTransaction(tx))
     val BroadcastTransactionResponse(`tx`, None) = probe.expectMsgType[BroadcastTransactionResponse]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 1)
 
     awaitCond({
       probe.send(wallet, GetData)
@@ -360,8 +359,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.send(wallet, BroadcastTransaction(tx1))
     val BroadcastTransactionResponse(`tx1`, None) = probe.expectMsgType[BroadcastTransactionResponse]
 
-    probe.send(bitcoincli, BitcoinReq("generate", 1))
-    probe.expectMsgType[JValue]
+    generateBlocks(bitcoincli, 1)
 
     awaitCond({
       probe.send(wallet, GetData)
