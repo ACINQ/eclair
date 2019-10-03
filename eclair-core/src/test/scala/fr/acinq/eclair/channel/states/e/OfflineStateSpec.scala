@@ -22,7 +22,9 @@ import akka.actor.Status
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, PublishAsap, WatchConfirmed, WatchEventSpent}
+import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -32,7 +34,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
 
@@ -45,7 +47,10 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = test.tags.contains("disable-offline-mismatch") match {
+      case false => init()
+      case true => init(nodeParamsA = Alice.nodeParams.copy(onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(closeOnOfflineMismatch = false)))
+    }
     import setup._
     within(30 seconds) {
       reachNormal(setup)
@@ -66,7 +71,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -85,8 +90,12 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(bobCommitments.localParams.channelKeyPath, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
+      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+      bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
+      TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
+      aliceCommitments.localCommit.index)
 
 
     // a didn't receive any update or sig
@@ -143,7 +152,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry, TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -169,8 +178,12 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(bobCommitments.localParams.channelKeyPath, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
+      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+      bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
+      TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
+      aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
     val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
@@ -405,7 +418,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccured])
+    system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
@@ -421,7 +434,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
-    val ChannelErrorOccured(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccured]
+    val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
     assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
 
@@ -459,4 +472,70 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectNoMsg(250 millis)
   }
 
+  test("handle feerate changes while offline (funder scenario)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
+
+    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+
+    // alice is funder
+    sender.send(alice, CurrentFeerates(highFeerate))
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+  }
+
+  test("handle feerate changes while offline (don't close on mismatch)", Tag("disable-offline-mismatch")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
+
+    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+
+    // this time Alice will ignore feerate changes for the offline channel
+    sender.send(alice, CurrentFeerates(highFeerate))
+    alice2blockchain.expectNoMsg()
+    alice2bob.expectNoMsg()
+  }
+
+  test("handle feerate changes while offline (fundee scenario)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val bobCommitTx = bobStateData.commitments.localCommit.publishableTxs.commitTx.tx
+
+    val localFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
+    val tooHighFeeratePerKw = ((bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
+    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+
+    // bob is fundee
+    sender.send(bob, CurrentFeerates(highFeerate))
+    bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+  }
 }

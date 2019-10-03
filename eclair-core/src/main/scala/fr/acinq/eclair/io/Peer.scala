@@ -16,22 +16,20 @@
 
 package fr.acinq.eclair.io
 
-import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
-import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Protocol, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{secureRandom, wire, _}
+import fr.acinq.eclair.{wire, _}
 import kamon.Kamon
 import scodec.Attempt
 import scodec.bits.ByteVector
@@ -664,17 +662,15 @@ object Peer {
   }
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
-    val entropy = new Array[Byte](16)
-    secureRandom.nextBytes(entropy)
-    val bis = new ByteArrayInputStream(entropy)
-    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, channelKeyPath)
+    // we make sure that funder and fundee key path end differently
+    val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, fundingKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
-      channelKeyPath,
+      fundingKeyPath,
       dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit

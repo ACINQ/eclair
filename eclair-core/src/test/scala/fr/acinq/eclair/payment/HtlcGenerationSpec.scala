@@ -28,7 +28,7 @@ import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, PerHopPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Globals, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, nodeFee, randomBytes32}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import scodec.bits.ByteVector
 
@@ -37,10 +37,6 @@ import scodec.bits.ByteVector
  */
 
 class HtlcGenerationSpec extends FunSuite with BeforeAndAfterAll {
-
-  override def beforeAll {
-    Globals.blockCount.set(HtlcGenerationSpec.currentBlockCount)
-  }
 
   test("compute fees") {
     val feeBaseMsat = 150000 msat

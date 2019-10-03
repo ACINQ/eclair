@@ -95,6 +95,7 @@ object Transactions {
    * these values are defined in the RFC
    */
   val commitWeight = 724
+  val htlcOutputWeight = 172
   val htlcTimeoutWeight = 663
   val htlcSuccessWeight = 703
 
@@ -118,26 +119,35 @@ object Transactions {
    */
   def fee2rate(fee: Satoshi, weight: Int) = (fee.toLong * 1000L) / weight
 
+  /** Offered HTLCs below this amount will be trimmed. */
+  def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = dustLimit + weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
+
   def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[DirectedHtlc] = {
-    val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
+    val threshold = offeredHtlcTrimThreshold(dustLimit, spec)
     spec.htlcs
       .filter(_.direction == OUT)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcTimeoutFee))
+      .filter(htlc => htlc.add.amountMsat >= threshold)
       .toSeq
   }
 
+  /** Received HTLCs below this amount will be trimmed. */
+  def receivedHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = dustLimit + weight2fee(spec.feeratePerKw, htlcSuccessWeight)
+
   def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[DirectedHtlc] = {
-    val htlcSuccessFee = weight2fee(spec.feeratePerKw, htlcSuccessWeight)
+    val threshold = receivedHtlcTrimThreshold(dustLimit, spec)
     spec.htlcs
       .filter(_.direction == IN)
-      .filter(htlc => htlc.add.amountMsat >= (dustLimit + htlcSuccessFee))
+      .filter(htlc => htlc.add.amountMsat >= threshold)
       .toSeq
   }
+
+  /** Fee for an un-trimmed HTLC. */
+  def htlcOutputFee(feeratePerKw: Long): Satoshi = weight2fee(feeratePerKw, htlcOutputWeight)
 
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
-    val weight = commitWeight + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    val weight = commitWeight + htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
     weight2fee(spec.feeratePerKw, weight)
   }
 

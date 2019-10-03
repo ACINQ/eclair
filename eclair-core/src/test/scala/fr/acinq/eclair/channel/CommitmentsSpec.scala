@@ -44,12 +44,32 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("take additional HTLC fee into account") { f =>
+    import f._
+    val htlcOutputFee = 1720000 msat
+    val a = 772760000 msat // initial balance alice
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    // we need to take the additional HTLC fee into account because balances are above the trim threshold.
+    assert(ac0.availableBalanceForSend == a - htlcOutputFee)
+    assert(bc0.availableBalanceForReceive == a - htlcOutputFee)
+
+    val (_, cmdAdd) = makeCmdAdd(a - htlcOutputFee - 1000.msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, Local(UUID.randomUUID, None), currentBlockHeight)
+    val bc1 = receiveAdd(bc0, add)
+    val (_, commit1) = sendCommit(ac1, alice.underlyingActor.nodeParams.keyManager)
+    val (bc2, _) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
+    // we don't take into account the additional HTLC fee since Alice's balance is below the trim threshold.
+    assert(ac1.availableBalanceForSend == 1000.msat)
+    assert(bc2.availableBalanceForReceive == 1000.msat)
+  }
+
   test("correct values for availableForSend/availableForReceive (success case)") { f =>
     import f._
 
-    val a = 772760000 msat // initial balance alice
-    val b = 190000000 msat // initial balance bob
     val fee = 1720000 msat // fee due to the additional htlc output
+    val a = (772760000 msat) - fee // initial balance alice
+    val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -61,8 +81,8 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc0.availableBalanceForSend == b)
     assert(bc0.availableBalanceForReceive == a)
 
-    val (payment_preimage, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId)
-    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, Local(UUID.randomUUID, None))
+    val (payment_preimage, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, Local(UUID.randomUUID, None), currentBlockHeight)
     assert(ac1.availableBalanceForSend == a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
@@ -131,9 +151,9 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("correct values for availableForSend/availableForReceive (failure case)") { f =>
     import f._
 
-    val a = 772760000 msat // initial balance alice
-    val b = 190000000 msat // initial balance bob
     val fee = 1720000 msat // fee due to the additional htlc output
+    val a = (772760000 msat) - fee // initial balance alice
+    val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -145,8 +165,8 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc0.availableBalanceForSend == b)
     assert(bc0.availableBalanceForReceive == a)
 
-    val (_, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId)
-    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, Local(UUID.randomUUID, None))
+    val (_, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, Local(UUID.randomUUID, None), currentBlockHeight)
     assert(ac1.availableBalanceForSend == a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
@@ -215,9 +235,9 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("correct values for availableForSend/availableForReceive (multiple htlcs)") { f =>
     import f._
 
-    val a = 772760000 msat // initial balance alice
-    val b = 190000000 msat // initial balance bob
     val fee = 1720000 msat // fee due to the additional htlc output
+    val a = (772760000 msat) - fee // initial balance alice
+    val b = 190000000 msat // initial balance bob
     val p1 = 10000000 msat // a->b payment
     val p2 = 20000000 msat // a->b payment
     val p3 = 40000000 msat // b->a payment
@@ -232,18 +252,18 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(bc0.availableBalanceForSend == b)
     assert(bc0.availableBalanceForReceive == a)
 
-    val (payment_preimage1, cmdAdd1) = makeCmdAdd(p1, bob.underlyingActor.nodeParams.nodeId)
-    val Right((ac1, add1)) = sendAdd(ac0, cmdAdd1, Local(UUID.randomUUID, None))
+    val (payment_preimage1, cmdAdd1) = makeCmdAdd(p1, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Right((ac1, add1)) = sendAdd(ac0, cmdAdd1, Local(UUID.randomUUID, None), currentBlockHeight)
     assert(ac1.availableBalanceForSend == a - p1 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val (_, cmdAdd2) = makeCmdAdd(p2, bob.underlyingActor.nodeParams.nodeId)
-    val Right((ac2, add2)) = sendAdd(ac1, cmdAdd2, Local(UUID.randomUUID, None))
+    val (_, cmdAdd2) = makeCmdAdd(p2, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Right((ac2, add2)) = sendAdd(ac1, cmdAdd2, Local(UUID.randomUUID, None), currentBlockHeight)
     assert(ac2.availableBalanceForSend == a - p1 - fee - p2 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac2.availableBalanceForReceive == b)
 
-    val (payment_preimage3, cmdAdd3) = makeCmdAdd(p3, alice.underlyingActor.nodeParams.nodeId)
-    val Right((bc1, add3)) = sendAdd(bc0, cmdAdd3, Local(UUID.randomUUID, None))
+    val (payment_preimage3, cmdAdd3) = makeCmdAdd(p3, alice.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Right((bc1, add3)) = sendAdd(bc0, cmdAdd3, Local(UUID.randomUUID, None), currentBlockHeight)
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
 

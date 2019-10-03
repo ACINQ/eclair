@@ -28,6 +28,8 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Exten
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, randomKey}
+import org.json4s
+import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
@@ -45,7 +47,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
   ignore("validate a batch of announcements") {
     import scala.concurrent.ExecutionContext.Implicits.global
 
-    implicit val system = ActorSystem()
+    implicit val system = ActorSystem("test")
     implicit val sttpBackend = OkHttpFutureBackend()
     implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
@@ -76,8 +78,13 @@ object AnnouncementsBatchValidationSpec {
 
   case class SimulatedChannel(node1Key: PrivateKey, node2Key: PrivateKey, node1FundingKey: PrivateKey, node2FundingKey: PrivateKey, amount: Satoshi, fundingTx: Transaction, fundingOutputIndex: Int)
 
-  def generateBlocks(numBlocks: Int)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext) =
-    Await.result(extendedBitcoinClient.rpcClient.invoke("generate", numBlocks), 10 seconds)
+  def generateBlocks(numBlocks: Int)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext) = {
+    val generatedF = for {
+      JString(address) <- extendedBitcoinClient.rpcClient.invoke("getnewaddress")
+      _ <- extendedBitcoinClient.rpcClient.invoke("generatetoaddress", numBlocks, address)
+    } yield ()
+    Await.result(generatedF, 10 seconds)
+  }
 
   def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): SimulatedChannel = {
     val node1Key = randomKey

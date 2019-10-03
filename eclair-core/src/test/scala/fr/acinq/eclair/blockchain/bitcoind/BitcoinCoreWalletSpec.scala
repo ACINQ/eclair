@@ -26,10 +26,10 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{LongToBtcAmount, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, TestConstants, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST._
-import org.json4s.{DefaultFormats, JString}
+import org.json4s.JsonAST.{JString, _}
+import org.json4s.DefaultFormats
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.collection.JavaConversions._
@@ -45,8 +45,8 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     "eclair.chain" -> "regtest",
     "eclair.spv" -> false,
     "eclair.server.public-ips.1" -> "localhost",
-    "eclair.bitcoind.port" -> 28333,
-    "eclair.bitcoind.rpcport" -> 28332,
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false))
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
@@ -275,8 +275,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(false)
     // let's confirm tx2
-    sender.send(bitcoincli, BitcoinReq("generate", 1))
-    sender.expectMsgType[JValue](10 seconds)
+    generateBlocks(bitcoincli, 1)
     // this time tx1 has been double spent
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(true)
