@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
+import fr.acinq.eclair.db.OutgoingPaymentStatus
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
@@ -66,8 +67,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   // we override the default because these test were designed to use cost-optimized routes
   val integrationTestRouteParams = Some(RouteParams(
     randomize = false,
-    maxFeeBase = MilliSatoshi(Long.MaxValue),
-    maxFeePct = Double.MaxValue,
+    maxFeeBase = 21000 msat,
+    maxFeePct = 0.03,
     routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
     routeMaxLength = ROUTE_MAX_LENGTH,
     ratios = Some(WeightRatios(
@@ -118,12 +119,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 150, timeout = 30 seconds)
   }
 
-  def instantiateEclairNode(name: String, config: Config) = {
+  def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
     new PrintWriter(new File(datadir, "eclair.conf")) {
       write(config.root().render())
-      close
+      close()
     }
     implicit val system = ActorSystem(s"system-$name")
     val setup = new Setup(datadir)
@@ -223,7 +224,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int) = {
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
     val sender = TestProbe()
     subset.foreach {
       case (_, setup) =>
@@ -433,6 +434,32 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 30 seconds, interval = 10 seconds)
   }
 
+  test("send an HTLC B->D using multi-part payment") {
+    val sender = TestProbe()
+    val amount = 1000000000L.msat
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill", allowMultiPart = true))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+
+    sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 5, paymentRequest = Some(pr)))
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId)
+    assert(paymentSent.paymentHash === pr.paymentHash)
+    assert(paymentSent.parts.length > 1)
+    assert(paymentSent.amount === amount)
+    assert(paymentSent.feesPaid > 0.msat)
+    assert(paymentSent.parts.forall(p => p.id != paymentSent.id))
+    assert(paymentSent.parts.forall(p => p.route.isDefined))
+
+    val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(paymentParts.length == paymentSent.parts.length)
+    assert(paymentParts.map(_.amount).sum === amount)
+    assert(paymentParts.forall(p => p.parentId == paymentId))
+    assert(paymentParts.forall(p => p.parentId != p.id))
+    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat))
+  }
+
   /**
    * We currently use p2pkh script Helpers.getFinalScriptPubKey
    */
@@ -466,7 +493,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     paymentSender.expectMsgType[UUID](30 seconds)
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -550,7 +577,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     paymentSender.expectMsgType[UUID](30 seconds)
 
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -624,7 +651,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -684,7 +711,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentId = paymentSender.expectMsgType[UUID](30 seconds)
 
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[Relayer.FinalPayload].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -753,7 +780,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("A").paymentInitiator, sendReq)
     val paymentId = sender.expectMsgType[UUID]
     // we forward the htlc to the payment handler
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[Relayer.FinalPayload]
     forwardHandlerF.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sigListener.expectMsgType[ChannelSignatureReceived]
@@ -770,19 +797,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[Relayer.FinalPayload]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[Relayer.FinalPayload]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(120000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[Relayer.FinalPayload]
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[Relayer.FinalPayload]
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
@@ -794,19 +821,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimagse
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage1 = sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[Relayer.FinalPayload]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
