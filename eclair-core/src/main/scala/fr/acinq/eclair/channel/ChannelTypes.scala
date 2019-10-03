@@ -206,35 +206,6 @@ final case class LocalParams(nodeId: PublicKey,
                              globalFeatures: ByteVector,
                              localFeatures: ByteVector)
 
-object LocalParams {
-
-  def makeLocalParamsWithStaticRemoteKey(nodeId: PublicKey,
-            fundingKeyPath: DeterministicWallet.KeyPath,
-            dustLimit: Satoshi,
-            maxHtlcValueInFlightMsat: UInt64,
-            channelReserve: Satoshi,
-            htlcMinimum: MilliSatoshi,
-            toSelfDelay: CltvExpiryDelta,
-            maxAcceptedHtlcs: Int,
-            isFunder: Boolean,
-            localPaymentBasepoint: PublicKey,
-            globalFeatures: ByteVector,
-            localFeatures: ByteVector): LocalParams = new LocalParams(
-    nodeId,
-    fundingKeyPath,
-    dustLimit,
-    maxHtlcValueInFlightMsat,
-    channelReserve,
-    htlcMinimum,
-    toSelfDelay,
-    maxAcceptedHtlcs,
-    isFunder,
-    Script.write(Script.pay2wpkh(localPaymentBasepoint)),
-    Some(localPaymentBasepoint),
-    globalFeatures,
-    localFeatures)
-}
-
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
                               maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi

@@ -23,7 +23,7 @@ import akka.actor.ActorSystem
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
@@ -102,7 +102,7 @@ class ChannelCodecsSpec extends FunSuite {
     assert(o.localPaymentBasepoint.isEmpty)
     assert(o === decoded.value)
 
-    val o1 = LocalParams.makeLocalParamsWithStaticRemoteKey(
+    val o1 = LocalParams(
       nodeId = randomKey.publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
@@ -111,7 +111,8 @@ class ChannelCodecsSpec extends FunSuite {
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      localPaymentBasepoint = PrivateKey(randomBytes32).publicKey,
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      localPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
       isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
