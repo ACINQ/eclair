@@ -4,6 +4,8 @@ agent:
   machine:
     type: e1-standard-4
     os_image: ubuntu1804
+execution_time_limit:
+  minutes: 15
 
 blocks:
   - name: Build & Test
@@ -23,5 +25,5 @@ blocks:
             - checkout
             - cache restore maven
             - mvn scoverage:report
-            - bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN
+            - bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN -v
             - cache store maven .m2
