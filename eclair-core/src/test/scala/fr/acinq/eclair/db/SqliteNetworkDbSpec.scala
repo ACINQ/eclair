@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
@@ -53,7 +53,6 @@ class SqliteNetworkDbSpec extends FunSuite {
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
     }
 
-
     using(sqlite.createStatement()) { statement =>
       assert(getVersion(statement, "network", 2) == 1)
     }
@@ -76,7 +75,6 @@ class SqliteNetworkDbSpec extends FunSuite {
     using(sqlite.createStatement()) { statement =>
       assert(getVersion(statement, "network", 2) == 2)
     }
-
   }
 
   test("add/remove/list nodes") {
@@ -102,6 +100,16 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateNode(node_1)
 
     assert(node_4.addresses == List(Tor2("aaaqeayeaudaocaj", 42000)))
+  }
+
+  test("correctly handle txids that start with 0") {
+    val sqlite = TestConstants.sqliteInMemory()
+    val db = new SqliteNetworkDb(sqlite)
+    val sig = ByteVector64.Zeroes
+    val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val txid = ByteVector32.fromValidHex("0001" * 16)
+    db.addChannel(c, txid, Satoshi(42))
+    assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None)))
   }
 
   def simpleTest(sqlite: Connection) = {
