@@ -55,6 +55,15 @@ trait KeyManager {
   }
 
   /**
+   *
+   * @param isFunder true if we're funding this channel
+   * @return a partial key path for a new funding public key. This key path will be extended:
+   *         - with a specific "chain" prefix
+   *         - with a specific "funding pubkey" suffix
+   */
+  def newFundingKeyPath(isFunder: Boolean) : DeterministicWallet.KeyPath
+
+  /**
     *
     * @param tx        input transaction
     * @param publicKey extended public key
@@ -112,9 +121,10 @@ object KeyManager {
     * @return a BIP32 path
     */
   def channelKeyPath(fundingPubKey: PublicKey) : DeterministicWallet.KeyPath = {
-    val buffer = fundingPubKey.hash160.take(16)
+    val buffer = Crypto.sha256(fundingPubKey.value)
     val bis = new ByteArrayInputStream(buffer.toArray)
-    DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
+    def next() = Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)
+    DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next()))
   }
 
   def channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey) : DeterministicWallet.KeyPath = channelKeyPath(fundingPubKey.publicKey)

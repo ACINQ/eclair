@@ -25,103 +25,157 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transact
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Direction
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, Formats, TypeHints, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, TypeHints, jackson}
 import scodec.bits.ByteVector
 import spray.httpx.{Json4sJacksonSupport, Json4sSupport}
 
 /**
-  * JSON Serializers.
-  * Note: in general, deserialization does not need to be implemented.
-  */
-class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ({ null }, {
+ * JSON Serializers.
+ * Note: in general, deserialization does not need to be implemented.
+ */
+class ByteVectorSerializer extends CustomSerializer[ByteVector](_ => ( {
+  null
+}, {
   case x: ByteVector => JString(x.toHex)
 }))
 
-class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ({ null }, {
+class ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
+  null
+}, {
   case x: ByteVector32 => JString(x.toHex)
 }))
 
-class ByteVector64Serializer extends CustomSerializer[ByteVector64](format => ({ null }, {
+class ByteVector64Serializer extends CustomSerializer[ByteVector64](_ => ( {
+  null
+}, {
   case x: ByteVector64 => JString(x.toHex)
 }))
 
-class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
+class UInt64Serializer extends CustomSerializer[UInt64](_ => ( {
+  null
+}, {
   case x: UInt64 => JInt(x.toBigInt)
 }))
 
-class SatoshiSerializer extends CustomSerializer[Satoshi](format => ({ null }, {
+class SatoshiSerializer extends CustomSerializer[Satoshi](_ => ( {
+  null
+}, {
   case x: Satoshi => JInt(x.toLong)
 }))
 
-class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ({ null }, {
+class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](_ => ( {
+  null
+}, {
   case x: MilliSatoshi => JInt(x.toLong)
 }))
 
-class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
-  case x: ShortChannelId => JString(x.toString())
+class CltvExpirySerializer extends CustomSerializer[CltvExpiry](_ => ( {
+  null
+}, {
+  case x: CltvExpiry => JLong(x.toLong)
 }))
 
-class StateSerializer extends CustomSerializer[State](format => ({ null }, {
-  case x: State => JString(x.toString())
+class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](_ => ( {
+  null
+}, {
+  case x: CltvExpiryDelta => JInt(x.toInt)
 }))
 
-class ShaChainSerializer extends CustomSerializer[ShaChain](format => ({ null }, {
-  case x: ShaChain => JNull
+class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
+  null
+}, {
+  case x: ShortChannelId => JString(x.toString)
 }))
 
-class PublicKeySerializer extends CustomSerializer[PublicKey](format => ({ null }, {
+class StateSerializer extends CustomSerializer[State](_ => ( {
+  null
+}, {
+  case x: State => JString(x.toString)
+}))
+
+class ShaChainSerializer extends CustomSerializer[ShaChain](_ => ( {
+  null
+}, {
+  case _: ShaChain => JNull
+}))
+
+class PublicKeySerializer extends CustomSerializer[PublicKey](_ => ( {
+  null
+}, {
   case x: PublicKey => JString(x.toString())
 }))
 
-class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ({ null }, {
-  case x: PrivateKey => JString("XXX")
+class PrivateKeySerializer extends CustomSerializer[PrivateKey](_ => ( {
+  null
+}, {
+  case _: PrivateKey => JString("XXX")
 }))
 
-class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](format => ({ null }, {
+class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
+  null
+}, {
   case x: ChannelVersion => JString(x.bits.toBin)
 }))
 
-class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
+class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
+  null
+}, {
   case x: Transaction => JObject(List(
     JField("txid", JString(x.txid.toHex)),
     JField("tx", JString(x.toString()))
   ))
 }))
 
-class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
+class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
+  null
+}, {
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString()))
   ))
 }))
 
-class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ({ null }, {
+class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](_ => ( {
+  null
+}, {
   case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
 }))
 
-class OutPointSerializer extends CustomSerializer[OutPoint](format => ({ null }, {
+class OutPointSerializer extends CustomSerializer[OutPoint](_ => ( {
+  null
+}, {
   case x: OutPoint => JString(s"${x.txid}:${x.index}")
 }))
 
-class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ null }, {
+class OutPointKeySerializer extends CustomKeySerializer[OutPoint](_ => ( {
+  null
+}, {
   case x: OutPoint => s"${x.txid}:${x.index}"
 }))
 
-class InputInfoSerializer extends CustomSerializer[InputInfo](format => ({ null }, {
+class InputInfoSerializer extends CustomSerializer[InputInfo](_ => ( {
+  null
+}, {
   case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
 }))
 
-class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {
+class ColorSerializer extends CustomSerializer[Color](_ => ( {
+  null
+}, {
   case c: Color => JString(c.toString)
 }))
 
-class RouteResponseSerializer extends CustomSerializer[RouteResponse](format => ({ null }, {
+class RouteResponseSerializer extends CustomSerializer[RouteResponse](_ => ( {
+  null
+}, {
   case route: RouteResponse =>
     val nodeIds = route.hops match {
       case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
@@ -130,49 +184,56 @@ class RouteResponseSerializer extends CustomSerializer[RouteResponse](format => 
     JArray(nodeIds.toList.map(n => JString(n.toString)))
 }))
 
-class ThrowableSerializer extends CustomSerializer[Throwable](format => ({ null }, {
+class ThrowableSerializer extends CustomSerializer[Throwable](_ => ( {
+  null
+}, {
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
   case t: Throwable => JString(t.getClass.getSimpleName)
 }))
 
-class FailureMessageSerializer extends CustomSerializer[FailureMessage](format => ({ null }, {
+class FailureMessageSerializer extends CustomSerializer[FailureMessage](_ => ( {
+  null
+}, {
   case m: FailureMessage => JString(m.message)
 }))
 
-class NodeAddressSerializer extends CustomSerializer[NodeAddress](format => ({ null},{
+class NodeAddressSerializer extends CustomSerializer[NodeAddress](_ => ( {
+  null
+}, {
   case n: NodeAddress => JString(HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString)
 }))
 
-class DirectionSerializer extends CustomSerializer[Direction](format => ({ null },{
+class DirectionSerializer extends CustomSerializer[Direction](_ => ( {
+  null
+}, {
   case d: Direction => JString(d.toString)
 }))
 
-class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](format => ( {
+class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
   null
 }, {
-  case p: PaymentRequest => {
+  case p: PaymentRequest =>
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
-
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(PaymentRequest.write(p))),
       JField("description", JString(p.description match {
-        case Left(l) => l.toString()
+        case Left(l) => l
         case Right(r) => r.toString()
       })),
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
       expiry ++
       minFinalCltvExpiry ++
       amount
-
     JObject(fieldList)
-  }
 }))
 
-class JavaUUIDSerializer extends CustomSerializer[UUID](format => ({ null }, {
+class JavaUUIDSerializer extends CustomSerializer[UUID](_ => ( {
+  null
+}, {
   case id: UUID => JString(id.toString)
 }))
 

@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -184,6 +184,23 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
   }
 
+  test("check that issue #1146 is fixed") {
+    val state3 = addFunds(state, state.changeKeys(0), 0.5 btc)
+
+    val pub1 = state.accountKeys(0).publicKey
+    val pub2 = state.accountKeys(1).publicKey
+    val redeemScript = Scripts.multiSig2of2(pub1, pub2)
+    val pubkeyScript = Script.pay2wsh(redeemScript)
+    val (tx, fee) = state3.spendAll(pubkeyScript, feeRatePerKw = 750)
+    val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
+    assert(received === 0.sat)
+    assert(fee == fee1)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
+
+    val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
+    assert(Try(state3.completeTransaction(tx1, 750, 0 sat, dustLimit, true)).isSuccess)
+  }
+
   test("fuzzy test") {
     val random = new Random()
     (0 to 10) foreach { _ =>
@@ -197,7 +214,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
         val amount = dustLimit + random.nextInt(10000000).sat
         val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
         Try(state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)) match {
-          case Success((state2, tx1, fee1)) => ()
+          case Success((state2, tx1, fee1)) =>
+            tx1.txOut.foreach(o => require(o.amount >= dustLimit, "output is below dust limit"))
           case Failure(cause) if cause.getMessage != null && cause.getMessage.contains("insufficient funds") => ()
           case Failure(cause) => logger.error(s"unexpected $cause")
         }
