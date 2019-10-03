@@ -18,9 +18,9 @@ class HostedChannelTypesSpec extends FunSuite {
   val bobPrivKey: Crypto.PrivateKey = randomKey
 
   val channelId: ByteVector32 = randomBytes32
-  val initHostedChannel = InitHostedChannel(maxHtlcValueInFlightMsat = UInt64(50000L), htlcMinimumMsat = 10 msat, maxAcceptedHtlcs = 3, 1000000L msat, 5000, 1000000 sat, initialClientBalanceMsat = 0 msat)
-  val updateAddHtlc1 = UpdateAddHtlc(channelId, 201, 300 msat, randomBytes32, CltvExpiry(4), Sphinx.emptyOnionPacket)
-  val updateAddHtlc2 = UpdateAddHtlc(channelId, 101, 900 msat, randomBytes32, CltvExpiry(40), Sphinx.emptyOnionPacket)
+  val initHostedChannel = InitHostedChannel(maxHtlcValueInFlightMsat = UInt64(90000L), htlcMinimumMsat = 10 msat, maxAcceptedHtlcs = 3, 1000000L msat, 5000, 1000000 sat, initialClientBalanceMsat = 0 msat)
+  val updateAddHtlc1 = UpdateAddHtlc(channelId, 102, 10000 msat, randomBytes32, CltvExpiry(4), Sphinx.emptyOnionPacket)
+  val updateAddHtlc2 = UpdateAddHtlc(channelId, 103, 20000 msat, randomBytes32, CltvExpiry(40), Sphinx.emptyOnionPacket)
 
   val lcss = LastCrossSignedState(refundScriptPubKey = randomBytes(119), initHostedChannel, blockDay = 100, localBalanceMsat = 100000 msat, remoteBalanceMsat = 900000 msat,
     localUpdates = 201, remoteUpdates = 101, incomingHtlcs = List(updateAddHtlc1, updateAddHtlc2), outgoingHtlcs = List(updateAddHtlc2, updateAddHtlc1),
@@ -81,48 +81,38 @@ class HostedChannelTypesSpec extends FunSuite {
     (payment_preimage, cmd)
   }
 
-  /*
-  def sendAdd(cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (HOSTED_DATA_COMMITMENTS, UpdateAddHtlc)] = {
-
-    val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    val commits1 = addProposal(Left(add)).copy(originChannels = originChannels + (add.id -> origin))
-    val outgoingHtlcs = commits1.nextLocalSpec.htlcs.filter(_.direction == OUT)
-
-    if (commits1.nextLocalSpec.toLocal < 0.msat) {
-      return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commits1.nextLocalSpec.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
-    }
-
-    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
-    if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      return Left(HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
-    }
-
-    if (outgoingHtlcs.size > lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs) {
-      return Left(TooManyAcceptedHtlcs(channelId, maximum = lastCrossSignedState.initHostedChannel.maxAcceptedHtlcs))
-    }
-
-    Right(commits1, add)
-  }
-   */
-
   test("Adding invalid HTLCs") {
     val (_, cmdAdd1) = makeCmdAdd(5 msat, randomKey.publicKey, currentBlockHeight = 100)
     assert(hdc.sendAdd(cmdAdd1, Local(UUID.randomUUID, None), blockHeight = 100).left.get.isInstanceOf[HtlcValueTooSmall])
     val (_, cmdAdd2) = makeCmdAdd(50 msat, randomKey.publicKey, currentBlockHeight = 100)
     assert(hdc.sendAdd(cmdAdd2, Local(UUID.randomUUID, None), blockHeight = 300).left.get.isInstanceOf[ExpiryTooSmall])
-
     val (_, cmdAdd3) = makeCmdAdd(50000 msat, randomKey.publicKey, currentBlockHeight = 100)
-    val (_, cmdAdd4) = makeCmdAdd(50000 msat, randomKey.publicKey, currentBlockHeight = 100)
-    val (_, cmdAdd5) = makeCmdAdd(20000 msat, randomKey.publicKey, currentBlockHeight = 100)
     val Right((hdc1, _)) = hdc.sendAdd(cmdAdd3, Local(UUID.randomUUID, None), blockHeight = 100)
     assert(hdc1.nextLocalSpec.toLocal === 50000.msat)
+    val (_, cmdAdd4) = makeCmdAdd(40000 msat, randomKey.publicKey, currentBlockHeight = 100)
     val Right((hdc2, _)) = hdc1.sendAdd(cmdAdd4, Local(UUID.randomUUID, None), blockHeight = 100)
-
-    val outgoingHtlcs = hdc2.nextLocalSpec.htlcs.filter(_.direction == OUT)
-    println(outgoingHtlcs.map(_.add.amountMsat))
-
-    assert(hdc2.nextLocalSpec.toLocal === 0.msat)
+    assert(hdc2.nextLocalSpec.toLocal === 10000.msat)
+    val (_, cmdAdd5) = makeCmdAdd(20000 msat, randomKey.publicKey, currentBlockHeight = 100)
     val Left(InsufficientFunds(_, _, missing, _, _)) = hdc2.sendAdd(cmdAdd5, Local(UUID.randomUUID, None), blockHeight = 100)
-    assert(missing === 20.sat)
+    assert(missing === 10.sat)
+    val (_, cmdAdd6) = makeCmdAdd(90001 msat, randomKey.publicKey, currentBlockHeight = 100)
+    assert(hdc.sendAdd(cmdAdd6, Local(UUID.randomUUID, None), blockHeight = 100).left.get.isInstanceOf[HtlcValueTooHighInFlight])
+    val (_, cmdAdd7) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
+    val (_, cmdAdd8) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
+    val (_, cmdAdd9) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
+    val (_, cmdAdd10) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
+    val Right((hdc3, _)) = hdc.sendAdd(cmdAdd7, Local(UUID.randomUUID, None), blockHeight = 100)
+    val Right((hdc4, _)) = hdc3.sendAdd(cmdAdd8, Local(UUID.randomUUID, None), blockHeight = 100)
+    val Right((hdc5, _)) = hdc4.sendAdd(cmdAdd9, Local(UUID.randomUUID, None), blockHeight = 100)
+    assert(hdc5.sendAdd(cmdAdd10, Local(UUID.randomUUID, None), blockHeight = 100).left.get.isInstanceOf[TooManyAcceptedHtlcs])
+    val hdc6 = hdc5.receiveAdd(updateAddHtlc1)
+    val hdc7 = hdc6.receiveAdd(updateAddHtlc2)
+    assert(hdc7.nextLocalSpec.toRemote === (hdc.localSpec.toRemote - updateAddHtlc1.amountMsat - updateAddHtlc2.amountMsat))
+    assert(hdc7.nextLocalUnsignedLCSS(blockDay = 100).remoteUpdates === 103)
+    assert(hdc7.nextLocalUnsignedLCSS(blockDay = 100).localUpdates === 204)
+    assert(hdc7.timedOutOutgoingHtlcs(243).isEmpty)
+    assert(hdc7.timedOutOutgoingHtlcs(244).size === 3)
+    assert(!hdc7.allOutgoingHtlcsResolved(244))
+    assert(hdc7.allOutgoingHtlcsResolved(250))
   }
 }

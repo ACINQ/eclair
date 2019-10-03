@@ -34,7 +34,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
 
-    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allOutgoingHtlcsResolved(nodeParams.currentBlockHeight - 6) => stop(FSM.Normal)
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allOutgoingHtlcsResolved(nodeParams.currentBlockHeight) => stop(FSM.Normal)
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport

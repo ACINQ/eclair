@@ -69,7 +69,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
-  def allOutgoingHtlcsResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight)
+  def allOutgoingHtlcsResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight - 6)
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
@@ -102,13 +102,13 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
 
     val add = UpdateAddHtlc(channelId, nextTotalLocal + 1, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     val commits1 = addProposal(Left(add)).copy(originChannels = originChannels + (add.id -> origin))
-    val outgoingHtlcs = commits1.nextLocalSpec.htlcs.filter(_.direction == OUT)
+    val outgoingHtlcs = commits1.nextLocalSpec.htlcs.filter(_.direction == OUT).toList
 
     if (commits1.nextLocalSpec.toLocal < 0.msat) {
       return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commits1.nextLocalSpec.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
     }
 
-    val htlcValueInFlight = outgoingHtlcs.toList.map(_.add.amountMsat).sum
+    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
     if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
@@ -130,13 +130,13 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     }
 
     val commits1 = addProposal(Right(add))
-    val incomingHtlcs = commits1.nextLocalSpec.htlcs.filter(_.direction == IN)
+    val incomingHtlcs = commits1.nextLocalSpec.htlcs.filter(_.direction == IN).toList
 
     if (commits1.nextLocalSpec.toRemote < 0.msat) {
       throw InsufficientFunds(channelId, amount = add.amountMsat, missing = -commits1.nextLocalSpec.toRemote.truncateToSatoshi, reserve = 0 sat, fees = 0 sat)
     }
 
-    val htlcValueInFlight = incomingHtlcs.toList.map(_.add.amountMsat).sum
+    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
     if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
