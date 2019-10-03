@@ -33,7 +33,8 @@ case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel, re
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
 
-case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
+case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
+                                   channelVersion: ChannelVersion,
                                    lastCrossSignedState: LastCrossSignedState,
                                    futureUpdates: List[Either[UpdateMessage, UpdateMessage]], // Left is local/outgoing, Right is remote/incoming
                                    localSpec: CommitmentSpec,
@@ -58,7 +59,7 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
 
-  lazy val currentAndNextOutgoing: Set[UpdateAddHtlc] = (localSpec.htlcs ++ nextLocalSpec.htlcs).collect { case htlc if htlc.direction == OUT => htlc.add }
+  lazy val currentAndNextInFlightHtlcs: Set[DirectedHtlc] = localSpec.htlcs ++ nextLocalSpec.htlcs
 
   override val announceChannel: Boolean = false
 
@@ -66,9 +67,9 @@ case class HOSTED_DATA_COMMITMENTS(channelVersion: ChannelVersion,
 
   def addProposal(update: Either[UpdateMessage, UpdateMessage]): HOSTED_DATA_COMMITMENTS = copy(futureUpdates = futureUpdates :+ update)
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextOutgoing.filter(add => blockheight >= add.cltvExpiry.toLong)
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
-  def allTimedoutResolved(blockheight: Long): Boolean = currentAndNextOutgoing == timedOutOutgoingHtlcs(blockheight)
+  def allOutgoingHtlcsResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight)
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)

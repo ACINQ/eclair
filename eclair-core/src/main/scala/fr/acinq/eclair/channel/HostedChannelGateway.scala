@@ -4,6 +4,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import com.google.common.collect.HashBiMap
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -27,9 +28,20 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
     case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
 
     case Terminated(channelRef) => inMemoryHostedChannels.inverse.remove(channelRef)
+
+    case HotChannels(channels) => channels.foreach(spawnChannel)
+  }
+
+  def spawnChannel(commits: HOSTED_DATA_COMMITMENTS): Unit = {
+    val chan = context.actorOf(HostedChannel.props(nodeParams, commits.remoteNodeId, router, relayer))
+    chan ! commits
+    inMemoryHostedChannels.put(commits.channelId, chan)
+    context.watch(chan)
   }
 }
 
 object HostedChannelGateway {
   def props(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef) = Props(new HostedChannelGateway(nodeParams, router, relayer))
+
+  case class HotChannels(channels: Set[HOSTED_DATA_COMMITMENTS])
 }

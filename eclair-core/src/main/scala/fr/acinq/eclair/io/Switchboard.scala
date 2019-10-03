@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
 import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Relayer.RelayPayload
@@ -46,6 +47,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   // we load peers and channels from database
   {
+    // Hosted channels with HTLCs in-flight
+    val hotHostedChannels: Set[HOSTED_DATA_COMMITMENTS] = nodeParams.db.hostedChannels.listHotChannels()
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
@@ -56,14 +59,14 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     })
     val peers = nodeParams.db.peers.listPeers()
 
-    checkBrokenHtlcsLink(channels, nodeParams.privateKey, nodeParams.globalFeatures) match {
+    checkBrokenHtlcsLink(channels, hotHostedChannels, nodeParams.privateKey, nodeParams.globalFeatures) match {
       case Nil => ()
       case brokenHtlcs =>
         val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
         brokenHtlcKiller ! brokenHtlcs
     }
 
-    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
+//    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
 
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
@@ -77,6 +80,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
           val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
           peer ! Peer.Reconnect
       }
+
+    hostedChannelGateway ! HotChannels(hotHostedChannels)
   }
 
   def receive: Receive = {
@@ -164,7 +169,7 @@ object Switchboard extends Logging {
     *
     * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
     */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], hostedChannels: Set[HOSTED_DATA_COMMITMENTS], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
@@ -176,15 +181,28 @@ object Switchboard extends Logging {
       .map(Relayer.decryptPacket(_, privateKey, features))
       .collect { case Right(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
 
+    val hosted_htlcs_in = hostedChannels
+      .flatMap(_.localSpec.htlcs)
+      .filter(_.direction == IN)
+      .map(_.add)
+      .map(Relayer.decryptPacket(_, privateKey, features))
+      .collect { case Right(RelayPayload(add, _, _)) => add }
+
     // Here we do it differently because we need the origin information.
     val relayed_out = channels
       .flatMap(_.commitments.originChannels.values)
       .collect { case r: Relayed => r }
       .toSet
 
-    val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
+    val hosted_relayed_out = hostedChannels
+      .flatMap(_.originChannels.values)
+      .collect { case r: Relayed => r }
 
-    logger.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
+    val all_htlcs_in = htlcs_in ++ hosted_htlcs_in
+    val all_relayed_out = relayed_out ++ hosted_relayed_out
+    val htlcs_broken = all_htlcs_in.filterNot(htlc_in => all_relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
+
+    logger.info(s"htlcs_in=${all_htlcs_in.size} htlcs_out=${all_relayed_out.size} htlcs_broken=${htlcs_broken.size}")
 
     htlcs_broken
   }
@@ -201,29 +219,29 @@ object Switchboard extends Logging {
     *
     * That's why we need to periodically clean up the pending relay db.
     */
-  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
-
-    // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
-    // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
-    // the command from the pending relay db.
-    val channel2Htlc: Seq[(ByteVector32, Long)] = for {
-      hasCommitments <- channels
-      DirectedHtlc(OUT, add) <- hasCommitments.commitments.remoteCommit.spec.htlcs
-    } yield (add.channelId, add.id)
-
-    val pendingRelay: Set[(ByteVector32, Long)] = for {
-      (chanId, cmd) <- relayDb.listPendingRelay()
-    } yield (chanId, cmd.id)
-
-    val toClean = pendingRelay -- channel2Htlc
-
-    toClean.foreach {
-      case (channelId, htlcId) =>
-        logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
-        relayDb.removePendingRelay(channelId, htlcId)
-    }
-    toClean.size
-  }
+//  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
+//
+//    // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
+//    // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
+//    // the command from the pending relay db.
+//    val channel2Htlc: Seq[(ByteVector32, Long)] = for {
+//      hasCommitments <- channels
+//      DirectedHtlc(OUT, add) <- hasCommitments.commitments.remoteCommit.spec.htlcs
+//    } yield (add.channelId, add.id)
+//
+//    val pendingRelay: Set[(ByteVector32, Long)] = for {
+//      (chanId, cmd) <- relayDb.listPendingRelay()
+//    } yield (chanId, cmd.id)
+//
+//    val toClean = pendingRelay -- channel2Htlc
+//
+//    toClean.foreach {
+//      case (channelId, htlcId) =>
+//        logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
+//        relayDb.removePendingRelay(channelId, htlcId)
+//    }
+//    toClean.size
+//  }
 
 }
 

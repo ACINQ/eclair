@@ -34,7 +34,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
 
-    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allTimedoutResolved(nodeParams.currentBlockHeight - 6) => stop(FSM.Normal)
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allOutgoingHtlcsResolved(nodeParams.currentBlockHeight - 6) => stop(FSM.Normal)
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
@@ -275,6 +275,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
               relayer ! ForwardFailMalformed(malformed, commits.originChannels(malformed.id), add)
           }
           val completedOutgoingHtlcs = commits.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id) -- commits1.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id)
+          context.system.eventStream.publish(AvailableBalanceChanged(self, commits1.channelId, commits1.channelUpdate.shortChannelId, remoteNodeId, localLCSS1.initHostedChannel.channelCapacityMsat.truncateToSatoshi, channelReserve = 0 sat, commits1.availableBalanceForSend, commits1))
           stay using commits1.copy(originChannels = commits1.originChannels -- completedOutgoingHtlcs, futureUpdates = Nil) storing() sending commits1.lastCrossSignedState.stateUpdate
         }
       }
@@ -349,14 +350,18 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       log.info(s"rejecting htlc request in state=$stateName in a hosted channel")
       // This may happen if CMD_ADD_HTLC message had been issued while this channel was NORMAL but became OFFLINE/CLOSED by the time it arrived
-      handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(commits.channelUpdate), Some(c)), c)
+      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
+      handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
   }
 
   onTransition {
     case state -> nextState =>
       nextStateData match {
         case commits: HOSTED_DATA_COMMITMENTS if state != NORMAL && nextState == NORMAL =>
+          context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, commits.isHost, commits.channelId, commits))
+          context.system.eventStream.publish(ShortChannelIdAssigned(self, commits.channelId, commits.channelUpdate.shortChannelId))
           context.system.eventStream.publish(LocalChannelUpdate(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId, None, commits.channelUpdate, commits))
+          context.system.eventStream.publish(HostedChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, commits))
           forwarder ! commits.channelUpdate
         case commits: HOSTED_DATA_COMMITMENTS if nextState != NORMAL =>
           context.system.eventStream.publish(LocalChannelDown(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId))
@@ -395,9 +400,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   def restoreEmptyCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = {
     val localCommitmentSpec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat)
-    // Hosted channel updates are always disabled for now, this is hacky but allows us to easily reply with `ChannelDisabled` when offline and otherwise does not matter since these channels are always private
-    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat, enable = false)
-    HOSTED_DATA_COMMITMENTS(ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty, channelId, isHost, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
+    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
+    HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty, channelId, isHost, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
   }
 
   def makeOverridingLocallySignedLCSS(commits: HOSTED_DATA_COMMITMENTS, newLocalBalance: MilliSatoshi): LastCrossSignedState =

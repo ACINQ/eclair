@@ -32,6 +32,18 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
   import nodeParams.db._
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+  context.system.eventStream.subscribe(self, classOf[HostedChannelStateChanged])
+
+  def reSendCommands(channel: ActorRef, channelId: ByteVector32): Unit = {
+    pendingRelay.listPendingRelay(channelId) match {
+      case Nil => ()
+      case cmds =>
+        log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel $channelId")
+        cmds.foreach(channel ! _) // they all have commit = false
+        // better to sign once instead of after each fulfill
+        channel ! CMD_SIGN
+    }
+  }
 
   override def receive: Receive = {
 
@@ -46,17 +58,9 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
       log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
       pendingRelay.removePendingRelay(channelId, htlcId)
 
-    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
-      import d.channelId
-      // if channel is in a state where it can have pending htlcs, we send them the fulfills/fails we know of
-      pendingRelay.listPendingRelay(channelId) match {
-        case Nil => ()
-        case cmds =>
-          log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel $channelId")
-          cmds.foreach(channel ! _) // they all have commit = false
-          // better to sign once instead of after each fulfill
-          channel ! CMD_SIGN
-      }
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) => reSendCommands(channel, d.channelId)
+
+    case HostedChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL, commits) => reSendCommands(channel, commits.channelId)
 
     case _: ChannelStateChanged => () // ignored
 
@@ -69,5 +73,4 @@ object CommandBuffer {
   case class CommandSend(channelId: ByteVector32, cmd: HasHtlcIdCommand)
 
   case class CommandAck(channelId: ByteVector32, htlcId: Long)
-
 }
