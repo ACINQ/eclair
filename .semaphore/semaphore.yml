@@ -25,5 +25,5 @@ blocks:
             - checkout
             - cache restore maven
             - mvn scoverage:report
-            - bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN -v
+            - bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN
             - cache store maven .m2
