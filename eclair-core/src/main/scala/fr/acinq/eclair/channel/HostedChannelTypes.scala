@@ -108,7 +108,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
       return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commits1.nextLocalSpec.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
     }
 
-    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
+    val htlcValueInFlight = outgoingHtlcs.toList.map(_.add.amountMsat).sum
     if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
@@ -136,7 +136,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
       throw InsufficientFunds(channelId, amount = add.amountMsat, missing = -commits1.nextLocalSpec.toRemote.truncateToSatoshi, reserve = 0 sat, fees = 0 sat)
     }
 
-    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
+    val htlcValueInFlight = incomingHtlcs.toList.map(_.add.amountMsat).sum
     if (lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(channelId, maximum = lastCrossSignedState.initHostedChannel.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
