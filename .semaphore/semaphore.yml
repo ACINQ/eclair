@@ -4,7 +4,7 @@ agent:
   machine:
     type: e1-standard-4
     os_image: ubuntu1804
-execution-time-limit:
+execution_time_limit:
   minutes: 15
 
 blocks:
