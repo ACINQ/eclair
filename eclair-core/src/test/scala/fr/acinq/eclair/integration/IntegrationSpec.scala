@@ -78,6 +78,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   ))
 
   val commonConfig = ConfigFactory.parseMap(Map(
+    "eclair.global-features" -> "0200", // don't use static_remotekey by default
     "eclair.chain" -> "regtest",
     "eclair.server.public-ips.1" -> "127.0.0.1",
     "eclair.bitcoind.port" -> bitcoindPort,
@@ -141,7 +142,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     import collection.JavaConversions._
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop", "eclair.global-features" -> "2000")).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083)).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
     instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.payment-handler" -> "noop")).withFallback(commonConfig)) // NB: eclair.payment-handler = noop allows us to manually fulfill htlcs
@@ -149,6 +150,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
     instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("F6", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F6", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.global-features" -> "2000")).withFallback(commonConfig))
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
@@ -179,7 +181,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     //      /       \
     // A---B ------- C ==== D
     //      \       / \
-    //       '--E--'   F{1,2,3,4,5}
+    //       '--E--'   F{1,2,3,4,5,6}
 
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -196,10 +198,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     connect(nodes("C"), nodes("F3"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("F4"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("F5"), 5000000 sat, 0 msat)
+    connect(nodes("C"), nodes("F6"), 5000000 sat, 0 msat)
     connect(nodes("B"), nodes("G"), 16000000 sat, 0 msat)
     connect(nodes("G"), nodes("C"), 16000000 sat, 0 msat)
 
-    val numberOfChannels = 13
+    val numberOfChannels = 14
     val channelEndpointsCount = 2 * numberOfChannels
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
@@ -249,8 +252,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
-    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 10, 12, 26)
-    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)), 10, 12, 24)
+    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 11, 13, 28)
+    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)), 11, 13, 26)
   }
 
   test("send an HTLC A->D") {
@@ -519,7 +522,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 10, 12, 26)
   }
 
   def getBlockCount: Long = {
@@ -601,7 +604,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 22)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -660,7 +663,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 20)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 22)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
@@ -723,7 +726,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 6, 8, 18)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 20)
   }
 
   test("punish a node that has published a revoked commit tx") {
@@ -846,7 +849,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     // this will remove the channel
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 5, 7, 16)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 6, 8, 18)
   }
 
   test("generate and validate lots of channels") {
@@ -873,8 +876,65 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann))
     awaitCond({
       sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 8 // 7 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  test("operate a channel C -> F6 with option_static_remotekey") {
+    // initially all the balance is on C side and F6 doesn't have an output
+
+    val sender = TestProbe()
+    sender.send(nodes("F6").register, 'channelsTo)
+    // retrieve the channelId of C <--> F6
+    val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
+
+    sender.send(nodes("F6").register, Forward(channelId, CMD_GETSTATEDATA))
+    val initialStateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val initialCommitmentIndex = initialStateDataF6.commitments.localCommit.index
+
+    // the 'to remote' address is a simple P2WPKH spending to the remote payment basepoint
+    val toRemoteAddress = Script.pay2wpkh(initialStateDataF6.commitments.remoteParams.paymentBasepoint)
+
+    // toRemote output of C as seen by F6
+    val Some(toRemoteOutC) = initialStateDataF6.commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+
+    // let's make a payment to advance the commit index
+    val amountMsat = 4200000.msat
+    sender.send(nodes("F6").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    // then we make the actual payment
+    sender.send(nodes("C").paymentInitiator, SendPaymentRequest(amountMsat, pr.paymentHash, nodes("F6").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 1))
+    val paymentId = sender.expectMsgType[UUID](5 seconds)
+    val ps = sender.expectMsgType[PaymentSent](5 seconds)
+    assert(ps.id == paymentId)
+
+    sender.send(nodes("F6").register, Forward(channelId, CMD_GETSTATEDATA))
+    val stateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val commitmentIndex = stateDataF6.commitments.localCommit.index
+    val commitTx = stateDataF6.commitments.localCommit.publishableTxs.commitTx.tx
+    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+
+    // there is a new commitment index in the channel state
+    assert(commitmentIndex == initialCommitmentIndex + 1)
+
+    // script pubkeys of toRemote output remained the same across commitments
+    assert(toRemoteOutC.publicKeyScript == toRemoteOutCNew.publicKeyScript)
+
+    // now let's force close the channel and check the toRemote is what we had at the beginning
+    sender.send(nodes("F6").register, Forward(channelId, CMD_FORCECLOSE))
+    sender.expectMsg("ok")
+    // we then wait for C to detect the unilateral close and go to CLOSING state
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSING
+    }, max = 20 seconds, interval = 1 second)
+
+    sender.send(bitcoincli, BitcoinReq("getrawtransaction", commitTx.txid.toHex))
+    val JString(rawTx) = sender.expectMsgType[JValue](10 seconds)
+
+    // the unilateral close contains the static toRemote output
+    assert(Transaction.read(rawTx).txOut.exists(_.publicKeyScript == toRemoteOutC.publicKeyScript))
   }
 
 }
