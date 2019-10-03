@@ -291,7 +291,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      val channelVersion = Features.canUseStaticRemoteKey(d.localInit.localFeatures, d.remoteInit.localFeatures) match {
+      val channelVersion = Features.canUseStaticRemoteKey(d.localInit.globalFeatures, d.remoteInit.globalFeatures) match {
         case false => ChannelVersion.STANDARD
         case true => ChannelVersion.STATIC_REMOTEKEY
       }
@@ -306,7 +306,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
-      val channelVersion = Features.canUseStaticRemoteKey(d.localInit.localFeatures, d.remoteInit.localFeatures) match {
+      val channelVersion = Features.canUseStaticRemoteKey(d.localInit.globalFeatures, d.remoteInit.globalFeatures) match {
         case false => ChannelVersion.STANDARD
         case true => ChannelVersion.STATIC_REMOTEKEY
       }
