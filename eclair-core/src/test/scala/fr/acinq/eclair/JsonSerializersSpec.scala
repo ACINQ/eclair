@@ -1,6 +1,6 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions._
@@ -37,7 +37,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("ChannelVersion serialization") {
-    assert(write(ChannelVersion.STANDARD) ===  """"00000000000000000000000000000000"""")
+    assert(write(ChannelVersion.STANDARD) ===  """"00000000000000000000000000000001"""")
   }
 
   test("Direction serialization") {
@@ -48,12 +48,12 @@ class JsonSerializersSpec extends FunSuite with Logging {
   test("serialize LocalParams") {
     val localParams = LocalParams(
       nodeId = randomKey.publicKey,
-      channelKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L, 42L, 42L, 42L)),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
-      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
-      toSelfDelay = Random.nextInt(Short.MaxValue),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       isFunder = Random.nextBoolean(),
@@ -67,11 +67,11 @@ class JsonSerializersSpec extends FunSuite with Logging {
   test("serialize RemoteParams") {
     val remoteParams = RemoteParams(
       nodeId = randomKey.publicKey,
-      dustLimitSatoshis = Random.nextInt(Int.MaxValue),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserveSatoshis = Random.nextInt(Int.MaxValue),
-      htlcMinimumMsat = Random.nextInt(Int.MaxValue),
-      toSelfDelay = Random.nextInt(Short.MaxValue),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       fundingPubKey = randomKey.publicKey,
       revocationBasepoint = randomKey.publicKey,
@@ -85,13 +85,13 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("serialize CommitmentSpec") {
-    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomBytes32, 421, 1245, randomBytes32, 1000, OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32)))), feeratePerKw = 1233, toLocalMsat = 100, toRemoteMsat = 200)
+    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomBytes32, 421, MilliSatoshi(1245), randomBytes32, CltvExpiry(1000), OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32)))), feeratePerKw = 1233, toLocal = MilliSatoshi(100), toRemote = MilliSatoshi(200))
     logger.info(write(spec))
   }
 
   test("serialize LocalChanges") {
     val channelId = randomBytes32
-    val add = UpdateAddHtlc(channelId, 421, 1245, randomBytes32, 1000, OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32))
+    val add = UpdateAddHtlc(channelId, 421, MilliSatoshi(1245), randomBytes32, CltvExpiry(1000), OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32))
     val fail = UpdateFailHtlc(channelId, 42, hex"0101")
     val failMalformed = UpdateFailMalformedHtlc(channelId, 42, randomBytes32, 1)
     val updateFee = UpdateFee(channelId, 1500)

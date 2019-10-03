@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
-import org.scalatest.FunSuite
+import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi}
+import org.scalatest.{FunSuite, ParallelTestExecution}
 
-
-class CoinUtilsSpec  extends FunSuite {
+class CoinUtilsSpec  extends FunSuite with ParallelTestExecution {
 
   test("Convert string amount to the correct BtcAmount") {
     val am_btc: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1", BtcUnit.code)

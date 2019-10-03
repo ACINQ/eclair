@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.states
 import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
@@ -27,24 +28,28 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams, TestConstants, randomBytes32}
+import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
+import org.scalatest.{ParallelTestExecution, fixture}
 
 /**
-  * Created by PM on 23/08/2016.
-  */
-trait StateTestsHelperMethods extends TestKitBase {
+ * Created by PM on 23/08/2016.
+ */
+trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with ParallelTestExecution {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
-                   bob: TestFSMRef[State, Data, Channel],
-                   alice2bob: TestProbe,
-                   bob2alice: TestProbe,
-                   alice2blockchain: TestProbe,
-                   bob2blockchain: TestProbe,
-                   router: TestProbe,
-                   relayerA: TestProbe,
-                   relayerB: TestProbe,
-                   channelUpdateListener: TestProbe)
+                          bob: TestFSMRef[State, Data, Channel],
+                          alice2bob: TestProbe,
+                          bob2alice: TestProbe,
+                          alice2blockchain: TestProbe,
+                          bob2blockchain: TestProbe,
+                          router: TestProbe,
+                          relayerA: TestProbe,
+                          relayerB: TestProbe,
+                          channelUpdateListener: TestProbe) {
+    def currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+  }
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
     val alice2bob = TestProbe()
@@ -65,12 +70,13 @@ trait StateTestsHelperMethods extends TestKitBase {
   def reachNormal(setup: SetupFixture,
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
+    val channelVersion = ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains("no_push_msat")) 0 else TestConstants.pushMsat
+    val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
@@ -98,28 +104,33 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSendMsat == math.max(pushMsat - TestConstants.Alice.channelParams.channelReserveSatoshis * 1000, 0))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.channelReserve).max(0 msat))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
-    val R: ByteVector32 = randomBytes32
-    val H: ByteVector32 = Crypto.sha256(R)
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
+    val payment_preimage: ByteVector32 = randomBytes32
+    val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
+    val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, payment_hash, Hop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
+    (payment_preimage, cmd)
+  }
+
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
     val sender = TestProbe()
-    val receiverPubkey = r.underlyingActor.nodeParams.nodeId
-    val expiry = 400144
-    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, amountMsat, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
+    val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
+    val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId, currentBlockHeight)
     sender.send(s, cmd)
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
-    (R, htlc)
+    (payment_preimage, htlc)
   }
 
-  def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
+  def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
     sender.send(s, CMD_FULFILL_HTLC(id, R))
     sender.expectMsg("ok")
@@ -128,7 +139,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
   }
 
-  def crossSign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
+  def crossSign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
     val sCommitIndex = s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
     val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
@@ -163,14 +174,18 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def channelId(a: TestFSMRef[State, Data, Channel]) = Helpers.getChannelId(a.stateData)
 
+
   implicit class ChannelWithTestFeeConf(a: TestFSMRef[State, Data, Channel]) {
     def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
+
     def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
   }
 
 
   implicit class PeerWithTestFeeConf(a: TestFSMRef[Peer.State, Peer.Data, Peer]) {
     def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
+
     def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
   }
+
 }

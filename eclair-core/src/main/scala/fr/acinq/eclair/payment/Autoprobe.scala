@@ -19,17 +19,17 @@ package fr.acinq.eclair.payment
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentResult, RemoteFailure, SendPayment}
-import fr.acinq.eclair.router.{Announcements, Data}
-import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{NodeParams, randomBytes32, secureRandom}
+import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.router.{Announcements, Data, PublicChannel}
+import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
+import fr.acinq.eclair.{LongToBtcAmount, NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
 
 /**
-  * This actor periodically probes the network by sending payments to random nodes. The payments will eventually fail
-  * because the recipient doesn't know the preimage, but it allows us to test channels and improve routing for real payments.
-  */
+ * This actor periodically probes the network by sending payments to random nodes. The payments will eventually fail
+ * because the recipient doesn't know the preimage, but it allows us to test channels and improve routing for real payments.
+ */
 class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: ActorRef) extends Actor with ActorLogging {
 
   import Autoprobe._
@@ -54,15 +54,15 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
         case Some(targetNodeId) =>
           val paymentHash = randomBytes32 // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
-          paymentInitiator ! SendPayment(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
+          paymentInitiator ! SendPaymentRequest(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()
       }
 
-    case paymentResult: PaymentResult =>
+    case paymentResult: PaymentEvent =>
       paymentResult match {
-        case PaymentFailed(_, _, _ :+ RemoteFailure(_, DecryptedFailurePacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_)))) =>
+        case PaymentFailed(_, _, _ :+ RemoteFailure(_, DecryptedFailurePacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_, _))), _) =>
           log.info(s"payment probe successful to node=$targetNodeId")
         case _ =>
           log.info(s"payment probe failed with paymentResult=$paymentResult")
@@ -83,15 +83,16 @@ object Autoprobe {
 
   val PROBING_INTERVAL = 20 seconds
 
-  val PAYMENT_AMOUNT_MSAT = 100 * 1000 // this is below dust_limit so there won't be an output in the commitment tx
+  val PAYMENT_AMOUNT_MSAT = (100 * 1000) msat // this is below dust_limit so there won't be an output in the commitment tx
 
   object TickProbe
 
   def pickPaymentDestination(nodeId: PublicKey, routingData: Data): Option[PublicKey] = {
     // we only pick direct peers with enabled public channels
-    val peers = routingData.updates
+    val peers = routingData.channels
       .collect {
-        case (desc, u) if desc.a == nodeId && Announcements.isEnabled(u.channelFlags) && routingData.channels.contains(u.shortChannelId) => desc.b // we only consider outgoing channels that are enabled and announced
+        case (shortChannelId, c@PublicChannel(ann, _, _, Some(u1), _))
+          if c.getNodeIdSameSideAs(u1) == nodeId && Announcements.isEnabled(u1.channelFlags) && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {
       None

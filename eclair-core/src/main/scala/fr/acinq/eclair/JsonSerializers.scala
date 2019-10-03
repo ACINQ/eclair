@@ -41,7 +41,10 @@ object JsonSerializers {
   implicit val directedHtlcReadWriter: ReadWriter[DirectedHtlc] = macroRW
   implicit val commitmentSpecReadWriter: ReadWriter[CommitmentSpec] = macroRW
   implicit val localChangesReadWriter: ReadWriter[LocalChanges] = macroRW
-  implicit val satoshiReadWriter: ReadWriter[Satoshi] = macroRW
+  implicit val cltvExpiryReadWriter: ReadWriter[CltvExpiry] = readwriter[Long].bimap(_.toLong, CltvExpiry.apply)
+  implicit val cltvExpiryDeltaReadWriter: ReadWriter[CltvExpiryDelta] = readwriter[Int].bimap(_.toInt, CltvExpiryDelta.apply)
+  implicit val millisatoshiReadWriter: ReadWriter[MilliSatoshi] = readwriter[Long].bimap(_.toLong, MilliSatoshi.apply)
+  implicit val satoshiReadWriter: ReadWriter[Satoshi] = readwriter[Long].bimap(_.toLong, Satoshi.apply)
   implicit val txOutReadWriter: ReadWriter[TxOut] = macroRW
   implicit val inputInfoReadWriter: ReadWriter[InputInfo] = macroRW
   implicit val transactionWithInputInfoReadWriter: ReadWriter[TransactionWithInputInfo] = ReadWriter.merge(

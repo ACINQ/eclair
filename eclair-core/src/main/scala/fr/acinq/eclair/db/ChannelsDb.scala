@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 
 trait ChannelsDb {
@@ -27,9 +28,9 @@ trait ChannelsDb {
 
   def listLocalChannels(): Seq[HasCommitments]
 
-  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: Long)
+  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
 
-  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, Long)]
+  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]
 
   def close(): Unit
 

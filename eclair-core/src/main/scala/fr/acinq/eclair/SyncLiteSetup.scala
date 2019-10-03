@@ -17,12 +17,13 @@
 package fr.acinq.eclair
 
 import java.io.File
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props, ReceiveTimeout, SupervisorStrategy}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.fee.FeeEstimator
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKB, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases
@@ -56,11 +57,31 @@ class SyncLiteSetup(datadir: File,
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))
   }
+  /**
+   * This counter holds the current blockchain height.
+   * It is mainly used to calculate htlc expiries.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val blockCount = new AtomicLong(0)
+
+  /**
+   * This holds the current feerates, in satoshi-per-kilobytes.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
+
+  /**
+   * This holds the current feerates, in satoshi-per-kw.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
+  val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
+
   val feeEstimator = new FeeEstimator {
-    override def getFeeratePerKb(target: Int): Long = Globals.feeratesPerKB.get().feePerBlock(target)
-    override def getFeeratePerKw(target: Int): Long = Globals.feeratesPerKw.get().feePerBlock(target)
+    override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, feeEstimator)
+
+  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, blockCount, feeEstimator)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

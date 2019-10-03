@@ -116,6 +116,17 @@ class TlvCodecsSpec extends FunSuite {
     }
   }
 
+  test("encode/decode truncated uint64 overflow") {
+    assert(tu64overflow.encode(Long.MaxValue).require.toByteVector === hex"087fffffffffffffff")
+    assert(tu64overflow.decode(hex"087fffffffffffffff".bits).require.value === Long.MaxValue)
+
+    assert(tu64overflow.encode(42L).require.toByteVector === hex"012a")
+    assert(tu64overflow.decode(hex"012a".bits).require.value === 42L)
+
+    assert(tu64overflow.encode(-1L).isFailure)
+    assert(tu64overflow.decode(hex"088000000000000000".bits).isFailure)
+  }
+
   test("decode invalid truncated integers") {
     val testCases = Seq(
       (tu16, hex"01 00"), // not minimal
@@ -294,6 +305,12 @@ class TlvCodecsSpec extends FunSuite {
     }
   }
 
+  test("get optional TLV field") {
+    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
+    assert(stream.get[TestType254] == Some(TestType254(42)))
+    assert(stream.get[TestType1] == Some(TestType1(42)))
+    assert(stream.get[TestType2] == None)
+  }
 }
 
 object TlvCodecsSpec {
