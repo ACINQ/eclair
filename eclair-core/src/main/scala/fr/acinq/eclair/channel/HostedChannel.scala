@@ -140,10 +140,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
 
     case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
+      forwarder ! commits.lastCrossSignedState
       if (commits.getError.isDefined) {
         goto(CLOSED) sending commits.getError.get
       } else {
-        stay sending commits.lastCrossSignedState
+        stay
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteLCSS: LastCrossSignedState), commits: HOSTED_DATA_COMMITMENTS) =>
