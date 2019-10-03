@@ -1044,8 +1044,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.localFeatures == hex"2000")
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.localFeatures == hex"2000")
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.globalFeatures == hex"2000")
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.globalFeatures == hex"2000")
 
     def aliceToRemoteScript() = {
       val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toRemote

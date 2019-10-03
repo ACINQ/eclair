@@ -48,7 +48,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     }
     val channelVersion = if(test.tags.contains("static_remotekey")) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.STANDARD
     val (aliceParams, bobParams) = if(test.tags.contains("static_remotekey"))
-      (Alice.channelParams.copy(localFeatures = hex"2000"), Bob.channelParams.copy(localFeatures = hex"2000"))
+      (Alice.channelParams.copy(globalFeatures = hex"2000"), Bob.channelParams.copy(globalFeatures = hex"2000"))
     else
       (Alice.channelParams, Bob.channelParams)
 

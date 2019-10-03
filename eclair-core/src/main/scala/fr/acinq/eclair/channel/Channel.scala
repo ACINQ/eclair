@@ -278,7 +278,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-          val channelVersion = Features.canUseStaticRemoteKey(localParams.localFeatures, remoteInit.localFeatures) match {
+          val channelVersion = Features.canUseStaticRemoteKey(localParams.globalFeatures, remoteInit.globalFeatures) match {
             case false => ChannelVersion.STANDARD
             case true => ChannelVersion.STATIC_REMOTEKEY
           }
