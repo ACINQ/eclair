@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, randomBytes32}
 import org.scalatest.FunSuite
 
 class CommitmentSpecSpec extends FunSuite {
