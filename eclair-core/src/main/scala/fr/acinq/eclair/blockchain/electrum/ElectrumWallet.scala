@@ -867,7 +867,7 @@ object ElectrumWallet {
           val confirmedBalance = confirmedReceived.map(_.amount).sum - confirmedSpents.map(_.amount).sum
           val unconfirmedBalance = unconfirmedReceived.map(_.amount).sum - unconfirmedSpents.map(_.amount).sum
 
-          logger.debug(s"scriptHash=$scriptHash confirmedBalance=$confirmedBalance unconfirmedBalance=$unconfirmedBalance)")
+          logger.trace(s"scriptHash=$scriptHash confirmedBalance=$confirmedBalance unconfirmedBalance=$unconfirmedBalance)")
           (confirmedBalance, unconfirmedBalance)
       }
     }

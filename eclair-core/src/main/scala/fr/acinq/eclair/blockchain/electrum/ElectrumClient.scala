@@ -97,7 +97,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
   })
 
   // Start the client.
-  log.info("connecting to server={}", serverAddress)
+  log.debug("connecting to server={}", serverAddress)
 
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
@@ -263,7 +263,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
 
   def disconnected: Receive = {
     case ctx: ChannelHandlerContext =>
-      log.info("connected to server={}", serverAddress)
+      log.debug("connected to server={}", serverAddress)
       send(ctx, version)
       context become waitingForVersion(ctx)
 
