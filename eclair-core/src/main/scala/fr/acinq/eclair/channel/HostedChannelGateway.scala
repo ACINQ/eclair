@@ -22,7 +22,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
           channel ! cmd
         case None =>
           val channel = context.actorOf(HostedChannel.props(nodeParams, cmd.remoteNodeId, router, relayer))
-          nodeParams.db.hostedChannels.getChannel(cmd.channelId).foreach(channel ! _)
+          for (commits <- nodeParams.db.hostedChannels.getChannel(cmd.channelId)) channel ! commits
           inMemoryHostedChannels.put(cmd.channelId, channel)
           context.watch(channel)
           channel ! cmd
@@ -37,9 +37,9 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
 
   def spawnChannel(commits: HOSTED_DATA_COMMITMENTS): Unit = {
     val chan = context.actorOf(HostedChannel.props(nodeParams, commits.remoteNodeId, router, relayer))
-    chan ! commits
     inMemoryHostedChannels.put(commits.channelId, chan)
     context.watch(chan)
+    chan ! commits
   }
 }
 

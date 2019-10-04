@@ -60,6 +60,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(WAIT_FOR_INIT_INTERNAL) {
+    case Event(CMD_HOSTED_MESSAGE(_, _: Error), _) => goto(CLOSED)
+
+    case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE) using HostedNothing
+
     case Event(CMD_HOSTED_MESSAGE(channelId, invoke: InvokeHostedChannel), HostedNothing) =>
       if (nodeParams.chainHash != invoke.chainHash) {
         val message = InvalidChainHash(channelId, local = nodeParams.chainHash, remote = invoke.chainHash).getMessage
@@ -103,6 +107,21 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay using HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits) sending locallySignedLCSS.stateUpdate
       }
 
+    case Event(CMD_HOSTED_MESSAGE(channelId, remoteLCSS: LastCrossSignedState), _: HOSTED_DATA_CLIENT_WAIT_HOST_INIT) =>
+      // Client has expected InitHostedChannel but got LastCrossSignedState so this channel exists already on host side
+      val commits = restoreEmptyCommits(remoteLCSS.reverse, channelId, isHost = false)
+      val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
+      val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(remoteNodeId)
+      if (!isLocalSigOk) {
+        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_LOCAL_SIG)
+      } else if (!isRemoteSigOk) {
+        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_REMOTE_SIG)
+      } else if (remoteLCSS.incomingHtlcs.nonEmpty || remoteLCSS.outgoingHtlcs.nonEmpty) {
+        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_IN_FLIGHT_HTLC_WHILE_RESTORING)
+      } else {
+        goto(NORMAL) using commits storing() sending commits.lastCrossSignedState
+      }
+
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), data: HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE) =>
       val fullySignedLCSS = data.commits.lastCrossSignedState.copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
       proceedOrClose(data.commits.channelId) {
@@ -118,27 +137,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         val commits1 = data.commits.copy(lastCrossSignedState = fullySignedLCSS)
         goto(NORMAL) using commits1 storing()
       }
-
-    case Event(CMD_HOSTED_MESSAGE(_, remoteLCSS: LastCrossSignedState), data: HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE) =>
-      // Client has expected InitHostedChannel but got LastCrossSignedState so this channel exists already on host side
-      val commits = restoreEmptyCommits(remoteLCSS.reverse, data.commits.channelId, isHost = false)
-      val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
-      val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(remoteNodeId)
-      if (!isLocalSigOk) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_LOCAL_SIG)
-      } else if (!isRemoteSigOk) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_REMOTE_SIG)
-      } else if (remoteLCSS.incomingHtlcs.nonEmpty || remoteLCSS.outgoingHtlcs.nonEmpty) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_IN_FLIGHT_HTLC_WHILE_RESTORING)
-      } else {
-        goto(NORMAL) using commits storing() sending commits.lastCrossSignedState
-      }
   }
 
   when(SYNCING) {
-    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
-      goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
-
     case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       forwarder ! commits.lastCrossSignedState
       if (commits.getError.isDefined) {
@@ -181,9 +182,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(NORMAL) {
-    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
-      goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
-
     case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.sendFulfill(c)) match {
         case Success((commits1, fulfill)) =>
@@ -282,6 +280,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(CLOSED) {
+    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, _) =>
+      val invoke = InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
+      goto(WAIT_FOR_INIT_INTERNAL) using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending invoke
+
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
       val completeLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat, remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates, blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
       proceedOrClose(commits.channelId) {
@@ -329,6 +331,14 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   whenUnhandled {
     case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE)
 
+    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
+      if (commits.getError.isDefined) {
+        goto(CLOSED)
+      } else {
+        val commits1 = commits.copy(remoteError = Some(error))
+        goto(CLOSED) using commits1 storing()
+      }
+
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
       if (failTimedoutOutgoing(c.blockCount, commits).nonEmpty && commits.getError.isEmpty) {
         localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
@@ -352,6 +362,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       // This may happen if CMD_ADD_HTLC message had been issued while this channel was NORMAL but became OFFLINE/CLOSED by the time it arrived
       val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
+
+    case otherwise =>
+      println(s"Unhandled $otherwise in state $stateName with data $stateData")
+      stay
   }
 
   onTransition {

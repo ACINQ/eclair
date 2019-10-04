@@ -23,9 +23,7 @@ case class CMD_HOSTED_OVERRIDE(channelId: ByteVector32, newLocalBalance: MilliSa
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
-case class HOSTED_DATA_CLIENT_WAIT_HOST_INIT(refundScriptPubKey: ByteVector) extends HostedData {
-  require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
-}
+case class HOSTED_DATA_CLIENT_WAIT_HOST_INIT(refundScriptPubKey: ByteVector) extends HostedData
 
 case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits: HOSTED_DATA_COMMITMENTS) extends HostedData
 
