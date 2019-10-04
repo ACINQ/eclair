@@ -82,11 +82,10 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         // channel_update are cheap to retrieve, so let's just wipe them out and they'll get resynced
+        // on Android we also wipe the channel db
         statement.execute("PRAGMA foreign_keys = ON")
         logger.warn("migrating network db version 1->2")
-        statement.executeUpdate("ALTER TABLE channels RENAME COLUMN data TO channel_announcement")
-        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_1 BLOB NULL")
-        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_2 BLOB NULL")
+        statement.executeUpdate("DROP TABLE channels")
         statement.executeUpdate("DROP TABLE channel_updates")
         statement.execute("PRAGMA foreign_keys = OFF")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
@@ -95,7 +94,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
       case unknown => throw new IllegalArgumentException(s"unknown version $unknown for network db")
     }
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
