@@ -6,12 +6,12 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Local, Origin, PaymentLifecycle}
+import fr.acinq.eclair.payment.{Local, PaymentLifecycle}
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.transactions.{CommitmentSpec, OUT}
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire.{ChannelUpdate, Error, InitHostedChannel, LastCrossSignedState, UpdateAddHtlc, UpdateMessage}
-import org.scalatest.{FunSuite, Outcome}
+import fr.acinq.eclair.wire.{ChannelUpdate, InitHostedChannel, LastCrossSignedState, UpdateAddHtlc, UpdateFulfillHtlc}
+import org.scalatest.FunSuite
 
 class HostedChannelTypesSpec extends FunSuite {
   val alicePrivKey: Crypto.PrivateKey = randomKey
@@ -19,8 +19,10 @@ class HostedChannelTypesSpec extends FunSuite {
 
   val channelId: ByteVector32 = randomBytes32
   val initHostedChannel = InitHostedChannel(maxHtlcValueInFlightMsat = UInt64(90000L), htlcMinimumMsat = 10 msat, maxAcceptedHtlcs = 3, 1000000L msat, 5000, 1000000 sat, initialClientBalanceMsat = 0 msat)
-  val updateAddHtlc1 = UpdateAddHtlc(channelId, 102, 10000 msat, randomBytes32, CltvExpiry(4), Sphinx.emptyOnionPacket)
-  val updateAddHtlc2 = UpdateAddHtlc(channelId, 103, 20000 msat, randomBytes32, CltvExpiry(40), Sphinx.emptyOnionPacket)
+  val preimage1: ByteVector32 = randomBytes32
+  val preimage2: ByteVector32 = randomBytes32
+  val updateAddHtlc1 = UpdateAddHtlc(channelId, 102, 10000 msat, Crypto.sha256(preimage1), CltvExpiry(4), Sphinx.emptyOnionPacket)
+  val updateAddHtlc2 = UpdateAddHtlc(channelId, 103, 20000 msat, Crypto.sha256(preimage2), CltvExpiry(40), Sphinx.emptyOnionPacket)
 
   val lcss = LastCrossSignedState(refundScriptPubKey = randomBytes(119), initHostedChannel, blockDay = 100, localBalanceMsat = 100000 msat, remoteBalanceMsat = 900000 msat,
     localUpdates = 201, remoteUpdates = 101, incomingHtlcs = List(updateAddHtlc1, updateAddHtlc2), outgoingHtlcs = List(updateAddHtlc2, updateAddHtlc1),
@@ -81,7 +83,7 @@ class HostedChannelTypesSpec extends FunSuite {
     (payment_preimage, cmd)
   }
 
-  test("Adding invalid HTLCs") {
+  test("Processing HTLCs") {
     val (_, cmdAdd1) = makeCmdAdd(5 msat, randomKey.publicKey, currentBlockHeight = 100)
     assert(hdc.sendAdd(cmdAdd1, Local(UUID.randomUUID, None), blockHeight = 100).left.get.isInstanceOf[HtlcValueTooSmall])
     val (_, cmdAdd2) = makeCmdAdd(50 msat, randomKey.publicKey, currentBlockHeight = 100)
@@ -97,11 +99,12 @@ class HostedChannelTypesSpec extends FunSuite {
     assert(missing === 10.sat)
     val (_, cmdAdd6) = makeCmdAdd(90001 msat, randomKey.publicKey, currentBlockHeight = 100)
     assert(hdc.sendAdd(cmdAdd6, Local(UUID.randomUUID, None), blockHeight = 100).left.get.isInstanceOf[HtlcValueTooHighInFlight])
-    val (_, cmdAdd7) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
+    val (bob2AliceAddPreimage, cmdAdd7) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
     val (_, cmdAdd8) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
     val (_, cmdAdd9) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
     val (_, cmdAdd10) = makeCmdAdd(10000 msat, randomKey.publicKey, currentBlockHeight = 100)
-    val Right((hdc3, _)) = hdc.sendAdd(cmdAdd7, Local(UUID.randomUUID, None), blockHeight = 100)
+
+    val Right((hdc3, bob2AliceAdd)) = hdc.sendAdd(cmdAdd7, Local(UUID.randomUUID, None), blockHeight = 100)
     val Right((hdc4, _)) = hdc3.sendAdd(cmdAdd8, Local(UUID.randomUUID, None), blockHeight = 100)
     val Right((hdc5, _)) = hdc4.sendAdd(cmdAdd9, Local(UUID.randomUUID, None), blockHeight = 100)
     assert(hdc5.sendAdd(cmdAdd10, Local(UUID.randomUUID, None), blockHeight = 100).left.get.isInstanceOf[TooManyAcceptedHtlcs])
@@ -114,5 +117,26 @@ class HostedChannelTypesSpec extends FunSuite {
     assert(hdc7.timedOutOutgoingHtlcs(244).size === 3)
     assert(!hdc7.allOutgoingHtlcsResolved(244))
     assert(hdc7.allOutgoingHtlcsResolved(250))
+
+    val bobHdc6LCSS: LastCrossSignedState = hdc6.nextLocalUnsignedLCSS(200).reverse.withLocalSigOfRemote(bobPrivKey) // Bob falls behind by one update and has an hdc6 LCSS
+    assert(hdc7.futureUpdates.diff(hdc7.findState(bobHdc6LCSS).head.futureUpdates) == List(Right(updateAddHtlc2))) // Alice has hdc7 with all updates and hdc LCSS, finds future state and rest of updates
+
+    val aliceSignedLCSS = hdc7.nextLocalUnsignedLCSS(blockDay = 200).withLocalSigOfRemote(alicePrivKey)
+    val bobSignedLCSS = hdc7.nextLocalUnsignedLCSS(blockDay = 200).reverse.withLocalSigOfRemote(bobPrivKey)
+    val aliceStateUpdatedHdc = hdc7.copy(lastCrossSignedState = aliceSignedLCSS.copy(remoteSigOfLocal = bobSignedLCSS.localSigOfRemote), localSpec = hdc7.nextLocalSpec, futureUpdates = Nil)
+    assert(aliceStateUpdatedHdc.lastCrossSignedState.verifyRemoteSig(bobPrivKey.publicKey)) // Alice now has an updated LCSS signed by Bob
+    assert(aliceStateUpdatedHdc.localSpec.htlcs.size === 5) // And 5 HTLCs in-flight
+
+    val (aliceStateUpdatedHdc1, fulfill) = aliceStateUpdatedHdc.sendFulfill(CMD_FULFILL_HTLC(updateAddHtlc1.id, preimage1))
+    assert(aliceStateUpdatedHdc1.nextLocalSpec.toLocal === aliceStateUpdatedHdc1.localSpec.toLocal + updateAddHtlc1.amountMsat)
+    assert(aliceStateUpdatedHdc1.nextLocalSpec.htlcs.size === 4)
+    assert(aliceStateUpdatedHdc1.futureUpdates === List(Left(fulfill)))
+    assert(aliceStateUpdatedHdc1.nextLocalUnsignedLCSS(blockDay = 201).withLocalSigOfRemote(alicePrivKey).stateUpdate.localUpdates === 205) // Fail/Fulfill also increase an update counter
+
+    val bobFulfill = UpdateFulfillHtlc(channelId, bob2AliceAdd.id, bob2AliceAddPreimage)
+    val Right((aliceStateUpdatedHdc2, _, _)) = aliceStateUpdatedHdc1.receiveFulfill(bobFulfill)
+    assert(aliceStateUpdatedHdc2.nextLocalSpec.htlcs.size === 3)
+    assert(aliceStateUpdatedHdc2.futureUpdates === List(Left(fulfill), Right(bobFulfill)))
+    assert(aliceStateUpdatedHdc2.nextLocalUnsignedLCSS(blockDay = 201).withLocalSigOfRemote(alicePrivKey).stateUpdate.remoteUpdates === 104) // Fail/Fulfill also increase an update counter
   }
 }
