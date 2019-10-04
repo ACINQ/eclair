@@ -134,15 +134,18 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
           Some(w)
       }).flatten
       // this is for WatchConfirmed
-      watches.collect {
-        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
-          val txheight = item.height
-          val confirmations = height - txheight + 1
-          log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
-          if (confirmations >= minDepth) {
-            // we need to get the tx position in the block
-            client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
-          }
+      // don't ask for merkle proof for unconfirmed transactions
+      if (item.height > 0) {
+        watches.collect {
+          case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
+            val txheight = item.height
+            val confirmations = height - txheight + 1
+            log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
+            if (confirmations >= minDepth) {
+              // we need to get the tx position in the block
+              client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
+            }
+        }
       }
       context become running(height, tip, watches -- watchSpentTriggered, scriptHashStatus, block2tx, sent)
 
