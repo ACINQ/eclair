@@ -174,32 +174,30 @@ object Switchboard extends Logging {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
-    val htlcs_in = channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .filter(_.direction == OUT)
-      .map(_.add)
-      .map(Relayer.decryptPacket(_, privateKey, features))
-      .collect { case Right(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
 
-    val hosted_htlcs_in = hostedChannels
-      .flatMap(_.localSpec.htlcs)
-      .filter(_.direction == IN)
-      .map(_.add)
-      .map(Relayer.decryptPacket(_, privateKey, features))
-      .collect { case Right(RelayPayload(add, _, _)) => add }
+    val htlcs_in = for {
+      channel <- channels
+      htlc <- channel.commitments.remoteCommit.spec.htlcs if htlc.direction == OUT
+      // we only consider htlcs that are relayed, not the ones for which we are the final node
+      decrypted = Relayer.decryptPacket(htlc.add, privateKey, features) if decrypted.isRight
+    } yield htlc.add
+
+    val hosted_htlcs_in = for {
+      channel <- hostedChannels
+      htlc <- channel.localSpec.htlcs if htlc.direction == IN
+      // we only consider htlcs that are relayed, not the ones for which we are the final node
+      decrypted = Relayer.decryptPacket(htlc.add, privateKey, features) if decrypted.isRight
+    } yield htlc.add
 
     // Here we do it differently because we need the origin information.
-    val relayed_out = channels
-      .flatMap(_.commitments.originChannels.values)
-      .collect { case r: Relayed => r }
-      .toSet
+    val relayed_out = channels.flatMap(_.commitments.originChannels.values).collect { case r: Relayed => r }.toSet
 
-    val hosted_relayed_out = hostedChannels
-      .flatMap(_.originChannels.values)
-      .collect { case r: Relayed => r }
+    val hosted_relayed_out = hostedChannels.flatMap(_.originChannels.values).collect { case r: Relayed => r }
 
     val all_htlcs_in = htlcs_in ++ hosted_htlcs_in
+
     val all_relayed_out = relayed_out ++ hosted_relayed_out
+
     val htlcs_broken = all_htlcs_in.filterNot(htlc_in => all_relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
 
     logger.info(s"htlcs_in=${all_htlcs_in.size} htlcs_out=${all_relayed_out.size} htlcs_broken=${htlcs_broken.size}")
@@ -248,17 +246,17 @@ object Switchboard extends Logging {
 class HtlcReaper extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+  context.system.eventStream.subscribe(self, classOf[HostedChannelStateChanged])
 
   override def receive: Receive = {
     case initialHtlcs: Seq[UpdateAddHtlc]@unchecked => context become main(initialHtlcs)
   }
 
-  def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
-    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
-      val acked = htlcs
-        .filter(_.channelId == data.channelId) // only consider htlcs related to this channel
-        .filter {
-        case htlc if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
+  def failBrokenHtlcs(channel: ActorRef, htlcs: Seq[UpdateAddHtlc], commitments: ChannelCommitments): Unit = {
+    val acked = htlcs
+      .filter(_.channelId == commitments.channelId)
+      .filter {
+        case htlc if commitments.getHtlcCrossSigned(IN, htlc.id).isDefined =>
           // this htlc is cross signed in the current commitment, we can fail it
           log.info(s"failing broken htlc=$htlc")
           channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
@@ -266,9 +264,14 @@ class HtlcReaper extends Actor with ActorLogging {
         case _ =>
           true // the htlc has already been failed, we can forget about it now
       }
-      acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}"))
-      context become main(htlcs diff acked)
+
+    acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}"))
+    context become main(htlcs diff acked)
   }
 
+  def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) => failBrokenHtlcs(channel, htlcs, data.commitments)
 
+    case HostedChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | CLOSED, commits) => failBrokenHtlcs(channel, htlcs, commits)
+  }
 }

@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.payment.Origin
-import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Direction, IN, OUT}
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
@@ -68,6 +68,9 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   def addProposal(update: Either[UpdateMessage, UpdateMessage]): HOSTED_DATA_COMMITMENTS = copy(futureUpdates = futureUpdates :+ update)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
+
+  // For hosted commits an HTLC can only get into localSpec if it was cross-signed already
+  def getHtlcCrossSigned(directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = localSpec.findHtlcById(htlcId, directionRelativeToLocal).map(_.add)
 
   def allOutgoingHtlcsResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight - 6)
 
@@ -149,11 +152,11 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): (HOSTED_DATA_COMMITMENTS, UpdateFulfillHtlc) =
-    localSpec.findHtlcById(cmd.id, IN) match {
-      case Some(htlc) if Commitments.alreadyProposed(nextLocalUpdates, htlc.add.id) =>
+    getHtlcCrossSigned(IN, cmd.id) match {
+      case Some(add) if Commitments.alreadyProposed(nextLocalUpdates, add.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(channelId, cmd.id)
-      case Some(htlc) if htlc.add.paymentHash == Crypto.sha256(cmd.r) =>
+      case Some(add) if add.paymentHash == Crypto.sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
         (addProposal(Left(fulfill)), fulfill)
       case Some(_) => throw InvalidHtlcPreimage(channelId, cmd.id)
@@ -161,19 +164,19 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     }
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
-    localSpec.findHtlcById(fulfill.id, OUT) match {
-      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addProposal(Right(fulfill)), originChannels(fulfill.id), htlc.add))
+    getHtlcCrossSigned(OUT, fulfill.id) match {
+      case Some(add) if add.paymentHash == fulfill.paymentHash => Right((addProposal(Right(fulfill)), originChannels(fulfill.id), add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)
     }
 
   def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (HOSTED_DATA_COMMITMENTS, UpdateFailHtlc) =
-    localSpec.findHtlcById(cmd.id, IN) match {
-      case Some(htlc) if Commitments.alreadyProposed(nextLocalUpdates, htlc.add.id) =>
+    getHtlcCrossSigned(IN, cmd.id) match {
+      case Some(add) if Commitments.alreadyProposed(nextLocalUpdates, add.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(channelId, cmd.id)
-      case Some(htlc) =>
-        val fail = failHtlc(nodeSecret, cmd, htlc.add)
+      case Some(add) =>
+        val fail = failHtlc(nodeSecret, cmd, add)
         (addProposal(Left(fail)), fail)
       case None => throw UnknownHtlcId(channelId, cmd.id)
     }
@@ -183,8 +186,8 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
       throw InvalidFailureCode(channelId)
     }
-    localSpec.findHtlcById(cmd.id, IN) match {
-      case Some(htlc) if Commitments.alreadyProposed(nextLocalUpdates, htlc.add.id) =>
+    getHtlcCrossSigned(IN, cmd.id) match {
+      case Some(add) if Commitments.alreadyProposed(nextLocalUpdates, add.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(channelId, cmd.id)
       case Some(_) =>
@@ -195,8 +198,8 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   }
 
   def receiveFail(fail: UpdateFailHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
-    localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addProposal(Right(fail)), originChannels(fail.id), htlc.add))
+    getHtlcCrossSigned(OUT, fail.id) match {
+      case Some(add) => Right((addProposal(Right(fail)), originChannels(fail.id), add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
 
@@ -205,9 +208,8 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       throw InvalidFailureCode(channelId)
     }
-
-    localSpec.findHtlcById(fail.id, OUT) match {
-      case Some(htlc) => Right((addProposal(Right(fail)), originChannels(fail.id), htlc.add))
+    getHtlcCrossSigned(OUT, fail.id) match {
+      case Some(add) => Right((addProposal(Right(fail)), originChannels(fail.id), add))
       case None => throw UnknownHtlcId(channelId, fail.id)
     }
   }
