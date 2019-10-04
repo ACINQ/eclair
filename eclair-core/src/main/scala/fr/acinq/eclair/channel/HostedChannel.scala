@@ -6,19 +6,21 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.channel.HostedChannel.LocalOrRemoteUpdate
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, OUT}
 import scodec.bits.ByteVector
 
-import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 
 object HostedChannel {
+  type LocalOrRemoteUpdate = Either[UpdateMessage, UpdateMessage]
+
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef) = Props(new HostedChannel(nodeParams, remoteNodeId, router, relayer))
 }
 
-class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, HostedData] with FSMDiagnosticActorLogging[State, HostedData] {
+class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef) extends FSM[State, HostedData] with FSMDiagnosticActorLogging[State, HostedData] {
 
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
   context.system.eventStream.subscribe(self, CMD_HOSTED_REMOVE_IDLE_CHANNELS.getClass)
@@ -34,7 +36,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
 
-    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allOutgoingHtlcsResolved(nodeParams.currentBlockHeight) => stop(FSM.Normal)
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.allOutgoingResolved(nodeParams.currentBlockHeight) => stop(FSM.Normal)
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
@@ -60,8 +62,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(WAIT_FOR_INIT_INTERNAL) {
-    case Event(CMD_HOSTED_MESSAGE(_, _: Error), _) => goto(CLOSED)
-
     case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE) using HostedNothing
 
     case Event(CMD_HOSTED_MESSAGE(channelId, invoke: InvokeHostedChannel), HostedNothing) =>
@@ -91,9 +91,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     // CLIENT FLOW
 
-    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, HostedNothing) =>
-      val invoke = InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
-      stay using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending invoke
+    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, HostedNothing) => stay using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
 
     case Event(CMD_HOSTED_MESSAGE(channelId, init: InitHostedChannel), data: HOSTED_DATA_CLIENT_WAIT_HOST_INIT) =>
       proceedOrClose(channelId) {
@@ -140,13 +138,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(SYNCING) {
-    case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
-      forwarder ! commits.lastCrossSignedState
-      if (commits.getError.isDefined) {
-        goto(CLOSED) sending commits.getError.get
-      } else {
-        stay
-      }
+    case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.getError.isEmpty => stay sending commits.lastCrossSignedState
+
+    case Event(CMD_HOSTED_MESSAGE(_, _: InvokeHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost => goto(CLOSED) sending commits.lastCrossSignedState sending commits.getError.get
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteLCSS: LastCrossSignedState), commits: HOSTED_DATA_COMMITMENTS) =>
       val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
@@ -230,14 +224,14 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       Try(commits.receiveFail(fail)) match {
         case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(Right((commits1, _, _))) => stay using commits1
-        case Success(Left(_)) => stay
+        case _ => stay
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, fail: UpdateFailMalformedHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFailMalformed(fail)) match {
         case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
         case Success(Right((commits1, _, _))) => stay using commits1
-        case Success(Left(_)) => stay
+        case _ => stay
       }
 
     case Event(CMD_SIGN, commits: HOSTED_DATA_COMMITMENTS) if commits.nextLocalUpdates.nonEmpty || commits.nextRemoteUpdates.nonEmpty =>
@@ -272,20 +266,22 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
               val add = commits.localSpec.findHtlcById(malformed.id, OUT).get.add
               relayer ! ForwardFailMalformed(malformed, commits.originChannels(malformed.id), add)
           }
+          context.system.eventStream.publish(AvailableBalanceChanged(self, commits1.channelId, commits1.channelUpdate.shortChannelId, remoteNodeId,
+            localLCSS1.initHostedChannel.channelCapacityMsat.truncateToSatoshi, channelReserve = 0 sat, commits1.availableBalanceForSend, commits1))
           val completedOutgoingHtlcs = commits.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id) -- commits1.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id)
-          context.system.eventStream.publish(AvailableBalanceChanged(self, commits1.channelId, commits1.channelUpdate.shortChannelId, remoteNodeId, localLCSS1.initHostedChannel.channelCapacityMsat.truncateToSatoshi, channelReserve = 0 sat, commits1.availableBalanceForSend, commits1))
           stay using commits1.copy(originChannels = commits1.originChannels -- completedOutgoingHtlcs, futureUpdates = Nil) storing() sending commits1.lastCrossSignedState.stateUpdate
         }
       }
   }
 
   when(CLOSED) {
-    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, _) =>
-      val invoke = InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
-      goto(WAIT_FOR_INIT_INTERNAL) using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending invoke
+    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, _) => goto(WAIT_FOR_INIT_INTERNAL) using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
-      val completeLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat, remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates, blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
+      val newLocalBalance = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
+      val completeLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
+        remoteBalanceMsat = remoteSO.localBalanceMsat, localUpdates = remoteSO.remoteUpdates, remoteUpdates = remoteSO.localUpdates,
+        blockDay = remoteSO.blockDay, remoteSigOfLocal = remoteSO.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
       proceedOrClose(commits.channelId) {
         val isRemoteSigOk = completeLocalLCSS.verifyRemoteSig(remoteNodeId)
         val isBlockdayAcceptable = math.abs(remoteSO.blockDay - nodeParams.currentBlockDay) <= 1
@@ -305,8 +301,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_OVERRIDE(_, newLocalBalance), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
       val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, newLocalBalance)
+      val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
+        localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
+        localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
       val commits1 = commits.copy(overriddenBalanceProposal = Some(newLocalBalance))
-      val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat, localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates, localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
       stay using commits1 sending localSO
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.overriddenBalanceProposal.isDefined =>
@@ -331,13 +329,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   whenUnhandled {
     case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE)
 
-    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
-      if (commits.getError.isDefined) {
-        goto(CLOSED)
-      } else {
-        val commits1 = commits.copy(remoteError = Some(error))
-        goto(CLOSED) using commits1 storing()
-      }
+    case Event(CMD_HOSTED_MESSAGE(_, _: Error), commits: HOSTED_DATA_COMMITMENTS) if commits.remoteError.isDefined => goto(CLOSED)
+
+    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) => goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
+
+    case Event(CMD_HOSTED_MESSAGE(_, _: Error), _) => goto(CLOSED)
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
       if (failTimedoutOutgoing(c.blockCount, commits).nonEmpty && commits.getError.isEmpty) {
@@ -353,19 +349,16 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         case Success(Right((commits1, origin, htlc))) =>
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using commits1 storing()
-        case Success(Left(_)) =>
+        case _ =>
           stay
       }
 
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       log.info(s"rejecting htlc request in state=$stateName in a hosted channel")
       // This may happen if CMD_ADD_HTLC message had been issued while this channel was NORMAL but became OFFLINE/CLOSED by the time it arrived
-      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
+      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
+        commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
-
-    case otherwise =>
-      println(s"Unhandled $otherwise in state $stateName with data $stateData")
-      stay
   }
 
   onTransition {
@@ -414,12 +407,17 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   def restoreEmptyCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = {
     val localCommitmentSpec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat)
-    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta, localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
-    HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty, channelId, isHost, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
+    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
+      localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
+    HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
+      channelId, isHost, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
   }
 
   def makeOverridingLocallySignedLCSS(commits: HOSTED_DATA_COMMITMENTS, newLocalBalance: MilliSatoshi): LastCrossSignedState =
-    commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance, remoteBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - newLocalBalance, localUpdates = commits.lastCrossSignedState.localUpdates + 1, remoteUpdates = commits.lastCrossSignedState.remoteUpdates + 1, blockDay = nodeParams.currentBlockDay, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
+    commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
+      remoteBalanceMsat = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - newLocalBalance,
+      localUpdates = commits.lastCrossSignedState.localUpdates + 1, remoteUpdates = commits.lastCrossSignedState.remoteUpdates + 1,
+      blockDay = nodeParams.currentBlockDay, remoteSigOfLocal = ByteVector64.Zeroes).withLocalSigOfRemote(nodeParams.privateKey)
 
   def proceedOrClose(channelId: ByteVector32)(check: => Unit)(whenPassed: => HostedFsmState): HostedFsmState =
     Try(check) match {
@@ -440,7 +438,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     stay replying Status.Failure(cause)
   }
 
-  def syncAndResend(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[Either[UpdateMessage, UpdateMessage]], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
+  def syncAndResend(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[LocalOrRemoteUpdate], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
     val commits1 = commits.copy(futureUpdates = leftovers.filter(_.isLeft), lastCrossSignedState = lcss, localSpec = spec)
     for (message <- commits1.lastCrossSignedState +: commits1.nextLocalUpdates) forwarder ! message
     if (commits1.nextLocalUpdates.nonEmpty) self ! CMD_SIGN

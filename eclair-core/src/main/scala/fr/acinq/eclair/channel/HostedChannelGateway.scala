@@ -22,13 +22,13 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
           channel ! cmd
         case None =>
           val channel = context.actorOf(HostedChannel.props(nodeParams, cmd.remoteNodeId, router, relayer))
-          for (commits <- nodeParams.db.hostedChannels.getChannel(cmd.channelId)) channel ! commits
+          nodeParams.db.hostedChannels.getChannel(cmd.channelId).foreach(commits => channel ! commits)
           inMemoryHostedChannels.put(cmd.channelId, channel)
           context.watch(channel)
           channel ! cmd
       }
 
-    case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(_ ! cmd)
+    case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(channel => channel ! cmd)
 
     case Terminated(channelRef) => inMemoryHostedChannels.inverse.remove(channelRef)
 

@@ -106,11 +106,9 @@ case class Commitments(channelVersion: ChannelVersion,
    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
    * and our HTLC success in case of a force-close.
    */
-  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
-    localCommit.spec.htlcs.collect {
-      case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).toLong => htlc.add
-    }
-  }
+  def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = for {
+    htlc <- localCommit.spec.htlcs if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).toLong
+  } yield htlc.add
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 

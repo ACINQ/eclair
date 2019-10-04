@@ -5,6 +5,7 @@ import fr.acinq.eclair._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.channel.HostedChannel.LocalOrRemoteUpdate
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Direction, IN, OUT}
 import fr.acinq.eclair.wire._
@@ -34,7 +35,7 @@ case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel, re
 case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
                                    channelVersion: ChannelVersion,
                                    lastCrossSignedState: LastCrossSignedState,
-                                   futureUpdates: List[Either[UpdateMessage, UpdateMessage]], // Left is local/outgoing, Right is remote/incoming
+                                   futureUpdates: List[LocalOrRemoteUpdate], // Left is local/outgoing, Right is remote/incoming
                                    localSpec: CommitmentSpec,
                                    originChannels: Map[Long, Origin],
                                    channelId: ByteVector32,
@@ -63,14 +64,14 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
 
   def getError: Option[Error] = localError.orElse(remoteError)
 
-  def addProposal(update: Either[UpdateMessage, UpdateMessage]): HOSTED_DATA_COMMITMENTS = copy(futureUpdates = futureUpdates :+ update)
+  def addProposal(update: LocalOrRemoteUpdate): HOSTED_DATA_COMMITMENTS = copy(futureUpdates = futureUpdates :+ update)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
 
   // For hosted commits an HTLC can only get into localSpec if it was cross-signed already
   def getHtlcCrossSigned(directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = localSpec.findHtlcById(htlcId, directionRelativeToLocal).map(_.add)
 
-  def allOutgoingHtlcsResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight - 6)
+  def allOutgoingResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight - 6)
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
