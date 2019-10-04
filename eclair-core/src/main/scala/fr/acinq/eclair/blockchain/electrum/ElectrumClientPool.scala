@@ -18,10 +18,10 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.io.InputStream
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
@@ -32,7 +32,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
+class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
   import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
@@ -166,10 +166,10 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
-    if (Globals.blockCount.get() < blockCount) {
+    if (this.blockCount.get() < blockCount) {
       log.debug("current blockchain height={}", blockCount)
       context.system.eventStream.publish(CurrentBlockCount(blockCount))
-      Globals.blockCount.set(blockCount)
+      this.blockCount.set(blockCount)
     }
   }
 }

@@ -18,16 +18,16 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{UInt64, wire}
 import org.scalatest.FunSuite
 import scodec.bits._
 
 import scala.util.Success
 
 /**
-  * Created by fabrice on 10/01/17.
-  */
+ * Created by fabrice on 10/01/17.
+ */
 class SphinxSpec extends FunSuite {
 
   import Sphinx._
@@ -249,7 +249,7 @@ class SphinxSpec extends FunSuite {
 
     val packet = FailurePacket.wrap(
       FailurePacket.wrap(
-        FailurePacket.create(sharedSecrets.head, InvalidOnionPayload(ByteVector32.Zeroes)),
+        FailurePacket.create(sharedSecrets.head, InvalidOnionPayload(UInt64(0), 0)),
         sharedSecrets(1)),
       sharedSecrets(2))
 
@@ -296,6 +296,20 @@ class SphinxSpec extends FunSuite {
       val Success(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error4, sharedSecrets)
       assert(pubkey === publicKeys(4))
       assert(failure === TemporaryNodeFailure)
+    }
+  }
+
+  test("intermediate node replies with an invalid onion payload length") {
+    // The error will not be recoverable by the sender, but we must still forward it.
+    val sharedSecret = ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242")
+    val errors = Seq(
+      ByteVector.fill(FailurePacket.PacketLength - MacLength)(13),
+      ByteVector.fill(FailurePacket.PacketLength + MacLength)(13)
+    )
+
+    for (error <- errors) {
+      val wrapped = FailurePacket.wrap(error, sharedSecret)
+      assert(wrapped.length === FailurePacket.PacketLength)
     }
   }
 
