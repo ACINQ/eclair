@@ -448,14 +448,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   def failTimedoutOutgoing(blockHeight: Long, commits: HOSTED_DATA_COMMITMENTS): Set[UpdateAddHtlc] = {
     // TODO: this will be failing an already failed payments on new blocks, optimize this somehow
     val timedoutOutgoingHtlcs = commits.timedOutOutgoingHtlcs(blockHeight)
-
-    for {
-      add <- timedoutOutgoingHtlcs
-      origin <- commits.originChannels.get(add.id)
-      reason = HtlcTimedout(commits.channelId, Set(add))
-      error = AddHtlcFailed(commits.channelId, add.paymentHash, reason, origin, None, None)
-    } relayer ! error
-
+    Channel.failPending(timedoutOutgoingHtlcs, (origin, add) => AddHtlcFailed(commits.channelId, add.paymentHash, HtlcTimedout(commits.channelId, Set(add)), origin, None, None), relayer, commits, log)
     timedoutOutgoingHtlcs
   }
 
