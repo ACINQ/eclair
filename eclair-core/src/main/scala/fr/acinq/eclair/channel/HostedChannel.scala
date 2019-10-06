@@ -53,12 +53,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       }
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
-      val commits1 = failTimedoutOutgoing(c.blockCount, commits)
-      val newHtlcFailed = commits1.resolvedOutgoingHtlcLeftoverIds != commits.resolvedOutgoingHtlcLeftoverIds
+      val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
       val error = Error(commits1.channelId, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
-      if (newHtlcFailed && commits1.getError.isEmpty) {
+      if (failedAdds.nonEmpty && commits1.getError.isEmpty) {
         stay using commits1.copy(localError = Some(error)) storing()
-      } else if (newHtlcFailed) {
+      } else if (failedAdds.nonEmpty) {
         stay using commits1 storing()
       } else {
         stay
@@ -355,11 +354,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) => goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
-      val commits1 = failTimedoutOutgoing(c.blockCount, commits)
-      val newHtlcFailed = commits1.resolvedOutgoingHtlcLeftoverIds != commits.resolvedOutgoingHtlcLeftoverIds
-      if (newHtlcFailed && commits.getError.isEmpty) {
+      val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
+      if (failedAdds.nonEmpty && commits.getError.isEmpty) {
         localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
-      } else if (newHtlcFailed) {
+      } else if (failedAdds.nonEmpty) {
         stay using commits1 storing()
       } else {
         stay
@@ -471,10 +469,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     commits1
   }
 
-  def failTimedoutOutgoing(blockHeight: Long, commits: HOSTED_DATA_COMMITMENTS): HOSTED_DATA_COMMITMENTS = {
+  def failTimedoutOutgoing(blockHeight: Long, commits: HOSTED_DATA_COMMITMENTS): (HOSTED_DATA_COMMITMENTS, Set[UpdateAddHtlc]) = {
     val timedoutOutgoingHtlcs = commits.timedOutOutgoingHtlcs(blockHeight) // Find timedout outgoing HTLCs which have not been failed or fulfilled by remote peer already
     Channel.failPending(timedoutOutgoingHtlcs, (origin, add) => AddHtlcFailed(commits.channelId, add.paymentHash, HtlcTimedout(commits.channelId, Set(add)), origin, None, None), relayer, commits, log)
-    commits.copy(resolvedOutgoingHtlcLeftoverIds = timedoutOutgoingHtlcs.map(_.id) ++ commits.resolvedOutgoingHtlcLeftoverIds) // Remember HTLCs we have just failed to not try failing them again
+    (commits.copy(resolvedOutgoingHtlcLeftoverIds = timedoutOutgoingHtlcs.map(_.id) ++ commits.resolvedOutgoingHtlcLeftoverIds), timedoutOutgoingHtlcs)
   }
 
   initialize()
