@@ -840,7 +840,7 @@ object Helpers {
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
         tx.txIn.map(_.witness match {
-          case ScriptWitness(Seq(ByteVector.empty, remoteSig, localSig, ByteVector.empty, htlcOfferedScript)) =>
+          case ScriptWitness(Seq(ByteVector.empty, _, _, ByteVector.empty, htlcOfferedScript)) =>
             val paymentHash160 = htlcOfferedScript.slice(109, 109 + 20)
             log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (htlc-timeout)")
             localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add).filter(add => ripemd160(add.paymentHash) == paymentHash160)

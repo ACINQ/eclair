@@ -43,7 +43,8 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
                                    channelUpdate: ChannelUpdate,
                                    localError: Option[Error],
                                    remoteError: Option[Error],
-                                   overriddenBalanceProposal: Option[MilliSatoshi] // Closed channel override can be initiated by Host, a new proposed balance should be retained if this happens
+                                   resolvedOutgoingHtlcLeftoverIds: Set[Long], // CLOSED channel may have in-flight outgoing HTLCs which can later be failed or fulfilled, collect their IDs here
+                                   overriddenBalanceProposal: Option[MilliSatoshi] // CLOSED channel override can be initiated by Host, a new proposed balance should be retained once this happens
                                   ) extends ChannelCommitments with HostedData { me =>
 
   lazy val (nextLocalUpdates, nextRemoteUpdates, nextTotalLocal, nextTotalRemote) =
@@ -66,12 +67,11 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
 
   def addProposal(update: LocalOrRemoteUpdate): HOSTED_DATA_COMMITMENTS = copy(futureUpdates = futureUpdates :+ update)
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong => htlc.add }
-
-  // For hosted commits an HTLC can only get into localSpec if it was cross-signed already
   def getHtlcCrossSigned(directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = localSpec.findHtlcById(htlcId, directionRelativeToLocal).map(_.add)
 
-  def allOutgoingResolved(blockheight: Long): Boolean = currentAndNextInFlightHtlcs.collect { case htlc if htlc.direction == OUT => htlc.add } == timedOutOutgoingHtlcs(blockheight - 6)
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect {
+    case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong && !resolvedOutgoingHtlcLeftoverIds.contains(htlc.add.id) => htlc.add
+  }
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)

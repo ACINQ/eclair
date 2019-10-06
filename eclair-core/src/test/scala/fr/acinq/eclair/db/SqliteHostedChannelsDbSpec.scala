@@ -66,6 +66,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     channelUpdate = channelUpdate,
     localError = None,
     remoteError = Some(error),
+    resolvedOutgoingHtlcLeftoverIds = Set(12,67,79, 119),
     overriddenBalanceProposal = Some(MilliSatoshi(1000000L)))
 
   test("init sqlite 2 times in a row") {

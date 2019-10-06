@@ -73,7 +73,7 @@ class HostedChannelTypesSpec extends FunSuite {
   }
 
   val hdc = HOSTED_DATA_COMMITMENTS(randomKey.publicKey, ChannelVersion.STANDARD, lcss1, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
-    channelId = randomBytes32, isHost = true, channelUpdate, localError = None, remoteError = None, overriddenBalanceProposal = None)
+    channelId = randomBytes32, isHost = true, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overriddenBalanceProposal = None)
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
     val payment_preimage: ByteVector32 = randomBytes32
@@ -115,8 +115,6 @@ class HostedChannelTypesSpec extends FunSuite {
     assert(hdc7.nextLocalUnsignedLCSS(blockDay = 100).localUpdates === 204)
     assert(hdc7.timedOutOutgoingHtlcs(243).isEmpty)
     assert(hdc7.timedOutOutgoingHtlcs(244).size === 3)
-    assert(!hdc7.allOutgoingResolved(244))
-    assert(hdc7.allOutgoingResolved(250))
 
     val bobHdc6LCSS: LastCrossSignedState = hdc6.nextLocalUnsignedLCSS(200).reverse.withLocalSigOfRemote(bobPrivKey) // Bob falls behind by one update and has an hdc6 LCSS
     assert(hdc7.futureUpdates.diff(hdc7.findState(bobHdc6LCSS).head.futureUpdates) == List(Right(updateAddHtlc2))) // Alice has hdc7 with all updates and hdc LCSS, finds future state and rest of updates
