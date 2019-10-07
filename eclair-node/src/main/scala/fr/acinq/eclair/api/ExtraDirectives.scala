@@ -36,14 +36,14 @@ import scala.concurrent.ExecutionContext.Implicits.global
 trait ExtraDirectives extends Directives {
 
   // named and typed URL parameters used across several routes
-  val shortChannelIdFormParam = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
-  val channelIdFormParam = "channelId".as[ByteVector32](sha256HashUnmarshaller)
-  val nodeIdFormParam = "nodeId".as[PublicKey]
-  val paymentHashFormParam = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
-  val fromFormParam = "from".as[Long]
-  val toFormParam = "to".as[Long]
-  val amountMsatFormParam = "amountMsat".as[MilliSatoshi]
-  val invoiceFormParam = "invoice".as[PaymentRequest]
+  val shortChannelIdFormParam_opt = "shortChannelId".as[Option[ShortChannelId]](shortChannelIdUnmarshaller)
+  val channelIdFormParam_opt = "channelId".as[Option[ByteVector32]](sha256HashUnmarshaller)
+  val nodeIdFormParam_opt = "nodeId".as[Option[PublicKey]](publicKeyUnmarshaller)
+  val paymentHashFormParam_opt = "paymentHash".as[Option[ByteVector32]](sha256HashUnmarshaller)
+  val fromFormParam_opt = "from".as[Long]
+  val toFormParam_opt = "to".as[Long]
+  val amountMsatFormParam_opt = "amountMsat".as[Option[MilliSatoshi]](millisatoshiUnmarshaller)
+  val invoiceFormParam_opt = "invoice".as[Option[PaymentRequest]](bolt11Unmarshaller)
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: Marshaller[T]) = onComplete(OnCompleteFutureMagnet(fut)) {
@@ -54,7 +54,7 @@ trait ExtraDirectives extends Directives {
   }
 
   import shapeless.::
-  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).hflatMap {
+  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam_opt, shortChannelIdFormParam_opt).hflatMap {
     case None :: None :: HNil => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
     case Some(channelId) :: None :: HNil => provide(Left(channelId))
     case None :: Some(shortChannelId) :: HNil => provide(Right(shortChannelId))

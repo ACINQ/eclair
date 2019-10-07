@@ -34,39 +34,39 @@ import scala.util.{Failure, Success, Try}
 
 object FormParamExtractors {
 
-  implicit val publicKeyUnmarshaller: Deserializer[Option[String], PublicKey] = strictDeserializer { str =>
+  implicit val publicKeyUnmarshaller: Deserializer[Option[String], Option[PublicKey]] = strictDeserializer { str =>
     PublicKey(ByteVector.fromValidHex(str))
   }
 
-  implicit val binaryDataUnmarshaller: Deserializer[Option[String], ByteVector] = strictDeserializer { str =>
+  implicit val binaryDataUnmarshaller: Deserializer[Option[String], Option[ByteVector]] = strictDeserializer { str =>
     ByteVector.fromValidHex(str)
   }
 
-  implicit val sha256HashUnmarshaller: Deserializer[Option[String], ByteVector32] = strictDeserializer { bin =>
+  implicit val sha256HashUnmarshaller: Deserializer[Option[String], Option[ByteVector32]] = strictDeserializer { bin =>
     ByteVector32.fromValidHex(bin)
   }
 
-  implicit val bolt11Unmarshaller: Deserializer[Option[String], PaymentRequest] = strictDeserializer { rawRequest =>
+  implicit val bolt11Unmarshaller: Deserializer[Option[String], Option[PaymentRequest]] = strictDeserializer { rawRequest =>
     PaymentRequest.read(rawRequest)
   }
 
-  implicit val shortChannelIdUnmarshaller: Deserializer[Option[String], ShortChannelId] = strictDeserializer { str =>
+  implicit val shortChannelIdUnmarshaller: Deserializer[Option[String], Option[ShortChannelId]] = strictDeserializer { str =>
     ShortChannelId(str)
   }
 
-  implicit val javaUUIDUnmarshaller: Deserializer[Option[String], UUID] = strictDeserializer { str =>
+  implicit val javaUUIDUnmarshaller: Deserializer[Option[String], Option[UUID]] = strictDeserializer { str =>
     UUID.fromString(str)
   }
 
-  implicit val timeoutSecondsUnmarshaller: Deserializer[Option[String], Timeout] = strictDeserializer { str =>
+  implicit val timeoutSecondsUnmarshaller: Deserializer[Option[String], Option[Timeout]] = strictDeserializer { str =>
     Timeout(str.toInt.seconds)
   }
 
-  implicit val nodeURIUnmarshaller: Deserializer[Option[String], NodeURI] = strictDeserializer { str =>
+  implicit val nodeURIUnmarshaller: Deserializer[Option[String], Option[NodeURI]] = strictDeserializer { str =>
     NodeURI.parse(str)
   }
 
-  implicit val pubkeyListUnmarshaller: Deserializer[Option[String], List[PublicKey]] = strictDeserializer { str =>
+  implicit val pubkeyListUnmarshaller: Deserializer[Option[String], Option[List[PublicKey]]] = strictDeserializer { str =>
     Try(serialization.read[List[String]](str).map { el =>
       PublicKey(ByteVector.fromValidHex(el), checkValid = false)
     }).recoverWith[List[PublicKey]] {
@@ -77,16 +77,21 @@ object FormParamExtractors {
     }
   }
 
-  implicit val satoshiUnmarshaller: Deserializer[Option[String], Satoshi] = strictDeserializer { str =>
+  implicit val satoshiUnmarshaller: Deserializer[Option[String], Option[Satoshi]] = strictDeserializer { str =>
     Satoshi(str.toLong)
   }
 
-  implicit val millisatoshiUnmarshaller: Deserializer[Option[String], MilliSatoshi] = strictDeserializer { str =>
+  implicit val millisatoshiUnmarshaller: Deserializer[Option[String], Option[MilliSatoshi]] = strictDeserializer { str =>
     MilliSatoshi(str.toLong)
   }
 
-  def strictDeserializer[T](f: String => T): Deserializer[Option[String], T] = Deserializer.fromFunction2Converter {
-    case Some(str) => f(str)
-    case None => throw new IllegalArgumentException("encountered empty data when parsing a form param")
+  implicit val millisatoshiUnmarshallerOpt: Deserializer[Option[String], Option[MilliSatoshi]] = strictDeserializer { str =>
+    MilliSatoshi(str.toLong)
+  }
+
+
+  def strictDeserializer[T](f: String => T): Deserializer[Option[String], Option[T]] = Deserializer.fromFunction2Converter {
+    case Some(str) => Some(f(str))
+    case None => None
   }
 }
