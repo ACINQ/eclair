@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.router
 
-import java.util.zip.CRC32C
-
 import akka.Done
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
@@ -39,6 +37,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import kamon.Kamon
 import kamon.context.Context
+import scodec.bits.ByteVector
 import shapeless.HNil
 
 import scala.annotation.tailrec
@@ -1128,12 +1127,16 @@ object Router {
     (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
   }
 
+  def crc32c(data: ByteVector): Long = {
+    import com.google.common.hash.Hashing
+    Hashing.crc32c().hashBytes(data.toArray).asInt() & 0xFFFFFFFFL
+  }
+
   def getChecksum(u: ChannelUpdate): Long = {
     import u._
+
     val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(chainHash :: shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
-    val checksum = new CRC32C()
-    checksum.update(data.toArray)
-    checksum.getValue
+    crc32c(data)
   }
 
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId])
