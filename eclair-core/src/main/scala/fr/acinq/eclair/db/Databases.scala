@@ -35,6 +35,8 @@ trait Databases {
 
   val pendingRelay: PendingRelayDb
 
+  val dbDir: Option[File]
+
   def backup(file: File) : Unit
 }
 
@@ -52,16 +54,17 @@ object Databases {
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
 
-    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair, Some(dbdir))
   }
 
-  def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
+  def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, dbDir_opt: Option[File]) = new Databases {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
     override val peers = new SqlitePeersDb(eclairJdbc)
     override val payments = new SqlitePaymentsDb(eclairJdbc)
     override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
+    override val dbDir: Option[File] = dbDir_opt
     override def backup(file: File): Unit = {
       SqliteUtils.using(eclairJdbc.createStatement()) {
         statement =>  {

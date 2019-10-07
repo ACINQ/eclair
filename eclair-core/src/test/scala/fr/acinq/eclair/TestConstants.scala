@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.sql.{Connection, DriverManager}
 import java.util.concurrent.atomic.AtomicLong
 
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
@@ -57,7 +58,7 @@ object TestConstants {
 
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection, None)
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
@@ -65,6 +66,7 @@ object TestConstants {
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
+      ConfigFactory.empty(),
       keyManager = keyManager,
       blockCount = new AtomicLong(400000),
       alias = "alice",
@@ -143,6 +145,7 @@ object TestConstants {
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def nodeParams = NodeParams(
+      ConfigFactory.empty(),
       keyManager = keyManager,
       blockCount = new AtomicLong(400000),
       alias = "bob",

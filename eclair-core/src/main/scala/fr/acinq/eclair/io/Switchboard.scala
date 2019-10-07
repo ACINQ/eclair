@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.io.Peer.Connect
 import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
@@ -111,6 +112,10 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case r: Rebroadcast => context.children.foreach(_ forward r)
 
     case 'peers => sender ! context.children
+
+    case c: ReconnectWithCommitments =>
+      val peer = createOrGetPeer(c.uri.nodeId, previousKnownAddress = None, offlineChannels = Set(c.commitments))
+      peer forward Connect(c.uri)
 
   }
 
@@ -227,6 +232,8 @@ object Switchboard extends Logging {
     toClean.size
   }
 
+  // Used during the recovery tool procedure to trigger the connection to a peer using the provided channel state data
+  case class ReconnectWithCommitments(uri: NodeURI, commitments: HasCommitments)
 }
 
 class HtlcReaper extends Actor with ActorLogging {
