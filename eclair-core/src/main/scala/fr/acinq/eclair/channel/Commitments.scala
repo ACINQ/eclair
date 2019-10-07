@@ -188,8 +188,7 @@ object Commitments {
       }
     }
 
-    // We can't obtain value in flight by `outgoingHtlcs.map(_.add.amountMsat).sum` because `outgoingHtlcs` is a Set where HTLCs may contain identical amounts and Set does not allow duplicates
-    val htlcValueInFlight = outgoingHtlcs.foldLeft(0 msat)(_ + _.add.amountMsat)
+    val htlcValueInFlight = outgoingHtlcs.foldLeft(0 msat)(_ + _.add.amountMsat) // can't use .map(...).sum on a set because duplicates would be removed
     if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
