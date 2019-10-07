@@ -45,6 +45,14 @@ object TlvCodecs {
     .\(0x08) { case i if i <= UInt64.MaxValue => i }(variableSizeUInt64(8, 0x0100000000000000L))
 
   /**
+    * Length-prefixed truncated long (1 to 9 bytes unsigned integer).
+    * This codec can be safely used for values < `2^63` and will fail otherwise.
+    */
+  val tu64overflow: Codec[Long] = tu64.exmap(
+    u => if (u <= Long.MaxValue) Attempt.Successful(u.toBigInt.toLong) else Attempt.Failure(Err(s"overflow for value $u")),
+    l => if (l >= 0) Attempt.Successful(UInt64(l)) else Attempt.Failure(Err(s"uint64 must be positive (actual=$l)")))
+
+  /**
     * Length-prefixed truncated uint32 (1 to 5 bytes unsigned integer).
     */
   val tu32: Codec[Long] = tu64.exmap({

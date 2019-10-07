@@ -24,16 +24,16 @@ import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
-import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
+import scala.concurrent.{Future, Promise}
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
@@ -41,7 +41,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
 
   override def withFixture(test: OneArgTest): Outcome = {
     val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future  // will never be completed
+      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future // will never be completed
     }
     val setup = if (test.tags.contains("mainnet")) {
       init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = noopWallet)
@@ -49,11 +49,13 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       init(wallet = noopWallet)
     }
     import setup._
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val channelVersion = ChannelVersion.STANDARD
+    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
+    val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
+    val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
@@ -83,7 +85,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // we don't want their dust limit to be below 546
-    val lowDustLimitSatoshis = 545
+    val lowDustLimitSatoshis = 545.sat
     alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage))
@@ -93,7 +95,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv AcceptChannel (to_self_delay too high)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    val delayTooHigh = 10000
+    val delayTooHigh = CltvExpiryDelta(10000)
     alice ! accept.copy(toSelfDelay = delayTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage))
@@ -104,7 +106,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // 30% is huge, recommended ratio is 1%
-    val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
+    val reserveTooHigh = TestConstants.fundingSatoshis * 0.3
     alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
@@ -114,7 +116,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv AcceptChannel (reserve below dust limit)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    val reserveTooSmall = accept.dustLimitSatoshis - 1
+    val reserveTooSmall = accept.dustLimitSatoshis - 1.sat
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage))
@@ -125,7 +127,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
-    val reserveTooSmall = open.dustLimitSatoshis - 1
+    val reserveTooSmall = open.dustLimitSatoshis - 1.sat
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage))
@@ -136,7 +138,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
-    val dustTooBig = open.channelReserveSatoshis + 1
+    val dustTooBig = open.channelReserveSatoshis + 1.sat
     alice ! accept.copy(dustLimitSatoshis = dustTooBig)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage))

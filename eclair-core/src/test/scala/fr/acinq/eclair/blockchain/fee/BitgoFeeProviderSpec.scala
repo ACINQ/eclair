@@ -71,7 +71,7 @@ class BitgoFeeProviderSpec extends FunSuite {
 
   test("make sure API hasn't changed") {
     import scala.concurrent.duration._
-    implicit val system = ActorSystem()
+    implicit val system = ActorSystem("test")
     implicit val ec = system.dispatcher
     implicit val sttp = OkHttpFutureBackend()
     implicit val timeout = Timeout(30 seconds)
