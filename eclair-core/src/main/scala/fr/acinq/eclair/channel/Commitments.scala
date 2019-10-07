@@ -229,7 +229,7 @@ object Commitments {
       }
     }
 
-    val htlcValueInFlight = incomingHtlcs.foldLeft(0 msat)(_ + _.add.amountMsat)
+    val htlcValueInFlight = incomingHtlcs.foldLeft(0 msat)(_ + _.add.amountMsat) // can't use .map(...).sum on a set because duplicates would be removed
     if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
