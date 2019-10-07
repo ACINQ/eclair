@@ -46,7 +46,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
   }
 
   override def addHeaders(startHeight: Int, headers: Seq[BlockHeader]): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)"), disableAutoCommit = true) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)"), inTransaction = true) { statement =>
       var height = startHeight
       headers.foreach(header => {
         statement.setInt(1, height)

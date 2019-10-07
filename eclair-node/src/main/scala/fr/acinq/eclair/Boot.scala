@@ -18,8 +18,12 @@ package fr.acinq.eclair
 
 import java.io.File
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, Props, SupervisorStrategy}
+import akka.io.IO
+import com.typesafe.config.Config
+import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
+import spray.can.Http
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -37,13 +41,38 @@ object Boot extends App with Logging {
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
+
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
-      case Success(kit) => plugins.foreach(_.onKit(kit))
+      case Success(kit) =>
+        startApiServiceIfEnabled(setup.config, kit)
+        plugins.foreach(_.onKit(kit))
       case Failure(t) => onError(t)
     }
   } catch {
     case t: Throwable => onError(t)
+  }
+
+  /**
+    * Starts the http APIs service if enabled in the configuration
+    *
+    * @param config
+    * @param kit
+    * @param system
+    * @param ec
+    */
+  def startApiServiceIfEnabled(config: Config, kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
+    if(config.getBoolean("api.enabled")){
+      logger.info(s"json API enabled on port=${config.getInt("api.port")}")
+      val apiPassword = config.getString("api.password") match {
+        case "" => throw EmptyAPIPasswordException
+        case valid => valid
+      }
+      val serviceActor = system.actorOf(SimpleSupervisor.props(Props(new Service(apiPassword, new EclairImpl(kit))), "api-service", SupervisorStrategy.Restart))
+      IO(Http) ! Http.Bind(serviceActor, config.getString("api.binding-ip"), config.getInt("api.port"))
+    } else {
+      logger.info("json API disabled")
+    }
   }
 
   def onError(t: Throwable): Unit = {
