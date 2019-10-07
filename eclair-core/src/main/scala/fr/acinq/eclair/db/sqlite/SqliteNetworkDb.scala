@@ -30,8 +30,8 @@ import scala.collection.immutable.SortedMap
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
-  import SqliteUtils._
   import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 2
@@ -53,7 +53,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
       case unknown => throw new IllegalArgumentException(s"unknown version $unknown for network db")
     }
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
