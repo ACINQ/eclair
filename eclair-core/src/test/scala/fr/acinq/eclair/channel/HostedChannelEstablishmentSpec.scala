@@ -23,23 +23,7 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
 
   test("Successful invoke") { f =>
     import f._
-    bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, bob2alice.ref)
-    alice ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Bob.nodeParams.nodeId, alice2bob.ref)
-    awaitCond(bob.stateName == WAIT_FOR_INIT_INTERNAL)
-    awaitCond(alice.stateName == WAIT_FOR_INIT_INTERNAL)
-    bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
-    val bobInvokeHostedChannel = bob2alice.expectMsgType[InvokeHostedChannel]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel))
-    awaitCond(alice.stateData.isInstanceOf[HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE])
-    val aliceInitHostedChannel = alice2bob.expectMsgType[InitHostedChannel]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel))
-    awaitCond(bob.stateData.isInstanceOf[HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE])
-    val bobStateUpdate = bob2alice.expectMsgType[StateUpdate]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
-    awaitCond(alice.stateName == NORMAL)
-    val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
-    awaitCond(bob.stateName == NORMAL)
+    reachNormal(f, channelId)
     val bobCommits = bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     val aliceCommits = alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     assert(!bobCommits.isHost)
@@ -101,23 +85,7 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     awaitCond(bob.stateName == OFFLINE)
     awaitCond(alice.stateName == OFFLINE)
 
-    bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, bob2alice.ref)
-    alice ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Bob.nodeParams.nodeId, alice2bob.ref)
-    awaitCond(bob.stateName == WAIT_FOR_INIT_INTERNAL)
-    awaitCond(alice.stateName == WAIT_FOR_INIT_INTERNAL)
-    bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
-    val bobInvokeHostedChannel1 = bob2alice.expectMsgType[InvokeHostedChannel]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel1))
-    awaitCond(alice.stateData.isInstanceOf[HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE])
-    val aliceInitHostedChannel1 = alice2bob.expectMsgType[InitHostedChannel]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel1))
-    awaitCond(bob.stateData.isInstanceOf[HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE])
-    val bobStateUpdate = bob2alice.expectMsgType[StateUpdate]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
-    awaitCond(alice.stateName == NORMAL)
-    val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
-    awaitCond(bob.stateName == NORMAL)
+    reachNormal(f, channelId)
     val bobCommits = bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     val aliceCommits = alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     alice2bob.expectMsgType[ChannelUpdate]
@@ -128,23 +96,7 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
   }
 
   test("Successful invoke, then client loses data, restores from host LCSS") { f =>
-    f.bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, f.bob2alice.ref)
-    f.alice ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Bob.nodeParams.nodeId, f.alice2bob.ref)
-    awaitCond(f.bob.stateName == WAIT_FOR_INIT_INTERNAL)
-    awaitCond(f.alice.stateName == WAIT_FOR_INIT_INTERNAL)
-    f.bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
-    val bobInvokeHostedChannel = f.bob2alice.expectMsgType[InvokeHostedChannel]
-    f.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel))
-    awaitCond(f.alice.stateData.isInstanceOf[HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE])
-    val aliceInitHostedChannel = f.alice2bob.expectMsgType[InitHostedChannel]
-    f.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel))
-    awaitCond(f.bob.stateData.isInstanceOf[HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE])
-    val bobStateUpdate = f.bob2alice.expectMsgType[StateUpdate]
-    f.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
-    awaitCond(f.alice.stateName == NORMAL)
-    val aliceStateUpdate = f.alice2bob.expectMsgType[StateUpdate]
-    f.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
-    awaitCond(f.bob.stateName == NORMAL)
+    reachNormal(f, channelId)
     val bobCommits = f.bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     val aliceCommits = f.alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     assert(!bobCommits.isHost)
@@ -174,23 +126,7 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
   }
 
   test("Successful invoke, then client loses data, host replies with wrong LCSS, both CLOSED on reconnect") { f =>
-    f.bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, f.bob2alice.ref)
-    f.alice ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Bob.nodeParams.nodeId, f.alice2bob.ref)
-    awaitCond(f.bob.stateName == WAIT_FOR_INIT_INTERNAL)
-    awaitCond(f.alice.stateName == WAIT_FOR_INIT_INTERNAL)
-    f.bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
-    val bobInvokeHostedChannel = f.bob2alice.expectMsgType[InvokeHostedChannel]
-    f.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel))
-    awaitCond(f.alice.stateData.isInstanceOf[HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE])
-    val aliceInitHostedChannel = f.alice2bob.expectMsgType[InitHostedChannel]
-    f.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel))
-    awaitCond(f.bob.stateData.isInstanceOf[HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE])
-    val bobStateUpdate = f.bob2alice.expectMsgType[StateUpdate]
-    f.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
-    awaitCond(f.alice.stateName == NORMAL)
-    val aliceStateUpdate = f.alice2bob.expectMsgType[StateUpdate]
-    f.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
-    awaitCond(f.bob.stateName == NORMAL)
+    reachNormal(f, channelId)
     val bobCommits = f.bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     val aliceCommits = f.alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     assert(!bobCommits.isHost)
@@ -258,23 +194,7 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     val aliceTestProbe = TestProbe()
     bobTestProbe watch bob
     aliceTestProbe watch alice
-    bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, bob2alice.ref)
-    alice ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Bob.nodeParams.nodeId, alice2bob.ref)
-    awaitCond(bob.stateName == WAIT_FOR_INIT_INTERNAL)
-    awaitCond(alice.stateName == WAIT_FOR_INIT_INTERNAL)
-    bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
-    val bobInvokeHostedChannel = bob2alice.expectMsgType[InvokeHostedChannel]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel))
-    awaitCond(alice.stateData.isInstanceOf[HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE])
-    val aliceInitHostedChannel = alice2bob.expectMsgType[InitHostedChannel]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel))
-    awaitCond(bob.stateData.isInstanceOf[HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE])
-    val bobStateUpdate = bob2alice.expectMsgType[StateUpdate]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
-    awaitCond(alice.stateName == NORMAL)
-    val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
-    awaitCond(bob.stateName == NORMAL)
+    reachNormal(f, channelId)
     bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     alice ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS)
