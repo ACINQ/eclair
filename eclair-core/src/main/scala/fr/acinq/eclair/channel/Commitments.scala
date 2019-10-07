@@ -172,7 +172,7 @@ object Commitments {
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
-    val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
+    val outgoingHtlcs: Set[DirectedHtlc] = reduced.htlcs.filter(_.direction == IN)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
@@ -188,7 +188,7 @@ object Commitments {
       }
     }
 
-    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
+    val htlcValueInFlight = outgoingHtlcs.foldLeft(0 msat)(_ + _.add.amountMsat) // can't use .map(...).sum on a set because duplicates would be removed
     if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
@@ -213,7 +213,7 @@ object Commitments {
     // let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
-    val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
+    val incomingHtlcs: Set[DirectedHtlc] = reduced.htlcs.filter(_.direction == IN)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
@@ -229,7 +229,7 @@ object Commitments {
       }
     }
 
-    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
+    val htlcValueInFlight = incomingHtlcs.foldLeft(0 msat)(_ + _.add.amountMsat)
     if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
