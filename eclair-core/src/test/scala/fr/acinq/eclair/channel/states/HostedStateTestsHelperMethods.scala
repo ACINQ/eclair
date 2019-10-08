@@ -1,11 +1,17 @@
 package fr.acinq.eclair.channel.states
 
+import java.util.UUID
+
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.{NodeParams, TestConstants}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, NodeParams, TestConstants, randomBytes32}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.channel.{CMD_HOSTED_INPUT_RECONNECTED, CMD_HOSTED_INVOKE_CHANNEL, CMD_HOSTED_MESSAGE, HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE, HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE, HostedChannel, HostedData, LocalChannelDown, LocalChannelUpdate, NORMAL, State, WAIT_FOR_INIT_INTERNAL}
-import fr.acinq.eclair.wire.{InitHostedChannel, InvokeHostedChannel, StateUpdate}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_HOSTED_INPUT_RECONNECTED, CMD_HOSTED_INVOKE_CHANNEL, CMD_HOSTED_MESSAGE, HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE, HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE, HostedChannel, HostedData, LocalChannelDown, LocalChannelUpdate, NORMAL, State, WAIT_FOR_INIT_INTERNAL}
+import fr.acinq.eclair.payment.PaymentLifecycle
+import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
+import fr.acinq.eclair.wire.{ChannelUpdate, InitHostedChannel, InvokeHostedChannel, StateUpdate}
 import org.scalatest.{ParallelTestExecution, fixture}
 
 trait HostedStateTestsHelperMethods extends TestKitBase with fixture.TestSuite with ParallelTestExecution {
@@ -35,6 +41,14 @@ trait HostedStateTestsHelperMethods extends TestKitBase with fixture.TestSuite w
     HostedSetupFixture(alice, bob, alice2bob, bob2alice, router, relayerA, relayerB, channelUpdateListener)
   }
 
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
+    val payment_preimage: ByteVector32 = randomBytes32
+    val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
+    val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+    val cmd = PaymentLifecycle.buildCommand(UUID.randomUUID, payment_hash, Hop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
+    (payment_preimage, cmd)
+  }
+
   def reachNormal(setup: HostedSetupFixture, channelId: ByteVector32, tags: Set[String] = Set.empty): Unit = {
     import setup._
     bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, bob2alice.ref)
@@ -54,5 +68,7 @@ trait HostedStateTestsHelperMethods extends TestKitBase with fixture.TestSuite w
     val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
     awaitCond(bob.stateName == NORMAL)
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate]
   }
 }

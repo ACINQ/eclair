@@ -88,7 +88,6 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     reachNormal(f, channelId)
     val bobCommits = bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
     val aliceCommits = alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
-    alice2bob.expectMsgType[ChannelUpdate]
     assert(!bobCommits.isHost)
     assert(aliceCommits.isHost)
     assert(bobCommits.lastCrossSignedState.verifyRemoteSig(Alice.nodeParams.nodeId))
@@ -103,7 +102,6 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     assert(aliceCommits.isHost)
     assert(bobCommits.lastCrossSignedState.verifyRemoteSig(Alice.nodeParams.nodeId))
     assert(aliceCommits.lastCrossSignedState.verifyRemoteSig(Bob.nodeParams.nodeId))
-    f.alice2bob.expectMsgType[ChannelUpdate]
     f.bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     f.alice ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     awaitCond(f.bob.stateName == OFFLINE)
@@ -133,7 +131,6 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     assert(aliceCommits.isHost)
     assert(bobCommits.lastCrossSignedState.verifyRemoteSig(Alice.nodeParams.nodeId))
     assert(aliceCommits.lastCrossSignedState.verifyRemoteSig(Bob.nodeParams.nodeId))
-    f.alice2bob.expectMsgType[ChannelUpdate]
     f.bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     f.alice ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     awaitCond(f.bob.stateName == OFFLINE)

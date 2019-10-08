@@ -252,18 +252,19 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         case _ => stay
       }
 
-    case Event(CMD_SIGN, commits: HOSTED_DATA_COMMITMENTS) if commits.nextLocalUpdates.nonEmpty || commits.nextRemoteUpdates.nonEmpty =>
-      stay storing() sending commits.nextLocalUnsignedLCSS(nodeParams.currentBlockDay).withLocalSigOfRemote(nodeParams.privateKey).stateUpdate
+    case Event(CMD_SIGN, commits: HOSTED_DATA_COMMITMENTS) =>
+      val localUnsignedLCSS1 = commits.nextLocalUnsignedLCSS(nodeParams.currentBlockDay)
+      stay storing() sending localUnsignedLCSS1.withLocalSigOfRemote(nodeParams.privateKey).stateUpdate
 
-    case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS)
-      // Remote peer may send a few identical updates, so only react if signature is different
-      if commits.lastCrossSignedState.remoteSigOfLocal != remoteSU.localSigOfRemoteLCSS =>
-      if (stateUpdateAttempts > 16) {
+    case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) =>
+      if (commits.lastCrossSignedState.remoteSigOfLocal == remoteSU.localSigOfRemoteLCSS) {
+        stay
+      } else if (stateUpdateAttempts > 16) {
         localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TOO_MANY_STATE_UPDATES)
       } else {
         stateUpdateAttempts += 1
-        val localLCSS1 = commits.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
-        val commits1 = commits.copy(lastCrossSignedState = localLCSS1.withLocalSigOfRemote(nodeParams.privateKey), localSpec = commits.nextLocalSpec)
+        val localLCSS1 = commits.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
+        val commits1 = commits.copy(lastCrossSignedState = localLCSS1, localSpec = commits.nextLocalSpec, futureUpdates = Nil)
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
         val isRemoteSigOk = localLCSS1.verifyRemoteSig(remoteNodeId)
         if (remoteSU.remoteUpdates < localLCSS1.localUpdates) {
@@ -287,7 +288,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           context.system.eventStream.publish(AvailableBalanceChanged(self, commits1.channelId, commits1.channelUpdate.shortChannelId, remoteNodeId,
             localLCSS1.initHostedChannel.channelCapacityMsat.truncateToSatoshi, channelReserve = 0 sat, commits1.availableBalanceForSend, commits1))
           val completedOutgoingHtlcs = commits.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id) -- commits1.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id)
-          stay using commits1.copy(originChannels = commits1.originChannels -- completedOutgoingHtlcs, futureUpdates = Nil) storing() sending commits1.lastCrossSignedState.stateUpdate
+          stay using commits1.copy(originChannels = commits1.originChannels -- completedOutgoingHtlcs) storing() sending commits1.lastCrossSignedState.stateUpdate
         }
       }
   }
@@ -383,6 +384,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
         commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
+
+    case Event(any, _) =>
+      println(s"${nodeParams.alias} unhandles $any in state=$stateName, data=$stateData")
+      stay
   }
 
   onTransition {
