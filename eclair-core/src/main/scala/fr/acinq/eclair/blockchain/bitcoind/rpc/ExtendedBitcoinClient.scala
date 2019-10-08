@@ -35,18 +35,23 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   implicit val formats = org.json4s.DefaultFormats
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
-      .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
-      .recover {
-        case t: JsonRPCError if t.error.code == -5 => None
-      }
+    rpcClient.invoke("gettxout", txId, 0).map {  // using outIndex=0 because there is always at least one output
+      case json:JObject => Some((json \ "confirmations").extract[Int])
+      case _ => None
+    }
 
-  def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
-      .map(json => (json \ "blockhash").extractOpt[String])
-      .recover {
-        case t: JsonRPCError if t.error.code == -5 => None
-      }
+  def getTxBlockHash(txId: String, tipHeight: Option[Long] = None)(implicit ec: ExecutionContext): Future[Option[String]] = for {
+    Some(confirmations) <- getTxConfirmations(txId)
+    currentHeight <- tipHeight.map(Future.successful).getOrElse {
+      rpcClient.invoke("getblockchaininfo").map(_ \ "blocks").map(_.extract[Long])
+    }
+    JString(blockHash) <- rpcClient.invoke("getblockhash", currentHeight - confirmations + 1)
+  } yield Some(blockHash)
+
+  def getBlock(blockHash: ByteVector32)(implicit ec: ExecutionContext): Future[Block] =
+    rpcClient.invoke("getblock", blockHash.toHex, 0).collect {
+      case JString(b) => Block.read(b)
+    }
 
   def lookForSpendingTx(blockhash_opt: Option[String], txid: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
     for {
@@ -75,9 +80,17 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     * @return
     */
   def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("getrawtransaction", txId) collect {
+    rpcClient.invoke("getrawtransaction", txId).collect { // this only looks in the mempool
       case JString(raw) => raw
+    }.recoverWith {
+      case _ => getHistoricalTransaction(txId)
     }
+
+  def getHistoricalTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] = for {
+    Some(blockHash) <- getTxBlockHash(txId)
+    block <- getBlock(ByteVector32.fromValidHex(blockHash))
+    Some(rawTx) = block.tx.find(_.txid.toHex == txId)
+  } yield Transaction.write(rawTx).toHex
 
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txId).map(raw => Transaction.read(raw))
