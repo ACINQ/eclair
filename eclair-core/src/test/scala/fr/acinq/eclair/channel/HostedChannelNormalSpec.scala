@@ -72,10 +72,46 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.isEmpty)
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.isEmpty)
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.isEmpty)
-    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal == 75000000L.msat)
-    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal == 75000000L.msat)
-    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal == 99925000000L.msat)
-    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal == 99925000000L.msat)
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal === 75000000L.msat)
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal === 75000000L.msat)
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal === 99925000000L.msat)
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal === 99925000000L.msat)
+  }
+
+  test("Bob -> Alice send and fulfill a wrong HTLC") { f =>
+    import f._
+    reachNormal(f, channelId)
+    val (paymentPreimage, cmdAdd) = makeCmdAdd(25000000 msat, Alice.nodeParams.nodeId, currentBlockHeight)
+    bob ! cmdAdd
+    bob ! CMD_SIGN
+    val bobUpdateAdd = bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobUpdateAdd))
+    val bobStateUpdate = bob2alice.expectMsgType[StateUpdate]
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 0)
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
+    // Alice LCSS is updated
+    val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == IN) === 1)
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == IN) === 1)
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
+    // Alice can now resolve a pending incoming HTLC by forwarding to to Relayer
+    val aliceForward = relayerA.expectMsgType[ForwardAdd]
+    assert(aliceForward.add === bobUpdateAdd)
+    // Bob LCSS is updated
+    val bobStateUpdate1 = bob2alice.expectMsgType[StateUpdate]
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 1)
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate1))
+    // Further StateUpdate exchange is halted because signature is the same
+    alice2bob.expectNoMsg(100 millis)
+    bob2alice.expectNoMsg(100 millis)
+
+    alice ! CMD_FULFILL_HTLC(bobUpdateAdd.id, paymentPreimage)
+    val aliceUpdateFulfill = alice2bob.expectMsgType[UpdateFulfillHtlc]
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateFulfill.copy(id = 19)))
+    awaitCond(bob.stateName === CLOSED)
+    assert(ChannelErrorCodes.toAscii(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localError.get.data) === "unknown htlc id=19")
   }
 
   test("Bob -> Alice send and fulfill many HTLC") { f =>
@@ -127,8 +163,8 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.isEmpty)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal === 22000000.msat)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal === 22000000.msat)
-    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal == 99978000000L.msat)
-    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal == 99978000000L.msat)
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal === 99978000000L.msat)
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal === 99978000000L.msat)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextTotalLocal === 3) // 3 Fulfills from Alice
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextTotalRemote === 3) // 3 Adds from Bob
   }
