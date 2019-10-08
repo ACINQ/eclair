@@ -111,7 +111,10 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     val aliceUpdateFulfill = alice2bob.expectMsgType[UpdateFulfillHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateFulfill.copy(id = 19)))
     awaitCond(bob.stateName === CLOSED)
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[wire.Error]))
+    awaitCond(alice.stateName === CLOSED)
     assert(ChannelErrorCodes.toAscii(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localError.get.data) === "unknown htlc id=19")
+    assert(ChannelErrorCodes.toAscii(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].remoteError.get.data) === "unknown htlc id=19")
   }
 
   test("Bob -> Alice send and fulfill many HTLC") { f =>
