@@ -1,4 +1,6 @@
 coverage:
+  ci:
+    - pm47.semaphoreci.com
   status:
     project: off
     patch: off

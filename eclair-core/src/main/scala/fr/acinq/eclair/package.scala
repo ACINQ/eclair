@@ -23,15 +23,14 @@ import fr.acinq.bitcoin._
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
-import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
 
   /**
-    * We are using 'new SecureRandom()' instead of 'SecureRandom.getInstanceStrong()' because the latter can hang on Linux
-    * See http://bugs.java.com/view_bug.do?bug_id=6521844 and https://tersesystems.com/2015/12/17/the-right-way-to-use-securerandom/
-    */
+   * We are using 'new SecureRandom()' instead of 'SecureRandom.getInstanceStrong()' because the latter can hang on Linux
+   * See http://bugs.java.com/view_bug.do?bug_id=6521844 and https://tersesystems.com/2015/12/17/the-right-way-to-use-securerandom/
+   */
   val secureRandom = new SecureRandom()
 
   def randomBytes(length: Int): ByteVector = {
@@ -59,82 +58,80 @@ package object eclair {
   }
 
   /**
-    * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
-    *
-    * @param feeratePerByte fee rate in satoshi-per-bytes
-    * @return feerate in satoshi-per-kw
-    */
+   * Converts fee rate in satoshi-per-bytes to fee rate in satoshi-per-kw
+   *
+   * @param feeratePerByte fee rate in satoshi-per-bytes
+   * @return fee rate in satoshi-per-kw
+   */
   def feerateByte2Kw(feeratePerByte: Long): Long = feerateKB2Kw(feeratePerByte * 1000)
 
   /**
-    *
-    * @param feeratesPerKw fee rate in satoshi-per-kw
-    * @return fee rate in satoshi-per-byte
-    */
-  def feerateKw2Byte(feeratesPerKw: Long): Long = feeratesPerKw / 250
+   * Converts fee rate in satoshi-per-kw to fee rate in satoshi-per-byte
+   *
+   * @param feeratePerKw fee rate in satoshi-per-kw
+   * @return fee rate in satoshi-per-byte
+   */
+  def feerateKw2Byte(feeratePerKw: Long): Long = feeratePerKw / 250
 
   /**
-    why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
-
-    because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
-    which is (3 * weight) / 4 ...
-    so we want :
-    fee > 1000 * virtual size
-    feerate-per-kw * weight > 1000 * (3 * weight / 4)
-    feerate_per-kw > 250 + 3000 / (4 * weight)
-    with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
-
-    see https://github.com/ElementsProject/lightning/pull/1251
+   * why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
+   *
+   * because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
+   * which is (3 * weight) / 4 ...
+   * so we want :
+   * fee > 1000 * virtual size
+   * feerate-per-kw * weight > 1000 * (3 * weight / 4)
+   * feerate_per-kw > 250 + 3000 / (4 * weight)
+   * with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
+   *
+   * see https://github.com/ElementsProject/lightning/pull/1251
    **/
   val MinimumFeeratePerKw = 253
 
   /**
-    minimum relay fee rate, in satoshi per kilo
-    bitcoin core uses virtual size and not the actual size in bytes, see above
+   * minimum relay fee rate, in satoshi per kilo
+   * bitcoin core uses virtual size and not the actual size in bytes, see above
    **/
   val MinimumRelayFeeRate = 1000
 
   /**
-    * Converts feerate in satoshi-per-kilobytes to feerate in satoshi-per-kw
-    *
-    * @param feeratePerKB fee rate in satoshi-per-kilobytes
-    * @return feerate in satoshi-per-kw
-    */
+   * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
+   *
+   * @param feeratePerKB fee rate in satoshi-per-kilobytes
+   * @return fee rate in satoshi-per-kw
+   */
   def feerateKB2Kw(feeratePerKB: Long): Long = Math.max(feeratePerKB / 4, MinimumFeeratePerKw)
 
   /**
-    *
-    * @param feeratesPerKw fee rate in satoshi-per-kw
-    * @return fee rate in satoshi-per-kilobyte
-    */
-  def feerateKw2KB(feeratesPerKw: Long): Long = feeratesPerKw * 4
-
+   * Converts fee rate in satoshi-per-kw to fee rate in satoshi-per-kilobyte
+   *
+   * @param feeratePerKw fee rate in satoshi-per-kw
+   * @return fee rate in satoshi-per-kilobyte
+   */
+  def feerateKw2KB(feeratePerKw: Long): Long = feeratePerKw * 4
 
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
   /**
-    * Tests whether the binary data is composed solely of printable ASCII characters (see BOLT 1)
-    *
-    * @param data to check
-    */
+   * Tests whether the binary data is composed solely of printable ASCII characters (see BOLT 1)
+   *
+   * @param data to check
+   */
   def isAsciiPrintable(data: ByteVector): Boolean = data.toArray.forall(ch => ch >= 32 && ch < 127)
 
   /**
-    *
-    * @param baseMsat     fixed fee
-    * @param proportional proportional fee
-    * @param msat         amount in millisatoshi
-    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
-    */
-  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
+   * @param baseFee         fixed fee
+   * @param proportionalFee proportional fee (millionths)
+   * @param paymentAmount   payment amount in millisatoshi
+   * @return the fee that a node should be paid to forward an HTLC of 'paymentAmount' millisatoshis
+   */
+  def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
 
   /**
-    *
-    * @param address   base58 of bech32 address
-    * @param chainHash hash of the chain we're on, which will be checked against the input address
-    * @return the public key script that matches the input address.
-    */
-
+   * @param address   base58 of bech32 address
+   * @param chainHash hash of the chain we're on, which will be checked against the input address
+   * @return the public key script that matches the input address.
+   */
   def addressToPublicKeyScript(address: String, chainHash: ByteVector32): Seq[ScriptElt] = {
     Try(Base58Check.decode(address)) match {
       case Success((Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
@@ -155,8 +152,37 @@ package object eclair {
     }
   }
 
-  /**
-    * We use this in the context of timestamp filtering, when we don't need an upper bound.
-    */
-  val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
+  implicit class LongToBtcAmount(l: Long) {
+    // @formatter:off
+    def msat: MilliSatoshi = MilliSatoshi(l)
+    def sat: Satoshi = Satoshi(l)
+    def mbtc: MilliBtc = MilliBtc(l)
+    def btc: Btc = Btc(l)
+    // @formatter:on
+  }
+
+  // We implement Numeric to take advantage of operations such as sum, sort or min/max on iterables.
+  implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
+    // @formatter:off
+    override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x + y
+    override def minus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x - y
+    override def times(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.toLong * y.toLong)
+    override def negate(x: MilliSatoshi): MilliSatoshi = -x
+    override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
+    override def toInt(x: MilliSatoshi): Int = x.toLong.toInt
+    override def toLong(x: MilliSatoshi): Long = x.toLong
+    override def toFloat(x: MilliSatoshi): Float = x.toLong
+    override def toDouble(x: MilliSatoshi): Double = x.toLong
+    override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
+    // @formatter:on
+  }
+
+  implicit class ToMilliSatoshiConversion(amount: BtcAmount) {
+    // @formatter:off
+    def toMilliSatoshi: MilliSatoshi = MilliSatoshi.toMilliSatoshi(amount)
+    def +(other: MilliSatoshi): MilliSatoshi = amount.toMilliSatoshi + other
+    def -(other: MilliSatoshi): MilliSatoshi = amount.toMilliSatoshi - other
+    // @formatter:on
+  }
+
 }
