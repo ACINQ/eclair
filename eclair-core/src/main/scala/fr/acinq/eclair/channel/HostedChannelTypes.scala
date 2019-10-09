@@ -70,7 +70,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   def getHtlcCrossSigned(directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = localSpec.findHtlcById(htlcId, directionRelativeToLocal).map(_.add)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect {
-    case htlc if htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong && !resolvedOutgoingHtlcLeftoverIds.contains(htlc.add.id) => htlc.add
+    case htlc if htlc.direction == OUT && blockheight > htlc.add.cltvExpiry.toLong && !resolvedOutgoingHtlcLeftoverIds.contains(htlc.add.id) => htlc.add
   }
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
@@ -164,6 +164,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(OUT, fulfill.id) match {
+      case _ if resolvedOutgoingHtlcLeftoverIds.contains(fulfill.id) => throw UnknownHtlcId(channelId, fulfill.id)
       case Some(add) if add.paymentHash == fulfill.paymentHash => Right((addProposal(Right(fulfill)), originChannels(fulfill.id), add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)

@@ -113,8 +113,8 @@ class HostedChannelTypesSpec extends FunSuite {
     assert(hdc7.nextLocalSpec.toRemote === (hdc.localSpec.toRemote - updateAddHtlc1.amountMsat - updateAddHtlc2.amountMsat))
     assert(hdc7.nextLocalUnsignedLCSS(blockDay = 100).remoteUpdates === 103)
     assert(hdc7.nextLocalUnsignedLCSS(blockDay = 100).localUpdates === 204)
-    assert(hdc7.timedOutOutgoingHtlcs(243).isEmpty)
-    assert(hdc7.timedOutOutgoingHtlcs(244).size === 3)
+    assert(hdc7.timedOutOutgoingHtlcs(244).isEmpty)
+    assert(hdc7.timedOutOutgoingHtlcs(245).size === 3)
 
     val bobHdc6LCSS: LastCrossSignedState = hdc6.nextLocalUnsignedLCSS(200).reverse.withLocalSigOfRemote(bobPrivKey) // Bob falls behind by one update and has an hdc6 LCSS
     assert(hdc7.futureUpdates.diff(hdc7.findState(bobHdc6LCSS).head.futureUpdates) == List(Right(updateAddHtlc2))) // Alice has hdc7 with all updates and hdc LCSS, finds future state and rest of updates

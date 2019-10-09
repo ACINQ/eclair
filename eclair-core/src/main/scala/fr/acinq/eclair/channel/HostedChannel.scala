@@ -36,7 +36,12 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, HostedNothing) => stop(FSM.Normal)
 
-    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) if commits.timedOutOutgoingHtlcs(nodeParams.currentBlockHeight).isEmpty => stop(FSM.Normal)
+    case Event(CMD_HOSTED_REMOVE_IDLE_CHANNELS, commits: HOSTED_DATA_COMMITMENTS) =>
+      if (commits.timedOutOutgoingHtlcs(Long.MaxValue).isEmpty) {
+        stop(FSM.Normal)
+      } else {
+        stay
+      }
 
     case Event(cmd: CMD_HOSTED_INPUT_RECONNECTED, HostedNothing) =>
       forwarder ! cmd.transport
@@ -356,8 +361,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
       val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
-      if (failedAdds.nonEmpty && commits.getError.isEmpty) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
+      if (failedAdds.nonEmpty && commits1.getError.isEmpty) {
+        localSuspend(commits1, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
       } else if (failedAdds.nonEmpty) {
         stay using commits1 storing()
       } else {
@@ -366,14 +371,16 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFulfill(fulfill)) match {
-        case Failure(cause) =>
+        case Failure(cause) if commits.localError.isEmpty =>
           localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
-        case Success(Right((commits1, origin, htlc))) if commits.getError.isDefined =>
-          relayer ! ForwardFulfill(fulfill, origin, htlc)
-          stay using commits1.copy(resolvedOutgoingHtlcLeftoverIds = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id) storing()
         case Success(Right((commits1, origin, htlc))) =>
           relayer ! ForwardFulfill(fulfill, origin, htlc)
-          stay using commits1 storing()
+          if (commits.getError.isDefined) {
+            val resolvedOutgoingHtlcLeftoverIds1 = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id
+            stay using commits1.copy(resolvedOutgoingHtlcLeftoverIds = resolvedOutgoingHtlcLeftoverIds1) storing()
+          } else {
+            stay using commits1 storing()
+          }
         case _ =>
           stay
       }
@@ -386,7 +393,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
 
     case Event(any, _) =>
-      println(s"${nodeParams.alias} unhandles $any in state=$stateName, data=$stateData")
+      println(s"${nodeParams.alias} fails to handle $any in state=$stateName, data=$stateData")
       stay
   }
 
@@ -395,6 +402,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       nextStateData match {
         case commits: HOSTED_DATA_COMMITMENTS if state != NORMAL && nextState == NORMAL =>
           context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, commits.isHost, commits.channelId, commits))
+          context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, ByteVector32.Zeroes, commits.channelId))
           context.system.eventStream.publish(ShortChannelIdAssigned(self, commits.channelId, commits.channelUpdate.shortChannelId))
           context.system.eventStream.publish(LocalChannelUpdate(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId, None, commits.channelUpdate, commits))
           context.system.eventStream.publish(HostedChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, commits))
