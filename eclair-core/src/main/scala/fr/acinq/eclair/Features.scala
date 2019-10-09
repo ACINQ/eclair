@@ -32,6 +32,9 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
+  val CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY = 10
+  val CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL = 11
+
   val VARIABLE_LENGTH_ONION_MANDATORY = 8
   val VARIABLE_LENGTH_ONION_OPTIONAL = 9
 
@@ -52,15 +55,14 @@ object Features {
    */
   def hasVariableLengthOnion(features: ByteVector): Boolean = hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) || hasFeature(features, VARIABLE_LENGTH_ONION_OPTIONAL)
 
+  def hasStaticRemoteKey(features: ByteVector): Boolean = hasFeature(features, STATIC_REMOTEKEY_MANDATORY) || hasFeature(features, STATIC_REMOTEKEY_OPTIONAL)
+
   /**
     * We can use STATIC_REMOTEKEY if both peer have at least optional support.
     */
   def canUseStaticRemoteKey(localFeatures: ByteVector, remoteFeatures: ByteVector): Boolean = {
-    val localSupport = hasFeature(localFeatures, STATIC_REMOTEKEY_OPTIONAL) || hasFeature(localFeatures, STATIC_REMOTEKEY_MANDATORY)
-    val remoteSupport = hasFeature(remoteFeatures, STATIC_REMOTEKEY_OPTIONAL) || hasFeature(remoteFeatures, STATIC_REMOTEKEY_MANDATORY)
-    localSupport && remoteSupport
+    hasStaticRemoteKey(localFeatures) && hasStaticRemoteKey(remoteFeatures)
   }
-
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits).
