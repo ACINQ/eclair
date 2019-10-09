@@ -209,9 +209,15 @@ object PaymentDirection {
 }
 
 /**
-  * Describes a generic payment, incoming or outgoing. Useful for high level requests.
+  * Generic payment trait, can be extended by external classes. Useful for high level requests aggregating
+  * payments of different origins.
   */
-case class Payment(direction: PaymentDirection,
+trait Payment
+
+/**
+  * Describes a generic Lightning payment, be it incoming or outgoing.
+  */
+case class LightningPayment(direction: PaymentDirection,
                    id: Option[UUID],
                    paymentHash: ByteVector32,
                    preimage: Option[ByteVector32],
@@ -220,4 +226,4 @@ case class Payment(direction: PaymentDirection,
                    status: PaymentStatus,
                    createdAt: Long,
                    completedAt: Option[Long],
-                   expireAt: Option[Long])
+                   expireAt: Option[Long]) extends Payment

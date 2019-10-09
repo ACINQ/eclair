@@ -333,7 +333,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |	 SELECT 'received' as type,
         |    NULL as id,
         |    payment_hash,
-        |    preimage,
+        |    payment_preimage,
         |    received_msat as final_amount,
         |    payment_request,
         |    NULL as target_node_id,
@@ -346,7 +346,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |	 SELECT 'sent' as type,
         |    id,
         |    payment_hash,
-        |    preimage,
+        |    payment_preimage,
         |    amount_msat as final_amount,
         |    payment_request,
         |    target_node_id,
@@ -369,7 +369,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       var q: Queue[Payment] = Queue()
       while (rs.next()) {
         val direction = if (rs.getString("type") == "received") PaymentDirection.IncomingPaymentDirection else PaymentDirection.OutgoingPaymentDirection
-        val preimage_opt = rs.getByteVector32Nullable("preimage")
+        val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
         val paymentRequest_opt = rs.getStringNullable("payment_request")
         val amount_opt = rs.getMilliSatoshiNullable("final_amount")
         val completedAt_opt = rs.getLongNullable("completed_at")
@@ -379,7 +379,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           parseOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None).getOrElse(OutgoingPaymentStatus.Pending)
         }
 
-        q = q :+ Payment(
+        q = q :+ LightningPayment(
           direction = direction,
           id = rs.getUUIDNullable("id"),
           paymentHash = rs.getByteVector32("payment_hash"),
