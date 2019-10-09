@@ -22,13 +22,12 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
-import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.Try
 
 /**
   * Created by PM on 06/07/2017.
@@ -36,6 +35,7 @@ import scala.concurrent.{ExecutionContext, Future}
 class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with Logging {
 
   import BitcoinCoreWallet._
+  implicit val formats = org.json4s.DefaultFormats
 
   def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
     val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
@@ -62,7 +62,9 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
 
-  def getTransaction(txid: ByteVector32): Future[Transaction] = rpcClient.invoke("getrawtransaction", txid.toString()) collect { case JString(hex) => Transaction.read(hex) }
+  def isTransactionInMempool(txid: ByteVector32): Future[Boolean] = {
+    getUnspentOutputConfirmations(txid.toHex, outputIndex = 0, includeMempool = true).map(_.isDefined)
+  }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = publishTransaction(Transaction.write(tx).toHex)
 
@@ -70,7 +72,16 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid.toString, outPoint.index))) collect { case JBool(result) => result }
 
-  def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("gettxout", txId, outputIndex, includeMempool) collect { case j => j != JNull }
+  def getUnspentOutputConfirmations(txId: String, outputIndex: Long, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Option[Int]] = {
+    rpcClient.invoke("gettxout", txId, outputIndex, includeMempool).collect {
+      case json:JObject => Some((json \ "confirmations").extract[Int])
+      case _ => None
+    }
+  }
+
+  def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = {
+    getUnspentOutputConfirmations(txId, outputIndex, includeMempool).map(_.isDefined)
+  }
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
 
@@ -111,7 +122,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     .map(_ => true) // if bitcoind says OK, then we consider the tx successfully published
     .recoverWith { case JsonRPCError(e) =>
     logger.warn(s"txid=${tx.txid} error=$e")
-    getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
+    isTransactionInMempool(tx.txid).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
   }
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
@@ -119,15 +130,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   override def doubleSpent(tx: Transaction): Future[Boolean] =
   for {
-    exists <- getTransaction(tx.txid)
-      .map(_ => true) // we have found the transaction
-      .recover {
-      case JsonRPCError(Error(_, message)) if message.contains("index") =>
-        sys.error("Fatal error: bitcoind is indexing!!")
-        System.exit(1) // bitcoind is indexing, that's a fatal error!!
-        false // won't be reached
-      case _ => false
-    }
+    exists <- isTransactionInMempool(tx.txid) // we have found the transaction
     doublespent <- if (exists) {
       // if the tx is in the blockchain, it can't have been double-spent
       Future.successful(false)
