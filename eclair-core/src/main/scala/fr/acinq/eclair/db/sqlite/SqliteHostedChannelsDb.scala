@@ -20,24 +20,30 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_htlcs INTEGER NOT NULL, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_htlcs INTEGER NOT NULL, in_flight_incoming INTEGER NOT NULL, in_flight_outgoing INTEGER NOT NULL, capacity INTEGER NOT NULL, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_in_flight_htlcs_idx ON local_hosted_channels(in_flight_htlcs)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_channel_id_idx ON local_hosted_channels(channel_id)")
   }
 
   override def addOrUpdateChannel(state: HOSTED_DATA_COMMITMENTS): Unit = {
     val data = HOSTED_DATA_COMMITMENTS_Codec.encode(state).require.toByteArray
-    using (sqlite.prepareStatement("UPDATE local_hosted_channels SET short_channel_id=?, in_flight_htlcs=?, data=? WHERE channel_id=?")) { update =>
+    using (sqlite.prepareStatement("UPDATE local_hosted_channels SET short_channel_id=?, in_flight_htlcs=?, in_flight_incoming=?, in_flight_outgoing=?, capacity=?, data=? WHERE channel_id=?")) { update =>
       update.setLong(1, state.channelUpdate.shortChannelId.toLong)
       update.setLong(2, state.currentAndNextInFlightHtlcs.size)
-      update.setBytes(3, data)
-      update.setBytes(4, state.channelId.toArray)
+      update.setLong(3, state.localSpec.inFlightIncoming.toLong)
+      update.setLong(4, state.localSpec.inFlightOutgoing.toLong)
+      update.setLong(5, state.lastCrossSignedState.initHostedChannel.channelCapacityMsat.toLong)
+      update.setBytes(6, data)
+      update.setBytes(7, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?, ?)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, state.channelId.toArray)
           statement.setLong(2, state.channelUpdate.shortChannelId.toLong)
           statement.setLong(3, state.currentAndNextInFlightHtlcs.size)
-          statement.setBytes(4, data)
+          statement.setLong(4, state.localSpec.inFlightIncoming.toLong)
+          statement.setLong(5, state.localSpec.inFlightOutgoing.toLong)
+          statement.setLong(6, state.lastCrossSignedState.initHostedChannel.channelCapacityMsat.toLong)
+          statement.setBytes(7, data)
           statement.executeUpdate()
         }
       }

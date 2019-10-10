@@ -18,6 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair._
 
 /**
   * Created by PM on 07/12/2016.
@@ -35,7 +36,11 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, to
 
   def findHtlcById(id: Long, direction: Direction): Option[DirectedHtlc] = htlcs.find(htlc => htlc.add.id == id && htlc.direction == direction)
 
-  val totalFunds: MilliSatoshi = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
+  val inFlightIncoming: MilliSatoshi = htlcs.foldLeft(0.msat) { case (acc, htlc) if htlc.direction == IN => acc + htlc.add.amountMsat case (acc, _) => acc }
+
+  val inFlightOutgoing: MilliSatoshi = htlcs.foldLeft(0.msat) { case (acc, htlc) if htlc.direction == OUT => acc + htlc.add.amountMsat case (acc, _) => acc }
+
+  val totalFunds: MilliSatoshi = toLocal + toRemote + inFlightIncoming + inFlightOutgoing
 }
 
 object CommitmentSpec {
