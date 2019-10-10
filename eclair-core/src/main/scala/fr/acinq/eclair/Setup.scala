@@ -265,6 +265,7 @@ class Setup(datadir: File,
           val walletType = config.getString("electrum-wallet-type") match {
             case "p2sh-p2wpkh" => P2SH_SEGWIT
             case "p2wpkh" => NATIVE_SEGWIT
+            case wrongType => throw new IllegalArgumentException(s"Wrong type=$wrongType for electrum-wallet-type")
           }
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(walletType, nodeParams.chainHash, walletDb)), "electrum-wallet")
           implicit val timeout = Timeout(30 seconds)
