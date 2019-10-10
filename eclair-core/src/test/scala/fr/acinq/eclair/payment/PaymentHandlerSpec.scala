@@ -24,6 +24,7 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.IncomingPaymentStatus
 import fr.acinq.eclair.payment.LocalPaymentHandler.{GetPendingPayments, PendingPayments}
+import fr.acinq.eclair.payment.MultiPartPaymentHandler.PendingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -306,6 +307,14 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
       sender1.send(handler, GetPendingPayments)
       sender1.expectMsgType[PendingPayments].paymentHashes.isEmpty
     })
+
+    // Extraneous HTLCs should be failed.
+    sender1.send(handler, MultiPartPaymentHandler.MultiPartHtlcFailed(pr1.paymentHash, PaymentTimeout, List(PendingPayment(42, PartialPayment(200 msat, ByteVector32.One), sender1.ref))))
+    sender1.expectMsg(CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true))
+
+    // The payment should still be pending in DB.
+    val Some(incomingPayment) = nodeParams.db.payments.getIncomingPayment(pr1.paymentHash)
+    assert(incomingPayment.status === IncomingPaymentStatus.Pending)
   }
 
   test("LocalPaymentHandler should handle multi-part payment success") { f =>
@@ -328,20 +337,28 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(fulfill1.id === 0)
     assert(Crypto.sha256(fulfill1.r) === pr.paymentHash)
     assert(sender2.expectMsgType[CMD_FAIL_HTLC].id == 42)
-    val fulfill2 = sender2.expectMsgType[CMD_FULFILL_HTLC]
-    assert(fulfill2.id === 43)
-    assert(Crypto.sha256(fulfill2.r) === pr.paymentHash)
+    sender2.expectMsg(CMD_FULFILL_HTLC(43, fulfill1.r, commit = true))
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
     assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0))) === PaymentReceived(pr.paymentHash, PartialPayment(800 msat, ByteVector32.One, 0) :: PartialPayment(200 msat, ByteVector32.Zeroes, 0) :: Nil))
     val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(1000 msat, 0))
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
     val probe = TestProbe()
     awaitCond({
       probe.send(handler, GetPendingPayments)
       probe.expectMsgType[PendingPayments].paymentHashes.isEmpty
     })
+
+    // Extraneous HTLCs should be fulfilled.
+    sender1.send(handler, MultiPartPaymentHandler.MultiPartHtlcSucceeded(pr.paymentHash, List(PendingPayment(44, PartialPayment(200 msat, ByteVector32.One, 0), sender1.ref))))
+    sender1.expectMsg(CMD_FULFILL_HTLC(44, fulfill1.r, commit = true))
+    assert(f.eventListener.expectMsgType[PaymentReceived].amount === 200.msat)
+    val received2 = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1200.msat)
+
+    probe.send(handler, GetPendingPayments)
+    probe.expectMsgType[PendingPayments].paymentHashes.isEmpty
   }
 
   test("LocalPaymentHandler should handle multi-part payment timeout then success") { f =>
@@ -369,15 +386,13 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     val fulfill1 = f.sender.expectMsgType[CMD_FULFILL_HTLC]
     assert(fulfill1.id === 2)
     assert(Crypto.sha256(fulfill1.r) === pr.paymentHash)
-    val fulfill2 = f.sender.expectMsgType[CMD_FULFILL_HTLC]
-    assert(fulfill2.id === 5)
-    assert(Crypto.sha256(fulfill2.r) === pr.paymentHash)
+    f.sender.expectMsg(CMD_FULFILL_HTLC(5, fulfill1.r, commit = true))
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
     assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0))) === PaymentReceived(pr.paymentHash, PartialPayment(300 msat, ByteVector32.One, 0) :: PartialPayment(700 msat, ByteVector32.Zeroes, 0) :: Nil))
     val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(1000 msat, 0))
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
     awaitCond({
       probe.send(handler, GetPendingPayments)
       probe.expectMsgType[PendingPayments].paymentHashes.isEmpty

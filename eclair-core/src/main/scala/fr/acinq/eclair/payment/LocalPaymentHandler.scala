@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Props, Status}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, Channel}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.Relayer.FinalPayload
@@ -42,7 +42,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
   override def receive: Receive = main(Map.empty)
 
-  def main(pendingPayments: Map[ByteVector32, ActorRef]): Receive = {
+  def main(pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)]): Receive = {
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, allowMultiPart) =>
       Try {
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
@@ -71,29 +71,40 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         case None =>
           log.info(s"received payment for paymentHash=${p.add.paymentHash} amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
           pendingPayments.get(p.add.paymentHash) match {
-            case Some(handler) =>
+            case Some((_, handler)) =>
               handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
             case None =>
-              val handler = context.actorOf(MultiPartPaymentHandler.props(nodeParams, p.add.paymentHash, record.paymentPreimage, p.payload.totalAmount, self))
+              val handler = context.actorOf(MultiPartPaymentHandler.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, self))
               handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
-              context become main(pendingPayments + (p.add.paymentHash -> handler))
+              context become main(pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler)))
           }
       }
       case None =>
         sender ! CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     }
 
-    case MultiPartPaymentHandler.MultiPartHtlcFailed(paymentHash, paidAmount) =>
-      log.warning(s"payment with paymentHash=$paymentHash paidAmount=$paidAmount failed (timed out or received invalid parts)")
-      pendingPayments.get(paymentHash).foreach(h => h ! PoisonPill)
+    case MultiPartPaymentHandler.MultiPartHtlcFailed(paymentHash, failure, parts) =>
+      log.warning(s"payment with paymentHash=$paymentHash paidAmount=${parts.map(_.payment.amount).sum} failed ($failure)")
+      pendingPayments.get(paymentHash).foreach(h => h._2 ! PoisonPill)
+      parts.foreach(p => p.sender ! CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
       context become main(pendingPayments - paymentHash)
 
-    case MultiPartPaymentHandler.MultiPartHtlcSucceeded(paymentReceived) =>
-      log.info(s"received complete payment for paymentHash=${paymentReceived.paymentHash} amount=${paymentReceived.amount}")
-      pendingPayments.get(paymentReceived.paymentHash).foreach(h => h ! PoisonPill)
-      paymentDb.receiveIncomingPayment(paymentReceived.paymentHash, paymentReceived.amount, paymentReceived.timestamp)
-      context.system.eventStream.publish(paymentReceived)
-      context become main(pendingPayments - paymentReceived.paymentHash)
+    case MultiPartPaymentHandler.MultiPartHtlcSucceeded(paymentHash, parts) =>
+      val received = PaymentReceived(paymentHash, parts.map(_.payment))
+      log.info(s"received complete payment for paymentHash=$paymentHash amount=${received.amount}")
+      pendingPayments.get(paymentHash) match {
+        case Some((preimage, handler)) =>
+          handler ! PoisonPill
+          parts.foreach(p => p.sender ! CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true))
+        // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
+        // expensive code path by fetching the preimage from DB.
+        case None => paymentDb.getIncomingPayment(paymentHash).foreach(record => {
+          parts.foreach(p => p.sender ! CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true))
+        })
+      }
+      paymentDb.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
+      context.system.eventStream.publish(received)
+      context become main(pendingPayments - paymentHash)
 
     case GetPendingPayments => sender ! PendingPayments(pendingPayments.keySet)
   }
