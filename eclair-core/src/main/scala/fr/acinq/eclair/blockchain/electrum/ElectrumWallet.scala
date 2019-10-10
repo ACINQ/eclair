@@ -56,7 +56,6 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
   val master = DeterministicWallet.generate(seed)
 
   val accountMaster = accountKey(master, rootPath(walletType, chainHash))
-
   val changeMaster = changeKey(master, rootPath(walletType, chainHash))
 
   client ! ElectrumClient.AddStatusListener(self)
@@ -254,7 +253,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
       val isChange = data.changeKeyMap.contains(scriptHash)
-      log.info(s"received status=$status for scriptHash=$scriptHash keyPath=${key.path} isChange=$isChange")
+      log.info(s"received status=$status for scriptHash=$scriptHash keyIndex=${key.path.lastChildNumber}  isChange=$isChange")
 
       // let's retrieve the tx history for this key
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
@@ -264,7 +263,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           // first time this script hash is used, need to generate a new key
           val newKey = if (isChange) derivePrivateKey(changeMaster, data.changeKeys.last.path.lastChildNumber + 1) else derivePrivateKey(accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
           val newScriptHash = computeScriptHashFromPublicKey(newKey.publicKey, walletType)
-          log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash keyPath=${key.path} isChange=$isChange")
+          log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash isChange=$isChange")
           // listens to changes for the newly generated key
           client ! ElectrumClient.ScriptHashSubscription(newScriptHash, self)
           if (isChange) (data.accountKeys, data.changeKeys :+ newKey) else (data.accountKeys :+ newKey, data.changeKeys)
@@ -586,23 +585,19 @@ object ElectrumWallet {
 
   def segwitAddress(key: PrivateKey, chainHash: ByteVector32): String = segwitAddress(key.publicKey, chainHash)
 
-  def bech32Address(key: ExtendedPublicKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
-
-  def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
-
   /**
     * @param key the public key
     * @return the bech32 encoded witness program for the p2wpkh script of this key
     */
-  def bech32Address(key: PublicKey, chainHash: ByteVector32): String = {
-    val pubKeyHash = Crypto.hash160(key.value)
-    chainHash match {
-      case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-      case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, pubKeyHash)
-      case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, pubKeyHash)
-    }
+  def bech32Address(key: PublicKey, chainHash: ByteVector32): String = chainHash match {
+    case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, Crypto.hash160(key.value))
+    case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, Crypto.hash160(key.value))
+    case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, Crypto.hash160(key.value))
   }
 
+  def bech32Address(key: ExtendedPublicKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
+
+  def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
   /**
    *
    * @param key public key
@@ -620,6 +615,12 @@ object ElectrumWallet {
    */
   def computeScriptHashFromPublicKey(key: PublicKey, walletType: WalletType): ByteVector32 = Crypto.sha256(Script.write(computePublicKeyScript(key, walletType))).reverse
 
+  /**
+    * We define a root path the first 3 elements in the BIP44 derivation scheme, which include
+    * the purpose, coin type (testnet/mainnet) and account number, example: m/purpose'/coin_type'/account'.
+    * We always use the first account.
+    * @return the root path
+    */
   def rootPath(walletType: WalletType, chainHash: ByteVector32) = walletType match {
     case P2SH_SEGWIT   => bip49RootPath(chainHash)
     case NATIVE_SEGWIT => bip84RootPath(chainHash)
@@ -659,12 +660,12 @@ object ElectrumWallet {
 
   // BIP84 version of the xpub
   def computeZpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val extendedPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84RootPath(chainHash)))
+    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84RootPath(chainHash)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
     }
-    (DeterministicWallet.encode(extendedPub, prefix), extendedPub.path.toString())
+    (DeterministicWallet.encode(zpub, prefix), zpub.path.toString())
   }
 
   /***
