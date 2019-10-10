@@ -11,7 +11,7 @@ import scala.concurrent.duration._
 
 class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
-  context.system.scheduler.schedule(1.hour, 1.hour)(context.system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS))
+  context.system.scheduler.schedule(1.day, 1.day)(context.system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS))
 
   val inMemoryHostedChannels: HashBiMap[ByteVector32, ActorRef] = HashBiMap.create[ByteVector32, ActorRef]
 

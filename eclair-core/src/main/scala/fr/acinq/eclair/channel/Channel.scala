@@ -2229,9 +2229,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
   }
 
-  implicit def state2mystate(state: FSM.State[fr.acinq.eclair.channel.State, Data]): MyState = MyState(state)
-
-  case class MyState(state: FSM.State[fr.acinq.eclair.channel.State, Data]) {
+  implicit class MyState(state: FSM.State[fr.acinq.eclair.channel.State, Data]) {
 
     def storing(): FSM.State[fr.acinq.eclair.channel.State, Data] = {
       state.stateData match {

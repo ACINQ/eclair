@@ -418,9 +418,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   type HostedFsmState = FSM.State[fr.acinq.eclair.channel.State, HostedData]
 
-  implicit def state2mystate(state: HostedFsmState): MyState = MyState(state)
-
-  case class MyState(state: HostedFsmState) {
+  implicit class MyState(state: HostedFsmState) {
 
     def storing(): HostedFsmState =
       state.stateData match {

@@ -19,18 +19,15 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
 import fr.acinq.eclair.channel.{HasCommitments, _}
-import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.Relayer.RelayPayload
 import fr.acinq.eclair.payment.{Relayed, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
-import fr.acinq.eclair.transactions.{DirectedHtlc, IN, OUT}
+import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
