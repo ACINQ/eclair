@@ -17,8 +17,10 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet, Statement}
+import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.MilliSatoshi
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 
@@ -128,6 +130,21 @@ object SqliteUtils {
     def getStringNullable(columnLabel: String): Option[String] = {
       val result = rs.getString(columnLabel)
       if (rs.wasNull()) None else Some(result)
+    }
+
+    def getLongNullable(columnLabel: String): Option[Long] = {
+      val result = rs.getLong(columnLabel)
+      if (rs.wasNull()) None else Some(result)
+    }
+
+    def getUUIDNullable(label: String) : Option[UUID] = {
+      val result = rs.getString(label)
+      if (rs.wasNull()) None else Some(UUID.fromString(result))
+    }
+
+    def getMilliSatoshiNullable(label: String) : Option[MilliSatoshi] = {
+      val result = rs.getLong(label)
+      if (rs.wasNull()) None else Some(MilliSatoshi(result))
     }
 
   }

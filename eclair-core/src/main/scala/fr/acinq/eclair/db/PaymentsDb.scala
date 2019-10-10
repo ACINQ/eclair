@@ -73,6 +73,14 @@ trait PaymentsDb {
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
 
+  /**
+    * List all incoming or outgoing payments within a given size limit, ordered by descending date.
+    * This method should only return incoming payments that have been received (not pending or failed).
+    *
+    * This is a high level method intended for front-end usage.
+    */
+  def listPayments(limit: Int): Seq[Payment]
+
 }
 
 /**
@@ -90,7 +98,7 @@ case class IncomingPayment(paymentRequest: PaymentRequest,
                            createdAt: Long,
                            status: IncomingPaymentStatus)
 
-sealed trait IncomingPaymentStatus
+sealed trait IncomingPaymentStatus extends PaymentStatus
 
 object IncomingPaymentStatus {
 
@@ -134,7 +142,9 @@ case class OutgoingPayment(id: UUID,
                            paymentRequest: Option[PaymentRequest],
                            status: OutgoingPaymentStatus)
 
-sealed trait OutgoingPaymentStatus
+sealed trait PaymentStatus
+
+sealed trait OutgoingPaymentStatus extends PaymentStatus
 
 object OutgoingPaymentStatus {
 
@@ -190,3 +200,30 @@ object FailureSummary {
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }
 }
+
+sealed trait PaymentDirection
+
+object PaymentDirection {
+  case object IncomingPaymentDirection extends PaymentDirection
+  case object OutgoingPaymentDirection extends PaymentDirection
+}
+
+/**
+  * Generic payment trait, can be extended by external classes. Useful for high level requests aggregating
+  * payments of different origins.
+  */
+trait Payment
+
+/**
+  * Describes a generic Lightning payment, be it incoming or outgoing.
+  */
+case class LightningPayment(direction: PaymentDirection,
+                   id: Option[UUID],
+                   paymentHash: ByteVector32,
+                   preimage: Option[ByteVector32],
+                   finalAmount: Option[MilliSatoshi],
+                   paymentRequest: Option[String],
+                   status: PaymentStatus,
+                   createdAt: Long,
+                   completedAt: Option[Long],
+                   expireAt: Option[Long]) extends Payment
