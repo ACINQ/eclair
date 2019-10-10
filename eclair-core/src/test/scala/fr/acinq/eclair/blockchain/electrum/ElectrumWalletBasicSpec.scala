@@ -46,14 +46,8 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val params = ElectrumWallet.WalletParameters(walletType, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
 
     val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
-    val accountMaster = walletType match {
-      case P2SH_SEGWIT => bip49AccountKey(master, Block.RegtestGenesisBlock.hash)
-      case NATIVE_SEGWIT => bip84AccountKey(master, Block.RegtestGenesisBlock.hash)
-    }
-    val changeMaster = walletType match {
-      case P2SH_SEGWIT => changeKey(master, Block.RegtestGenesisBlock.hash)
-      case NATIVE_SEGWIT => bip84ChangeKey(master, Block.RegtestGenesisBlock.hash)
-    }
+    val accountMaster = accountKey(master, rootPath(walletType, Block.RegtestGenesisBlock.hash))
+    val changeMaster = changeKey(master, rootPath(walletType, Block.RegtestGenesisBlock.hash))
     val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
@@ -96,22 +90,22 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
   }
 
-  test("derive bip84 keys") { f =>
+  test("derive bip84 keys", Tag("bech32")) { f =>
     val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
     val master = DeterministicWallet.generate(seed)
     val (accountZpub, _) = computeZpub(master, Block.LivenetGenesisBlock.hash)
     assert(accountZpub == "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs") // m/84'/0'/0'
 
-    val firstReceivingKey = DeterministicWallet.derivePrivateKey(bip84AccountKey(master, Block.LivenetGenesisBlock.hash), 0)
+    val firstReceivingKey = DeterministicWallet.derivePrivateKey(accountKey(master, rootPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 0)
     assert(firstReceivingKey.publicKey.value == hex"0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c")
   }
 
-  test("compute bech32 addresses") { f =>
+  test("compute bech32 addresses", Tag("bech32")) { f =>
     val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
     val master = DeterministicWallet.generate(seed)
-    val firstReceivingKey = DeterministicWallet.derivePrivateKey(bip84AccountKey(master, Block.LivenetGenesisBlock.hash), 0)
-    val secondReceivingKey = DeterministicWallet.derivePrivateKey(bip84AccountKey(master, Block.LivenetGenesisBlock.hash), 1)
-    val firstChangeKey = DeterministicWallet.derivePrivateKey(bip84ChangeKey(master, Block.LivenetGenesisBlock.hash), 0)
+    val firstReceivingKey = DeterministicWallet.derivePrivateKey(accountKey(master, rootPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 0)
+    val secondReceivingKey = DeterministicWallet.derivePrivateKey(accountKey(master, rootPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 1)
+    val firstChangeKey = DeterministicWallet.derivePrivateKey(changeKey(master, rootPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 0)
 
     assert(bech32Address(firstReceivingKey, Block.LivenetGenesisBlock.hash) == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
     assert(bech32Address(secondReceivingKey, Block.LivenetGenesisBlock.hash) == "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")
@@ -129,7 +123,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val seed = MnemonicCode.toSeed(mnemonics, "")
     val master = DeterministicWallet.generate(seed)
 
-    val accountMaster = bip49AccountKey(master, Block.RegtestGenesisBlock.hash)
+    val accountMaster = accountKey(master, rootPath(f.state.walletType, Block.RegtestGenesisBlock.hash))
     val firstKey = derivePrivateKey(accountMaster, 0)
     assert(segwitAddress(firstKey, Block.RegtestGenesisBlock.hash) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
   }

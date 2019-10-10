@@ -55,8 +55,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
   val master = DeterministicWallet.generate(seed)
 
-  val accountMaster = bip49AccountKey(master, chainHash)
-  val changeMaster = changeKey(master, chainHash)
+  val accountMaster = accountKey(master, rootPath(walletType, chainHash))
+
+  val changeMaster = changeKey(master, rootPath(walletType, chainHash))
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -589,6 +590,10 @@ object ElectrumWallet {
 
   def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
 
+  /**
+    * @param key the public key
+    * @return the bech32 encoded witness program for the p2wpkh script of this key
+    */
   def bech32Address(key: PublicKey, chainHash: ByteVector32): String = {
     val pubKeyHash = Crypto.hash160(key.value)
     chainHash match {
@@ -615,26 +620,26 @@ object ElectrumWallet {
    */
   def computeScriptHashFromPublicKey(key: PublicKey, walletType: WalletType): ByteVector32 = Crypto.sha256(Script.write(computePublicKeyScript(key, walletType))).reverse
 
-  def bip49AccountPath(chainHash: ByteVector32): List[Long] = chainHash match {
+  def rootPath(walletType: WalletType, chainHash: ByteVector32) = walletType match {
+    case P2SH_SEGWIT   => bip49RootPath(chainHash)
+    case NATIVE_SEGWIT => bip84RootPath(chainHash)
+  }
+
+  private def bip49RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
   }
 
-  def bip84AccountPath(chainHash: ByteVector32): List[Long] = chainHash match {
+  private def bip84RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
     case Block.LivenetGenesisBlock.hash => hardened(84) :: hardened(0) :: hardened(0) :: Nil
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(84) :: hardened(1) :: hardened(0) :: Nil
   }
 
   /**
-   * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
-   *
    * @param master master key
-   * @return the BIP49 account key for this master key: m/49'/1'/0'/0 on testnet/regtest, m/49'/0'/0'/0 on mainnet
+   * @return the account key for this master key and derivation root path, follows BIP44 scheme
    */
-  def bip49AccountKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, bip49AccountPath(chainHash) ::: 0L :: Nil)
-
-
-  def bip84AccountKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, bip84AccountPath(chainHash) ::: 0L :: Nil)
+  def accountKey(master: ExtendedPrivateKey, rootPath: List[Long]) = DeterministicWallet.derivePrivateKey(master, rootPath ::: 0L :: Nil)
 
   /**
    * Compute the wallet's xpub
@@ -644,7 +649,7 @@ object ElectrumWallet {
    * @return a (xpub, path) tuple where xpub is the encoded account public key, and path is the derivation path for the account key
    */
   def computeXpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip49AccountPath(chainHash)))
+    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip49RootPath(chainHash)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
@@ -654,7 +659,7 @@ object ElectrumWallet {
 
   // BIP84 version of the xpub
   def computeZpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val extendedPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84AccountPath(chainHash)))
+    val extendedPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84RootPath(chainHash)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
@@ -662,21 +667,11 @@ object ElectrumWallet {
     (DeterministicWallet.encode(extendedPub, prefix), extendedPub.path.toString())
   }
 
-  /**
-   * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
-   *
+  /***
    * @param master master key
-   * @return the BIP49 change key for this master key: m/49'/1'/0'/1 on testnet/regtest, m/49'/0'/0'/1 on mainnet
+   * @return the change key for this master key and derivation root path, follows BIP44 scheme
    */
-  def changeKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, bip49AccountPath(chainHash) ::: 1L :: Nil)
-
-  /**
-    *
-    * Use BIP84 for native p2wpkh
-    * @param master key
-    * @return the BIP84 change key for this master key: m/84'/1'/0'/1/0 on testnet/regtest and m/84'/0'/0'/1/0 on mainnet
-    */
-  def bip84ChangeKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, bip84AccountPath(chainHash) ::: 1L :: Nil)
+  def changeKey(master: ExtendedPrivateKey, rootPath: List[Long]) = DeterministicWallet.derivePrivateKey(master, rootPath ::: 1L :: Nil)
 
   def totalAmount(utxos: Seq[Utxo]): Satoshi = Satoshi(utxos.map(_.item.value).sum)
 

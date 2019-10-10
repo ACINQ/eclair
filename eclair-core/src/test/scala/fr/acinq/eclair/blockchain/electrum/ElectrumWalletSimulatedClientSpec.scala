@@ -127,7 +127,7 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
 
     sender.send(wallet, GetCurrentReceiveAddress)
     val GetCurrentReceiveAddressResponse(address) = sender.expectMsgType[GetCurrentReceiveAddressResponse]
-    assert(address == "bcrt1qpuqcjwu7ne6e3u96pccllmmr4ghrqa700rche6")
+    assert(address == "bcrt1qrnnndt33lw89uth54kqmujahgpylg8dcgdv7vj")
   }
 
   test("tell wallet is ready when a new block comes in, even if nothing else has changed") { f =>
@@ -295,8 +295,8 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
 
     val data = {
       val master = DeterministicWallet.generate(seed)
-      val accountMaster = ElectrumWallet.bip49AccountKey(master, walletParameters.chainHash)
-      val changeMaster = ElectrumWallet.changeKey(master, walletParameters.chainHash)
+      val accountMaster = accountKey(master, rootPath(walletParameters.walletType, walletParameters.chainHash))
+      val changeMaster = changeKey(master, rootPath(walletParameters.walletType, walletParameters.chainHash))
       val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
       val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
       val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
