@@ -107,8 +107,8 @@ case class RouteRequest(source: PublicKey,
 
 case class FinalizeRoute(hops: Seq[PublicKey])
 
-case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
-  require(hops.nonEmpty, "route cannot be empty")
+case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+  require(allowEmpty || hops.nonEmpty, "route cannot be empty")
 }
 
 // @formatter:off
@@ -120,6 +120,8 @@ case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
 
 case object GetNetworkStats
+
+case class GetNetworkStatsResponse(stats: Option[NetworkStats])
 
 case object GetRoutingState
 
@@ -261,10 +263,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(SyncProgress(progress), d: Data) =>
       if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
         log.info("initial routing sync done: computing network statistics")
-        stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
-      } else {
-        stay
+        self ! TickComputeNetworkStats
       }
+      stay
 
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
@@ -272,7 +273,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(GetNetworkStats, d: Data) =>
-      sender ! d.stats
+      sender ! GetNetworkStatsResponse(d.stats)
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>
@@ -407,7 +408,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
       log.info("re-computing network statistics")
-      stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
+      stay using d.copy(stats = NetworkStats.computeStats(d.channels.values.toSeq))
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
