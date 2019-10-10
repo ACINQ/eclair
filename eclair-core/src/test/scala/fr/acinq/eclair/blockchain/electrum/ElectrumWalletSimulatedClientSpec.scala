@@ -319,7 +319,7 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
           txIn = TxIn(OutPoint(wallettxs(0), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
           txOut = walletOutput(wallet.stateData.walletType, wallettxs(0).txOut(0).amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(wallet.stateData.walletType, 50000 sat, data2.changeKeys(0).publicKey) :: Nil,
           lockTime = 0)
-        data2.signTransaction(tx)
+        data2.signTransaction(tx, walletParameters.walletType)
       }
 
       // a tx that spend from our wallet to a random address, plus change to our wallet
@@ -328,7 +328,7 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
           txIn = TxIn(OutPoint(wallettxs(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
           txOut = TxOut(wallettxs(1).txOut(0).amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(wallet.stateData.walletType, 50000 sat, data2.changeKeys(1).publicKey) :: Nil,
           lockTime = 0)
-        data2.signTransaction(tx)
+        data2.signTransaction(tx, walletParameters.walletType)
       }
       val data3 = Seq(tx1, tx2).foldLeft(data2)(addTransaction)
       data3
@@ -442,7 +442,7 @@ object ElectrumWalletSimulatedClientSpec {
         }
         val data1 = data.copy(history = history1, transactions = data.transactions + (tx.txid -> tx))
         val history2 = tx.txIn.filter(i => data1.isMine(i)).foldLeft(data1.history) { case (a, b) =>
-          addToHistory(a, ElectrumWallet.computeScriptHashFromPublicKey(extractPubKeySpentFrom(b).get, data.walletType), TransactionHistoryItem(100000, tx.txid))
+          addToHistory(a, ElectrumWallet.computeScriptHashFromPublicKey(extractPubKey(b, data.walletType).get, data.walletType), TransactionHistoryItem(100000, tx.txid))
         }
         val data2 = data1.copy(history = history2)
         updateStatus(data2)
