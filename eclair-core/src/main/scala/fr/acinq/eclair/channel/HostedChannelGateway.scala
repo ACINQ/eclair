@@ -44,6 +44,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
 }
 
 object HostedChannelGateway {
+
   def props(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef) = Props(new HostedChannelGateway(nodeParams, router, relayer))
 
   case class HotChannels(channels: Set[HOSTED_DATA_COMMITMENTS])

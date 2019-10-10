@@ -63,8 +63,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         brokenHtlcKiller ! brokenHtlcs
     }
 
-//    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
       .map {
@@ -201,43 +199,6 @@ object Switchboard extends Logging {
 
     htlcs_broken
   }
-
-  /**
-    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
-    * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
-    * don't want to lose preimages, or to forget to fail incoming htlcs, which
-    * would lead to unwanted channel closings.
-    *
-    * Because of the way our watcher works, in a scenario where a downstream
-    * channel has gone to the blockchain, it may send several times the same
-    * command, and the upstream channel may have disappeared in the meantime.
-    *
-    * That's why we need to periodically clean up the pending relay db.
-    */
-//  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
-//
-//    // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
-//    // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
-//    // the command from the pending relay db.
-//    val channel2Htlc: Seq[(ByteVector32, Long)] = for {
-//      hasCommitments <- channels
-//      DirectedHtlc(OUT, add) <- hasCommitments.commitments.remoteCommit.spec.htlcs
-//    } yield (add.channelId, add.id)
-//
-//    val pendingRelay: Set[(ByteVector32, Long)] = for {
-//      (chanId, cmd) <- relayDb.listPendingRelay()
-//    } yield (chanId, cmd.id)
-//
-//    val toClean = pendingRelay -- channel2Htlc
-//
-//    toClean.foreach {
-//      case (channelId, htlcId) =>
-//        logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
-//        relayDb.removePendingRelay(channelId, htlcId)
-//    }
-//    toClean.size
-//  }
-
 }
 
 class HtlcReaper extends Actor with ActorLogging {
