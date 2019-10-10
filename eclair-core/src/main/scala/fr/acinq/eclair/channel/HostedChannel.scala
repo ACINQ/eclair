@@ -355,9 +355,12 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   whenUnhandled {
     case Event(_: CMD_HOSTED_INPUT_DISCONNECTED, _) => goto(OFFLINE)
 
-    case Event(CMD_HOSTED_MESSAGE(_, _: Error), commits: HOSTED_DATA_COMMITMENTS) if commits.remoteError.isDefined => goto(CLOSED)
-
-    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) => goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
+    case Event(CMD_HOSTED_MESSAGE(_, error: Error), commits: HOSTED_DATA_COMMITMENTS) =>
+      if (commits.remoteError.isEmpty) {
+        goto(CLOSED) using commits.copy(remoteError = Some(error)) storing()
+      } else {
+        goto(CLOSED)
+      }
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
       val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
