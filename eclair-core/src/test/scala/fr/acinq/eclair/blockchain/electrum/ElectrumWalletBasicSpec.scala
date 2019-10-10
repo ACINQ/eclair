@@ -26,6 +26,7 @@ import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
+import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Random, Success, Try}
 
@@ -81,6 +82,28 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
     assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
     assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
+  }
+
+  test("derive bip84 keys") {
+    val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
+    val master = DeterministicWallet.generate(seed)
+    val (accountZpub, _) = computeZpub(master, Block.LivenetGenesisBlock.hash)
+    assert(accountZpub == "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs") // m/84'/0'/0'
+
+    val firstReceivingKey = DeterministicWallet.derivePrivateKey(bip84AccountKey(master, Block.LivenetGenesisBlock.hash), 0)
+    assert(firstReceivingKey.publicKey.value == hex"0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c")
+  }
+
+  test("compute bech32 addresses") {
+    val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
+    val master = DeterministicWallet.generate(seed)
+    val firstReceivingKey = DeterministicWallet.derivePrivateKey(bip84AccountKey(master, Block.LivenetGenesisBlock.hash), 0)
+    val secondReceivingKey = DeterministicWallet.derivePrivateKey(bip84AccountKey(master, Block.LivenetGenesisBlock.hash), 1)
+    val firstChangeKey = DeterministicWallet.derivePrivateKey(bip84ChangeKey(master, Block.LivenetGenesisBlock.hash), 0)
+
+    assert(bech32Address(firstReceivingKey, Block.LivenetGenesisBlock.hash) == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
+    assert(bech32Address(secondReceivingKey, Block.LivenetGenesisBlock.hash) == "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")
+    assert(bech32Address(firstChangeKey, Block.LivenetGenesisBlock.hash) == "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el")
   }
 
   test("implement BIP49") {

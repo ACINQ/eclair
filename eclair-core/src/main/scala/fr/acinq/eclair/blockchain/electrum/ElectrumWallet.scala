@@ -18,8 +18,8 @@ package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, FSM, PoisonPill, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
-import fr.acinq.bitcoin.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, ExtendedPublicKey, KeyPath, derivePrivateKey, hardened}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, DeterministicWallet, OP_0, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
@@ -577,6 +577,19 @@ object ElectrumWallet {
 
   def segwitAddress(key: PrivateKey, chainHash: ByteVector32): String = segwitAddress(key.publicKey, chainHash)
 
+  def bech32Address(key: ExtendedPublicKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
+
+  def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
+
+  def bech32Address(key: PublicKey, chainHash: ByteVector32): String = {
+    val pubKeyHash = Crypto.hash160(key.value)
+    chainHash match {
+      case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
+      case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, pubKeyHash)
+      case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, pubKeyHash)
+    }
+  }
+
   /**
    *
    * @param key public key
@@ -596,6 +609,11 @@ object ElectrumWallet {
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
   }
 
+  def bip84AccountPath(chainHash: ByteVector32): List[Long] = chainHash match {
+    case Block.LivenetGenesisBlock.hash => hardened(84) :: hardened(0) :: hardened(0) :: Nil
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(84) :: hardened(1) :: hardened(0) :: Nil
+  }
+
   /**
    * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
    *
@@ -604,6 +622,8 @@ object ElectrumWallet {
    */
   def accountKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, accountPath(chainHash) ::: 0L :: Nil)
 
+
+  def bip84AccountKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, bip84AccountPath(chainHash) ::: 0L :: Nil)
 
   /**
    * Compute the wallet's xpub
@@ -621,6 +641,16 @@ object ElectrumWallet {
     (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
   }
 
+  // BIP84 version of the xpub
+  def computeZpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
+    val extendedPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84AccountPath(chainHash)))
+    val prefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
+    }
+    (DeterministicWallet.encode(extendedPub, prefix), extendedPub.path.toString())
+  }
+
   /**
    * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
    *
@@ -628,6 +658,14 @@ object ElectrumWallet {
    * @return the BIP49 change key for this master key: m/49'/1'/0'/1 on testnet/regtest, m/49'/0'/0'/1 on mainnet
    */
   def changeKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, accountPath(chainHash) ::: 1L :: Nil)
+
+  /**
+    *
+    * Use BIP84 for native p2wpkh
+    * @param master key
+    * @return the BIP84 change key for this master key: m/84'/1'/0'/1/0 on testnet/regtest and m/84'/0'/0'/1/0 on mainnet
+    */
+  def bip84ChangeKey(master: ExtendedPrivateKey, chainHash: ByteVector32) = DeterministicWallet.derivePrivateKey(master, bip84AccountPath(chainHash) ::: 1L :: Nil)
 
   def totalAmount(utxos: Seq[Utxo]): Satoshi = Satoshi(utxos.map(_.item.value).sum)
 
