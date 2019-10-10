@@ -56,7 +56,6 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
   val master = DeterministicWallet.generate(seed)
 
   val accountMaster = accountKey(master, rootPath(walletType, chainHash))
-
   val changeMaster = changeKey(master, rootPath(walletType, chainHash))
 
   client ! ElectrumClient.AddStatusListener(self)
@@ -586,23 +585,19 @@ object ElectrumWallet {
 
   def segwitAddress(key: PrivateKey, chainHash: ByteVector32): String = segwitAddress(key.publicKey, chainHash)
 
-  def bech32Address(key: ExtendedPublicKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
-
-  def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
-
   /**
     * @param key the public key
     * @return the bech32 encoded witness program for the p2wpkh script of this key
     */
-  def bech32Address(key: PublicKey, chainHash: ByteVector32): String = {
-    val pubKeyHash = Crypto.hash160(key.value)
-    chainHash match {
-      case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-      case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, pubKeyHash)
-      case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, pubKeyHash)
-    }
+  def bech32Address(key: PublicKey, chainHash: ByteVector32): String = chainHash match {
+    case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, Crypto.hash160(key.value))
+    case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, Crypto.hash160(key.value))
+    case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, Crypto.hash160(key.value))
   }
 
+  def bech32Address(key: ExtendedPublicKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
+
+  def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
   /**
    *
    * @param key public key
@@ -659,12 +654,12 @@ object ElectrumWallet {
 
   // BIP84 version of the xpub
   def computeZpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val extendedPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84RootPath(chainHash)))
+    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84RootPath(chainHash)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
     }
-    (DeterministicWallet.encode(extendedPub, prefix), extendedPub.path.toString())
+    (DeterministicWallet.encode(zpub, prefix), zpub.path.toString())
   }
 
   /***
