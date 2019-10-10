@@ -22,36 +22,56 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.payment.PaymentLifecycle.{DefaultPaymentProgressHandler, SendPayment, SendPaymentToRoute}
+import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.RouteParams
+import fr.acinq.eclair.wire.Onion
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, NodeParams}
 
 /**
  * Created by PM on 29/08/2016.
  */
-class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends Actor with ActorLogging {
+class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef, register: ActorRef) extends Actor with ActorLogging {
+
+  import PaymentInitiator._
 
   override def receive: Receive = {
-    case p: PaymentInitiator.SendPaymentRequest =>
+    case r: SendPaymentRequest =>
       val paymentId = UUID.randomUUID()
-      // We add one block in order to not have our htlc fail when a new block has just been found.
-      val finalExpiry = p.finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1)
-      val payFsm = context.actorOf(PaymentLifecycle.props(nodeParams, DefaultPaymentProgressHandler(paymentId, p, nodeParams.db.payments), router, register))
-      // NB: we only generate legacy payment onions for now for maximum compatibility.
-      p.predefinedRoute match {
-        case Nil => payFsm forward SendPayment(p.paymentHash, p.targetNodeId, FinalLegacyPayload(p.amount, finalExpiry), p.maxAttempts, p.assistedRoutes, p.routeParams)
-        case hops => payFsm forward SendPaymentToRoute(p.paymentHash, hops, FinalLegacyPayload(p.amount, finalExpiry))
+      val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
+      r.paymentRequest match {
+        case Some(invoice) if invoice.features.allowMultiPart =>
+          r.predefinedRoute match {
+            case Nil => spawnMultiPartPaymentFsm(paymentId, r) forward r
+            case hops => spawnPaymentFsm(paymentId, r) forward SendPaymentToRoute(r.paymentHash, hops, Onion.createMultiPartPayload(r.amount, invoice.amount.getOrElse(r.amount), finalExpiry, invoice.paymentSecret.get))
+          }
+        case _ =>
+          val payFsm = spawnPaymentFsm(paymentId, r)
+          // NB: we only generate legacy payment onions for now for maximum compatibility.
+          r.predefinedRoute match {
+            case Nil => payFsm forward SendPayment(r.paymentHash, r.targetNodeId, FinalLegacyPayload(r.amount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
+            case hops => payFsm forward SendPaymentToRoute(r.paymentHash, hops, FinalLegacyPayload(r.amount, finalExpiry))
+          }
       }
       sender ! paymentId
+  }
+
+  def spawnPaymentFsm(paymentId: UUID, r: SendPaymentRequest): ActorRef = {
+    val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.targetNodeId, r.paymentRequest, storeInDb = true, publishEvent = true)
+    context.actorOf(PaymentLifecycle.props(nodeParams, paymentCfg, router, register))
+  }
+
+  def spawnMultiPartPaymentFsm(paymentId: UUID, r: SendPaymentRequest): ActorRef = {
+    val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.targetNodeId, r.paymentRequest, storeInDb = true, publishEvent = true)
+    context.actorOf(MultiPartPaymentLifecycle.props(nodeParams, paymentCfg, relayer, router, register))
   }
 
 }
 
 object PaymentInitiator {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef) = Props(classOf[PaymentInitiator], nodeParams, router, register)
+  def props(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef, register: ActorRef) = Props(classOf[PaymentInitiator], nodeParams, router, relayer, register)
 
   case class SendPaymentRequest(amount: MilliSatoshi,
                                 paymentHash: ByteVector32,
@@ -62,6 +82,18 @@ object PaymentInitiator {
                                 externalId: Option[String] = None,
                                 predefinedRoute: Seq[PublicKey] = Nil,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                                routeParams: Option[RouteParams] = None)
+                                routeParams: Option[RouteParams] = None) {
+    // We add one block in order to not have our htlcs fail when a new block has just been found.
+    def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
+  }
+
+  case class SendPaymentConfig(id: UUID,
+                               parentId: UUID,
+                               externalId: Option[String],
+                               paymentHash: ByteVector32,
+                               targetNodeId: PublicKey,
+                               paymentRequest: Option[PaymentRequest],
+                               storeInDb: Boolean,
+                               publishEvent: Boolean)
 
 }
