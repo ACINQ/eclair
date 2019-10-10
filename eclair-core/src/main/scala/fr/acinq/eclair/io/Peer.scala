@@ -280,11 +280,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(msg: wire.HostedChannelMessage, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
       hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, msg)
+      log.debug(s"received hosted message $msg for channel $hostedChannelId from peer $remoteNodeId")
       stay
 
     case Event(msg: wire.HasChannelId, d: ConnectedData) if msg.channelId == hostedChannelId =>
       d.transport ! TransportHandler.ReadAck(msg)
       hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, msg)
+      log.debug(s"received message $msg for hosted channel $hostedChannelId from peer $remoteNodeId")
       stay
 
     // END HOSTED CHANNEL MESSAGES
