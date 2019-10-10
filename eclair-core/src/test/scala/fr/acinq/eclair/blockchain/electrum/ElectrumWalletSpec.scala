@@ -90,7 +90,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("wait until wallet is ready") {
     electrumClient = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), Set(ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)))))
-    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat))), "wallet")
+    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(P2SH_SEGWIT, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat))), "wallet")
     val probe = TestProbe()
     awaitCond({
       probe.send(wallet, GetData)
