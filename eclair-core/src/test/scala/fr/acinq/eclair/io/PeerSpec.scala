@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
+import fr.acinq.eclair.channel.{CMD_HOSTED_INPUT_DISCONNECTED, CMD_HOSTED_INPUT_RECONNECTED, ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -49,7 +49,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement).toList
 
-  case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer])
+  case class FixtureParam(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, hostedChannelGateway: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer])
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val authenticator = TestProbe()
@@ -73,7 +73,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
 
     val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, hostedChannelGateway.ref, wallet))
-    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
+    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, hostedChannelGateway, peer)))
   }
 
   def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(Bob.nodeParams.globalFeatures, Bob.nodeParams.localFeatures), expectSync: Boolean = false): Unit = {
@@ -98,6 +98,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
+    hostedChannelGateway.expectMsgType[CMD_HOSTED_INPUT_RECONNECTED]
     probe.send(peer, Peer.GetPeerInfo)
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
@@ -139,6 +140,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
     probe.send(peer, Peer.Connect(NodeURI.parse("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@1.2.3.4:9735")))
+    hostedChannelGateway.expectNoMsg(200 millis)
     probe.expectMsg("reconnection in progress")
   }
 
@@ -147,6 +149,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     probe.send(peer, Peer.Reconnect)
+    hostedChannelGateway.expectNoMsg(200 millis)
     probe.expectNoMsg()
   }
 
@@ -156,6 +159,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
     probe.send(peer, Peer.Reconnect)
+    hostedChannelGateway.expectNoMsg(200 millis)
     probe.expectNoMsg()
   }
 
@@ -164,7 +168,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
-  val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
     val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     peer.underlyingActor.nodeParams.db.network.addNode(bobAnnouncement)
 
@@ -175,7 +179,6 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
     probe.send(peer, Reconnect)
-
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     within(30 seconds) {
       mockServer.accept()
@@ -238,11 +241,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
-
+    hostedChannelGateway.expectMsgType[CMD_HOSTED_INPUT_RECONNECTED]
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
+    hostedChannelGateway.expectMsgType[CMD_HOSTED_INPUT_DISCONNECTED]
     probe.expectMsg("disconnecting")
   }
 
@@ -306,10 +310,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val deathWatcher = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    hostedChannelGateway.expectMsgType[CMD_HOSTED_INPUT_RECONNECTED]
     // we manually trigger a ping because we don't want to wait too long in tests
     sender.send(peer, SendPing)
     transport.expectMsgType[Ping]
     deathWatcher.watch(transport.ref)
+    hostedChannelGateway.expectMsgType[CMD_HOSTED_INPUT_DISCONNECTED]
     deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
   }
 
@@ -403,7 +409,6 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val error1 = transport.expectMsgType[Error]
     assert(error1.channelId === CHANNELID_ZERO)
     assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
-
 
     // let's assume that one of the sigs were invalid
     router.send(peer, Peer.InvalidSignature(channels(0)))
