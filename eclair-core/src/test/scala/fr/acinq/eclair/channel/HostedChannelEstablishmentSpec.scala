@@ -130,6 +130,40 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     awaitCond(f.alice.stateName == NORMAL)
   }
 
+  test("Successful invoke, then host loses data, restores from client LCSS") { f =>
+    reachNormal(f, channelId)
+    val bobCommits = f.bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
+    val aliceCommits = f.alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
+    assert(!bobCommits.isHost)
+    assert(aliceCommits.isHost)
+    assert(bobCommits.lastCrossSignedState.verifyRemoteSig(Alice.nodeParams.nodeId))
+    assert(aliceCommits.lastCrossSignedState.verifyRemoteSig(Bob.nodeParams.nodeId))
+    f.bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
+    f.alice ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
+    awaitCond(f.bob.stateName == OFFLINE)
+    awaitCond(f.alice.stateName == OFFLINE)
+
+    val f1 = init()
+    f.bob ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Alice.nodeParams.nodeId, f.bob2alice.ref)
+    f1.alice ! CMD_HOSTED_INPUT_RECONNECTED(channelId, Bob.nodeParams.nodeId, f1.alice2bob.ref)
+    awaitCond(f.bob.stateName == SYNCING)
+    awaitCond(f1.alice.stateName == WAIT_FOR_INIT_INTERNAL)
+    f.bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
+    val bobInvokeHostedChannel1 = f.bob2alice.expectMsgType[InvokeHostedChannel]
+    f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel1))
+    val aliceInitHostedChannel = f1.alice2bob.expectMsgType[InitHostedChannel]
+    f1.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel))
+    f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, f.bob2alice.expectMsgType[LastCrossSignedState]))
+    f1.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, f1.alice2bob.expectMsgType[LastCrossSignedState]))
+    f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, f.bob2alice.expectMsgType[LastCrossSignedState]))
+    f.bob2alice.expectMsgType[ChannelUpdate]
+    f1.alice2bob.expectMsgType[ChannelUpdate]
+    awaitCond(f.bob.stateName == NORMAL)
+    awaitCond(f1.alice.stateName == NORMAL)
+    f.bob2alice.expectNoMsg(100 millis)
+    f1.alice2bob.expectNoMsg(100 millis)
+  }
+
   test("Successful invoke, then client loses data, host replies with wrong LCSS, both CLOSED on reconnect") { f =>
     reachNormal(f, channelId)
     val bobCommits = f.bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS]
@@ -172,7 +206,7 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     val bobError1 = f1.bob2alice.expectMsgType[wire.Error]
     f1.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobError1))
     awaitCond(f.alice.stateName == CLOSED)
-    f.alice2bob.expectNoMsg(300 millis)
+    f.alice2bob.expectNoMsg(100 millis)
   }
 
   test("Remove stale channels without commitments") { f =>

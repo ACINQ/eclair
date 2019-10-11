@@ -160,6 +160,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay
       }
 
+    case Event(CMD_HOSTED_MESSAGE(_, _: InitHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
+      // Looks like Host has lost this channel for some reason, resend our LCSS so they can re-sync
+      stay sending commits.lastCrossSignedState
+
     case Event(CMD_HOSTED_MESSAGE(_, remoteLCSS: LastCrossSignedState), commits: HOSTED_DATA_COMMITMENTS) =>
       val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
       val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(remoteNodeId)
