@@ -106,7 +106,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     val commits1 = addProposal(Left(add)).copy(originChannels = originChannels + (add.id -> origin))
     val outgoingHtlcs = commits1.nextLocalSpec.htlcs.filter(_.direction == OUT).toList
 
-    if (commits1.nextLocalSpec.toLocal < 0.msat) {
+    if (commits1.nextLocalSpec.toLocal < 0.msat) { // TODO: we may have many mutually cancelling fails/fulfills in nextLocalSpec, test if that can cause trouble
       return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -commits1.nextLocalSpec.toLocal.truncateToSatoshi, reserve = 0 sat, fees = 0 sat))
     }
 

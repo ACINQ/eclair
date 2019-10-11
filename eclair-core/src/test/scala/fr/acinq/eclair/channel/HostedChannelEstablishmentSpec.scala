@@ -117,8 +117,15 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     f1.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel1))
     val aliceLastCrossSignedState = f.alice2bob.expectMsgType[LastCrossSignedState]
     f.alice2bob.forward(f1.bob, CMD_HOSTED_MESSAGE(channelId, aliceLastCrossSignedState))
+    awaitCond(f.alice.stateName == SYNCING)
     val bobLastCrossSignedState = f1.bob2alice.expectMsgType[LastCrossSignedState]
     f1.bob2alice.forward(f.alice, CMD_HOSTED_MESSAGE(channelId, bobLastCrossSignedState))
+    val aliceLastCrossSignedState1 = f.alice2bob.expectMsgType[LastCrossSignedState]
+    f.alice2bob.forward(f1.bob, CMD_HOSTED_MESSAGE(channelId, aliceLastCrossSignedState1))
+    f1.bob2alice.expectMsgType[ChannelUpdate]
+    f.alice2bob.expectMsgType[ChannelUpdate]
+    f1.bob2alice.expectNoMsg(100 millis)
+    f.alice2bob.expectNoMsg(100 millis)
     awaitCond(f1.bob.stateName == NORMAL)
     awaitCond(f.alice.stateName == NORMAL)
   }

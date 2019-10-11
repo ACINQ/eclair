@@ -123,21 +123,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay using HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits) sending locallySignedLCSS.stateUpdate
       }
 
-    case Event(CMD_HOSTED_MESSAGE(channelId, remoteLCSS: LastCrossSignedState), _: HOSTED_DATA_CLIENT_WAIT_HOST_INIT) =>
-      // Client has expected InitHostedChannel but got LastCrossSignedState so this channel exists already on host side
-      val commits = restoreEmptyCommits(remoteLCSS.reverse, channelId, isHost = false)
-      val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
-      val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(remoteNodeId)
-      if (!isLocalSigOk) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_LOCAL_SIG)
-      } else if (!isRemoteSigOk) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_REMOTE_SIG)
-      } else if (remoteLCSS.incomingHtlcs.nonEmpty || remoteLCSS.outgoingHtlcs.nonEmpty) {
-        localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_IN_FLIGHT_HTLC_WHILE_RESTORING)
-      } else {
-        goto(NORMAL) using commits storing() sending commits.lastCrossSignedState
-      }
-
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), data: HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE) =>
       val fullySignedLCSS = data.commits.lastCrossSignedState.copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
       proceedOrClose(data.commits.channelId) {
@@ -153,6 +138,16 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         val commits1 = data.commits.copy(lastCrossSignedState = fullySignedLCSS)
         goto(NORMAL) using commits1 storing()
       }
+
+    // MISSING CHANNEL
+
+    case Event(CMD_HOSTED_MESSAGE(channelId, remoteLCSS: LastCrossSignedState), _: HOSTED_DATA_CLIENT_WAIT_HOST_INIT) =>
+      // We have sent InvokeHostedChannel and were expecting Host's InitHostedChannel
+      restoreMissingChannel(channelId, remoteLCSS, isHost = false)
+
+    case Event(CMD_HOSTED_MESSAGE(channelId, remoteLCSS: LastCrossSignedState), _: HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE) =>
+      // Client have sent us InvokeHostedChannel, we have replied with InitHostedChannel and were expecting Client's StateUpdate
+      restoreMissingChannel(channelId, remoteLCSS, isHost = true)
   }
 
   when(SYNCING) {
@@ -441,6 +436,21 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       state
     }
 
+  }
+
+  def restoreMissingChannel(channelId: ByteVector32, remoteLCSS: LastCrossSignedState, isHost: Boolean): HostedFsmState = {
+    val commits = restoreEmptyCommits(remoteLCSS.reverse, channelId, isHost)
+    val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
+    val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(remoteNodeId)
+    if (!isLocalSigOk) {
+      localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_LOCAL_SIG)
+    } else if (!isRemoteSigOk) {
+      localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_WRONG_REMOTE_SIG)
+    } else if (remoteLCSS.incomingHtlcs.nonEmpty || remoteLCSS.outgoingHtlcs.nonEmpty) {
+      localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_IN_FLIGHT_HTLC_WHILE_RESTORING)
+    } else {
+      goto(NORMAL) using commits storing() sending commits.lastCrossSignedState
+    }
   }
 
   def restoreEmptyCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = {
