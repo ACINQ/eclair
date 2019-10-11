@@ -146,7 +146,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val state3 = state2.cancelTransaction(tx1)
     assert(state3 == state1)
 
-    val state4 = state2.commitTransaction(tx1, state.walletType)
+    val state4 = state2.commitTransaction(tx1)
     val (confirmed4, unconfirmed4) = state4.balance
     assert(confirmed4 == confirmed1)
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
@@ -167,7 +167,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val state3 = state2.cancelTransaction(tx1)
     assert(state3 == state1)
 
-    val state4 = state2.commitTransaction(tx1, state.walletType)
+    val state4 = state2.commitTransaction(tx1)
     val (confirmed4, unconfirmed4) = state4.balance
     assert(confirmed4 == confirmed1)
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))

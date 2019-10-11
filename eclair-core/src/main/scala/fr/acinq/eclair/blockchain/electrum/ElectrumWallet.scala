@@ -434,7 +434,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(CommitTransaction(tx), data) =>
       log.info(s"committing txid=${tx.txid}")
-      val data1 = data.commitTransaction(tx, walletType)
+      val data1 = data.commitTransaction(tx)
       // we use the initial state to compute the effect of the tx
       // note: we know that computeTransactionDelta and the fee will be defined, because we built the tx ourselves so
       // we know all the parents
@@ -964,7 +964,7 @@ object ElectrumWallet {
      * @param tx pending transaction
      * @return an updated state
      */
-    def commitTransaction(tx: Transaction, walletType: WalletType): Data = {
+    def commitTransaction(tx: Transaction): Data = {
       // HACK! since we base our utxos computation on the history as seen by the electrum server (so that it is
       // reorg-proof out of the box), we need to update the history  right away if we want to be able to build chained
       // unconfirmed transactions. A few seconds later electrum will notify us and the entry will be overwritten.
