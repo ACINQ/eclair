@@ -319,7 +319,7 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
           txIn = TxIn(OutPoint(wallettxs(0), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
           txOut = walletOutput(wallet.stateData.walletType, wallettxs(0).txOut(0).amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(wallet.stateData.walletType, 50000 sat, data2.changeKeys(0).publicKey) :: Nil,
           lockTime = 0)
-        data2.signTransaction(tx, walletParameters.walletType)
+        data2.strategy.signTx(tx, data2)
       }
 
       // a tx that spend from our wallet to a random address, plus change to our wallet
@@ -328,7 +328,7 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
           txIn = TxIn(OutPoint(wallettxs(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
           txOut = TxOut(wallettxs(1).txOut(0).amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(wallet.stateData.walletType, 50000 sat, data2.changeKeys(1).publicKey) :: Nil,
           lockTime = 0)
-        data2.signTransaction(tx, walletParameters.walletType)
+        data2.strategy.signTx(tx, data2)
       }
       val data3 = Seq(tx1, tx2).foldLeft(data2)(addTransaction)
       data3
