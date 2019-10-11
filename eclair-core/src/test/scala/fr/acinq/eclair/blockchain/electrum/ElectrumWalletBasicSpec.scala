@@ -55,7 +55,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
     val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
-    val state1 = state.copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(state.strategy.computePublicKeyScript(key.publicKey)) -> "").toMap)
+    val state1 = state.copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromScriptPubKey(state.strategy.computePublicKeyScript(key.publicKey)) -> "").toMap)
 
     withFixture(test.toNoArgTest(FixtureParam(state1)))
   }
@@ -67,7 +67,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, data.strategy.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(key.publicKey))
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(data.strategy.computePublicKeyScript(key.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -77,7 +77,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
 
   def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, data.strategy.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(keyamount._1.publicKey))
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(data.strategy.computePublicKeyScript(keyamount._1.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -146,7 +146,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val state3 = state2.cancelTransaction(tx1)
     assert(state3 == state1)
 
-    val state4 = state2.commitTransaction(tx1, state.walletType)
+    val state4 = state2.commitTransaction(tx1)
     val (confirmed4, unconfirmed4) = state4.balance
     assert(confirmed4 == confirmed1)
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
@@ -167,7 +167,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val state3 = state2.cancelTransaction(tx1)
     assert(state3 == state1)
 
-    val state4 = state2.commitTransaction(tx1, state.walletType)
+    val state4 = state2.commitTransaction(tx1)
     val (confirmed4, unconfirmed4) = state4.balance
     assert(confirmed4 == confirmed1)
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
