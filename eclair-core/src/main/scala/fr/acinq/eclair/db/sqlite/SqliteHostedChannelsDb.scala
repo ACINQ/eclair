@@ -11,6 +11,7 @@ import fr.acinq.eclair.channel.HOSTED_DATA_COMMITMENTS
 import scodec.bits.BitVector
 
 import scala.collection.immutable.Queue
+import scala.compat.Platform
 
 class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with Logging {
 
@@ -20,7 +21,7 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_htlcs INTEGER NOT NULL, in_flight_incoming INTEGER NOT NULL, in_flight_outgoing INTEGER NOT NULL, capacity INTEGER NOT NULL, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_hosted_channels (channel_id BLOB NOT NULL, short_channel_id INTEGER NOT NULL UNIQUE, in_flight_htlcs INTEGER NOT NULL, in_flight_incoming INTEGER NOT NULL, in_flight_outgoing INTEGER NOT NULL, capacity INTEGER NOT NULL, created_at INTEGER NOT NULL, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_in_flight_htlcs_idx ON local_hosted_channels(in_flight_htlcs)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS local_hosted_channels_channel_id_idx ON local_hosted_channels(channel_id)")
   }
@@ -36,14 +37,15 @@ class SqliteHostedChannelsDb(sqlite: Connection) extends HostedChannelsDb with L
       update.setBytes(6, data)
       update.setBytes(7, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_hosted_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, state.channelId.toArray)
           statement.setLong(2, state.channelUpdate.shortChannelId.toLong)
           statement.setLong(3, state.currentAndNextInFlightHtlcs.size)
           statement.setLong(4, state.localSpec.inFlightIncoming.toLong)
           statement.setLong(5, state.localSpec.inFlightOutgoing.toLong)
           statement.setLong(6, state.lastCrossSignedState.initHostedChannel.channelCapacityMsat.toLong)
-          statement.setBytes(7, data)
+          statement.setLong(7, Platform.currentTime / 1000L)
+          statement.setBytes(8, data)
           statement.executeUpdate()
         }
       }
