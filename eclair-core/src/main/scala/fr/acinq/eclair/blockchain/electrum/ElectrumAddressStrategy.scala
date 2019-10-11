@@ -18,6 +18,11 @@ trait ElectrumAddressStrategy {
     */
   def computePublicKeyScript(key: PublicKey): Seq[ScriptElt]
 
+  /**
+    *
+    * @param key public key
+    * @return the address for this key
+    */
   def computeAddress(key: PublicKey, chainHash: ByteVector32): String
   def computeAddress(key: ExtendedPrivateKey, chainHash: ByteVector32): String = computeAddress(key.publicKey, chainHash)
   def computeAddress(key: PrivateKey, chainHash: ByteVector32): String = computeAddress(key.publicKey, chainHash)
@@ -66,11 +71,6 @@ class P2SHStrategy extends ElectrumAddressStrategy {
 
   override def computePublicKeyScript(key: PublicKey) = Script.pay2sh(Script.pay2wpkh(key))
 
-  /**
-    *
-    * @param key public key
-    * @return the address of the p2sh-of-p2wpkh script for this key
-    */
   override def computeAddress(key: PublicKey, chainHash: ByteVector32): String = {
     val script = Script.pay2wpkh(key)
     val hash = Crypto.hash160(Script.write(script))

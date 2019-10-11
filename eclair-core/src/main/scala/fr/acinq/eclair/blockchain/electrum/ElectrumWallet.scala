@@ -25,7 +25,6 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.wire.HasChainHash
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -167,8 +166,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         goto(SYNCING) using data
       } else if (header == data.blockchain.tip.header) {
         // nothing to sync
-        data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey, walletType), self))
-        data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey, walletType), self))
+        data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(key.publicKey)), self))
+        data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(key.publicKey)), self))
         advertiseTransactions(data)
         goto(RUNNING) using persistAndNotify(data)
       } else {
@@ -183,8 +182,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       if (headers.isEmpty) {
         // ok, we're all synced now
         log.info(s"headers sync complete, tip=${data.blockchain.tip}")
-        data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey, walletType), self))
-        data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey, walletType), self))
+        data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(key.publicKey)), self))
+        data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(key.publicKey)), self))
         advertiseTransactions(data)
         goto(RUNNING) using persistAndNotify(data)
       } else {
@@ -263,7 +262,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
         case None =>
           // first time this script hash is used, need to generate a new key
           val newKey = if (isChange) derivePrivateKey(changeMaster, data.changeKeys.last.path.lastChildNumber + 1) else derivePrivateKey(accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
-          val newScriptHash = computeScriptHashFromPublicKey(newKey.publicKey, walletType)
+          val newScriptHash = computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(newKey.publicKey))
           log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash isChange=$isChange")
           // listens to changes for the newly generated key
           client ! ElectrumClient.ScriptHashSubscription(newScriptHash, self)
@@ -567,20 +566,10 @@ object ElectrumWallet {
 
   /**
    *
-   * @param key public key
-   * @return the publicKeyScript for this key
-   */
-  def computePublicKeyScript(key: PublicKey, walletType: WalletType) = walletType match {
-    case P2SH_SEGWIT => Script.pay2sh(Script.pay2wpkh(key))
-    case NATIVE_SEGWIT => Script.pay2wpkh(key)
-  }
-
-  /**
-   *
-   * @param key public key
+   * @param scriptPubKey the public key script
    * @return the hash of the public key script for this key, as used by Electrum's hash-based methods
    */
-  def computeScriptHashFromPublicKey(key: PublicKey, walletType: WalletType): ByteVector32 = Crypto.sha256(Script.write(computePublicKeyScript(key, walletType))).reverse
+  def computeScriptHashFromPublicKey(scriptPubKey: Seq[ScriptElt]): ByteVector32 = Crypto.sha256(Script.write(scriptPubKey)).reverse
 
   /**
     * We define a root path the first 3 elements in the BIP44 derivation scheme, which include
@@ -682,15 +671,15 @@ object ElectrumWallet {
 
     val chainHash = blockchain.chainHash
 
-    lazy val accountKeyMap = accountKeys.map(key => computeScriptHashFromPublicKey(key.publicKey, walletType) -> key).toMap
+    lazy val accountKeyMap = accountKeys.map(key => computeScriptHashFromPublicKey(strategy.computePublicKeyScript(key.publicKey)) -> key).toMap
 
-    lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(key.publicKey, walletType) -> key).toMap
+    lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(strategy.computePublicKeyScript(key.publicKey)) -> key).toMap
 
-    lazy val firstUnusedAccountKeys = accountKeys.find(key => status.get(computeScriptHashFromPublicKey(key.publicKey, walletType)) == Some(""))
+    lazy val firstUnusedAccountKeys = accountKeys.find(key => status.get(computeScriptHashFromPublicKey(strategy.computePublicKeyScript(key.publicKey))) == Some(""))
 
-    lazy val firstUnusedChangeKeys = changeKeys.find(key => status.get(computeScriptHashFromPublicKey(key.publicKey, walletType)) == Some(""))
+    lazy val firstUnusedChangeKeys = changeKeys.find(key => status.get(computeScriptHashFromPublicKey(strategy.computePublicKeyScript(key.publicKey))) == Some(""))
 
-    lazy val publicScriptMap = (accountKeys ++ changeKeys).map(key => Script.write(ElectrumWallet.computePublicKeyScript(key.publicKey, walletType)) -> key).toMap
+    lazy val publicScriptMap = (accountKeys ++ changeKeys).map(key => Script.write(strategy.computePublicKeyScript(key.publicKey)) -> key).toMap
 
     lazy val utxos = history.keys.toSeq.map(scriptHash => getUtxos(scriptHash)).flatten
 
@@ -746,7 +735,7 @@ object ElectrumWallet {
       changeKeys.head
     }
 
-    def isMine(txIn: TxIn): Boolean = strategy.extractPubKey(txIn).exists(pub => publicScriptMap.contains(Script.write(ElectrumWallet.computePublicKeyScript(pub, walletType))))
+    def isMine(txIn: TxIn): Boolean = strategy.extractPubKey(txIn).exists(pub => publicScriptMap.contains(Script.write(strategy.computePublicKeyScript(pub))))
 
     def isSpend(txIn: TxIn, publicKey: PublicKey): Boolean = strategy.extractPubKey(txIn).contains(publicKey)
 
@@ -756,9 +745,9 @@ object ElectrumWallet {
      * @param scriptHash
      * @return true if txIn spends from an address that matches scriptHash
      */
-    def isSpend(txIn: TxIn, scriptHash: ByteVector32): Boolean = strategy.extractPubKey(txIn).exists(pub => computeScriptHashFromPublicKey(pub, walletType) == scriptHash)
+    def isSpend(txIn: TxIn, scriptHash: ByteVector32): Boolean = strategy.extractPubKey(txIn).exists(pub => computeScriptHashFromPublicKey(strategy.computePublicKeyScript(pub)) == scriptHash)
 
-    def isReceive(txOut: TxOut, scriptHash: ByteVector32): Boolean = publicScriptMap.get(txOut.publicKeyScript).exists(key => computeScriptHashFromPublicKey(key.publicKey, walletType) == scriptHash)
+    def isReceive(txOut: TxOut, scriptHash: ByteVector32): Boolean = publicScriptMap.get(txOut.publicKeyScript).exists(key => computeScriptHashFromPublicKey(strategy.computePublicKeyScript(key.publicKey)) == scriptHash)
 
     def isMine(txOut: TxOut): Boolean = publicScriptMap.contains(txOut.publicKeyScript)
 
@@ -920,7 +909,7 @@ object ElectrumWallet {
         Transactions.weight2fee(feeRatePerKw, tx2.weight())
       }
 
-      val dummyChange = TxOut(Satoshi(0), ElectrumWallet.computePublicKeyScript(currentChangeKey.publicKey, walletType))
+      val dummyChange = TxOut(Satoshi(0), strategy.computePublicKeyScript(currentChangeKey.publicKey))
 
       @tailrec
       def loop(current: Seq[Utxo], remaining: Seq[Utxo]): (Seq[Utxo], Option[TxOut]) = {
@@ -980,7 +969,7 @@ object ElectrumWallet {
       // reorg-proof out of the box), we need to update the history  right away if we want to be able to build chained
       // unconfirmed transactions. A few seconds later electrum will notify us and the entry will be overwritten.
       // Note that we need to take into account both inputs and outputs, because there may be change.
-      val history1 = (tx.txIn.filter(isMine).flatMap(strategy.extractPubKey).map(computeScriptHashFromPublicKey(_, walletType)) ++ tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash))
+      val history1 = (tx.txIn.filter(isMine).flatMap(strategy.extractPubKey).map(key => computeScriptHashFromPublicKey(strategy.computePublicKeyScript(key))) ++ tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash))
         .foldLeft(this.history) {
           case (history, scriptHash) =>
             val entry = history.get(scriptHash) match {

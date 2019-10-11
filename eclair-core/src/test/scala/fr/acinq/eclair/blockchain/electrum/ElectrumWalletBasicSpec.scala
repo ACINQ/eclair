@@ -55,9 +55,9 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
     val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
-      .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey, walletType) -> "").toMap)
+    val state1 = state.copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(state.strategy.computePublicKeyScript(key.publicKey)) -> "").toMap)
 
-    withFixture(test.toNoArgTest(FixtureParam(state)))
+    withFixture(test.toNoArgTest(FixtureParam(state1)))
   }
 
   val swipeRange = 10
@@ -66,8 +66,8 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
   val minimumFee = 2000 sat
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
-    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey, data.walletType)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey, data.walletType)
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, data.strategy.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(key.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -76,8 +76,8 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
   }
 
   def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
-    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey, data.walletType)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey, data.walletType)
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, data.strategy.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(data.strategy.computePublicKeyScript(keyamount._1.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
