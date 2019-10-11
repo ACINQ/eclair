@@ -2,10 +2,12 @@ package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_PUSHDATA, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, Utxo, extractPubKey}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, Utxo, WalletType, bip49RootPath, bip84RootPath}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import scodec.bits.ByteVector
+
+import scala.util.Try
 
 trait ElectrumAddressStrategy {
 
@@ -30,6 +32,22 @@ trait ElectrumAddressStrategy {
     *         is used to estimate the weight of the signed transaction
     */
   def addUtxos(tx: Transaction, utxos: Seq[Utxo]): Transaction
+
+  /**
+    *
+    * @param txIn transaction input
+    * @return Some(pubkey) if this tx input spends a p2sh-of-p2wpkh(pub) OR p2wpkh(pub), None otherwise
+    */
+  def extractPubKey(txIn: TxIn): Option[PublicKey]
+
+  /**
+    * Compute the wallet's xpub
+    *
+    * @param master    master key
+    * @param chainHash chain hash
+    * @return a (xpub, path) tuple where xpub is the encoded account public key, and path is the derivation path for the account key
+    */
+  def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String)
 
 }
 
@@ -72,6 +90,28 @@ class P2SHStrategy extends ElectrumAddressStrategy {
     })
   }
 
+  override def extractPubKey(txIn: TxIn): Option[PublicKey] = {
+    Try {
+      // we're looking for tx that spend a pay2sh-of-p2wkph output
+      require(txIn.witness.stack.size == 2)
+      val sig = txIn.witness.stack(0)
+      val pub = txIn.witness.stack(1)
+      val OP_PUSHDATA(script, _) :: Nil = Script.parse(txIn.signatureScript)
+      val publicKey = PublicKey(pub)
+      if (Script.write(Script.pay2wpkh(publicKey)) == script) {
+        Some(publicKey)
+      } else None
+    } getOrElse None
+  }
+
+  override def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
+    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip49RootPath(chainHash)))
+    val prefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
+    }
+    (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
+  }
 }
 
 class NativeSegwitStrategy extends ElectrumAddressStrategy {
@@ -107,6 +147,26 @@ class NativeSegwitStrategy extends ElectrumAddressStrategy {
       val witness = ScriptWitness(sig :: utxo.key.publicKey.value :: Nil)
       TxIn(utxo.outPoint, signatureScript = sigScript, sequence = TxIn.SEQUENCE_FINAL, witness = witness)
     })
+  }
+
+  override def extractPubKey(txIn: TxIn): Option[PublicKey] = {
+    Try {
+      // we're looking for tx that spend a p2wkph output
+      require(txIn.witness.stack.size == 2)
+      require(txIn.signatureScript.isEmpty)
+
+      val pub = txIn.witness.stack(1)
+      Some(PublicKey(pub))
+    } getOrElse None
+  }
+
+  override def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
+    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, ElectrumWallet.bip84RootPath(chainHash)))
+    val prefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
+    }
+    (DeterministicWallet.encode(zpub, prefix), zpub.path.toString())
   }
 }
 

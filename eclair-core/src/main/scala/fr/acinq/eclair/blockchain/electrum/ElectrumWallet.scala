@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.wire.HasChainHash
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -483,11 +484,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
-    case Event(GetRootPub, _) =>
-      val (pub, path) = walletType match {
-        case P2SH_SEGWIT => computeXpub(master, chainHash)
-        case NATIVE_SEGWIT => computeZpub(master, chainHash)
-      }
+    case Event(GetRootPub, data) =>
+      val (pub, path) = data.strategy.computeRootPub(master, chainHash)
       stay replying GetRootPubResponse(pub, path)
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
@@ -570,37 +568,6 @@ object ElectrumWallet {
   /**
    *
    * @param key public key
-   * @return the address of the p2sh-of-p2wpkh script for this key
-   */
-  def segwitAddress(key: PublicKey, chainHash: ByteVector32): String = {
-    val script = Script.pay2wpkh(key)
-    val hash = Crypto.hash160(Script.write(script))
-    chainHash match {
-      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
-      case Block.LivenetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
-    }
-  }
-
-  def segwitAddress(key: ExtendedPrivateKey, chainHash: ByteVector32): String = segwitAddress(key.publicKey, chainHash)
-
-  def segwitAddress(key: PrivateKey, chainHash: ByteVector32): String = segwitAddress(key.publicKey, chainHash)
-
-  /**
-    * @param key the public key
-    * @return the bech32 encoded witness program for the p2wpkh script of this key
-    */
-  def bech32Address(key: PublicKey, chainHash: ByteVector32): String = chainHash match {
-    case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, Crypto.hash160(key.value))
-    case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, Crypto.hash160(key.value))
-    case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, Crypto.hash160(key.value))
-  }
-
-  def bech32Address(key: ExtendedPublicKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
-
-  def bech32Address(key: ExtendedPrivateKey, chainHash: ByteVector32): String = bech32Address(key.publicKey, chainHash)
-  /**
-   *
-   * @param key public key
    * @return the publicKeyScript for this key
    */
   def computePublicKeyScript(key: PublicKey, walletType: WalletType) = walletType match {
@@ -626,12 +593,12 @@ object ElectrumWallet {
     case NATIVE_SEGWIT => bip84RootPath(chainHash)
   }
 
-  private def bip49RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
+  def bip49RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
   }
 
-  private def bip84RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
+  def bip84RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
     case Block.LivenetGenesisBlock.hash => hardened(84) :: hardened(0) :: hardened(0) :: Nil
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(84) :: hardened(1) :: hardened(0) :: Nil
   }
@@ -641,32 +608,6 @@ object ElectrumWallet {
    * @return the account key for this master key and derivation root path, follows BIP44 scheme
    */
   def accountKey(master: ExtendedPrivateKey, rootPath: List[Long]) = DeterministicWallet.derivePrivateKey(master, rootPath ::: 0L :: Nil)
-
-  /**
-   * Compute the wallet's xpub
-   *
-   * @param master    master key
-   * @param chainHash chain hash
-   * @return a (xpub, path) tuple where xpub is the encoded account public key, and path is the derivation path for the account key
-   */
-  def computeXpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip49RootPath(chainHash)))
-    val prefix = chainHash match {
-      case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
-      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
-    }
-    (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
-  }
-
-  // BIP84 version of the xpub
-  def computeZpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip84RootPath(chainHash)))
-    val prefix = chainHash match {
-      case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
-      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
-    }
-    (DeterministicWallet.encode(zpub, prefix), zpub.path.toString())
-  }
 
   /***
    * @param master master key
@@ -685,41 +626,6 @@ object ElectrumWallet {
    * @return the fee for this tx weight
    */
   def computeFee(weight: Int, feeRatePerKw: Long): Satoshi = Satoshi((weight * feeRatePerKw) / 1000)
-
-  /**
-   *
-   * @param txIn transaction input
-   * @return Some(pubkey) if this tx input spends a p2sh-of-p2wpkh(pub), None otherwise
-   */
-  def extractPubKeySpentFromP2SH(txIn: TxIn): Option[PublicKey] = {
-    Try {
-      // we're looking for tx that spend a pay2sh-of-p2wkph output
-      require(txIn.witness.stack.size == 2)
-      val sig = txIn.witness.stack(0)
-      val pub = txIn.witness.stack(1)
-      val OP_PUSHDATA(script, _) :: Nil = Script.parse(txIn.signatureScript)
-      val publicKey = PublicKey(pub)
-      if (Script.write(Script.pay2wpkh(publicKey)) == script) {
-        Some(publicKey)
-      } else None
-    } getOrElse None
-  }
-
-  def extractPubKeySpentFromSegwit(txIn: TxIn): Option[PublicKey] = {
-    Try {
-      // we're looking for tx that spend a p2wkph output
-      require(txIn.witness.stack.size == 2)
-      require(txIn.signatureScript.isEmpty)
-
-      val pub = txIn.witness.stack(1)
-      Some(PublicKey(pub))
-    } getOrElse None
-  }
-
-  def extractPubKey(txIn: TxIn, walletType: WalletType) = walletType match {
-    case P2SH_SEGWIT => extractPubKeySpentFromP2SH(txIn)
-    case NATIVE_SEGWIT => extractPubKeySpentFromSegwit(txIn)
-  }
 
   def computeDepth(currentHeight: Long, txHeight: Long): Long =
     if (txHeight <= 0) {
@@ -800,6 +706,8 @@ object ElectrumWallet {
       WalletReady(confirmed, unconfirmed, blockchain.tip.height, blockchain.tip.header.time)
     }
 
+    def getAddress(key: PublicKey, chainHash: ByteVector32) = strategy.computeAddress(key, chainHash)
+
     /**
      *
      * @return the ids of transactions that belong to our wallet history for this script hash but that we don't have
@@ -838,9 +746,9 @@ object ElectrumWallet {
       changeKeys.head
     }
 
-    def isMine(txIn: TxIn): Boolean = extractPubKey(txIn, walletType).exists(pub => publicScriptMap.contains(Script.write(ElectrumWallet.computePublicKeyScript(pub, walletType))))
+    def isMine(txIn: TxIn): Boolean = strategy.extractPubKey(txIn).exists(pub => publicScriptMap.contains(Script.write(ElectrumWallet.computePublicKeyScript(pub, walletType))))
 
-    def isSpend(txIn: TxIn, publicKey: PublicKey): Boolean = extractPubKey(txIn, walletType).contains(publicKey)
+    def isSpend(txIn: TxIn, publicKey: PublicKey): Boolean = strategy.extractPubKey(txIn).contains(publicKey)
 
     /**
      *
@@ -848,7 +756,7 @@ object ElectrumWallet {
      * @param scriptHash
      * @return true if txIn spends from an address that matches scriptHash
      */
-    def isSpend(txIn: TxIn, scriptHash: ByteVector32): Boolean = extractPubKey(txIn, walletType).exists(pub => computeScriptHashFromPublicKey(pub, walletType) == scriptHash)
+    def isSpend(txIn: TxIn, scriptHash: ByteVector32): Boolean = strategy.extractPubKey(txIn).exists(pub => computeScriptHashFromPublicKey(pub, walletType) == scriptHash)
 
     def isReceive(txOut: TxOut, scriptHash: ByteVector32): Boolean = publicScriptMap.get(txOut.publicKeyScript).exists(key => computeScriptHashFromPublicKey(key.publicKey, walletType) == scriptHash)
 
@@ -1072,7 +980,7 @@ object ElectrumWallet {
       // reorg-proof out of the box), we need to update the history  right away if we want to be able to build chained
       // unconfirmed transactions. A few seconds later electrum will notify us and the entry will be overwritten.
       // Note that we need to take into account both inputs and outputs, because there may be change.
-      val history1 = (tx.txIn.filter(isMine).flatMap(extractPubKey(_, walletType)).map(computeScriptHashFromPublicKey(_, walletType)) ++ tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash))
+      val history1 = (tx.txIn.filter(isMine).flatMap(strategy.extractPubKey).map(computeScriptHashFromPublicKey(_, walletType)) ++ tx.txOut.filter(isMine).map(_.publicKeyScript).map(computeScriptHash))
         .foldLeft(this.history) {
           case (history, scriptHash) =>
             val entry = history.get(scriptHash) match {

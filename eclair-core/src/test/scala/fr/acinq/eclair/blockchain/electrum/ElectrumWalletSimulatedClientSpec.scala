@@ -442,7 +442,7 @@ object ElectrumWalletSimulatedClientSpec {
         }
         val data1 = data.copy(history = history1, transactions = data.transactions + (tx.txid -> tx))
         val history2 = tx.txIn.filter(i => data1.isMine(i)).foldLeft(data1.history) { case (a, b) =>
-          addToHistory(a, ElectrumWallet.computeScriptHashFromPublicKey(extractPubKey(b, data.walletType).get, data.walletType), TransactionHistoryItem(100000, tx.txid))
+          addToHistory(a, ElectrumWallet.computeScriptHashFromPublicKey(data.strategy.extractPubKey(b).get, data.walletType), TransactionHistoryItem(100000, tx.txid))
         }
         val data2 = data1.copy(history = history2)
         updateStatus(data2)
