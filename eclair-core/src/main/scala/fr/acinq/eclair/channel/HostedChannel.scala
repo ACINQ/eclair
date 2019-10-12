@@ -160,9 +160,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay
       }
 
+    // Looks like remote peer has lost this channel, they should re-sync from our LCSS
     case Event(CMD_HOSTED_MESSAGE(_, _: InitHostedChannel), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
-      // Looks like Host has lost this channel for some reason, resend our LCSS so they can re-sync
-      stay sending commits.lastCrossSignedState
+      goto(NORMAL) using syncAndResend(commits, commits.futureUpdates, commits.lastCrossSignedState, commits.localSpec)
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteLCSS: LastCrossSignedState), commits: HOSTED_DATA_COMMITMENTS) =>
       val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
@@ -492,7 +492,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   def syncAndResend(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[LocalOrRemoteUpdate], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
     val commits1 = commits.copy(futureUpdates = leftovers.filter(_.isLeft), lastCrossSignedState = lcss, localSpec = spec)
-    for (message <- commits1.lastCrossSignedState +: commits1.nextLocalUpdates) forwarder ! message
+
+    forwarder ! commits1.lastCrossSignedState
+    for (update <- commits1.nextLocalUpdates) forwarder ! update
     if (commits1.nextLocalUpdates.nonEmpty) self ! CMD_SIGN
     commits1
   }

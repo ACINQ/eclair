@@ -149,17 +149,14 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     awaitCond(f.bob.stateName == SYNCING)
     awaitCond(f1.alice.stateName == WAIT_FOR_INIT_INTERNAL)
     f.bob ! CMD_HOSTED_INVOKE_CHANNEL(channelId, Alice.nodeParams.nodeId, Bob.channelParams.defaultFinalScriptPubKey)
-    val bobInvokeHostedChannel1 = f.bob2alice.expectMsgType[InvokeHostedChannel]
-    f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, bobInvokeHostedChannel1))
-    val aliceInitHostedChannel = f1.alice2bob.expectMsgType[InitHostedChannel]
-    f1.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, aliceInitHostedChannel))
+    f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, f.bob2alice.expectMsgType[InvokeHostedChannel]))
+    f1.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, f1.alice2bob.expectMsgType[InitHostedChannel]))
     f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, f.bob2alice.expectMsgType[LastCrossSignedState]))
     f1.alice2bob.forward(f.bob, CMD_HOSTED_MESSAGE(channelId, f1.alice2bob.expectMsgType[LastCrossSignedState]))
-    f.bob2alice.forward(f1.alice, CMD_HOSTED_MESSAGE(channelId, f.bob2alice.expectMsgType[LastCrossSignedState]))
-    f.bob2alice.expectMsgType[ChannelUpdate]
-    f1.alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(f.bob.stateName == NORMAL)
     awaitCond(f1.alice.stateName == NORMAL)
+    f.bob2alice.expectMsgType[ChannelUpdate]
+    f1.alice2bob.expectMsgType[ChannelUpdate]
     f.bob2alice.expectNoMsg(100 millis)
     f1.alice2bob.expectNoMsg(100 millis)
   }
