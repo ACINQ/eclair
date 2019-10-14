@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{getNullableLong, _}
+import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
 import grizzled.slf4j.Logging
@@ -153,7 +153,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
       OutgoingPaymentStatus.Pending
     )
-    parseOutgoingPaymentStatus(rs.getByteVector32Nullable("payment_preimage"), rs.getMilliSatoshiNullable("fees_msat"), rs.getBitVectorOpt("payment_route"), getNullableLong(rs, "completed_at"), rs.getBitVectorOpt("failures")) match {
+    parseOutgoingPaymentStatus(rs.getByteVector32Nullable("payment_preimage"), rs.getMilliSatoshiNullable("fees_msat"), rs.getBitVectorOpt("payment_route"), rs.getLongNullable("completed_at"), rs.getBitVectorOpt("failures")) match {
       case Some(status) => result.copy(status = status)
       case None => result
     }
