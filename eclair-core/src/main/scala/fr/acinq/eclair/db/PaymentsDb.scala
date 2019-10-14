@@ -75,7 +75,7 @@ trait PaymentsDb {
 
   /**
     * List all incoming or outgoing payments within a given size limit, ordered by descending date.
-    * This method should only return incoming payments that have been received (not pending or failed).
+    * This method should only return incoming payments that have been received (not pending or expired).
     *
     * This is a high level method intended for front-end usage.
     */
