@@ -354,7 +354,6 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |    completed_at,
         |    NULL as expire_at
         |	 FROM sent_payments
-        |	 GROUP BY payment_hash, target_node_id
         |)
         |ORDER BY CASE
         |  WHEN completed_at IS NULL THEN created_at
