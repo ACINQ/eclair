@@ -73,6 +73,14 @@ trait PaymentsDb {
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
 
+  /**
+    * List all incoming or outgoing payments within a given size limit, ordered by descending date.
+    * This method should only return incoming payments that have been received (not pending or expired).
+    *
+    * This is a high level method intended for front-end usage.
+    */
+  def listPayments(limit: Int): Seq[Payment]
+
 }
 
 /**
@@ -89,26 +97,6 @@ case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
                            createdAt: Long,
                            status: IncomingPaymentStatus)
-
-sealed trait IncomingPaymentStatus
-
-object IncomingPaymentStatus {
-
-  /** Payment is pending (waiting to receive). */
-  case object Pending extends IncomingPaymentStatus
-
-  /** Payment has expired. */
-  case object Expired extends IncomingPaymentStatus
-
-  /**
-   * Payment has been successfully received.
-   *
-   * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
-   * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
-   */
-  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
-
-}
 
 /**
  * An outgoing payment sent by this node.
@@ -134,7 +122,28 @@ case class OutgoingPayment(id: UUID,
                            paymentRequest: Option[PaymentRequest],
                            status: OutgoingPaymentStatus)
 
-sealed trait OutgoingPaymentStatus
+
+sealed trait PaymentStatus
+sealed trait IncomingPaymentStatus extends PaymentStatus
+sealed trait OutgoingPaymentStatus extends PaymentStatus
+
+object IncomingPaymentStatus {
+
+  /** Payment is pending (waiting to receive). */
+  case object Pending extends IncomingPaymentStatus
+
+  /** Payment has expired. */
+  case object Expired extends IncomingPaymentStatus
+
+  /**
+    * Payment has been successfully received.
+    *
+    * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+    * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+    */
+  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
+
+}
 
 object OutgoingPaymentStatus {
 
@@ -190,3 +199,30 @@ object FailureSummary {
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }
 }
+
+sealed trait PaymentDirection
+
+object PaymentDirection {
+  case object IncomingPaymentDirection extends PaymentDirection
+  case object OutgoingPaymentDirection extends PaymentDirection
+}
+
+/**
+  * Generic payment trait, can be extended by external classes. Useful for high level requests aggregating
+  * payments of different origins.
+  */
+trait Payment
+
+/**
+  * Describes a generic Lightning payment, be it incoming or outgoing.
+  */
+case class LightningPayment(direction: PaymentDirection,
+                   id: Option[UUID],
+                   paymentHash: ByteVector32,
+                   preimage: Option[ByteVector32],
+                   finalAmount: Option[MilliSatoshi],
+                   paymentRequest: Option[String],
+                   status: PaymentStatus,
+                   createdAt: Long,
+                   completedAt: Option[Long],
+                   expireAt: Option[Long]) extends Payment
