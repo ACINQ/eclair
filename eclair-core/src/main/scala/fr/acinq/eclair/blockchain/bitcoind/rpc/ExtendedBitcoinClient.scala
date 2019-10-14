@@ -157,29 +157,23 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
         _ = span0.finish()
         span1 = Kamon.spanBuilder("getblock").start()
-        txid: String <- rpcClient.invoke("getblock", blockHash).map {
-          case json => Try {
-            val JArray(txs) = json \ "tx"
-            txs(txIndex).extract[String]
-          } getOrElse ByteVector32.Zeroes.toHex
-        }
+        // we force non verbose output to retrieve the entire serialized block
+        block <- rpcClient.invoke("getblock", blockHash, 0).collect { case JString(s) => Block.read(s) }
         _ = span1.finish()
-        span2 = Kamon.spanBuilder("getrawtx").start()
-        tx <- getRawTransaction(txid)
-        _ = span2.finish()
+        tx = block.tx(txIndex)
         span3 = Kamon.spanBuilder("utxospendable-mempool").start()
-        unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
+        unspent <- isTransactionOutputSpendable(tx.txid.toHex, outputIndex, includeMempool = true)
         _ = span3.finish()
         fundingTxStatus <- if (unspent) {
           Future.successful(UtxoStatus.Unspent)
         } else {
           // if this returns true, it means that the spending tx is *not* in the blockchain
-          isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+          isTransactionOutputSpendable(tx.txid.toHex, outputIndex, includeMempool = false).map {
             case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
           }
         }
         _ = span.finish()
-      } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
+      } yield ValidateResult(c, Right((tx, fundingTxStatus)))
 
   } recover { case t: Throwable => ValidateResult(c, Left(t)) }
 
