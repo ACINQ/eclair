@@ -280,13 +280,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(msg: wire.HostedChannelMessage, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
       hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, msg)
-      log.debug(s"received hosted message $msg for channel $hostedChannelId from peer $remoteNodeId")
+      log.info(s"received hosted message $msg for channel $hostedChannelId from peer $remoteNodeId")
       stay
 
     case Event(msg: wire.HasChannelId, d: ConnectedData) if msg.channelId == hostedChannelId =>
       d.transport ! TransportHandler.ReadAck(msg)
       hostedChannelGateway ! CMD_HOSTED_MESSAGE(hostedChannelId, msg)
-      log.debug(s"received message $msg for hosted channel $hostedChannelId from peer $remoteNodeId")
+      log.info(s"received message $msg for hosted channel $hostedChannelId from peer $remoteNodeId")
       stay
 
     // END HOSTED CHANNEL MESSAGES
@@ -472,12 +472,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
       log.info(s"lost connection to $remoteNodeId")
+      hostedChannelGateway ! CMD_HOSTED_INPUT_DISCONNECTED(hostedChannelId)
       if (d.channels.isEmpty) {
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        hostedChannelGateway ! CMD_HOSTED_INPUT_DISCONNECTED(hostedChannelId)
         goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
       }
 

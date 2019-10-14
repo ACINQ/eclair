@@ -395,7 +395,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
 
     case Event(any, _) =>
-      log.debug(s"Hosted channel failed to handle $any in state=$stateName, data=$stateData, remoteNodeId=$remoteNodeId")
+      log.info(s"Hosted channel failed to handle $any in state=$stateName, data=$stateData, remoteNodeId=$remoteNodeId")
       stay
   }
 
