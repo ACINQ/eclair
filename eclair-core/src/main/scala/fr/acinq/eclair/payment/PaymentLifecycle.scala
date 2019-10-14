@@ -139,8 +139,17 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
             }
             // in any case, we forward the update to the router
             router ! failureMessage.update
+            // we also update assisted routes, because they take precedence over the router's routing table
+            val assistedRoutes1 = c.assistedRoutes.map(_.map {
+              case extraHop: ExtraHop if extraHop.shortChannelId == failureMessage.update.shortChannelId => extraHop.copy(
+                cltvExpiryDelta = failureMessage.update.cltvExpiryDelta,
+                feeBase = failureMessage.update.feeBaseMsat,
+                feeProportionalMillionths = failureMessage.update.feeProportionalMillionths
+              )
+              case extraHop => extraHop
+            })
             // let's try again, router will have updated its state
-            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes, ignoreChannels, c.routeParams)
+            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, assistedRoutes1, ignoreNodes, ignoreChannels, c.routeParams)
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
