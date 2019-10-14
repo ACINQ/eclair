@@ -98,26 +98,6 @@ case class IncomingPayment(paymentRequest: PaymentRequest,
                            createdAt: Long,
                            status: IncomingPaymentStatus)
 
-sealed trait IncomingPaymentStatus extends PaymentStatus
-
-object IncomingPaymentStatus {
-
-  /** Payment is pending (waiting to receive). */
-  case object Pending extends IncomingPaymentStatus
-
-  /** Payment has expired. */
-  case object Expired extends IncomingPaymentStatus
-
-  /**
-   * Payment has been successfully received.
-   *
-   * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
-   * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
-   */
-  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
-
-}
-
 /**
  * An outgoing payment sent by this node.
  * At first it is in a pending state, then will become either a success or a failure.
@@ -142,9 +122,28 @@ case class OutgoingPayment(id: UUID,
                            paymentRequest: Option[PaymentRequest],
                            status: OutgoingPaymentStatus)
 
-sealed trait PaymentStatus
 
+sealed trait PaymentStatus
+sealed trait IncomingPaymentStatus extends PaymentStatus
 sealed trait OutgoingPaymentStatus extends PaymentStatus
+
+object IncomingPaymentStatus {
+
+  /** Payment is pending (waiting to receive). */
+  case object Pending extends IncomingPaymentStatus
+
+  /** Payment has expired. */
+  case object Expired extends IncomingPaymentStatus
+
+  /**
+    * Payment has been successfully received.
+    *
+    * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
+    * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
+    */
+  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
+
+}
 
 object OutgoingPaymentStatus {
 
