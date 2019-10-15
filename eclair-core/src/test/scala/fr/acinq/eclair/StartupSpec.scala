@@ -29,12 +29,14 @@ import scala.util.Try
 class StartupSpec extends FunSuite {
 
   test("check configuration") {
-    val conf = ConfigFactory.load()
-    assert(NodeParams.checkConfiguration(conf) == conf)
+    val blockCount = new AtomicLong(0)
+    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val conf = ConfigFactory.load().getConfig("eclair")
+    assert(Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)).isSuccess)
 
-    val conf1 = conf.withFallback(ConfigFactory.parseMap(Map("eclair.max-feerate-mismatch" -> 42)))
+    val conf1 = conf.withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42)))
     intercept[RuntimeException] {
-      NodeParams.checkConfiguration(conf1)
+      NodeParams.makeNodeParams(conf1, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)
     }
   }
 

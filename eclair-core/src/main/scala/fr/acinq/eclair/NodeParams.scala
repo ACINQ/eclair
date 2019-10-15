@@ -93,14 +93,6 @@ object NodeParams {
 
   object ELECTRUM extends WatcherType
 
-  def checkConfiguration(config: Config): Config = {
-    // this check is needed because somme keys were moved to a new section in v0.3.2
-    if (config.hasPath("eclair.default-feerates") || config.hasPath("eclair.max-feerate-mismatch") || config.hasPath("eclair.update-fee_min-diff-ratio")) {
-      throw new IllegalArgumentException("Your configuration uses keys that have moved to a new section, please check our release notes for more details")
-    }
-    config
-  }
-
   /**
    * Order of precedence for the configuration parameters:
    * 1) Java environment variables (-D...)
@@ -108,13 +100,11 @@ object NodeParams {
    * 3) Optionally provided config
    * 4) Default values in reference.conf
    */
-  def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) = {
-    val conf = ConfigFactory.parseProperties(System.getProperties)
+  def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) =
+    ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load())
-    checkConfiguration(conf)
-  }
 
   def getSeed(datadir: File): ByteVector = {
     val seedPath = new File(datadir, "seed.dat")
@@ -138,6 +128,8 @@ object NodeParams {
   }
 
   def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+    val keyPaths = Seq("default-feerates", "max-feerate-mismatch", "update-fee_min-diff-ratio")
+    keyPaths.foreach(keyPath => require(!config.hasPath(keyPath), s"configuration key $keyPath has been renamed/moved to a new section"))
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
