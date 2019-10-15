@@ -53,9 +53,9 @@ trait PaymentsDb {
   def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit
 
   /**
-   * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-   * Note that this function assumes that there is a matching payment request in the DB.
-   */
+    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
+    * Note that this function assumes that there is a matching payment request in the DB.
+    */
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = Platform.currentTime): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
@@ -84,34 +84,34 @@ trait PaymentsDb {
 }
 
 /**
- * An incoming payment received by this node.
- * At first it is in a pending state once the payment request has been generated, then will become either a success (if
- * we receive a valid HTLC) or a failure (if the payment request expires).
- *
- * @param paymentRequest  Bolt 11 payment request.
- * @param paymentPreimage pre-image associated with the payment request's payment_hash.
- * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
- * @param status          current status of the payment.
- */
+  * An incoming payment received by this node.
+  * At first it is in a pending state once the payment request has been generated, then will become either a success (if
+  * we receive a valid HTLC) or a failure (if the payment request expires).
+  *
+  * @param paymentRequest  Bolt 11 payment request.
+  * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
+  * @param status          current status of the payment.
+  */
 case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
                            createdAt: Long,
                            status: IncomingPaymentStatus)
 
 /**
- * An outgoing payment sent by this node.
- * At first it is in a pending state, then will become either a success or a failure.
- *
- * @param id             internal payment identifier.
- * @param parentId       internal identifier of a parent payment, or [[id]] if single-part payment.
- * @param externalId     external payment identifier: lets lightning applications reconcile payments with their own db.
- * @param paymentHash    payment_hash.
- * @param amount         amount of the payment, in milli-satoshis.
- * @param targetNodeId   node ID of the payment recipient.
- * @param createdAt      absolute time in milli-seconds since UNIX epoch when the payment was created.
- * @param paymentRequest Bolt 11 payment request (if paying from an invoice).
- * @param status         current status of the payment.
- */
+  * An outgoing payment sent by this node.
+  * At first it is in a pending state, then will become either a success or a failure.
+  *
+  * @param id             internal payment identifier.
+  * @param parentId       internal identifier of a parent payment, or [[id]] if single-part payment.
+  * @param externalId     external payment identifier: lets lightning applications reconcile payments with their own db.
+  * @param paymentHash    payment_hash.
+  * @param amount         amount of the payment, in milli-satoshis.
+  * @param targetNodeId   node ID of the payment recipient.
+  * @param createdAt      absolute time in milli-seconds since UNIX epoch when the payment was created.
+  * @param paymentRequest Bolt 11 payment request (if paying from an invoice).
+  * @param status         current status of the payment.
+  */
 case class OutgoingPayment(id: UUID,
                            parentId: UUID,
                            externalId: Option[String],
@@ -124,7 +124,9 @@ case class OutgoingPayment(id: UUID,
 
 
 sealed trait PaymentStatus
+
 sealed trait IncomingPaymentStatus extends PaymentStatus
+
 sealed trait OutgoingPaymentStatus extends PaymentStatus
 
 object IncomingPaymentStatus {
@@ -151,22 +153,22 @@ object OutgoingPaymentStatus {
   case object Pending extends OutgoingPaymentStatus
 
   /**
-   * Payment has been successfully sent and the recipient released the pre-image.
-   * We now have a valid proof-of-payment.
-   *
-   * @param paymentPreimage the preimage of the payment_hash.
-   * @param feesPaid        total amount of fees paid to intermediate routing nodes.
-   * @param route           payment route.
-   * @param completedAt     absolute time in milli-seconds since UNIX epoch when the payment was completed.
-   */
+    * Payment has been successfully sent and the recipient released the pre-image.
+    * We now have a valid proof-of-payment.
+    *
+    * @param paymentPreimage the preimage of the payment_hash.
+    * @param feesPaid        total amount of fees paid to intermediate routing nodes.
+    * @param route           payment route.
+    * @param completedAt     absolute time in milli-seconds since UNIX epoch when the payment was completed.
+    */
   case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: Long) extends OutgoingPaymentStatus
 
   /**
-   * Payment has failed and may be retried.
-   *
-   * @param failures    failed payment attempts.
-   * @param completedAt absolute time in milli-seconds since UNIX epoch when the payment was completed.
-   */
+    * Payment has failed and may be retried.
+    *
+    * @param failures    failed payment attempts.
+    * @param completedAt absolute time in milli-seconds since UNIX epoch when the payment was completed.
+    */
   case class Failed(failures: Seq[FailureSummary], completedAt: Long) extends OutgoingPaymentStatus
 
 }
@@ -203,8 +205,11 @@ object FailureSummary {
 sealed trait PaymentDirection
 
 object PaymentDirection {
+
   case object IncomingPaymentDirection extends PaymentDirection
+
   case object OutgoingPaymentDirection extends PaymentDirection
+
 }
 
 /**
@@ -217,12 +222,12 @@ trait Payment
   * Describes a generic Lightning payment, be it incoming or outgoing.
   */
 case class LightningPayment(direction: PaymentDirection,
-                   id: Option[UUID],
-                   paymentHash: ByteVector32,
-                   preimage: Option[ByteVector32],
-                   finalAmount: Option[MilliSatoshi],
-                   paymentRequest: Option[String],
-                   status: PaymentStatus,
-                   createdAt: Long,
-                   completedAt: Option[Long],
-                   expireAt: Option[Long]) extends Payment
+                            parentId: Option[UUID],
+                            paymentHash: ByteVector32,
+                            preimage: Option[ByteVector32],
+                            finalAmount: Option[MilliSatoshi],
+                            paymentRequest: Option[String],
+                            status: PaymentStatus,
+                            createdAt: Long,
+                            completedAt: Option[Long],
+                            expireAt: Option[Long]) extends Payment

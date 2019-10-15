@@ -331,7 +331,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       """
         |SELECT * FROM (
         |	 SELECT 'received' as type,
-        |    NULL as id,
+        |	   NULL as id,
+        |	   NULL as parent_id,
         |    payment_hash,
         |    payment_preimage,
         |    received_msat as final_amount,
@@ -340,26 +341,24 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |    created_at,
         |    received_at as completed_at,
         |    expire_at
-        |	 FROM received_payments
-        |	 WHERE final_amount > 0
+        |  FROM received_payments
+        |  WHERE final_amount > 0
         |UNION ALL
-        |	 SELECT 'sent' as type,
+        |  SELECT 'sent' as type,
         |    id,
+        |	   parent_id,
         |    payment_hash,
         |    payment_preimage,
-        |    amount_msat as final_amount,
+        |    sum(amount_msat) as final_amount,
         |    payment_request,
         |    target_node_id,
         |    created_at,
         |    completed_at,
         |    NULL as expire_at
-        |	 FROM sent_payments
+        |  FROM sent_payments
+        |  GROUP BY parent_id
         |)
-        |ORDER BY CASE
-        |  WHEN completed_at IS NULL THEN created_at
-        |  ELSE completed_at
-        |  END
-        |  DESC
+        |ORDER BY coalesce(completed_at, created_at) DESC
         |LIMIT ?
       """.stripMargin
     )) { statement =>
@@ -380,7 +379,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
         q = q :+ LightningPayment(
           direction = direction,
-          id = rs.getUUIDNullable("id"),
+          parentId = rs.getUUIDNullable("parent_id"),
           paymentHash = rs.getByteVector32("payment_hash"),
           preimage = preimage_opt,
           finalAmount = amount_opt,
