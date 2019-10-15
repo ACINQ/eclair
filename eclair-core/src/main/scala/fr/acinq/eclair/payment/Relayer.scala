@@ -103,7 +103,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
             case Right(addHtlc) =>
               log.debug(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to payment-handler")
-              paymentHandler ! addHtlc
+              paymentHandler forward addHtlc
           }
         case Right(r: RelayPayload) =>
           handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
