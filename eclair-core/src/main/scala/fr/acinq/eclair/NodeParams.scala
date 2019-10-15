@@ -95,7 +95,7 @@ object NodeParams {
 
   def checkConfiguration(config: Config): Config = {
     // this check is needed because somme keys were moved to a new section in v0.3.2
-    if (config.hasPath("eclair.default-feerates") || config.hasPath("eclair.max-feerate-mismatch") || config.hasPath("update-fee_min-diff-ratio")) {
+    if (config.hasPath("eclair.default-feerates") || config.hasPath("eclair.max-feerate-mismatch") || config.hasPath("eclair.update-fee_min-diff-ratio")) {
       throw new IllegalArgumentException("Your configuration uses keys that have moved to a new section, please check our release notes for more details")
     }
     config
