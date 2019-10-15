@@ -128,6 +128,8 @@ object NodeParams {
   }
 
   def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+    val keyPaths = Seq("default-feerates", "max-feerate-mismatch", "update-fee_min-diff-ratio")
+    keyPaths.foreach(keyPath => require(!config.hasPath(keyPath), s"configuration key $keyPath has been renamed/moved to a new section"))
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
