@@ -72,12 +72,9 @@ trait BitcoindService extends Logging {
           .replace("28332", bitcoindRpcPort.toString)
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
+          .replace("txindex=0", if (txIndexEnabled) "txindex=1" else "txindex=0")
       Files.writeString(bitcoinConfFile, conf)
     }
-    if(txIndexEnabled) {
-      Files.writeString(bitcoinConfFile, "txindex=1", StandardOpenOption.APPEND)
-    }
-
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort)
