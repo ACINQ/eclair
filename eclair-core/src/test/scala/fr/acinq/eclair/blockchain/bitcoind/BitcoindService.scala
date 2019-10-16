@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import java.io.File
-import java.nio.file.{Files, StandardCopyOption}
+import java.nio.file.{Files, StandardOpenOption}
 import java.util.UUID
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -62,17 +62,22 @@ trait BitcoindService extends Logging {
 
   case class BitcoinReq(method: String, params: Any*)
 
-  def startBitcoind(): Unit = {
+  def startBitcoind(txIndexEnabled: Boolean = false): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
-    if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
+    val bitcoinConfFile = new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath
+    if (!Files.exists(bitcoinConfFile)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
       val conf = Source.fromInputStream(is).mkString
           .replace("28333", bitcoindPort.toString)
           .replace("28332", bitcoindRpcPort.toString)
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
-      Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
+      Files.writeString(bitcoinConfFile, conf)
     }
+    if(txIndexEnabled) {
+      Files.writeString(bitcoinConfFile, "txindex=1", StandardOpenOption.APPEND)
+    }
+
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort)
