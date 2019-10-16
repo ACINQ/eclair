@@ -73,7 +73,7 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       globalFeatures = globalFeatures,
-      localFeatures = ByteVector(0),
+      localFeatures = ByteVector.fromValidHex("088a"),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
