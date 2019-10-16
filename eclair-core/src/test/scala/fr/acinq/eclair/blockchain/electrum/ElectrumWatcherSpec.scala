@@ -41,7 +41,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
-    startBitcoind()
+    startBitcoind(txIndexEnabled = true)
     waitForBitcoindReady()
     super.beforeAll()
   }
@@ -67,7 +67,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
     val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
 
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
+    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid)) // tx is still in mempool
     val JString(hex) = probe.expectMsgType[JValue]
     val tx = Transaction.read(hex)
 
