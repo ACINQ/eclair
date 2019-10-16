@@ -70,6 +70,8 @@ object Features {
     * A feature set is supported if all even bits are supported.
     * We just ignore unknown odd bits.
     */
+
   def areSupported(features: ByteVector): Boolean = areSupported(features.bits)
 
+  def isBitSet(pos: Int, bitfield: Byte): Boolean = (bitfield & (1 << pos)) == (1 << pos)
 }
