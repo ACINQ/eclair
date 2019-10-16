@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{LongToBtcAmount, randomKey}
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedMap
 import scala.compat.Platform
@@ -67,6 +68,13 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // they just provided a different checksum that is the same as us => ask
     assert(Router.shouldRequestUpdate(now, 1234, None, Some(1235)))
+  }
+
+  test("compute checksums") {
+    assert(Router.crc32c(ByteVector.fromValidHex("00" * 32)) == 0x8a9136aaL)
+    assert(Router.crc32c(ByteVector.fromValidHex("FF" * 32)) == 0x62a8ab43L)
+    assert(Router.crc32c(ByteVector((0 to 31).map(_.toByte))) == 0x46dd794eL)
+    assert(Router.crc32c(ByteVector((31 to 0 by -1).map(_.toByte))) == 0x113fdb5cL)
   }
 
   test("compute flag tests") {
