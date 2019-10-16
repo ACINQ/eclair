@@ -1,84 +1,40 @@
-package fr.acinq.eclair
-
-import java.io.{File, FileWriter}
+package fr.acinq.eclair.recovery
 
 import akka.util.Timeout
+import akka.pattern.ask
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.{KeyManager, LocalKeyManager, ShaChain}
-import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts, Transactions}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
-import scodec.bits.ByteVector
-import akka.pattern._
-import fr.acinq.eclair.api.JsonSupport
-import grizzled.slf4j.Logging
-
-import concurrent.duration._
-import scala.compat.Platform
-import scala.concurrent.{Await, Future}
-import scala.util.{Failure, Random, Success, Try}
-import scodec.bits._
-
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.io.Source
-import JsonSupport.formats
-import JsonSupport.serialization
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Switchboard.ReconnectWithCommitments
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
 import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, ShortChannelId, UInt64, addressToPublicKeyScript, randomBytes}
+import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
+import scodec.bits.HexStringSyntax
+
+import scala.compat.Platform
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration._
+import scala.util.{Failure, Random, Success, Try}
 
 object RecoveryTool extends Logging {
 
   private lazy val scanner = new java.util.Scanner(System.in).useDelimiter("\\n")
 
   def interactiveRecovery(appKit: Kit): Unit = {
-    print(s"\n ### Welcome to the eclair recovery tool ### \n")
+    println(s"\n ### Welcome to the eclair recovery tool ### \n")
     val nodeUri = getInput[NodeURI]("Please insert the URI of the target node: ", NodeURI.parse)
-    val hasShortChannelId = getInput[Boolean]("Press 's' if you know the shortChannelId, 'c' for channelId",{ s =>
-      s match {
-        case "s" => true
-        case "c" => false
-      }
-    })
-    val channelIdentifier: Either[ShortChannelId, ByteVector32] = if(hasShortChannelId){
-      Left(getInput("Please insert the shortChannelId: ", ShortChannelId.apply))
-    } else {
-      Right(getInput("Please insert the channelId: ", ByteVector32.fromValidHex))
-    }
-
     println(s"### Attempting channel recovery now - good luck! ###")
-    doRecovery(appKit, backup, nodeUri)
-  }
-
-  def storeBackup(nodeParams: NodeParams, channelData: HasCommitments) = Future {
-    val backup = ChannelBackup(
-      fundingTxid = channelData.commitments.commitInput.outPoint.txid,
-      fundingOutputIndex = channelData.commitments.commitInput.outPoint.index,
-      isFunder = channelData.commitments.localParams.isFunder,
-      remoteNodeId = channelData.commitments.remoteParams.nodeId,
-      remoteFundingPubkey_opt = Some(channelData.commitments.remoteParams.fundingPubKey)
-    )
-
-    if (nodeParams.db.dbDir.isEmpty) {
-      logger.warn(s"No database folder defined, skipping static backup")
-    }
-
-    nodeParams.db.dbDir.foreach { dbDir =>
-      val backupDir = new File(dbDir, "channel-backups")
-      if (!backupDir.exists()) backupDir.mkdir()
-
-      val channelBackup = new File(backupDir, "backup_" + backup.fundingTxid.toHex + ".json")
-      val writer = new FileWriter(channelBackup)
-      writer.write(serialization.writePretty(backup))
-      writer.close()
-      logger.info(s"Created channel backup: ${channelBackup.getAbsolutePath}")
-    }
-
+    doRecovery(appKit, nodeUri)(appKit.system.dispatcher)
   }
 
   private def getInput[T](msg: String, parse: String => T): T = {
@@ -93,7 +49,7 @@ object RecoveryTool extends Logging {
     throw new IllegalArgumentException("Unable to get input")
   }
 
-  def doRecovery(appKit: Kit, backup: ChannelBackup, uri: NodeURI): Future[Unit] = {
+  def doRecovery(appKit: Kit, uri: NodeURI)(implicit ec: ExecutionContext): Future[Unit] = {
 
     implicit val timeout = Timeout(10 minutes)
     implicit val shttp = OkHttpFutureBackend()
@@ -105,34 +61,19 @@ object RecoveryTool extends Logging {
       port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
     )
 
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinRpcClient)
-
-    val (fundingTx, blockHeight, finalAddress, isFundingSpendable) = Await.result(for {
-      Some(blockHash) <- bitcoinClient.getTxBlockHash(backup.fundingTxid.toHex)
-      block <- bitcoinClient.getBlock(ByteVector32.fromValidHex(blockHash))
-      height <- bitcoinClient.getBlockHeight(ByteVector32.fromValidHex(blockHash))
-      Some(funding) = block.tx.find(_.txid === backup.fundingTxid)
-      isSpendable <- bitcoinClient.isTransactionOutputSpendable(funding.txid.toHex, backup.fundingOutputIndex.toInt, includeMempool = true)
-      address <- new BitcoinCoreWallet(bitcoinRpcClient).getFinalAddress
-    } yield (funding, height, address, isSpendable), 60 seconds)
-
-    if (!isFundingSpendable) {
-      logger.info(s"Sorry but the funding tx has been spent, the channel has been closed")
-      return Future.successful(())
-    }
-
+    val finalAddress = Await.result(new BitcoinCoreWallet(bitcoinRpcClient).getFinalAddress, 30 seconds)
     val finalScriptPubkey = Script.write(addressToPublicKeyScript(finalAddress, appKit.nodeParams.chainHash))
-    val channelId = fr.acinq.eclair.toLongId(fundingTx.hash, backup.fundingOutputIndex.toInt)
+    val channelId = ByteVector32.Zeroes //fr.acinq.eclair.toLongId(fundingTx.hash, backup.fundingOutputIndex.toInt)
 
     val inputInfo = Transactions.InputInfo(
-      outPoint = OutPoint(fundingTx.hash, backup.fundingOutputIndex),
-      txOut = fundingTx.txOut(backup.fundingOutputIndex.toInt),
+      outPoint = OutPoint(ByteVector32.Zeroes, 0),
+      txOut = TxOut(0 sat, ByteVector.empty),
       redeemScript = ByteVector.empty
     )
 
     val channelKeyPath = ???
 
-    logger.info(s"Recovery using: channelId=$channelId finalScriptPubKey=$finalAddress remotePeer=${uri.nodeId} funder=${backup.isFunder}")
+    logger.info(s"Recovery using: channelId=$channelId finalScriptPubKey=$finalAddress remotePeer=${uri.nodeId}")
     val commitments = makeDummyCommitment(appKit.nodeParams.keyManager, channelKeyPath, uri.nodeId, appKit.nodeParams.nodeId, channelId, inputInfo, finalScriptPubkey, appKit.nodeParams.chainHash)
     (appKit.switchboard ? ReconnectWithCommitments(uri, commitments)).mapTo[Unit]
   }
