@@ -25,7 +25,6 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
-import fr.acinq.eclair.payment.PaymentLifecycle.PaymentResult
 import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 import javafx.application.Preloader.ErrorNotification
@@ -42,8 +41,8 @@ import scala.util.{Failure, Success, Try}
 
 
 /**
-  * Created by PM on 16/08/2016.
-  */
+ * Created by PM on 16/08/2016.
+ */
 class FxApp extends Application with Logging {
 
   override def init = {
@@ -99,12 +98,12 @@ class FxApp extends Application with Logging {
           system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
           system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
-          system.eventStream.subscribe(guiUpdater, classOf[PaymentResult])
           system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
           system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)
           pKit.future.onComplete {
-            case Success(_) =>
+            case Success(kit) =>
+              Boot.startApiServiceIfEnabled(setup.config, kit)
               Platform.runLater(new Runnable {
                 override def run(): Unit = {
                   val scene = new Scene(mainRoot)
@@ -136,11 +135,11 @@ class FxApp extends Application with Logging {
   }
 
   /**
-    * Initialize the notification stage and assign it to the handler class.
-    *
-    * @param owner         stage owning the notification stage
-    * @param notifhandlers Handles the notifications
-    */
+   * Initialize the notification stage and assign it to the handler class.
+   *
+   * @param owner         stage owning the notification stage
+   * @param notifhandlers Handles the notifications
+   */
   private def initNotificationStage(owner: Stage, notifhandlers: Handlers) = {
     // get fxml/controller
     val notifFXML = new FXMLLoader(getClass.getResource("/gui/main/notifications.fxml"))

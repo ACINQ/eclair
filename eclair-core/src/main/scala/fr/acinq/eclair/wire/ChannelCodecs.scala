@@ -50,14 +50,23 @@ object ChannelCodecs extends Logging {
       ("path" | keyPathCodec) ::
       ("parent" | int64)).as[ExtendedPrivateKey]
 
+  val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
+    discriminator = discriminated[ChannelVersion].by(byte)
+      .typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion])
+      // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
+      ,
+    fallback = provide(ChannelVersion.ZEROES) // README: DO NOT CHANGE THIS !! old channels don't have a channel version
+    // field and don't support additional features which is why all bits are set to 0.
+  )
+
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
-      ("toSelfDelay" | uint16) ::
+      ("channelReserve" | satoshi) ::
+      ("htlcMinimum" | millisatoshi) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
@@ -66,11 +75,11 @@ object ChannelCodecs extends Logging {
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
-      ("dustLimitSatoshis" | uint64overflow) ::
+      ("dustLimit" | satoshi) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | uint64overflow) ::
-      ("htlcMinimumMsat" | uint64overflow) ::
-      ("toSelfDelay" | uint16) ::
+      ("channelReserve" | satoshi) ::
+      ("htlcMinimum" | millisatoshi) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubKey" | publicKey) ::
       ("revocationBasepoint" | publicKey) ::
@@ -97,8 +106,8 @@ object ChannelCodecs extends Logging {
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
       ("feeratePerKw" | uint32) ::
-      ("toLocalMsat" | uint64overflow) ::
-      ("toRemoteMsat" | uint64overflow)).as[CommitmentSpec]
+      ("toLocal" | millisatoshi) ::
+      ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
   val outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 
@@ -127,8 +136,8 @@ object ChannelCodecs extends Logging {
   val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
     (value: ByteVector64) => bytes(64).encode(value),
     (wire: BitVector) => bytes.decode(wire).map(_.map {
-       case bin64 if bin64.size == 64 => ByteVector64(bin64)
-       case der => Crypto.der2compact(der)
+      case bin64 if bin64.size == 64 => ByteVector64(bin64)
+      case der => Crypto.der2compact(der)
     })
   )
 
@@ -178,8 +187,8 @@ object ChannelCodecs extends Logging {
   val relayedCodec: Codec[Relayed] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
-      ("amountMsatIn" | uint64overflow) ::
-      ("amountMsatOut" | uint64overflow)).as[Relayed]
+      ("amountIn" | millisatoshi) ::
+      ("amountOut" | millisatoshi)).as[Relayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
@@ -204,7 +213,8 @@ object ChannelCodecs extends Logging {
   )
 
   val commitmentsCodec: Codec[Commitments] = (
-    ("localParams" | localParamsCodec) ::
+      ("channelVersion" | channelVersionCodec) ::
+      ("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
       ("channelFlags" | byte) ::
       ("localCommit" | localCommitCodec) ::
@@ -266,12 +276,37 @@ object ChannelCodecs extends Logging {
       ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
+  // All channel_announcement's written prior to supporting unknown trailing fields had the same fixed size, because
+  // those are the announcements that *we* created and we always used an empty features field, which was the only
+  // variable-length field.
+  val noUnknownFieldsChannelAnnouncementSizeCodec: Codec[Int] = provide(430)
+
+  // We used to ignore unknown trailing fields, and assume that channel_update size was known. This is not true anymore,
+  // so we need to tell the codec where to stop, otherwise all the remaining part of the data will be decoded as unknown
+  // fields. Fortunately, we can easily tell what size the channel_update will be.
+  val noUnknownFieldsChannelUpdateSizeCodec: Codec[Int] = peek( // we need to take a peek at a specific byte to know what size the message will be, and then rollback to read the full message
+    ignore(8 * (64 + 32 + 8 + 4)) ~> // we skip the first fields: signature + chain_hash + short_channel_id + timestamp
+      byte // this is the messageFlags byte
+  )
+    .map(messageFlags => if ((messageFlags & 1) != 0) 136 else 128) // depending on the value of option_channel_htlc_max, size will be 128B or 136B
+    .decodeOnly // this is for compat, we only need to decode
+
+  // this is a decode-only codec compatible with versions 9afb26e and below
+  val DATA_NORMAL_COMPAT_03_Codec: Codec[DATA_NORMAL] = (
+    ("commitments" | commitmentsCodec) ::
+      ("shortChannelId" | shortchannelid) ::
+      ("buried" | bool) ::
+      ("channelAnnouncement" | optional(bool, variableSizeBytes(noUnknownFieldsChannelAnnouncementSizeCodec, channelAnnouncementCodec))) ::
+      ("channelUpdate" | variableSizeBytes(noUnknownFieldsChannelUpdateSizeCodec, channelUpdateCodec)) ::
+      ("localShutdown" | optional(bool, shutdownCodec)) ::
+      ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
+
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
-      ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
-      ("channelUpdate" | channelUpdateCodec) ::
+      ("channelAnnouncement" | optional(bool, variableSizeBytes(uint16, channelAnnouncementCodec))) ::
+      ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
@@ -329,11 +364,12 @@ object ChannelCodecs extends Logging {
     * More info here: https://github.com/scodec/scodec/issues/122
     */
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
+    .typecase(0x10, DATA_NORMAL_Codec)
     .typecase(0x09, DATA_CLOSING_Codec)
     .typecase(0x08, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x03, DATA_NORMAL_Codec)
+    .typecase(0x03, DATA_NORMAL_COMPAT_03_Codec)
     .typecase(0x04, DATA_SHUTDOWN_Codec)
     .typecase(0x05, DATA_NEGOTIATING_Codec)
     .typecase(0x06, DATA_CLOSING_COMPAT_06_Codec)

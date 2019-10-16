@@ -16,38 +16,32 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, MilliSatoshi}
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
-import fr.acinq.eclair.io.Peer.OpenChannel
-import fr.acinq.eclair.payment.PaymentLifecycle.{ReceivePayment, SendPayment, SendPaymentToRoute}
-import org.scalatest.{Outcome, fixture}
-import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import org.scalatest.{Matchers, Outcome, fixture}
-import scodec.bits._
-import TestConstants._
-import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register}
-import fr.acinq.eclair.payment.LocalPaymentHandler
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.io.Peer.OpenChannel
+import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 import org.mockito.scalatest.IdiomaticMockito
+import org.scalatest.{Outcome, ParallelTestExecution, fixture}
+import scodec.bits._
 
 import scala.concurrent.Await
-import scala.util.{Failure, Success}
 import scala.concurrent.duration._
+import scala.util.Success
 
-class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSuiteLike with IdiomaticMockito {
+class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with IdiomaticMockito with ParallelTestExecution {
 
-  implicit val timeout = Timeout(30 seconds)
+  implicit val timeout: Timeout = Timeout(30 seconds)
 
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
 
@@ -84,14 +78,14 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat_opt = None, fundingFeerateSatByte_opt = Some(5), flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeerateSatByte_opt = Some(5), flags_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
-    assert(open.fundingTxFeeratePerKw_opt == Some(1250))
+    assert(open.fundingTxFeeratePerKw_opt === Some(1250))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingSatoshis = 10000000L, pushMsat_opt = None, fundingFeerateSatByte_opt = Some(1), flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeerateSatByte_opt = Some(1), flags_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
-    assert(open1.fundingTxFeeratePerKw_opt == Some(MinimumFeeratePerKw))
+    assert(open1.fundingTxFeeratePerKw_opt === Some(MinimumFeeratePerKw))
   }
 
   test("call send with passing correct arguments") { f =>
@@ -100,38 +94,55 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val eclair = new EclairImpl(kit)
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
-    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None)
-    val send = paymentInitiator.expectMsgType[SendPayment]
-    assert(send.targetNodeId == nodeId)
-    assert(send.amountMsat == 123)
-    assert(send.paymentHash == ByteVector32.Zeroes)
-    assert(send.assistedRoutes == Seq.empty)
+    eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = None)
+    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send.externalId === None)
+    assert(send.targetNodeId === nodeId)
+    assert(send.amount === 123.msat)
+    assert(send.paymentHash === ByteVector32.Zeroes)
+    assert(send.paymentRequest === None)
+    assert(send.assistedRoutes === Seq.empty)
 
     // with assisted routes
-    val hints = Seq(Seq(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBaseMsat = 10, feeProportionalMillionths = 1, cltvExpiryDelta = 12)))
-    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = hints, minFinalCltvExpiry_opt = None)
-    val send1 = paymentInitiator.expectMsgType[SendPayment]
-    assert(send1.targetNodeId == nodeId)
-    assert(send1.amountMsat == 123)
-    assert(send1.paymentHash == ByteVector32.Zeroes)
-    assert(send1.assistedRoutes == hints)
+    val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
+    val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
+    val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, randomKey, "description", None, None, hints)
+    eclair.send(Some(externalId1), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice1))
+    val send1 = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send1.externalId === Some(externalId1))
+    assert(send1.targetNodeId === nodeId)
+    assert(send1.amount === 123.msat)
+    assert(send1.paymentHash === ByteVector32.Zeroes)
+    assert(send1.paymentRequest === Some(invoice1))
+    assert(send1.assistedRoutes === hints)
 
     // with finalCltvExpiry
-    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = Some(96))
-    val send2 = paymentInitiator.expectMsgType[SendPayment]
-    assert(send2.targetNodeId == nodeId)
-    assert(send2.amountMsat == 123)
-    assert(send2.paymentHash == ByteVector32.Zeroes)
-    assert(send2.finalCltvExpiry == 96)
+    val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
+    val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodeId, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
+    eclair.send(Some(externalId2), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice2))
+    val send2 = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send2.externalId === Some(externalId2))
+    assert(send2.targetNodeId === nodeId)
+    assert(send2.amount === 123.msat)
+    assert(send2.paymentHash === ByteVector32.Zeroes)
+    assert(send2.paymentRequest === Some(invoice2))
+    assert(send2.finalExpiryDelta === CltvExpiryDelta(96))
 
     // with custom route fees parameters
-    eclair.send(recipientNodeId = nodeId, amountMsat = 123, paymentHash = ByteVector32.Zeroes, assistedRoutes = Seq.empty, minFinalCltvExpiry_opt = None, feeThresholdSat_opt = Some(123), maxFeePct_opt = Some(4.20))
-    val send3 = paymentInitiator.expectMsgType[SendPayment]
-    assert(send3.targetNodeId == nodeId)
-    assert(send3.amountMsat == 123)
-    assert(send3.paymentHash == ByteVector32.Zeroes)
-    assert(send3.routeParams.get.maxFeeBaseMsat == 123 * 1000) // conversion sat -> msat
-    assert(send3.routeParams.get.maxFeePct == 4.20)
+    eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = None, feeThreshold_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
+    val send3 = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send3.externalId === None)
+    assert(send3.targetNodeId === nodeId)
+    assert(send3.amount === 123.msat)
+    assert(send3.paymentHash === ByteVector32.Zeroes)
+    assert(send3.routeParams.get.maxFeeBase === 123000.msat) // conversion sat -> msat
+    assert(send3.routeParams.get.maxFeePct === 4.20)
+
+    val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
+    assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), nodeId, 123 msat, ByteVector32.Zeroes), 50 millis))
+
+    val expiredInvoice = invoice2.copy(timestamp = 0L)
+    assertThrows[IllegalArgumentException](Await.result(eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(expiredInvoice)), 50 millis))
   }
 
   test("allupdates can filter by nodeId") { f =>
@@ -140,11 +151,11 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
     val updates = List(
-      makeUpdate(1L, a, b, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 13),
-      makeUpdate(4L, a, e, feeBaseMsat = 0, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12),
-      makeUpdate(2L, b, c, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
-      makeUpdate(3L, c, d, feeBaseMsat = 1, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 500),
-      makeUpdate(7L, e, c, feeBaseMsat = 2, 0, minHtlcMsat = 0, maxHtlcMsat = None, cltvDelta = 12)
+      makeUpdate(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(13)),
+      makeUpdate(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeUpdate(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500)),
+      makeUpdate(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500)),
+      makeUpdate(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
     ).toMap
 
     val eclair = new EclairImpl(kit)
@@ -188,15 +199,15 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123L), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
-    assert(receive.amountMsat_opt == Some(MilliSatoshi(123L)))
-    assert(receive.expirySeconds_opt == Some(456))
-    assert(receive.fallbackAddress == Some(fallBackAddressRaw))
+    assert(receive.amount_opt === Some(123 msat))
+    assert(receive.expirySeconds_opt === Some(456))
+    assert(receive.fallbackAddress === Some(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123L), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { fixture =>
@@ -206,7 +217,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive(description = "some desc", amountMsat_opt = None, expire_opt = None, fallbackAddress_opt = None, paymentPreimage_opt = Some(paymentPreimage))
+    val fResp = eclair.receive(description = "some desc", amount_opt = None, expire_opt = None, fallbackAddress_opt = None, paymentPreimage_opt = Some(paymentPreimage))
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
@@ -226,7 +237,7 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     auditDb.listSent(anyLong, anyLong) returns Seq.empty
     auditDb.listReceived(anyLong, anyLong) returns Seq.empty
     auditDb.listRelayed(anyLong, anyLong) returns Seq.empty
-    paymentDb.listPaymentRequests(anyLong, anyLong) returns Seq.empty
+    paymentDb.listIncomingPayments(anyLong, anyLong) returns Seq.empty
 
     val databases = mock[Databases]
     databases.audit returns auditDb
@@ -236,15 +247,15 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
     val eclair = new EclairImpl(kitWithMockAudit)
 
     Await.result(eclair.networkFees(None, None), 10 seconds)
-    auditDb.listNetworkFees(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+    auditDb.listNetworkFees(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once) // assert the call was made only once and with the specified params
 
     Await.result(eclair.audit(None, None), 10 seconds)
-    auditDb.listRelayed(0, MaxEpochSeconds).wasCalled(once)
-    auditDb.listReceived(0, MaxEpochSeconds).wasCalled(once)
-    auditDb.listSent(0, MaxEpochSeconds).wasCalled(once)
+    auditDb.listRelayed(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
+    auditDb.listReceived(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
+    auditDb.listSent(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
 
     Await.result(eclair.allInvoices(None, None), 10 seconds)
-    paymentDb.listPaymentRequests(0, MaxEpochSeconds).wasCalled(once) // assert the call was made only once and with the specified params
+    paymentDb.listIncomingPayments(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once) // assert the call was made only once and with the specified params
   }
 
   test("sendtoroute should pass the parameters correctly") { f =>
@@ -252,15 +263,14 @@ class EclairImplSpec extends TestKit(ActorSystem("mySystem")) with fixture.FunSu
 
     val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val eclair = new EclairImpl(kit)
-    eclair.sendToRoute(route, 1234, ByteVector32.One, 123)
+    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123))
 
-    val send = paymentInitiator.expectMsgType[SendPaymentToRoute]
-
-    assert(send.hops == route)
-    assert(send.amountMsat == 1234)
-    assert(send.finalCltvExpiry == 123)
-    assert(send.paymentHash == ByteVector32.One)
+    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send.externalId === Some("42"))
+    assert(send.predefinedRoute === route)
+    assert(send.amount === 1234.msat)
+    assert(send.finalExpiryDelta === CltvExpiryDelta(123))
+    assert(send.paymentHash === ByteVector32.One)
   }
-
 
 }

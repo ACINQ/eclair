@@ -2,14 +2,14 @@ package fr.acinq.eclair.io
 
 import java.io.File
 
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.FunSuiteLike
 import scodec.bits._
@@ -31,7 +31,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       }
     )
 
-    val remoteNodeId = ChannelStateSpec.normal.commitments.remoteParams.nodeId
+    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
     val authenticator = TestProbe()
     val watcher = TestProbe()
     val router = TestProbe()
@@ -45,7 +45,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     )
 
     // add a channel to the db
-    nodeParams.db.channels.addOrUpdateChannel(ChannelStateSpec.normal)
+    nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
 
     val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
 

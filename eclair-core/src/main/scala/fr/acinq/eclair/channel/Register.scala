@@ -37,7 +37,7 @@ class Register extends Actor with ActorLogging {
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
   def main(channels: Map[ByteVector32, ActorRef], shortIds: Map[ShortChannelId, ByteVector32], channelsTo: Map[ByteVector32, PublicKey]): Receive = {
-    case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
+    case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId, _, _) =>
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
 

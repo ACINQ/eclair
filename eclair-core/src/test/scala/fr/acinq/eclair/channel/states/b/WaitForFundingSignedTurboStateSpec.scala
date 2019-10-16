@@ -39,7 +39,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.fromValidHex("00" * 32), TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.PrivateTurbo)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.fromValidHex("00" * 32), TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.PrivateTurbo, ChannelVersion.USE_PUBKEY_KEYPATH)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.fromValidHex("00" * 32), Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
