@@ -119,7 +119,7 @@ package object eclair {
 
   val defaultHostedChanCapacity = MilliSatoshi(100000000000L)
 
-  val defaultHostedInitialClientBalance = MilliSatoshi(100000000L)
+  val defaultHostedInitialClientBalance = MilliSatoshi(25000000L)
 
   /**
    * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
