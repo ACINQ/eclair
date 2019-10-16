@@ -325,7 +325,20 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val mockAliceState = DATA_NORMAL(
       commitments = Commitments(
         channelVersion = ChannelVersion.STANDARD,
-        localParams = oldAliceState.commitments.localParams, // during the actual recovery flow this can be reconstructed with seed + channelKeyPath
+        localParams = LocalParams(
+          nodeId = oldAliceState.commitments.localParams.nodeId,
+          fundingKeyPath = oldAliceState.commitments.localParams.fundingKeyPath,
+          dustLimit = 0 sat,
+          maxHtlcValueInFlightMsat = UInt64(0),
+          channelReserve = 0 sat,
+          toSelfDelay = CltvExpiryDelta(0),
+          htlcMinimum = 0 msat,
+          maxAcceptedHtlcs = 0,
+          isFunder = true,
+          defaultFinalScriptPubKey = oldAliceState.commitments.localParams.defaultFinalScriptPubKey,
+          globalFeatures = hex"00",
+          localFeatures = hex"00"
+        ),
         remoteParams = RemoteParams(
           Bob.nodeParams.nodeId,
           dustLimit = 0 sat,
@@ -394,7 +407,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           redeemScript = ByteVector.empty
         ),
         remotePerCommitmentSecrets = ShaChain.init,
-        channelId = oldAliceState.commitments.channelId
+        channelId = ByteVector32.Zeroes
       ),
       shortChannelId = oldAliceState.shortChannelId,
       buried = oldAliceState.buried,
@@ -437,7 +450,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceLatestPerCommitmentSecret = Alice.keyManager.commitmentSecret(Alice.keyManager.channelKeyPath(mockAliceState.commitments.localParams,  mockAliceState.commitments.channelVersion), effectiveLastCommitmentIndex - 1)
 
     // Alice sends the indexes and commitment points according to her (mistaken) view of the commitment, Bob will let her know she's behind
-    alice2bob.expectMsg(ChannelReestablish(oldAliceState.commitments.channelId, mockAliceIndex + 1, mockBobIndex, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
+    alice2bob.expectMsg(ChannelReestablish(ByteVector32.Zeroes, mockAliceIndex + 1, mockBobIndex, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
     bob2alice.expectMsg(ChannelReestablish(oldAliceState.commitments.channelId, effectiveLastCommitmentIndex + 1, effectiveLastCommitmentIndex, Some(aliceLatestPerCommitmentSecret), Some(bobCurrentPerCommitmentPoint)))
 
     // alice then realizes it has an old state...
