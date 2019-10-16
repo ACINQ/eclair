@@ -18,6 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair._
 
 /**
   * Created by PM on 07/12/2016.
@@ -32,7 +33,7 @@ case object OUT extends Direction { def opposite = IN }
 case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
-  val totalFunds = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
+  val totalFunds: MilliSatoshi = toLocal + toRemote + htlcs.foldLeft(0 msat)(_ + _.add.amountMsat) // can't use .map(...).sum on a set because duplicates would be removed
 }
 
 object CommitmentSpec {
