@@ -22,7 +22,7 @@ import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
-import org.json4s.JsonAST._
+import org.json4s.JsonAST.{JValue, _}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -34,15 +34,21 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
+  def watchScript(script: String, rescanSinceHeight: Int)(implicit ec: ExecutionContext): Future[Unit] =
+    for {
+      _ <- rpcClient.invoke("importaddress", script, "", false)
+      _ <- rpcClient.invoke("rescanblockchain", rescanSinceHeight)
+    } yield Unit
+
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("gettransaction", txId) // we choose verbose output to get the number of confirmations
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
   def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("gettransaction", txId) // we choose verbose output to get the number of confirmations
       .map(json => (json \ "blockhash").extractOpt[String])
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
@@ -66,7 +72,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
       txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]])
-      txs <- Future.sequence(txids.map(getTransaction(_)))
+      txs <- Future.sequence(txids.map(getRawTransaction(_)))
     } yield txs
 
   /**
@@ -74,13 +80,16 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     * @param ec
     * @return
     */
-  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
+  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     rpcClient.invoke("getrawtransaction", txId) collect {
-      case JString(raw) => raw
+      case JString(raw) => Transaction.read(raw)
     }
 
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txId).map(raw => Transaction.read(raw))
+    for {
+      json <- rpcClient.invoke("gettransaction", txId)
+      JString(hex) = json \ "hex"
+    } yield Transaction.read(hex)
 
   def getTransactionMeta(txId: String)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
@@ -165,7 +174,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         }
         _ = span1.finish()
         span2 = Kamon.spanBuilder("getrawtx").start()
-        tx <- getRawTransaction(txid)
+        tx <- getTransaction(txid)
         _ = span2.finish()
         span3 = Kamon.spanBuilder("utxospendable-mempool").start()
         unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
@@ -179,7 +188,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
           }
         }
         _ = span.finish()
-      } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
+      } yield ValidateResult(c, Right((tx, fundingTxStatus)))
 
   } recover { case t: Throwable => ValidateResult(c, Left(t)) }
 
