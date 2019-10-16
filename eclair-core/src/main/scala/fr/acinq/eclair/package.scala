@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
-import scala.concurrent.duration.Duration
+
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
@@ -151,11 +151,6 @@ package object eclair {
         }
     }
   }
-
-  /**
-   * We use this in the context of timestamp filtering, when we don't need an upper bound.
-   */
-  val MaxEpochSeconds = Duration.fromNanos(Long.MaxValue).toSeconds
 
   implicit class LongToBtcAmount(l: Long) {
     // @formatter:off

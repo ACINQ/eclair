@@ -46,9 +46,13 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 case class TimestampQueryFilters(from: Long, to: Long)
 
 object TimestampQueryFilters {
+  /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
+  val MaxEpochMilliseconds = Duration.fromNanos(Long.MaxValue).toMillis
+
   def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
-    val from = from_opt.getOrElse(0L)
-    val to = to_opt.getOrElse(MaxEpochSeconds)
+    // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
+    val from = from_opt.getOrElse(0L).seconds.toMillis
+    val to = to_opt.map(_.seconds.toMillis).getOrElse(MaxEpochMilliseconds)
 
     TimestampQueryFilters(from, to)
   }
@@ -78,13 +82,13 @@ trait Eclair {
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
-  def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[UUID]
+  def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
   def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def sendToRoute(route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID]
+  def sendToRoute(externalId_opt: Option[String], route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse]
 
@@ -112,6 +116,9 @@ trait Eclair {
 class EclairImpl(appKit: Kit) extends Eclair {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
+
+  // We constrain external identifiers. This allows uuid, long and pubkey to be used.
+  private val externalIdMaxLength = 66
 
   override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
     case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[String]
@@ -186,37 +193,42 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amount, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def sendToRoute(route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID] = {
-    (appKit.paymentInitiator ? SendPaymentRequest(amount, paymentHash, route.last, 1, finalCltvExpiryDelta, route)).mapTo[UUID]
+  override def sendToRoute(externalId_opt: Option[String], route: Seq[PublicKey], amount: MilliSatoshi, paymentHash: ByteVector32, finalCltvExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID] = {
+    externalId_opt match {
+      case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException("externalId is too long: cannot exceed 66 characters"))
+      case _ => (appKit.paymentInitiator ? SendPaymentRequest(amount, paymentHash, route.last, 1, finalCltvExpiryDelta, None, externalId_opt, route)).mapTo[UUID]
+    }
   }
 
-  override def send(recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
+  override def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
-
     val defaultRouteParams = Router.getDefaultRouteParams(appKit.nodeParams.routerConf)
     val routeParams = defaultRouteParams.copy(
       maxFeePct = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeePct),
       maxFeeBase = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeBase)
     )
 
-    invoice_opt match {
-      case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
-      case Some(invoice) =>
-        val sendPayment = invoice.minFinalCltvExpiryDelta match {
-          case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
-          case None => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
-        }
-        (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
-      case None =>
-        val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, routeParams = Some(routeParams))
-        (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+    externalId_opt match {
+      case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException("externalId is too long: cannot exceed 66 characters"))
+      case _ => invoice_opt match {
+        case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
+        case Some(invoice) =>
+          val sendPayment = invoice.minFinalCltvExpiryDelta match {
+            case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, invoice_opt, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
+            case None => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, paymentRequest = invoice_opt, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
+          }
+          (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+        case None =>
+          val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams))
+          (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+      }
     }
   }
 
   override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = Future {
     id match {
       case Left(uuid) => appKit.nodeParams.db.payments.getOutgoingPayment(uuid).toSeq
-      case Right(paymentHash) => appKit.nodeParams.db.payments.getOutgoingPayments(paymentHash)
+      case Right(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
     }
   }
 
@@ -245,17 +257,17 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val filter = getDefaultTimestampFilters(from_opt, to_opt)
 
-    appKit.nodeParams.db.payments.listPaymentRequests(filter.from, filter.to)
+    appKit.nodeParams.db.payments.listIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
   }
 
   override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val filter = getDefaultTimestampFilters(from_opt, to_opt)
 
-    appKit.nodeParams.db.payments.listPendingPaymentRequests(filter.from, filter.to)
+    appKit.nodeParams.db.payments.listPendingIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
   }
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
-    appKit.nodeParams.db.payments.getPaymentRequest(paymentHash)
+    appKit.nodeParams.db.payments.getIncomingPayment(paymentHash).map(_.paymentRequest)
   }
 
   /**

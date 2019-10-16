@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddr
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import grizzled.slf4j.Logging
+import org.json4s
 import org.json4s.JsonAST.{JArray, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
@@ -72,9 +73,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     val listener = TestProbe()
     probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
-    probe.send(bitcoincli, BitcoinReq("generate", 3))
-    listener.expectNoMessage(1 second)
-    probe.send(bitcoincli, BitcoinReq("generate", 2))
+    generateBlocks(bitcoincli, 5)
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid.toHex === txid)
     system.stop(watcher)
@@ -119,10 +118,8 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     listener.expectNoMessage(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]
-    probe.send(bitcoincli, BitcoinReq("generate", 2))
-    val blocks = probe.expectMsgType[JValue]
-    val JArray(List(JString(block1), JString(block2))) = blocks
-    val spent = listener.expectMsgType[WatchEventSpent](20 seconds)
+    generateBlocks(bitcoincli, 2)
+    listener.expectMsgType[WatchEventSpent](20 seconds)
     system.stop(watcher)
   }
 

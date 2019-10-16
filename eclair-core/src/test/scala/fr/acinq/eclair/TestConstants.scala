@@ -71,7 +71,7 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       globalFeatures = globalFeatures,
-      localFeatures = ByteVector(0),
+      localFeatures = ByteVector.fromValidHex("088a"),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
@@ -79,6 +79,7 @@ object TestConstants {
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         maxFeerateMismatch = 1.5,
+        closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
@@ -156,6 +157,7 @@ object TestConstants {
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         maxFeerateMismatch = 1.0,
+        closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs

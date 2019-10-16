@@ -54,7 +54,7 @@ trait BitcoindService extends Logging {
   val INTEGRATION_TMP_DIR = new File(TestUtils.BUILD_DIRECTORY, s"integration-${UUID.randomUUID()}")
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.17.1/bin/bitcoind")
+  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.18.1/bin/bitcoind")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
   var bitcoind: Process = null
@@ -108,14 +108,26 @@ trait BitcoindService extends Logging {
       }
     }, max = 3 minutes, interval = 2 seconds)
     logger.info(s"generating initial blocks...")
-    sender.send(bitcoincli, BitcoinReq("generate", 150))
-    val JArray(res) = sender.expectMsgType[JValue](3 minutes)
-    assert(res.size == 150)
+    generateBlocks(bitcoincli, 150)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("getbalance"))
       val JDecimal(balance) = sender.expectMsgType[JDecimal](30 seconds)
       balance > 100
     }, max = 3 minutes, interval = 2 second)
+  }
+
+  def generateBlocks(bitcoinCli: ActorRef, blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
+    val sender = TestProbe()
+    val addressToUse = address match {
+      case Some(addr) => addr
+      case None =>
+        sender.send(bitcoinCli, BitcoinReq("getnewaddress"))
+        val JString(address) = sender.expectMsgType[JValue](timeout)
+        address
+    }
+    sender.send(bitcoinCli, BitcoinReq("generatetoaddress", blockCount, addressToUse))
+    val JArray(blocks) = sender.expectMsgType[JValue](timeout)
+    assert(blocks.size == blockCount)
   }
 
 }

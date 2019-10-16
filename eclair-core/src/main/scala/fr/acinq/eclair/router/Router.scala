@@ -35,6 +35,7 @@ import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import shapeless.HNil
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
@@ -458,10 +459,15 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(FinalizeRoute(partialHops), d) =>
-      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs, then select the largest edge between them
-      val edges = partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2).maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat)) }
-      val hops = edges.map(d => Hop(d.desc.a, d.desc.b, d.update)).toSeq
-      sender ! RouteResponse(hops, Set.empty, Set.empty)
+      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
+      partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2) }.toList match {
+        case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
+          val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
+          val hops = selectedEdges.map(d => Hop(d.desc.a, d.desc.b, d.update))
+          sender ! RouteResponse(hops, Set.empty, Set.empty)
+        case _ => // some nodes in the supplied route aren't connected in our graph
+          sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+      }
       stay
 
     case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, params_opt), d) =>
@@ -1080,12 +1086,16 @@ object Router {
     (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
   }
 
+  def crc32c(data: ByteVector): Long = {
+    import com.google.common.hash.Hashing
+    Hashing.crc32c().hashBytes(data.toArray).asInt() & 0xFFFFFFFFL
+  }
+
   def getChecksum(u: ChannelUpdate): Long = {
     import u._
+
     val data = serializationResult(LightningMessageCodecs.channelUpdateChecksumCodec.encode(chainHash :: shortChannelId :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: HNil))
-    val checksum = com.google.common.hash.Hashing.crc32c().newHasher()
-    checksum.putBytes(data.toArray)
-    checksum.hash().padToLong()
+    crc32c(data)
   }
 
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId])
