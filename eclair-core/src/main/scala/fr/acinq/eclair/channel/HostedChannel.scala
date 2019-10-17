@@ -267,11 +267,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         localSuspend(commits, ChannelErrorCodes.ERR_HOSTED_TOO_MANY_STATE_UPDATES)
       } else {
         stateUpdateAttempts += 1
-        val localLCSS1 = commits.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
-        val commits1 = commits.copy(lastCrossSignedState = localLCSS1, localSpec = commits.nextLocalSpec, futureUpdates = Nil)
+        val lcss1 = commits.nextLocalUnsignedLCSS(remoteSU.blockDay).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS).withLocalSigOfRemote(nodeParams.privateKey)
+        val commits1 = commits.copy(lastCrossSignedState = lcss1, localSpec = commits.nextLocalSpec, futureUpdates = Nil)
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
-        val isRemoteSigOk = localLCSS1.verifyRemoteSig(remoteNodeId)
-        if (remoteSU.remoteUpdates < localLCSS1.localUpdates) {
+        val isRemoteSigOk = lcss1.verifyRemoteSig(remoteNodeId)
+        if (remoteSU.remoteUpdates < lcss1.localUpdates) {
           stay sending commits1.lastCrossSignedState.stateUpdate
         } else if (!isBlockdayAcceptable) {
           localSuspend(commits1, ChannelErrorCodes.ERR_HOSTED_WRONG_BLOCKDAY)
@@ -290,7 +290,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
               relayer ! ForwardFailMalformed(malformed, commits.originChannels(malformed.id), add)
           }
           context.system.eventStream.publish(AvailableBalanceChanged(self, commits1.channelId, commits1.channelUpdate.shortChannelId, remoteNodeId,
-            localLCSS1.initHostedChannel.channelCapacityMsat.truncateToSatoshi, channelReserve = 0 sat, commits1.availableBalanceForSend, commits1))
+            lcss1.initHostedChannel.channelCapacityMsat.truncateToSatoshi, channelReserve = 0 sat, commits1.availableBalanceForSend, commits1))
           val completedOutgoingHtlcs = commits.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id) -- commits1.localSpec.htlcs.filter(_.direction == OUT).map(_.add.id)
           stay using commits1.copy(originChannels = commits1.originChannels -- completedOutgoingHtlcs) storing() sending commits1.lastCrossSignedState.stateUpdate
         }

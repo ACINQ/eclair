@@ -117,7 +117,7 @@ package object eclair {
 
   val maxHostedOnChainRefund = Satoshi(1000000L)
 
-  val defaultHostedChanCapacity = MilliSatoshi(100000000000L)
+  val defaultHostedChanCapacity = MilliSatoshi(20000000000L)
 
   val defaultHostedInitialClientBalance = MilliSatoshi(25000000L)
 
