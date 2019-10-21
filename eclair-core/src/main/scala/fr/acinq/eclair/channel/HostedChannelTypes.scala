@@ -47,19 +47,19 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
                                    overriddenBalanceProposal: Option[MilliSatoshi] // CLOSED channel override can be initiated by Host, a new proposed balance should be retained once this happens
                                   ) extends ChannelCommitments with HostedData { me =>
 
-  lazy val (nextLocalUpdates, nextRemoteUpdates, nextTotalLocal, nextTotalRemote) =
+  val (nextLocalUpdates, nextRemoteUpdates, nextTotalLocal, nextTotalRemote) =
     futureUpdates.foldLeft((List.empty[UpdateMessage], List.empty[UpdateMessage], lastCrossSignedState.localUpdates, lastCrossSignedState.remoteUpdates)) {
       case ((localMessages, remoteMessages, totalLocalNumber, totalRemoteNumber), Left(msg)) => (localMessages :+ msg, remoteMessages, totalLocalNumber + 1, totalRemoteNumber)
       case ((localMessages, remoteMessages, totalLocalNumber, totalRemoteNumber), Right(msg)) => (localMessages, remoteMessages :+ msg, totalLocalNumber, totalRemoteNumber + 1)
     }
 
-  lazy val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
+  val nextLocalSpec: CommitmentSpec = CommitmentSpec.reduce(localSpec, nextLocalUpdates, nextRemoteUpdates)
 
-  lazy val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
+  val availableBalanceForSend: MilliSatoshi = nextLocalSpec.toLocal
 
-  lazy val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
+  val availableBalanceForReceive: MilliSatoshi = nextLocalSpec.toRemote
 
-  lazy val currentAndNextInFlightHtlcs: Set[DirectedHtlc] = localSpec.htlcs ++ nextLocalSpec.htlcs
+  val currentAndNextInFlightHtlcs: Set[DirectedHtlc] = localSpec.htlcs ++ nextLocalSpec.htlcs
 
   override val announceChannel: Boolean = false
 
