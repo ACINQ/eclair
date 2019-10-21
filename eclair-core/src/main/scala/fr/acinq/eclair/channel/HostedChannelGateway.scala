@@ -28,6 +28,8 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
           channel ! cmd
       }
 
+    case cmd: CMD_HOSTED_OVERRIDE => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(channel => channel forward cmd)
+
     case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels.get(cmd.channelId)).foreach(channel => channel ! cmd)
 
     case Terminated(channelRef) => inMemoryHostedChannels.inverse.remove(channelRef)
