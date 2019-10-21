@@ -111,6 +111,8 @@ trait Eclair {
   def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]]
+
+  def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -289,4 +291,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
   )
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
+
+  def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String] = (appKit.hostedChannelGateway ? CMD_HOSTED_OVERRIDE(channelId, newLocalBalance)).mapTo[String]
 }

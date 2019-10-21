@@ -5,7 +5,6 @@ import grizzled.slf4j.Logging
 import java.sql.Connection
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec
 import fr.acinq.eclair.channel.HOSTED_DATA_COMMITMENTS
 import scodec.bits.BitVector

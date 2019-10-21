@@ -330,7 +330,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
         localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
       val commits1 = commits.copy(overriddenBalanceProposal = Some(newLocalBalance))
-      stay using commits1 sending localSO
+      stay using commits1 sending localSO replying "ok"
 
     case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.overriddenBalanceProposal.isDefined =>
       val completeOverridingLCSS = makeOverridingLocallySignedLCSS(commits, commits.overriddenBalanceProposal.get).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
