@@ -172,7 +172,7 @@ object Switchboard extends Logging {
     // Here we do it differently because we need the origin information.
     val relayed_out = channels
       .flatMap(_.commitments.originChannels.values)
-      .collect { case r: Origin.ChannelRelayed => r }
+      .collect { case r: Origin.StandardRelayed => r }
       .toSet
 
     val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))

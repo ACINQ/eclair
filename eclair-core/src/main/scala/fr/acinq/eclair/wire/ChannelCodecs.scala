@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transacti
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.Origin
-import fr.acinq.eclair.payment.Origin.{ChannelRelayed, Local}
+import fr.acinq.eclair.payment.Origin.{StandardRelayed, Local}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
@@ -185,11 +185,11 @@ object ChannelCodecs extends Logging {
       ("sender" | provide(Option.empty[ActorRef]))
     ).as[Local]
 
-  val relayedCodec: Codec[ChannelRelayed] = (
+  val relayedCodec: Codec[StandardRelayed] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[ChannelRelayed]
+      ("amountOut" | millisatoshi)).as[StandardRelayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")

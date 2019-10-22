@@ -106,8 +106,10 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
 
 sealed trait Upstream
 object Upstream {
+  /** Our node is the payer. */
   final case class Local(id: UUID) extends Upstream
-  final case class ChannelRelayed(add: UpdateAddHtlc) extends Upstream
+  /** Our node forwarded a single incoming HTLC to an outgoing channel. */
+  final case class StandardRelayed(add: UpdateAddHtlc) extends Upstream
 }
 
 sealed trait Command

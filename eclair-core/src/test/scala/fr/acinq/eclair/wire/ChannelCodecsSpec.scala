@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Deterministi
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
-import fr.acinq.eclair.payment.Origin.{ChannelRelayed, Local}
+import fr.acinq.eclair.payment.Origin.{StandardRelayed, Local}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
@@ -175,17 +175,17 @@ class ChannelCodecsSpec extends FunSuite {
     val id = UUID.randomUUID()
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
     // TODO: add backward compatibility check
-    val relayed = ChannelRelayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
+    val relayed = StandardRelayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
       1L -> Local(UUID.randomUUID(), None),
-      42L -> ChannelRelayed(randomBytes32, 4324, 12000000 msat, 11000000 msat),
-      130L -> ChannelRelayed(randomBytes32, -45, 13000000 msat, 12000000 msat),
-      1000L -> ChannelRelayed(randomBytes32, 10, 14000000 msat, 13000000 msat),
-      -32L -> ChannelRelayed(randomBytes32, 54, 15000000 msat, 14000000 msat),
+      42L -> StandardRelayed(randomBytes32, 4324, 12000000 msat, 11000000 msat),
+      130L -> StandardRelayed(randomBytes32, -45, 13000000 msat, 12000000 msat),
+      1000L -> StandardRelayed(randomBytes32, 10, 14000000 msat, 13000000 msat),
+      -32L -> StandardRelayed(randomBytes32, 54, 15000000 msat, 14000000 msat),
       -4L -> Local(UUID.randomUUID(), None))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
@@ -400,7 +400,7 @@ object ChannelCodecsSpec {
   val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
-    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> ChannelRelayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)),
+    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> StandardRelayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
 

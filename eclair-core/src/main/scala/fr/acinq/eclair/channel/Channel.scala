@@ -2233,7 +2233,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def origin(c: CMD_ADD_HTLC): Origin = c.upstream match {
     case Upstream.Local(id) => Origin.Local(id, Some(sender)) // we were the origin of the payment
-    case Upstream.ChannelRelayed(u) => Origin.ChannelRelayed(u.channelId, u.id, u.amountMsat, c.amount) // this is a relayed payment to an outgoing channel
+    case Upstream.StandardRelayed(u) => Origin.StandardRelayed(u.channelId, u.id, u.amountMsat, c.amount) // this is a relayed payment to an outgoing channel
   }
 
   def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = {
