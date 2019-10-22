@@ -23,12 +23,12 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.IncomingPaymentStatus
-import fr.acinq.eclair.payment.LocalPaymentHandler.{GetPendingPayments, PendingPayments}
 import fr.acinq.eclair.payment.MultiPartPaymentHandler.PendingPayment
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
+import fr.acinq.eclair.payment.handlers.DefaultHandler.{GetPendingPayments, PendingPayments}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.{Outcome, fixture}
@@ -41,12 +41,12 @@ import scala.concurrent.duration._
 
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, handler: TestActorRef[LocalPaymentHandler], eventListener: TestProbe, sender: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, handler: TestActorRef[PaymentHandler], eventListener: TestProbe, sender: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(30 seconds) {
       val nodeParams = Alice.nodeParams
-      val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
       val eventListener = TestProbe()
       system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, CltvExpiryDelta(12).toCltvExpiry(nodeParams.currentBlockHeight), handler, eventListener, TestProbe())))
@@ -282,7 +282,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
 
   test("LocalPaymentHandler should handle multi-part payment timeout") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 200 millis)
-    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
     val (sender1, sender2) = (TestProbe(), TestProbe())
 
     // Partial payment missing additional parts.
@@ -319,7 +319,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
 
   test("LocalPaymentHandler should handle multi-part payment success") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis)
-    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
     val (sender1, sender2) = (TestProbe(), TestProbe())
 
     sender1.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee", allowMultiPart = true))
@@ -363,7 +363,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
 
   test("LocalPaymentHandler should handle multi-part payment timeout then success") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 250 millis)
-    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
 
     f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 coffee, no sugar", allowMultiPart = true))
     val pr = f.sender.expectMsgType[PaymentRequest]

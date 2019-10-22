@@ -39,6 +39,7 @@ import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.handlers.ForwardHandler
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, PublicChannel, RouteParams}
@@ -144,18 +145,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     import collection.JavaConversions._
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082)).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083)).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
-    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.payment-handler" -> "noop")).withFallback(commonConfig)) // NB: eclair.payment-handler = noop allows us to manually fulfill htlcs
-    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085)).withFallback(commonConfig))
+    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086)).withFallback(commonConfig))
+    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087)).withFallback(commonConfig))
+    instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088)).withFallback(commonConfig))
+    instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089)).withFallback(commonConfig))
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
-    val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams))
     nodes("C").paymentHandler ! paymentHandlerC
   }
 
@@ -568,10 +569,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F1").paymentHandler ! htlcReceiver.ref
+    nodes("F1").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
@@ -651,10 +651,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F2").paymentHandler ! htlcReceiver.ref
+    nodes("F2").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
@@ -726,10 +725,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F3").paymentHandler ! htlcReceiver.ref
+    nodes("F3").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage: ByteVector = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
@@ -785,10 +783,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F4").paymentHandler ! htlcReceiver.ref
+    nodes("F4").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage: ByteVector = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
@@ -848,14 +845,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we use this to get commitments
     val sigListener = TestProbe()
     nodes("F5").system.eventStream.subscribe(sigListener.ref, classOf[ChannelSignatureReceived])
-    // we use this to control when to fulfill htlcs, setup is as follow : noop-handler ---> forward-handler ---> payment-handler
+    // we use this to control when to fulfill htlcs
     val forwardHandlerC = TestProbe()
-    nodes("C").paymentHandler ! forwardHandlerC.ref
+    nodes("C").paymentHandler ! new ForwardHandler(forwardHandlerC.ref)
     val forwardHandlerF = TestProbe()
-    nodes("F5").paymentHandler ! forwardHandlerF.ref
+    nodes("F5").paymentHandler ! new ForwardHandler(forwardHandlerF.ref)
     // this is the actual payment handler that we will forward requests to
-    val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
-    val paymentHandlerF = nodes("F5").system.actorOf(LocalPaymentHandler.props(nodes("F5").nodeParams))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams))
+    val paymentHandlerF = nodes("F5").system.actorOf(PaymentHandler.props(nodes("F5").nodeParams))
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
