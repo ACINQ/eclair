@@ -244,6 +244,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectNoMsg(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (over max inflight htlc value with duplicate amounts)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val add = CMD_ADD_HTLC(75500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    sender.send(bob, add)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[UpdateAddHtlc]
+    val add1 = CMD_ADD_HTLC(75500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+    sender.send(bob, add1)
+    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add1.paymentHash, error, Local(add1.upstream.left.get, Some(sender.ref)), Some(initialState.channelUpdate), Some(add1))))
+    bob2alice.expectNoMsg(200 millis)
+  }
+
   test("recv CMD_ADD_HTLC (over max accepted htlcs)") { f =>
     import f._
     val sender = TestProbe()
