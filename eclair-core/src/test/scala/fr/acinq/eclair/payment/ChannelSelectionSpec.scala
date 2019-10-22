@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Upstream}
 import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
 import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayFailure, RelayPayload, RelaySuccess}
 import fr.acinq.eclair.router.Announcements
@@ -50,7 +50,7 @@ class ChannelSelectionSpec extends FunSuite {
     val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10000000 msat, true)
 
     // nominal case
-    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload.payload.amountToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltv, relayPayload.nextPacket, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload.payload.amountToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltv, relayPayload.nextPacket, Upstream.StandardRelayed(relayPayload.add), commit = true)))
     // no channel_update
     assert(Relayer.relayOrFail(relayPayload, channelUpdate_opt = None) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(UnknownNextPeer), commit = true)))
     // channel disabled
@@ -67,7 +67,7 @@ class ChannelSelectionSpec extends FunSuite {
     assert(Relayer.relayOrFail(relayPayload_insufficientfee, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(FeeInsufficient(relayPayload_insufficientfee.add.amountMsat, channelUpdate)), commit = true)))
     // note that a generous fee is ok!
     val relayPayload_highfee = relayPayload.copy(payload = onionPayload.copy(amountToForward = 900000 msat))
-    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload_highfee.payload.amountToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltv, relayPayload_highfee.nextPacket, upstream = Right(relayPayload.add), commit = true)))
+    assert(Relayer.relayOrFail(relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(relayPayload_highfee.payload.amountToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltv, relayPayload_highfee.nextPacket, Upstream.StandardRelayed(relayPayload.add), commit = true)))
   }
 
   test("channel selection") {

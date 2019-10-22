@@ -27,19 +27,17 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.{HasCommitments, _}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Relayer.RelayPayload
-import fr.acinq.eclair.payment.{Relayed, Relayer}
+import fr.acinq.eclair.payment.{Origin, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
-import scala.util.Success
-
 /**
-  * Ties network connections to peers.
-  * Created by PM on 14/02/2017.
-  */
+ * Ties network connections to peers.
+ * Created by PM on 14/02/2017.
+ */
 class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
@@ -94,7 +92,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case d: Peer.Disconnect =>
       getPeer(d.nodeId) match {
         case Some(peer) => peer forward d
-        case None       => sender ! Status.Failure(new RuntimeException("peer not found"))
+        case None => sender ! Status.Failure(new RuntimeException("peer not found"))
       }
 
     case o: Peer.OpenChannel =>
@@ -115,25 +113,18 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   }
 
   /**
-    * Retrieves a peer based on its public key.
-    *
-    * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)) where N is the number of
-    * peers. We could make it O(1) by using our own HashMap, but it creates other problems when we need to remove an
-    * existing peer. This seems like a reasonable trade-off because we only make this call once per connection, and N
-    * should never be very big anyway.
-    *
-    * @param remoteNodeId
-    * @return
-    */
+   * Retrieves a peer based on its public key.
+   *
+   * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)) where N is the number of
+   * peers. We could make it O(1) by using our own HashMap, but it creates other problems when we need to remove an
+   * existing peer. This seems like a reasonable trade-off because we only make this call once per connection, and N
+   * should never be very big anyway.
+   */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   /**
-    *
-    * @param remoteNodeId
-    * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
-    * @param offlineChannels
-    * @return
-    */
+   * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
+   */
   def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
@@ -158,14 +149,14 @@ object Switchboard extends Logging {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
-    * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
-    * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
-    *
-    * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
-    * get closed, which is a major inconvenience.
-    *
-    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
-    */
+   * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
+   * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
+   *
+   * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
+   * get closed, which is a major inconvenience.
+   *
+   * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
+   */
   def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
@@ -181,7 +172,7 @@ object Switchboard extends Logging {
     // Here we do it differently because we need the origin information.
     val relayed_out = channels
       .flatMap(_.commitments.originChannels.values)
-      .collect { case r: Relayed => r }
+      .collect { case r: Origin.StandardRelayed => r }
       .toSet
 
     val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
@@ -192,17 +183,17 @@ object Switchboard extends Logging {
   }
 
   /**
-    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
-    * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
-    * don't want to lose preimages, or to forget to fail incoming htlcs, which
-    * would lead to unwanted channel closings.
-    *
-    * Because of the way our watcher works, in a scenario where a downstream
-    * channel has gone to the blockchain, it may send several times the same
-    * command, and the upstream channel may have disappeared in the meantime.
-    *
-    * That's why we need to periodically clean up the pending relay db.
-    */
+   * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
+   * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
+   * don't want to lose preimages, or to forget to fail incoming htlcs, which
+   * would lead to unwanted channel closings.
+   *
+   * Because of the way our watcher works, in a scenario where a downstream
+   * channel has gone to the blockchain, it may send several times the same
+   * command, and the upstream channel may have disappeared in the meantime.
+   *
+   * That's why we need to periodically clean up the pending relay db.
+   */
   def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
@@ -242,14 +233,14 @@ class HtlcReaper extends Actor with ActorLogging {
       val acked = htlcs
         .filter(_.channelId == data.channelId) // only consider htlcs related to this channel
         .filter {
-        case htlc if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
-          // this htlc is cross signed in the current commitment, we can fail it
-          log.info(s"failing broken htlc=$htlc")
-          channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
-          false // the channel may very well be disconnected before we sign (=ack) the fail, so we keep it for now
-        case _ =>
-          true // the htlc has already been failed, we can forget about it now
-      }
+          case htlc if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
+            // this htlc is cross signed in the current commitment, we can fail it
+            log.info(s"failing broken htlc=$htlc")
+            channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+            false // the channel may very well be disconnected before we sign (=ack) the fail, so we keep it for now
+          case _ =>
+            true // the htlc has already been failed, we can forget about it now
+        }
       acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}"))
       context become main(htlcs diff acked)
   }
