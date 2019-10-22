@@ -1,6 +1,5 @@
 coverage:
-  ci:
-    - pm47.semaphoreci.com
+  range: 70..90
   status:
     project: off
     patch: off
