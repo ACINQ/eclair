@@ -44,7 +44,7 @@ class MultiPartHandler(nodeParams: NodeParams,
   private var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
 
   /**
-   * Can be overridden for a more fine-grained controle of whether or not to handle this payload.
+   * Can be overridden for a more fine-grained control of whether or not to handle this payload.
    * If the call returns false, then the pattern matching will fail and the payload will be passed to other handlers.
    */
   def doHandle(p: FinalPayload): Boolean = true
