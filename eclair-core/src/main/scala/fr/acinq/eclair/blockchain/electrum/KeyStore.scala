@@ -1,9 +1,9 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, Utxo, WalletType, bip49RootPath, bip84RootPath}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, Utxo, WalletType}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import scodec.bits.ByteVector
 
@@ -105,12 +105,19 @@ class P2SHSegwitKeyStore extends KeyStore {
   }
 
   override def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, bip49RootPath(chainHash)))
+    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, P2SHSegwitKeyStore.accountPath(chainHash)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
     }
     (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
+  }
+}
+
+object P2SHSegwitKeyStore {
+  def accountPath(chainHash: ByteVector32): List[Long] = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
+    case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
   }
 }
 
@@ -161,7 +168,7 @@ class Bech32KeyStore extends KeyStore {
   }
 
   override def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, ElectrumWallet.bip84RootPath(chainHash)))
+    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, Bech32KeyStore.accountPath(chainHash)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
@@ -170,3 +177,9 @@ class Bech32KeyStore extends KeyStore {
   }
 }
 
+object Bech32KeyStore {
+  def accountPath(chainHash: ByteVector32): List[Long] = chainHash match {
+    case Block.LivenetGenesisBlock.hash => hardened(84) :: hardened(0) :: hardened(0) :: Nil
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(84) :: hardened(1) :: hardened(0) :: Nil
+  }
+}

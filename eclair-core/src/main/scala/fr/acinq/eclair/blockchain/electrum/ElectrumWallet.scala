@@ -578,18 +578,8 @@ object ElectrumWallet {
     * @return the root path
     */
   def accountPath(walletType: WalletType, chainHash: ByteVector32) = walletType match {
-    case P2SH_SEGWIT   => bip49RootPath(chainHash)
-    case NATIVE_SEGWIT => bip84RootPath(chainHash)
-  }
-
-  def bip49RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
-    case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
-  }
-
-  def bip84RootPath(chainHash: ByteVector32): List[Long] = chainHash match {
-    case Block.LivenetGenesisBlock.hash => hardened(84) :: hardened(0) :: hardened(0) :: Nil
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(84) :: hardened(1) :: hardened(0) :: Nil
+    case P2SH_SEGWIT   => P2SHSegwitKeyStore.accountPath(chainHash)
+    case NATIVE_SEGWIT => Bech32KeyStore.accountPath(chainHash)
   }
 
   /**
