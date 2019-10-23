@@ -59,8 +59,8 @@ class HostedChannelTypesSpec extends FunSuite {
     val bobLocallySignedLCSS = lcss.reverse.withLocalSigOfRemote(bobPrivKey)
     val aliceFullySignedLCSS = aliceLocallySignedLCSS.copy(remoteSigOfLocal = bobLocallySignedLCSS.localSigOfRemote)
     val bobFullySignedLCSS = bobLocallySignedLCSS.copy(remoteSigOfLocal = aliceLocallySignedLCSS.localSigOfRemote)
-    assert(aliceFullySignedLCSS.stateUpdate.localUpdates == bobFullySignedLCSS.remoteUpdates)
-    assert(bobFullySignedLCSS.stateUpdate.localUpdates == aliceFullySignedLCSS.remoteUpdates)
+    assert(aliceFullySignedLCSS.stateUpdate(false).localUpdates === bobFullySignedLCSS.remoteUpdates)
+    assert(bobFullySignedLCSS.stateUpdate(false).localUpdates === aliceFullySignedLCSS.remoteUpdates)
     assert(bobFullySignedLCSS.verifyRemoteSig(alicePrivKey.publicKey))
     assert(aliceFullySignedLCSS.verifyRemoteSig(bobPrivKey.publicKey))
   }
@@ -129,12 +129,12 @@ class HostedChannelTypesSpec extends FunSuite {
     assert(aliceStateUpdatedHdc1.nextLocalSpec.toLocal === aliceStateUpdatedHdc1.localSpec.toLocal + updateAddHtlc1.amountMsat)
     assert(aliceStateUpdatedHdc1.nextLocalSpec.htlcs.size === 4)
     assert(aliceStateUpdatedHdc1.futureUpdates === List(Left(fulfill)))
-    assert(aliceStateUpdatedHdc1.nextLocalUnsignedLCSS(blockDay = 201).withLocalSigOfRemote(alicePrivKey).stateUpdate.localUpdates === 205) // Fail/Fulfill also increase an update counter
+    assert(aliceStateUpdatedHdc1.nextLocalUnsignedLCSS(blockDay = 201).withLocalSigOfRemote(alicePrivKey).stateUpdate(false).localUpdates === 205) // Fail/Fulfill also increase an update counter
 
     val bobFulfill = UpdateFulfillHtlc(channelId, bob2AliceAdd.id, bob2AliceAddPreimage)
     val Right((aliceStateUpdatedHdc2, _, _)) = aliceStateUpdatedHdc1.receiveFulfill(bobFulfill)
     assert(aliceStateUpdatedHdc2.nextLocalSpec.htlcs.size === 3)
     assert(aliceStateUpdatedHdc2.futureUpdates === List(Left(fulfill), Right(bobFulfill)))
-    assert(aliceStateUpdatedHdc2.nextLocalUnsignedLCSS(blockDay = 201).withLocalSigOfRemote(alicePrivKey).stateUpdate.remoteUpdates === 104) // Fail/Fulfill also increase an update counter
+    assert(aliceStateUpdatedHdc2.nextLocalUnsignedLCSS(blockDay = 201).withLocalSigOfRemote(alicePrivKey).stateUpdate(true).remoteUpdates === 104) // Fail/Fulfill also increase an update counter
   }
 }

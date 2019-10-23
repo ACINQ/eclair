@@ -18,13 +18,11 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
-import fr.acinq.eclair.wire.ChannelCodecs.originCodec
 import java.nio.ByteOrder.LITTLE_ENDIAN
 
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, Protocol, Satoshi}
-import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
@@ -354,12 +352,9 @@ case class LastCrossSignedState(refundScriptPubKey: ByteVector,
 
   def isEven(remoteLCSS: LastCrossSignedState): Boolean = remoteUpdates == remoteLCSS.localUpdates && localUpdates == remoteLCSS.remoteUpdates
 
-  def stateUpdate: StateUpdate = {
-    require(localSigOfRemote != ByteVector64.Zeroes, "Empty localSigOfRemote")
-    StateUpdate(blockDay, localUpdates, remoteUpdates, localSigOfRemote)
-  }
+  def stateUpdate(isTerminal: Boolean): StateUpdate = StateUpdate(blockDay, localUpdates, remoteUpdates, localSigOfRemote, isTerminal)
 }
 
-case class StateUpdate(blockDay: Long, localUpdates: Long, remoteUpdates: Long, localSigOfRemoteLCSS: ByteVector64) extends HostedChannelMessage
+case class StateUpdate(blockDay: Long, localUpdates: Long, remoteUpdates: Long, localSigOfRemoteLCSS: ByteVector64, isTerminal: Boolean) extends HostedChannelMessage
 
 case class StateOverride(blockDay: Long, localBalanceMsat: MilliSatoshi, localUpdates: Long, remoteUpdates: Long, localSigOfRemoteLCSS: ByteVector64) extends HostedChannelMessage

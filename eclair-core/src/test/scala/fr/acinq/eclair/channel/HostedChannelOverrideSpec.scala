@@ -36,6 +36,7 @@ class HostedChannelOverrideSpec extends TestkitBaseClass with HostedStateTestsHe
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd2))
     bob ! CMD_SIGN
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
@@ -70,9 +71,10 @@ class HostedChannelOverrideSpec extends TestkitBaseClass with HostedStateTestsHe
     val aliceUpdateAdd3 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd3))
     alice ! CMD_SIGN
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate])) // isTerminal: false, alice has no idea if Bob is sending anything
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate])) // isTerminal: true, Bob reply, he is not
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate])) // isTerminal: true, Alice reply with state update
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate])) // isTerminal: false, Bob reply with state update
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     bob ! CMD_FULFILL_HTLC(aliceUpdateAdd3.id, paymentPreimage3)
@@ -82,6 +84,7 @@ class HostedChannelOverrideSpec extends TestkitBaseClass with HostedStateTestsHe
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.toLocal === 130000000.msat)
@@ -101,6 +104,7 @@ class HostedChannelOverrideSpec extends TestkitBaseClass with HostedStateTestsHe
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd2))
     bob ! CMD_SIGN
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))

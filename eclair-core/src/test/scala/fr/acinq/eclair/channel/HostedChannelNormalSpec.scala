@@ -33,39 +33,34 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     bob ! CMD_SIGN
     val bobUpdateAdd = bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobUpdateAdd))
-    val bobStateUpdate = bob2alice.expectMsgType[StateUpdate]
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 0)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     // Alice LCSS is updated
-    val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == IN) === 1)
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == IN) === 1)
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
     // Alice can now resolve a pending incoming HTLC by forwarding to to Relayer
     val aliceForward = relayerA.expectMsgType[ForwardAdd]
     assert(aliceForward.add === bobUpdateAdd)
     // Bob LCSS is updated
-    val bobStateUpdate1 = bob2alice.expectMsgType[StateUpdate]
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 1)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate1))
     // Further StateUpdate exchange is halted because signature is the same
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
-
     alice ! CMD_FULFILL_HTLC(bobUpdateAdd.id, paymentPreimage)
     alice ! CMD_SIGN
     val aliceUpdateFulfill = alice2bob.expectMsgType[UpdateFulfillHtlc]
     relayerA.expectMsgType[CommandBuffer.CommandAck]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateFulfill))
     relayerB.expectMsgType[ForwardFulfill]
-    val aliceStateUpdate1 = alice2bob.expectMsgType[StateUpdate]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate1))
-    val bobStateUpdate2 = bob2alice.expectMsgType[StateUpdate]
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate2))
-    val aliceStateUpdate2 = alice2bob.expectMsgType[StateUpdate]
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate2))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     // Further StateUpdate exchange is halted because signature is the same
     relayerA.expectNoMsg(100 millis)
     relayerB.expectNoMsg(100 millis)
@@ -90,27 +85,24 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     bob ! CMD_SIGN
     val bobUpdateAdd = bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobUpdateAdd))
-    val bobStateUpdate = bob2alice.expectMsgType[StateUpdate]
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 0)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     // Alice LCSS is updated
-    val aliceStateUpdate = alice2bob.expectMsgType[StateUpdate]
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == IN) === 1)
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == IN) === 1)
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceStateUpdate))
     // Alice can now resolve a pending incoming HTLC by forwarding to to Relayer
     val aliceForward = relayerA.expectMsgType[ForwardAdd]
     assert(aliceForward.add === bobUpdateAdd)
     // Bob LCSS is updated
-    val bobStateUpdate1 = bob2alice.expectMsgType[StateUpdate]
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 1)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobStateUpdate1))
     // Further StateUpdate exchange is halted because signature is the same
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
-
     alice ! CMD_FULFILL_HTLC(bobUpdateAdd.id, paymentPreimage)
     val aliceUpdateFulfill = alice2bob.expectMsgType[UpdateFulfillHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateFulfill.copy(id = 19)))
@@ -141,10 +133,11 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     bob ! CMD_SIGN
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
-    // Further StateUpdate exchange is halted because signature is the same
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     alice ! CMD_FULFILL_HTLC(bobUpdateAdd2.id, paymentPreimage2)
@@ -158,9 +151,11 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     // HTLCs has been resolved
@@ -194,21 +189,30 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob ! cmdAdd2
-    bob2alice.expectMsgType[StateUpdate]
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     val bobUpdateAdd2 = bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobUpdateAdd2))
     alice ! cmdAdd5
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     val aliceUpdateAdd5 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd5))
     bob ! CMD_SIGN
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice ! cmdAdd6
-    alice2bob.expectMsgType[StateUpdate]
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     val aliceUpdateAdd6 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd6))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice ! CMD_FULFILL_HTLC(bobUpdateAdd1.id, paymentPreimage1)
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[UpdateFulfillHtlc]))
     bob ! cmdAdd3
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     val bobUpdateAdd3 = bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobUpdateAdd3))
     bob ! CMD_FULFILL_HTLC(aliceUpdateAdd4.id, paymentPreimage4)
@@ -217,8 +221,9 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
-    bob2alice.expectMsgType[StateUpdate]
-    alice2bob.expectMsgType[StateUpdate]
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     alice ! CMD_FULFILL_HTLC(bobUpdateAdd2.id, paymentPreimage2)
@@ -231,16 +236,20 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[UpdateFulfillHtlc]))
     alice ! CMD_SIGN
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob ! CMD_FAIL_HTLC(aliceUpdateAdd6.id, Right(PermanentChannelFailure))
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[UpdateFailHtlc]))
     bob ! CMD_SIGN
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.isEmpty)
@@ -282,16 +291,18 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[UpdateAddHtlc]))
     bob2alice.expectMsgType[ChannelUpdate]
     alice2bob.expectMsgType[ChannelUpdate]
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
-    // Both resend because both see remote peer as lagging behind by 1 UpdateAddHtlc
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
-    // Once 1:1 local/remote is reached both send another StateUpdate which halts further exchange
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     awaitCond(bob.stateName == NORMAL)
     awaitCond(alice.stateName == NORMAL)
+    alice2bob.expectNoMsg(100 millis)
+    bob2alice.expectNoMsg(100 millis)
     bob ! CMD_FULFILL_HTLC(aliceUpdateAdd2.id, paymentPreimage2)
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[UpdateFulfillHtlc]))
     bob ! CMD_SIGN
@@ -302,8 +313,11 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.isEmpty)
@@ -335,22 +349,24 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice ! CMD_SIGN
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.size === 2)
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.size === 2)
-    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     relayerA.expectMsgType[ForwardAdd] // cmdAdd1 from Bob is cross-signed
     relayerB.expectMsgType[ForwardAdd] // cmdAdd2 from Alice is cross-signed
+    alice2bob.expectNoMsg(100 millis)
+    bob2alice.expectNoMsg(100 millis)
     // Alice sends a second UpdateAddHtlc
     alice ! cmdAdd3
     val aliceUpdateAdd3 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd3))
     // Alice sends StateUpdate, Bob receives it, has a future state
     alice ! CMD_SIGN
-    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
-    bob2alice.expectMsgType[StateUpdate]
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate].copy(isTerminal = true)))
+    bob2alice.expectMsgType[StateUpdate] // disconnect happens on Bob's side, neither of them notice this yet
     relayerB.expectMsgType[ForwardAdd] // cmdAdd3 from Alice is cross-signed on Bob's side
-    // disconnect happens on Bob's side, Alice does not notice this yet
     alice ! cmdAdd4
     val aliceUpdateAdd4 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, aliceUpdateAdd4))
@@ -382,8 +398,9 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.expectMsgType[ChannelUpdate]
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
-    relayerB.expectMsgType[ForwardAdd] // cmdAdd4 is now cross-signed on Bob's side
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    relayerB.expectMsgType[ForwardAdd] // cmdAdd4 is now cross-signed on Bob's side
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     awaitCond(bob.stateName == NORMAL)
     awaitCond(alice.stateName == NORMAL)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.size === 4)
@@ -402,6 +419,7 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.size === 1)
@@ -433,6 +451,7 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     bob ! CMD_FULFILL_HTLC(aliceUpdateAdd1.id, paymentPreimage1)
@@ -480,6 +499,7 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)

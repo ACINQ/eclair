@@ -94,7 +94,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val init_hosted_channel = InitHostedChannel(UInt64(6), 10 msat, 20, 500000000L msat, 5000, 1000000 sat, 1000000 msat)
     val state_override = StateOverride(50000L, 500000 msat, 70000, 700000, randomBytes64)
 
-    val state_update = StateUpdate(50000L, 10, 20, randomBytes64)
+    val state_update = StateUpdate(50000L, 10, 20, randomBytes64, isTerminal = false)
     val lcss1 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(update_add_htlc, update_add_htlc), List(update_add_htlc, update_add_htlc), randomBytes64, randomBytes64)
     val lcss2 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, Nil, List(update_add_htlc, update_add_htlc), randomBytes64, randomBytes64)
     val lcss3 = LastCrossSignedState(bin(47, 0), init_hosted_channel, 10000, 10000 msat, 20000 msat, 10, 20, List(update_add_htlc, update_add_htlc), Nil, randomBytes64, randomBytes64)
