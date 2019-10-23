@@ -25,7 +25,7 @@ import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.handlers.MultipartHandler.ReceivePayment
+import fr.acinq.eclair.payment.handlers.MultiPartHandler.ReceivePayment
 import grizzled.slf4j.Logging
 
 import scala.concurrent.duration._

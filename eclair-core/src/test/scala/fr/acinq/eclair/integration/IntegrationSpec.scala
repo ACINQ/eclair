@@ -40,7 +40,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
 import fr.acinq.eclair.payment.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.handlers.ForwardHandler
-import fr.acinq.eclair.payment.handlers.MultipartHandler.ReceivePayment
+import fr.acinq.eclair.payment.handlers.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, PublicChannel, RouteParams}

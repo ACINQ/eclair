@@ -20,15 +20,13 @@ import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
-import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus}
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
-import fr.acinq.eclair.payment.handlers.MultipartHandler.IncomingPaymentsDb
 import fr.acinq.eclair.payment.{MultiPartPaymentHandler, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, NodeParams, randomBytes32}
 
-import scala.compat.Platform
 import scala.util.{Failure, Success, Try}
 
 
@@ -37,10 +35,10 @@ import scala.util.{Failure, Success, Try}
  *
  * Created by PM on 17/06/2016.
  */
-class MultipartHandler(nodeParams: NodeParams,
+class MultiPartHandler(nodeParams: NodeParams,
                        db: IncomingPaymentsDb) extends ReceiveHandler {
 
-  import MultipartHandler._
+  import MultiPartHandler._
 
   // NB: this is safe because this handler will be called from within an actor
   private var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
@@ -121,31 +119,12 @@ class MultipartHandler(nodeParams: NodeParams,
 
 }
 
-object MultipartHandler {
+object MultiPartHandler {
 
   // @formatter:off
   case object GetPendingPayments
   case class PendingPayments(paymentHashes: Set[ByteVector32])
   // @formatter:on
-
-  /**
-   * This is a subset of Payments Db
-   */
-  trait IncomingPaymentsDb {
-
-    /** Add a new expected incoming payment (not yet received). */
-    def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit
-
-    /**
-     * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-     * Note that this function assumes that there is a matching payment request in the DB.
-     */
-    def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = Platform.currentTime): Unit
-
-    /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
-    def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
-
-  }
 
   /**
    * Use this message to create a Bolt 11 invoice to receive a payment.
