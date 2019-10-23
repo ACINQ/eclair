@@ -187,6 +187,9 @@ trait Service extends ExtraDirectives with Logging {
                         path("allchannels") {
                           complete(eclairApi.allChannels())
                         } ~
+                        path("networkstats") {
+                          complete(eclairApi.networkStats())
+                        } ~
                         path("allupdates") {
                           formFields(nodeIdFormParam.?) { nodeId_opt =>
                             complete(eclairApi.allUpdates(nodeId_opt))
