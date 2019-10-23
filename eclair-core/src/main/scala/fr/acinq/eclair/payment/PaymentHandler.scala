@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.payment.handlers.{DefaultHandler, ReceiveHandler}
+import fr.acinq.eclair.payment.handlers.{MultiPartHandler, ReceiveHandler}
 
 /**
  * Generic payment handler that delegates handling of incoming messages to a list of handlers.
@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.handlers.{DefaultHandler, ReceiveHandler}
 class PaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   override def receive: Receive = {
-    val defaultHandler = new DefaultHandler(nodeParams)
+    val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments)
     normal(Seq(defaultHandler), defaultHandler.handle(context, log))
   }
 

@@ -28,7 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.handlers.MultipartHandler.ReceivePayment
+import fr.acinq.eclair.payment.handlers.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
