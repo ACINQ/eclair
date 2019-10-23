@@ -9,7 +9,7 @@ import scodec.bits.ByteVector
 
 import scala.util.Try
 
-trait ElectrumAddressStrategy {
+trait KeyStore {
 
   /**
     *
@@ -36,7 +36,7 @@ trait ElectrumAddressStrategy {
     * @return a tx where all utxos have been added as inputs, signed with dummy invalid signatures. This
     *         is used to estimate the weight of the signed transaction
     */
-  def addUtxos(tx: Transaction, utxos: Seq[Utxo]): Transaction
+  def addUtxosWithDummySig(tx: Transaction, utxos: Seq[Utxo]): Transaction
 
   /**
     *
@@ -56,7 +56,7 @@ trait ElectrumAddressStrategy {
 
 }
 
-class P2SHStrategy extends ElectrumAddressStrategy {
+class P2SHSegwitKeyStore extends KeyStore {
 
   override def signTx(tx: Transaction, d: Data): Transaction = {
     tx.copy(txIn = tx.txIn.zipWithIndex.map { case (txIn, i) =>
@@ -80,7 +80,7 @@ class P2SHStrategy extends ElectrumAddressStrategy {
     }
   }
 
-  def addUtxos(tx: Transaction, utxos: Seq[Utxo]): Transaction = {
+  def addUtxosWithDummySig(tx: Transaction, utxos: Seq[Utxo]): Transaction = {
     tx.copy(txIn = utxos.map { case utxo =>
       // we use dummy signature here, because the result is only used to estimate fees
       val sig = ByteVector.fill(71)(1)
@@ -114,7 +114,7 @@ class P2SHStrategy extends ElectrumAddressStrategy {
   }
 }
 
-class NativeSegwitStrategy extends ElectrumAddressStrategy {
+class Bech32KeyStore extends KeyStore {
 
   /**
     * @param key the public key
@@ -139,7 +139,7 @@ class NativeSegwitStrategy extends ElectrumAddressStrategy {
     })
   }
 
-  override def addUtxos(tx: Transaction, utxos: Seq[Utxo]): Transaction = {
+  override def addUtxosWithDummySig(tx: Transaction, utxos: Seq[Utxo]): Transaction = {
     tx.copy(txIn = utxos.map { case utxo =>
       // we use dummy signature here, because the result is only used to estimate fees
       val sig = Scripts.der(Transactions.PlaceHolderSig)
