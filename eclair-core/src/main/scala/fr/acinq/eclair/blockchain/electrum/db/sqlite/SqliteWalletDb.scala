@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT, PersistentData, WalletType}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
@@ -197,13 +197,18 @@ object SqliteWalletDb {
 
   /**
     * change this value
-    * -if the new codec is incompatible with the old one
+    * - if the new codec is incompatible with the old one
     * - OR if you want to force a full sync from Electrum servers
     */
-  val version = 0x0000
+  val legacyVersion = 0x0000
+  val bech32Version = 0x0001
+
+  val walletTypeCodec = discriminated[WalletType].by(uint32)
+    .typecase(legacyVersion, provide(P2SH_SEGWIT))
+    .typecase(bech32Version, provide(NATIVE_SEGWIT))
 
   val persistentDataCodec: Codec[PersistentData] = (
-    ("version" | constant(BitVector.fromInt(version))) ::
+    ("walletType" | walletTypeCodec) ::
       ("accountKeysCount" | int32) ::
       ("changeKeysCount" | int32) ::
       ("status" | statusCodec) ::
