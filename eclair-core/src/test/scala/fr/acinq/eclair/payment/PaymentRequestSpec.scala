@@ -21,7 +21,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, _}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
 import org.scalatest.FunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -194,6 +194,8 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.tags.size == 3)
+    assert(pr.features.bitmask.isEmpty)
+    assert(!pr.features.allowMultiPart)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
@@ -209,6 +211,8 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(12)))
     assert(pr.tags.size == 4)
+    assert(pr.features.bitmask.isEmpty)
+    assert(!pr.features.allowMultiPart)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
@@ -216,13 +220,14 @@ class PaymentRequestSpec extends FunSuite {
     val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9qzsze992adudgku8p05pstl6zh7av6rx2f297pv89gu5q93a0hf3g7lynl3xq56t23dpvah6u7y9qey9lccrdml3gaqwc6nxsl5ktzm464sq73t7cl"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
-    assert(pr.amount === Some(MilliSatoshi(2500000000L)))
+    assert(pr.amount === Some(2500000000L msat))
     assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp === 1496314658L)
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
     assert(pr.features.bitmask === bin"1000000010")
+    assert(pr.features.allowMultiPart)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -230,13 +235,14 @@ class PaymentRequestSpec extends FunSuite {
     val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9q4pqqqqqqqqqqqqqqqqqqszk3ed62snp73037h4py4gry05eltlp0uezm2w9ajnerhmxzhzhsu40g9mgyx5v3ad4aqwkmvyftzk4k9zenz90mhjcy9hcevc7r3lx2sphzfxz7"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
-    assert(pr.amount === Some(MilliSatoshi(2500000000L)))
+    assert(pr.amount === Some(2500000000L msat))
     assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.timestamp === 1496314658L)
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
     assert(pr.features.bitmask === bin"000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010")
+    assert(pr.features.allowMultiPart)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -289,6 +295,38 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.amount === Some(100000000000L msat))
     assert(pr.features.bitmask === BitVector.empty)
+  }
+
+  test("payment request features") {
+    val featureBits = Map(
+      Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, Features.PAYMENT_SECRET_OPTIONAL) -> true,
+      Features(Features.BASIC_MULTI_PART_PAYMENT_MANDATORY, Features.PAYMENT_SECRET_MANDATORY) -> true,
+      Features(Features.BASIC_MULTI_PART_PAYMENT_MANDATORY, Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) -> true,
+      Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, 9, 13) -> true,
+      Features(BitVector.empty) -> false,
+      Features(7) -> false,
+      Features(9, 100) -> false
+    )
+
+    for ((features, allowMultiPart) <- featureBits) {
+      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(features))
+      assert(pr.features.allowMultiPart === allowMultiPart)
+      assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
+    }
+  }
+
+  test("payment secret") {
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    assert(pr.paymentSecret.isDefined)
+    assert(pr.features === Features(Features.PAYMENT_SECRET_OPTIONAL))
+    assert(!pr.features.requirePaymentSecret)
+
+    val pr1 = PaymentRequest.read(PaymentRequest.write(pr))
+    assert(pr1.paymentSecret === pr.paymentSecret)
+
+    val pr2 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr2.features.requirePaymentSecret)
+    assert(pr2.paymentSecret === None)
   }
 
   test("nonreg") {
