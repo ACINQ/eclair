@@ -21,7 +21,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus}
-import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
 import fr.acinq.eclair.payment.handlers.MultipartHandler.IncomingPaymentsDb
 import fr.acinq.eclair.payment.{MultiPartPaymentHandler, PaymentReceived, PaymentRequest}
@@ -42,7 +42,8 @@ class MultipartHandler(nodeParams: NodeParams,
 
   import MultipartHandler._
 
-  var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
+  // NB: this is safe because this handler will be called from within an actor
+  private var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
 
   override def handle(implicit ctx: ActorContext, log: LoggingAdapter): PartialFunction[Any, Unit] = {
 
@@ -145,6 +146,25 @@ object MultipartHandler {
     def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
 
   }
+
+  /**
+   * Use this message to create a Bolt 11 invoice to receive a payment.
+   *
+   * @param amount_opt        amount to receive in milli-satoshis.
+   * @param description       payment description.
+   * @param expirySeconds_opt number of seconds before the invoice expires (relative to the invoice creation time).
+   * @param extraHops         routing hints to help the payer.
+   * @param fallbackAddress   fallback Bitcoin address.
+   * @param paymentPreimage   payment preimage.
+   * @param allowMultiPart    allow multi-part payments.
+   */
+  case class ReceivePayment(amount_opt: Option[MilliSatoshi],
+                            description: String,
+                            expirySeconds_opt: Option[Long] = None,
+                            extraHops: List[List[ExtraHop]] = Nil,
+                            fallbackAddress: Option[String] = None,
+                            paymentPreimage: Option[ByteVector32] = None,
+                            allowMultiPart: Boolean = false)
 
   private def validatePaymentStatus(payment: FinalPayload, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
