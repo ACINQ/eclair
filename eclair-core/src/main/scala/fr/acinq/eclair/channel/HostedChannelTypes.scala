@@ -163,9 +163,10 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     }
 
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
-    getHtlcCrossSigned(OUT, fulfill.id) match {
+    // Technically peer may send a preimage any moment, even if new LCSS has not been reached yet so do our best and always resolve on getting it
+    nextLocalSpec.findHtlcById(fulfill.id, OUT) match {
       case _ if resolvedOutgoingHtlcLeftoverIds.contains(fulfill.id) => throw UnknownHtlcId(channelId, fulfill.id)
-      case Some(add) if add.paymentHash == fulfill.paymentHash => Right((addProposal(Right(fulfill)), originChannels(fulfill.id), add))
+      case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addProposal(Right(fulfill)), originChannels(fulfill.id), htlc.add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)
     }
