@@ -1,15 +1,39 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, hardened}
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath, derivePrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, Utxo, WalletType}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, NATIVE_SEGWIT, P2SH_SEGWIT, Utxo, WalletType}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import scodec.bits.ByteVector
 
 import scala.util.Try
 
 trait KeyStore {
+
+  def toWalletType: WalletType
+
+  def master: ExtendedPrivateKey
+
+  def chainHash: ByteVector32
+
+  /**
+    * We define a root path the first 3 elements in the BIP44 derivation scheme, which include
+    * the purpose, coin type (testnet/mainnet) and account number, example: m/purpose'/coin_type'/account'.
+    * We always use the first account.
+    * @return the root path
+    */
+  def accountPath: KeyPath
+
+  def changePath: KeyPath
+
+  /**
+    * @param index the derivation index for this key
+    * @return the account key at the specified index, follows BIP44 scheme
+    */
+  def accountKey(index: Long): ExtendedPrivateKey = derivePrivateKey(master, accountPath.path :+ index)
+
+  def changeKey(index: Long): ExtendedPrivateKey = derivePrivateKey(master, changePath.path :+ index)
 
   /**
     *
@@ -23,9 +47,9 @@ trait KeyStore {
     * @param key public key
     * @return the address for this key
     */
-  def computeAddress(key: PublicKey, chainHash: ByteVector32): String
-  def computeAddress(key: ExtendedPrivateKey, chainHash: ByteVector32): String = computeAddress(key.publicKey, chainHash)
-  def computeAddress(key: PrivateKey, chainHash: ByteVector32): String = computeAddress(key.publicKey, chainHash)
+  def computeAddress(key: PublicKey): String
+  def computeAddress(key: ExtendedPrivateKey): String = computeAddress(key.publicKey)
+  def computeAddress(key: PrivateKey): String = computeAddress(key.publicKey)
 
   def signTx(tx: Transaction, d: Data): Transaction
 
@@ -48,15 +72,24 @@ trait KeyStore {
   /**
     * Compute the wallet's xpub
     *
-    * @param master    master key
-    * @param chainHash chain hash
     * @return a (xpub, path) tuple where xpub is the encoded account public key, and path is the derivation path for the account key
     */
-  def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String)
+  def computeXPub: (String, String)
 
 }
 
-class P2SHSegwitKeyStore extends KeyStore {
+class P2SHSegwitKeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
+
+  override def toWalletType: WalletType = P2SH_SEGWIT
+
+  val rootPath = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => "m/49'/1'/0'"
+    case Block.LivenetGenesisBlock.hash => "m/49'/0'/0'"
+  }
+
+  override def accountPath: KeyPath = KeyPath(rootPath + "/0")
+
+  override def changePath: KeyPath = KeyPath(rootPath + "/1")
 
   override def signTx(tx: Transaction, d: Data): Transaction = {
     tx.copy(txIn = tx.txIn.zipWithIndex.map { case (txIn, i) =>
@@ -71,7 +104,7 @@ class P2SHSegwitKeyStore extends KeyStore {
 
   override def computePublicKeyScript(key: PublicKey) = Script.pay2sh(Script.pay2wpkh(key))
 
-  override def computeAddress(key: PublicKey, chainHash: ByteVector32): String = {
+  override def computeAddress(key: PublicKey): String = {
     val script = Script.pay2wpkh(key)
     val hash = Crypto.hash160(Script.write(script))
     chainHash match {
@@ -104,8 +137,8 @@ class P2SHSegwitKeyStore extends KeyStore {
     } getOrElse None
   }
 
-  override def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, P2SHSegwitKeyStore.accountPath(chainHash)))
+  override def computeXPub: (String, String) = {
+    val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, KeyPath(rootPath)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
@@ -114,20 +147,24 @@ class P2SHSegwitKeyStore extends KeyStore {
   }
 }
 
-object P2SHSegwitKeyStore {
-  def accountPath(chainHash: ByteVector32): List[Long] = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
-    case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
-  }
-}
+class Bech32KeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
 
-class Bech32KeyStore extends KeyStore {
+  override def toWalletType: WalletType = NATIVE_SEGWIT
+
+  val rootPath = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => "m/84'/1'/0'"
+    case Block.LivenetGenesisBlock.hash => "m/84'/0'/0'"
+  }
+
+  override def accountPath: KeyPath = KeyPath(rootPath + "/0")
+
+  override def changePath: KeyPath = KeyPath(rootPath + "/1")
 
   /**
     * @param key the public key
     * @return the bech32 encoded witness program for the p2wpkh script of this key
     */
-  override def computeAddress(key: PublicKey, chainHash: ByteVector32): String = chainHash match {
+  override def computeAddress(key: PublicKey): String = chainHash match {
     case Block.RegtestGenesisBlock.hash => Bech32.encodeWitnessAddress("bcrt", 0, Crypto.hash160(key.value))
     case Block.TestnetGenesisBlock.hash => Bech32.encodeWitnessAddress("tb", 0, Crypto.hash160(key.value))
     case Block.LivenetGenesisBlock.hash => Bech32.encodeWitnessAddress("bc", 0, Crypto.hash160(key.value))
@@ -167,19 +204,12 @@ class Bech32KeyStore extends KeyStore {
     } getOrElse None
   }
 
-  override def computeRootPub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
-    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, Bech32KeyStore.accountPath(chainHash)))
+  override def computeXPub: (String, String) = {
+    val zpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, KeyPath(rootPath)))
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.zpub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.vpub
     }
     (DeterministicWallet.encode(zpub, prefix), zpub.path.toString())
-  }
-}
-
-object Bech32KeyStore {
-  def accountPath(chainHash: ByteVector32): List[Long] = chainHash match {
-    case Block.LivenetGenesisBlock.hash => hardened(84) :: hardened(0) :: hardened(0) :: Nil
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(84) :: hardened(1) :: hardened(0) :: Nil
   }
 }

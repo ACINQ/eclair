@@ -295,11 +295,13 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
 
     val data = {
       val master = DeterministicWallet.generate(seed)
-      val accountMaster = accountKey(master, accountPath(walletParameters.walletType, walletParameters.chainHash))
-      val changeMaster = changeKey(master, accountPath(walletParameters.walletType, walletParameters.chainHash))
-      val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-      val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-      val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
+      val keyStore = walletParameters.walletType match {
+        case P2SH_SEGWIT => new P2SHSegwitKeyStore(master, Block.RegtestGenesisBlock.hash)
+        case NATIVE_SEGWIT => new Bech32KeyStore(master, Block.RegtestGenesisBlock.hash)
+      }
+      val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => keyStore.accountKey(i)).toVector
+      val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => keyStore.changeKey(i)).toVector
+      val data1 = new Data(keyStore, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys, Map(), Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set(), List(), None)
 
       val amount1 = 1000000 sat
       val amount2 = 1500000 sat
