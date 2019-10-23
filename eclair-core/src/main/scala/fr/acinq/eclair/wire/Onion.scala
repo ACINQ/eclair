@@ -34,6 +34,9 @@ sealed trait OnionTlv extends Tlv
 
 object OnionTlv {
 
+  /** Total amount in multi-part payments. When missing, assumed to be equal to AmountToForward. */
+  case class TotalAmount(amount: MilliSatoshi) extends OnionTlv
+
   /** Amount to forward to the next node. */
   case class AmountToForward(amount: MilliSatoshi) extends OnionTlv
 
@@ -42,6 +45,9 @@ object OnionTlv {
 
   /** Id of the channel to use to forward a payment to the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends OnionTlv
+
+  /** Payment secret specified in the Bolt 11 invoice. */
+  case class PaymentSecret(secret: ByteVector32) extends OnionTlv
 
 }
 
@@ -76,11 +82,16 @@ object Onion {
   sealed trait FinalPayload extends PerHopPayload with PerHopPayloadFormat {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
+    val paymentSecret: Option[ByteVector32]
+    val totalAmount: MilliSatoshi
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends RelayPayload with LegacyFormat
 
-  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat
+  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat {
+    override val paymentSecret = None
+    override val totalAmount = amount
+  }
 
   case class RelayTlvPayload(records: TlvStream[OnionTlv]) extends RelayPayload with TlvFormat {
     override val amountToForward = records.get[AmountToForward].get.amount
@@ -91,7 +102,12 @@ object Onion {
   case class FinalTlvPayload(records: TlvStream[OnionTlv]) extends FinalPayload with TlvFormat {
     override val amount = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
+    override val paymentSecret = records.get[PaymentSecret].map(_.secret)
+    override val totalAmount = records.get[TotalAmount].map(_.amount).getOrElse(amount)
   }
+
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32): FinalPayload =
+    FinalTlvPayload(TlvStream(AmountToForward(amount), TotalAmount(totalAmount), OutgoingCltv(expiry), PaymentSecret(paymentSecret)))
 
 }
 
@@ -119,16 +135,22 @@ object OnionCodecs {
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
     varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
+  private val totalAmount: Codec[TotalAmount] = ("total_msat" | tu64overflow).xmap(amountMsat => TotalAmount(MilliSatoshi(amountMsat)), (a: TotalAmount) => a.amount.toLong)
+
   private val amountToForward: Codec[AmountToForward] = ("amount_msat" | tu64overflow).xmap(amountMsat => AmountToForward(MilliSatoshi(amountMsat)), (a: AmountToForward) => a.amount.toLong)
 
   private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | tu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
 
   private val outgoingChannelId: Codec[OutgoingChannelId] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[OutgoingChannelId]
 
+  private val paymentSecret: Codec[PaymentSecret] = (("length" | constant(hex"20")) :: ("payment_secret" | bytes32)).as[PaymentSecret]
+
   private val onionTlvCodec = discriminated[OnionTlv].by(varint)
+    .typecase(UInt64(1), totalAmount)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
     .typecase(UInt64(6), outgoingChannelId)
+    .typecase(UInt64(8), paymentSecret)
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionTlv](onionTlvCodec).complete
 
