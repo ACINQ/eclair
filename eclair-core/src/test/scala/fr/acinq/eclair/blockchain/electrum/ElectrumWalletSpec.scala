@@ -96,7 +96,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       probe.send(wallet, GetData)
       val GetDataResponse(state) = probe.expectMsgType[GetDataResponse]
       state.status.size == state.accountKeys.size + state.changeKeys.size
-    }, max = 30 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 500 millis)
     logger.info(s"wallet is ready")
   }
 
