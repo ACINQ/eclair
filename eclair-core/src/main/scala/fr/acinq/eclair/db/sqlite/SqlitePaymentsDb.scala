@@ -234,12 +234,20 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
-    using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
-      statement.setLong(1, amount.toLong)
-      statement.setLong(2, receivedAt)
-      statement.setBytes(3, paymentHash.toArray)
-      val res = statement.executeUpdate()
-      if (res == 0) throw new IllegalArgumentException("Inserted a received payment without having an invoice")
+    using(sqlite.prepareStatement("SELECT received_msat FROM received_payments WHERE payment_hash = ?"), inTransaction = true) { query =>
+      query.setBytes(1, paymentHash.toArray)
+      val rs = query.executeQuery()
+      if (rs.next()) {
+        val receivedAmount = getNullableLong(rs, "received_msat").map(_ + amount.toLong).getOrElse(amount.toLong)
+        using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { update =>
+          update.setLong(1, receivedAmount)
+          update.setLong(2, receivedAt)
+          update.setBytes(3, paymentHash.toArray)
+          update.executeUpdate()
+        }
+      } else {
+        throw new IllegalArgumentException("Inserted a received payment without having an invoice")
+      }
     }
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
