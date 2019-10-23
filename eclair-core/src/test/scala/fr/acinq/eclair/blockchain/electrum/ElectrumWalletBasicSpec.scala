@@ -18,45 +18,56 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging
-import org.scalatest.FunSuite
+import org.scalatest.{FunSuite, Outcome, Tag, fixture}
 import scodec.bits.ByteVector
+import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Random, Success, Try}
 
-class ElectrumWalletBasicSpec extends FunSuite with Logging {
+class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
 
   import ElectrumWallet._
   import ElectrumWalletBasicSpec._
+
+  val p2shKeyStore = new P2SHSegwitKeyStore
+  val bech32KeyStore = new Bech32KeyStore
+
+  case class FixtureParam(state: Data)
+
+  override def withFixture(test: OneArgTest): Outcome = {
+    val walletType:WalletType = test.tags.contains("bech32") match {
+      case true => NATIVE_SEGWIT
+      case false => P2SH_SEGWIT
+    }
+
+    val params = ElectrumWallet.WalletParameters(walletType, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
+
+    val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
+    val accountMaster = accountKey(master, accountPath(walletType, Block.RegtestGenesisBlock.hash))
+    val changeMaster = changeKey(master, accountPath(walletType, Block.RegtestGenesisBlock.hash))
+    val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
+    val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
+
+    val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
+    val state1 = state.copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromScriptPubKey(state.keyStore.computePublicKeyScript(key.publicKey)) -> "").toMap)
+
+    withFixture(test.toNoArgTest(FixtureParam(state1)))
+  }
 
   val swipeRange = 10
   val dustLimit = 546 sat
   val feeRatePerKw = 20000
   val minimumFee = 2000 sat
 
-  val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
-  val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
-  val accountIndex = 0
-
-  val changeMaster = changeKey(master, Block.RegtestGenesisBlock.hash)
-  val changeIndex = 0
-
-  val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
-  val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
-
-  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
-
-  val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
-    .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
-
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
-    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey)
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, data.keyStore.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(data.keyStore.computePublicKeyScript(key.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -65,8 +76,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   }
 
   def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
-    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey)
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, data.keyStore.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(data.keyStore.computePublicKeyScript(keyamount._1.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -76,24 +87,52 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
 
   def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
 
-
-  test("compute addresses") {
+  test("compute addresses") { f =>
     val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
     assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
-    assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
+    assert(p2shKeyStore.computeAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
   }
 
-  test("implement BIP49") {
+  test("derive bip84 keys", Tag("bech32")) { f =>
+    val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
+    val master = DeterministicWallet.generate(seed)
+    val (accountZpub, _) = bech32KeyStore.computeRootPub(master, Block.LivenetGenesisBlock.hash)
+    assert(accountZpub == "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs") // m/84'/0'/0'
+
+    val firstReceivingKey = DeterministicWallet.derivePrivateKey(accountKey(master, accountPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 0)
+    assert(firstReceivingKey.publicKey.value == hex"0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c")
+  }
+
+  test("compute bech32 addresses", Tag("bech32")) { f =>
+    val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
+    val master = DeterministicWallet.generate(seed)
+    val firstReceivingKey = DeterministicWallet.derivePrivateKey(accountKey(master, accountPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 0)
+    val secondReceivingKey = DeterministicWallet.derivePrivateKey(accountKey(master, accountPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 1)
+    val firstChangeKey = DeterministicWallet.derivePrivateKey(changeKey(master, accountPath(f.state.walletType, Block.LivenetGenesisBlock.hash)), 0)
+
+    assert(bech32KeyStore.computeAddress(firstReceivingKey, Block.LivenetGenesisBlock.hash) == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
+    assert(bech32KeyStore.computeAddress(secondReceivingKey, Block.LivenetGenesisBlock.hash) == "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")
+    assert(bech32KeyStore.computeAddress(firstChangeKey, Block.LivenetGenesisBlock.hash) == "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el")
+  }
+
+  // from https://github.com/spesmilo/electrum/blob/master/electrum/tests/test_wallet.py#L218
+  test("electrum bech32 compatibility") { f =>
+    val (privKey, _) = PrivateKey.fromBase58("L4jkdiXszG26SUYvwwJhzGwg37H2nLhrbip7u6crmgNeJysv5FHL", Base58.Prefix.SecretKey)
+    assert(bech32KeyStore.computeAddress(privKey.publicKey, Block.LivenetGenesisBlock.hash) == "bc1q2ccr34wzep58d4239tl3x3734ttle92a8srmuw")
+  }
+
+  test("implement BIP49") { f =>
     val mnemonics = "pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist".split(" ")
     val seed = MnemonicCode.toSeed(mnemonics, "")
     val master = DeterministicWallet.generate(seed)
 
-    val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
+    val accountMaster = accountKey(master, accountPath(f.state.walletType, Block.RegtestGenesisBlock.hash))
     val firstKey = derivePrivateKey(accountMaster, 0)
-    assert(segwitAddress(firstKey, Block.RegtestGenesisBlock.hash) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
+    assert(p2shKeyStore.computeAddress(firstKey, Block.RegtestGenesisBlock.hash) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
   }
 
-  test("complete transactions (enough funds)") {
+  test("complete transactions (enough funds)") { f =>
+    import f._
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val (confirmed1, unconfirmed1) = state1.balance
 
@@ -113,7 +152,30 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
   }
 
-  test("complete transactions (insufficient funds)") {
+  test("complete transactions (enough funds, bech32)", Tag("bech32")) { f =>
+    import f._
+    val state1 = addFunds(state, state.accountKeys.head, 1 btc)
+    val (confirmed1, unconfirmed1) = state1.balance
+
+    val pub = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
+    val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
+    val Some((_, _, Some(fee))) = state2.computeTransactionDelta(tx1)
+    assert(fee == fee1)
+    val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+
+    val state3 = state2.cancelTransaction(tx1)
+    assert(state3 == state1)
+
+    val state4 = state2.commitTransaction(tx1)
+    val (confirmed4, unconfirmed4) = state4.balance
+    assert(confirmed4 == confirmed1)
+    assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
+  }
+
+
+  test("complete transactions (insufficient funds)") { f =>
+    import f._
     val state1 = addFunds(state, state.accountKeys.head, 5 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(6 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val e = intercept[IllegalArgumentException] {
@@ -121,7 +183,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     }
   }
 
-  test("compute the effect of tx") {
+  test("compute the effect of tx") { f =>
+    import f._
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
@@ -131,7 +194,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(sent - received - fee == btc2satoshi(0.5 btc))
   }
 
-  test("use actual transaction weight to compute fees") {
+  test("use actual transaction weight to compute fees") { f =>
+    import f._
     val state1 = addFunds(state, (state.accountKeys(0), 5000000 sat) :: (state.accountKeys(1), 6000000 sat) :: (state.accountKeys(2), 4000000 sat) :: Nil)
 
     {
@@ -170,7 +234,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     }
   }
 
-  test("spend all our balance") {
+  test("spend all our balance") { f =>
+    import f._
     val state1 = addFunds(state, state.accountKeys(0), 1 btc)
     val state2 = addFunds(state1, state1.accountKeys(1), 2 btc)
     val state3 = addFunds(state2, state2.changeKeys(0), 0.5 btc)
@@ -184,7 +249,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
   }
 
-  test("check that issue #1146 is fixed") {
+  test("check that issue #1146 is fixed") { f =>
+    import f._
     val state3 = addFunds(state, state.changeKeys(0), 0.5 btc)
 
     val pub1 = state.accountKeys(0).publicKey
@@ -201,7 +267,26 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
     assert(Try(state3.completeTransaction(tx1, 750, 0 sat, dustLimit, true)).isSuccess)
   }
 
-  test("fuzzy test") {
+  test("check that issue #1146 is fixed, bech32", Tag("bech32")) { f =>
+    import f._
+    val state3 = addFunds(state, state.changeKeys(0), 0.5 btc)
+
+    val pub1 = state.accountKeys(0).publicKey
+    val pub2 = state.accountKeys(1).publicKey
+    val redeemScript = Scripts.multiSig2of2(pub1, pub2)
+    val pubkeyScript = Script.pay2wsh(redeemScript)
+    val (tx, fee) = state3.spendAll(pubkeyScript, feeRatePerKw = 750)
+    val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
+    assert(received === 0.sat)
+    assert(fee == fee1)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
+
+    val tx1 = Transaction(version = 2, txIn = Nil, txOut = TxOut(tx.txOut.map(_.amount).sum, pubkeyScript) :: Nil, lockTime = 0)
+    assert(Try(state3.completeTransaction(tx1, 750, 0 sat, dustLimit, true)).isSuccess)
+  }
+
+  test("fuzzy test") { f =>
+    import f._
     val random = new Random()
     (0 to 10) foreach { _ =>
       val funds = for (i <- 0 until random.nextInt(10)) yield {
