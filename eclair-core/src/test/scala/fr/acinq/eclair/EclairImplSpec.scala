@@ -32,18 +32,16 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 import fr.acinq.eclair.router.{Announcements, PublicChannel, Router}
-import fr.acinq.eclair.wire.Color
+import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{Outcome, ParallelTestExecution, fixture}
 import scodec.bits._
 
-import scala.collection.immutable.SortedMap
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Success
 
 class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with IdiomaticMockito with ParallelTestExecution {
-
   implicit val timeout: Timeout = Timeout(30 seconds)
 
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
@@ -172,13 +170,16 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val mockNetworkDb = mock[NetworkDb]
     mockNetworkDb.listChannels() returns channels
+    mockNetworkDb.listNodes() returns Seq.empty
+    Mockito.doNothing().when(mockNetworkDb).removeNode(kit.nodeParams.nodeId)
 
     val mockDB = mock[Databases]
     mockDB.network returns mockNetworkDb
 
-    val mockRouter = system.actorOf(Router.props(kit.nodeParams.copy(db = mockDB), TestProbe().ref))
+    val mockNodeParams = kit.nodeParams.copy(db = mockDB)
+    val mockRouter = system.actorOf(Router.props(mockNodeParams, TestProbe().ref))
 
-    val eclair = new EclairImpl(kit.copy(router = mockRouter))
+    val eclair = new EclairImpl(kit.copy(router = mockRouter, nodeParams = mockNodeParams))
     val fResp = eclair.allUpdates(Some(b)) // ask updates filtered by 'b'
 
     awaitCond({
