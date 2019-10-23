@@ -1003,7 +1003,8 @@ object ElectrumWallet {
 
   case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
 
-  case class PersistentData(accountKeysCount: Int,
+  case class PersistentData(walletType: WalletType,
+                            accountKeysCount: Int,
                             changeKeysCount: Int,
                             status: Map[ByteVector32, String],
                             transactions: Map[ByteVector32, Transaction],
@@ -1014,7 +1015,7 @@ object ElectrumWallet {
                             locks: Set[Transaction])
 
   object PersistentData {
-    def apply(data: Data) = new PersistentData(data.accountKeys.length, data.changeKeys.length, data.status, data.transactions, data.heights, data.history, data.proofs, data.pendingTransactions, data.locks)
+    def apply(data: Data) = new PersistentData(data.walletType, data.accountKeys.length, data.changeKeys.length, data.status, data.transactions, data.heights, data.history, data.proofs, data.pendingTransactions, data.locks)
   }
 
 }
