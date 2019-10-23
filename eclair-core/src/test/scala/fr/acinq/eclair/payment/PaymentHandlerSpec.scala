@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
-import fr.acinq.eclair.payment.handlers.DefaultHandler.{GetPendingPayments, PendingPayments}
+import fr.acinq.eclair.payment.handlers.MultipartHandler.{GetPendingPayments, PendingPayments}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.{Outcome, fixture}
