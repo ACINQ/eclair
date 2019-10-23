@@ -1,5 +1,4 @@
 coverage:
-  range: 70..90
   status:
     project: off
     patch: off
