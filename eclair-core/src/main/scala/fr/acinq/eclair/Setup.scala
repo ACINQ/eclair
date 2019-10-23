@@ -277,10 +277,7 @@ class Setup(datadir: File,
           if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
         ),"backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
-      paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
-        case "local" => LocalPaymentHandler.props(nodeParams)
-        case "noop" => Props[NoopPaymentHandler]
-      }, "payment-handler", SupervisorStrategy.Resume))
+      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams), "payment-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
