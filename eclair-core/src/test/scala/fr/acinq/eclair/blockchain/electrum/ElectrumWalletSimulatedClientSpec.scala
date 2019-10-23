@@ -296,8 +296,8 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
     val data = {
       val master = DeterministicWallet.generate(seed)
       val keyStore = walletParameters.walletType match {
-        case P2SH_SEGWIT => new P2SHSegwitKeyStore(master, Block.RegtestGenesisBlock.hash)
-        case NATIVE_SEGWIT => new Bech32KeyStore(master, Block.RegtestGenesisBlock.hash)
+        case P2SH_SEGWIT => new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
+        case NATIVE_SEGWIT => new BIP84KeyStore(master, Block.RegtestGenesisBlock.hash)
       }
       val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => keyStore.accountKey(i)).toVector
       val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => keyStore.changeKey(i)).toVector

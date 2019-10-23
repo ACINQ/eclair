@@ -78,7 +78,7 @@ trait KeyStore {
 
 }
 
-class P2SHSegwitKeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
+class BIP49KeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
 
   override def toWalletType: WalletType = P2SH_SEGWIT
 
@@ -147,7 +147,7 @@ class P2SHSegwitKeyStore(override val master: ExtendedPrivateKey, override val c
   }
 }
 
-class Bech32KeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
+class BIP84KeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
 
   override def toWalletType: WalletType = NATIVE_SEGWIT
 

@@ -45,8 +45,8 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
 
     val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
     val keyStore = walletType match {
-      case P2SH_SEGWIT => new P2SHSegwitKeyStore(master, Block.RegtestGenesisBlock.hash)
-      case NATIVE_SEGWIT => new Bech32KeyStore(master, Block.RegtestGenesisBlock.hash)
+      case P2SH_SEGWIT => new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
+      case NATIVE_SEGWIT => new BIP84KeyStore(master, Block.RegtestGenesisBlock.hash)
     }
     val firstAccountKeys = (0 until 10).map(i => keyStore.accountKey(i)).toVector
     val firstChangeKeys = (0 until 10).map(i => keyStore.changeKey(i)).toVector
@@ -92,7 +92,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
   test("derive bip84 keys", Tag("bech32")) { f =>
     val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
     val master = DeterministicWallet.generate(seed)
-    val keyStore = new Bech32KeyStore(master, Block.LivenetGenesisBlock.hash)
+    val keyStore = new BIP84KeyStore(master, Block.LivenetGenesisBlock.hash)
     val (accountZpub, _) = keyStore.computeXPub
     assert(accountZpub == "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs") // m/84'/0'/0'
 
@@ -103,7 +103,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
   test("compute bech32 addresses", Tag("bech32")) { f =>
     val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
     val master = DeterministicWallet.generate(seed)
-    val livenetKeyStore = new Bech32KeyStore(master, Block.LivenetGenesisBlock.hash)
+    val livenetKeyStore = new BIP84KeyStore(master, Block.LivenetGenesisBlock.hash)
     val firstReceivingKey = livenetKeyStore.accountKey(0)
     val secondReceivingKey = livenetKeyStore.accountKey(1)
     val firstChangeKey = livenetKeyStore.changeKey(0)
@@ -116,7 +116,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
   // from https://github.com/spesmilo/electrum/blob/master/electrum/tests/test_wallet.py#L218
   test("electrum bech32 compatibility") { f =>
     val (privKey, _) = PrivateKey.fromBase58("L4jkdiXszG26SUYvwwJhzGwg37H2nLhrbip7u6crmgNeJysv5FHL", Base58.Prefix.SecretKey)
-    val livenetKeyStore = new Bech32KeyStore(DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1))), Block.LivenetGenesisBlock.hash)
+    val livenetKeyStore = new BIP84KeyStore(DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1))), Block.LivenetGenesisBlock.hash)
     assert(livenetKeyStore.computeAddress(privKey.publicKey) == "bc1q2ccr34wzep58d4239tl3x3734ttle92a8srmuw")
   }
 
@@ -124,7 +124,7 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
     val mnemonics = "pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist".split(" ")
     val seed = MnemonicCode.toSeed(mnemonics, "")
     val master = DeterministicWallet.generate(seed)
-    val keyStore = new P2SHSegwitKeyStore(master, Block.RegtestGenesisBlock.hash)
+    val keyStore = new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
 
     val firstKey = keyStore.accountKey(0)
     assert(keyStore.computeAddress(firstKey) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")

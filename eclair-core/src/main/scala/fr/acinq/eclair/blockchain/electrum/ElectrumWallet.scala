@@ -56,8 +56,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
   val master = DeterministicWallet.generate(seed)
 
   val keyStore = walletType match {
-    case P2SH_SEGWIT => new P2SHSegwitKeyStore(master, chainHash)
-    case NATIVE_SEGWIT => new Bech32KeyStore(master, chainHash)
+    case P2SH_SEGWIT => new BIP49KeyStore(master, chainHash)
+    case NATIVE_SEGWIT => new BIP84KeyStore(master, chainHash)
   }
 
   client ! ElectrumClient.AddStatusListener(self)
