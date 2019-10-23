@@ -20,7 +20,7 @@ import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
@@ -31,6 +31,8 @@ import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.{LocalPaymentHandler, PaymentRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
+import fr.acinq.eclair.router.{Announcements, PublicChannel, Router}
+import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{Outcome, ParallelTestExecution, fixture}
 import scodec.bits._
@@ -40,7 +42,6 @@ import scala.concurrent.duration._
 import scala.util.Success
 
 class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with IdiomaticMockito with ParallelTestExecution {
-
   implicit val timeout: Timeout = Timeout(30 seconds)
 
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
@@ -149,25 +150,42 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     import f._
 
     val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    val ann_ab = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_ae = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(4), a, e, a, e, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_bc = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(2), b, c, b, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_cd = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(3), c, d, c, d, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val ann_ec = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(7), e, c, e, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
 
-    val updates = List(
-      makeUpdate(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(13)),
-      makeUpdate(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
-      makeUpdate(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500)),
-      makeUpdate(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500)),
-      makeUpdate(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
-    ).toMap
+    var channels = scala.collection.immutable.SortedMap.empty[ShortChannelId, PublicChannel]
 
-    val eclair = new EclairImpl(kit)
+    List(
+      (ann_ab, makeUpdate(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(13))),
+      (ann_ae, makeUpdate(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))),
+      (ann_bc, makeUpdate(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
+      (ann_cd, makeUpdate(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
+      (ann_ec, makeUpdate(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
+    ).foreach { case (ann, (desc, update)) =>
+      channels = channels + (desc.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = 0)), None))
+    }
+
+    val mockNetworkDb = mock[NetworkDb]
+    mockNetworkDb.listChannels() returns channels
+    mockNetworkDb.listNodes() returns Seq.empty
+    Mockito.doNothing().when(mockNetworkDb).removeNode(kit.nodeParams.nodeId)
+
+    val mockDB = mock[Databases]
+    mockDB.network returns mockNetworkDb
+
+    val mockNodeParams = kit.nodeParams.copy(db = mockDB)
+    val mockRouter = system.actorOf(Router.props(mockNodeParams, TestProbe().ref))
+
+    val eclair = new EclairImpl(kit.copy(router = mockRouter, nodeParams = mockNodeParams))
     val fResp = eclair.allUpdates(Some(b)) // ask updates filtered by 'b'
-    f.router.expectMsg('updatesMap)
-
-    f.router.reply(updates)
 
     awaitCond({
       fResp.value match {
         // check if the response contains updates only for 'b'
-        case Some(Success(res)) => res.forall { u => updates.exists(entry => entry._2.shortChannelId == u.shortChannelId && entry._1.a == b || entry._1.b == b) }
+        case Some(Success(res)) => res.forall { u => u.shortChannelId == ShortChannelId(1L) || u.shortChannelId == ShortChannelId(2L) }
         case _ => false
       }
     })
