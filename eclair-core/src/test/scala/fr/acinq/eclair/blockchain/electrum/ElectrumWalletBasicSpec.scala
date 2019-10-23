@@ -83,53 +83,6 @@ class ElectrumWalletBasicSpec extends fixture.FunSuite with Logging {
 
   def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
 
-  test("compute addresses") { f =>
-    val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
-    assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
-    assert(f.state.keyStore.computeAddress(priv) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
-  }
-
-  test("derive bip84 keys", Tag("bech32")) { f =>
-    val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
-    val master = DeterministicWallet.generate(seed)
-    val keyStore = new BIP84KeyStore(master, Block.LivenetGenesisBlock.hash)
-    val (accountZpub, _) = keyStore.computeXPub
-    assert(accountZpub == "zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs") // m/84'/0'/0'
-
-    val firstReceivingKey = keyStore.accountKey(0)
-    assert(firstReceivingKey.publicKey.value == hex"0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f0753bf5beef9c2d91af3c")
-  }
-
-  test("compute bech32 addresses", Tag("bech32")) { f =>
-    val seed = MnemonicCode.toSeed("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", passphrase = "")
-    val master = DeterministicWallet.generate(seed)
-    val livenetKeyStore = new BIP84KeyStore(master, Block.LivenetGenesisBlock.hash)
-    val firstReceivingKey = livenetKeyStore.accountKey(0)
-    val secondReceivingKey = livenetKeyStore.accountKey(1)
-    val firstChangeKey = livenetKeyStore.changeKey(0)
-
-    assert(livenetKeyStore.computeAddress(firstReceivingKey) == "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu")
-    assert(livenetKeyStore.computeAddress(secondReceivingKey) == "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")
-    assert(livenetKeyStore.computeAddress(firstChangeKey) == "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el")
-  }
-
-  // from https://github.com/spesmilo/electrum/blob/master/electrum/tests/test_wallet.py#L218
-  test("electrum bech32 compatibility") { f =>
-    val (privKey, _) = PrivateKey.fromBase58("L4jkdiXszG26SUYvwwJhzGwg37H2nLhrbip7u6crmgNeJysv5FHL", Base58.Prefix.SecretKey)
-    val livenetKeyStore = new BIP84KeyStore(DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1))), Block.LivenetGenesisBlock.hash)
-    assert(livenetKeyStore.computeAddress(privKey.publicKey) == "bc1q2ccr34wzep58d4239tl3x3734ttle92a8srmuw")
-  }
-
-  test("implement BIP49") { f =>
-    val mnemonics = "pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist".split(" ")
-    val seed = MnemonicCode.toSeed(mnemonics, "")
-    val master = DeterministicWallet.generate(seed)
-    val keyStore = new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
-
-    val firstKey = keyStore.accountKey(0)
-    assert(keyStore.computeAddress(firstKey) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
-  }
-
   test("complete transactions (enough funds)") { f =>
     import f._
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
