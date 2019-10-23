@@ -27,8 +27,8 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.handlers.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
@@ -52,8 +52,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler(Alice.nodeParams)))
-    val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler(Bob.nodeParams)))
+    val paymentHandlerA = system.actorOf(Props(new PaymentHandler(Alice.nodeParams)))
+    val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams)))
     val registerA = TestProbe()
     val registerB = TestProbe()
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandlerA))
