@@ -24,11 +24,10 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.IncomingPaymentStatus
 import fr.acinq.eclair.payment.MultiPartPaymentHandler.PendingPayment
-import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
-import fr.acinq.eclair.payment.handlers.MultipartHandler.{GetPendingPayments, PendingPayments}
+import fr.acinq.eclair.payment.handlers.MultipartHandler.{GetPendingPayments, PendingPayments, ReceivePayment}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.{Outcome, fixture}
