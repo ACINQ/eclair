@@ -112,7 +112,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val sender = TestProbe()
 
     // create a transaction that spends UTXOs that don't exist
-    wallet.getFinalAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     val unknownTxids = Seq(
       ByteVector32.fromValidHex("01" * 32),
@@ -147,7 +147,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[Satoshi] > 0.sat)
 
-    wallet.getFinalAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -207,7 +207,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[Satoshi] > 0.sat)
 
-    wallet.getFinalAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
