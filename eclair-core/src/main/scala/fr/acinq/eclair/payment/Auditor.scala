@@ -47,14 +47,37 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
       Kamon
         .histogram("payment.hist")
         .withTag("direction", "sent")
+        .withTag("type", "amount")
         .record(e.amount.truncateToSatoshi.toLong)
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "sent")
+        .withTag("type", "fee")
+        .record(e.feesPaid.truncateToSatoshi.toLong)
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "sent")
+        .withTag("type", "parts")
+        .record(e.parts.length)
       db.add(e)
+
+    case _: PaymentFailed =>
+      Kamon
+        .counter("payment.failures.count")
+        .withTag("direction", "sent")
+        .increment()
 
     case e: PaymentReceived =>
       Kamon
         .histogram("payment.hist")
         .withTag("direction", "received")
+        .withTag("type", "amount")
         .record(e.amount.truncateToSatoshi.toLong)
+      Kamon
+        .histogram("payment.hist")
+        .withTag("direction", "received")
+        .withTag("type", "parts")
+        .record(e.parts.length)
       db.add(e)
 
     case e: PaymentRelayed =>
