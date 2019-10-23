@@ -55,8 +55,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
   val master = DeterministicWallet.generate(seed)
 
-  val accountMaster = accountKey(master, rootPath(walletType, chainHash))
-  val changeMaster = changeKey(master, rootPath(walletType, chainHash))
+  val accountMaster = accountKey(master, accountPath(walletType, chainHash))
+  val changeMaster = changeKey(master, accountPath(walletType, chainHash))
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -483,9 +483,9 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
-    case Event(GetRootPub, data) =>
+    case Event(GetXpub, data) =>
       val (pub, path) = data.strategy.computeRootPub(master, chainHash)
-      stay replying GetRootPubResponse(pub, path)
+      stay replying GetXpubResponse(pub, path)
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
   }
@@ -512,8 +512,8 @@ object ElectrumWallet {
   case object GetBalance extends Request
   case class GetBalanceResponse(confirmed: Satoshi, unconfirmed: Satoshi) extends Response
 
-  case object GetRootPub extends Request
-  case class GetRootPubResponse(xpub: String, path: String) extends Response
+  case object GetXpub extends Request
+  case class GetXpubResponse(xpub: String, path: String) extends Response
 
   case object GetCurrentReceiveAddress extends Request
   case class GetCurrentReceiveAddressResponse(address: String) extends Response
@@ -577,7 +577,7 @@ object ElectrumWallet {
     * We always use the first account.
     * @return the root path
     */
-  def rootPath(walletType: WalletType, chainHash: ByteVector32) = walletType match {
+  def accountPath(walletType: WalletType, chainHash: ByteVector32) = walletType match {
     case P2SH_SEGWIT   => bip49RootPath(chainHash)
     case NATIVE_SEGWIT => bip84RootPath(chainHash)
   }
@@ -665,8 +665,8 @@ object ElectrumWallet {
                   lastReadyMessage: Option[WalletReady]) extends Logging {
 
     val strategy = walletType match {
-      case P2SH_SEGWIT => new P2SHStrategy
-      case NATIVE_SEGWIT => new NativeSegwitStrategy
+      case P2SH_SEGWIT => new P2SHSegwitKeyStore
+      case NATIVE_SEGWIT => new Bech32KeyStore
     }
 
     val chainHash = blockchain.chainHash
@@ -904,7 +904,7 @@ object ElectrumWallet {
 
       // computes the fee what we would have to pay for our tx with our candidate utxos and an optional change output
       def computeFee(candidates: Seq[Utxo], change: Option[TxOut]): Satoshi = {
-        val tx1 = strategy.addUtxos(tx, candidates)
+        val tx1 = strategy.addUtxosWithDummySig(tx, candidates)
         val tx2 = change.map(o => tx1.addOutput(o)).getOrElse(tx1)
         Transactions.weight2fee(feeRatePerKw, tx2.weight())
       }
@@ -939,7 +939,7 @@ object ElectrumWallet {
       val (selected, change_opt) = loop(Seq.empty[Utxo], unlocked)
 
       // sign our tx
-      val tx1 = strategy.addUtxos(tx, selected)
+      val tx1 = strategy.addUtxosWithDummySig(tx, selected)
       val tx2 = change_opt.map(out => tx1.addOutput(out)).getOrElse(tx1)
       val tx3 = strategy.signTx(tx2, this)
 
@@ -996,7 +996,7 @@ object ElectrumWallet {
       val amount = balance._1 + balance._2
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
       // use all uxtos, including locked ones
-      val tx1 = strategy.addUtxos(tx, utxos)
+      val tx1 = strategy.addUtxosWithDummySig(tx, utxos)
       val fee = Transactions.weight2fee(feeRatePerKw, tx1.weight())
       val tx2 = tx1.copy(txOut = TxOut(amount - fee, publicKeyScript) :: Nil)
       val tx3 = strategy.signTx(tx2, this)

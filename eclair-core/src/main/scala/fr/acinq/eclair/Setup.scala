@@ -263,8 +263,8 @@ class Setup(datadir: File,
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val walletType = config.getString("electrum-wallet-type") match {
-            case "p2sh-p2wpkh" => P2SH_SEGWIT
-            case "p2wpkh" => NATIVE_SEGWIT
+            case "p2sh-segwit" => P2SH_SEGWIT
+            case "bech32" => NATIVE_SEGWIT
             case wrongType => throw new IllegalArgumentException(s"Wrong type=$wrongType for electrum-wallet-type")
           }
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(walletType, nodeParams.chainHash, walletDb)), "electrum-wallet")

@@ -91,8 +91,8 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
     val ready = listener.expectMsgType[WalletReady]
     assert(ready.timestamp == headers.last.time)
     listener.expectMsgType[NewWalletReceiveAddress]
-    listener.send(wallet, GetRootPub)
-    listener.expectMsgType[GetRootPubResponse]
+    listener.send(wallet, GetXpub)
+    listener.expectMsgType[GetXpubResponse]
 
     withFixture(test.toNoArgTest(FixtureParam(wallet, walletParameters, seed, headers, sender, client, listener)))
   }
@@ -112,16 +112,16 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
 
   test("xpub and derivation path, p2sh-p2wpkh") { f =>
     import f._
-    listener.send(wallet, GetRootPub)
-    val GetRootPubResponse(xpub, path) = listener.expectMsgType[GetRootPubResponse]
+    listener.send(wallet, GetXpub)
+    val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
     assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
     assert(path == "m/49'/1'/0'")
   }
 
   test("xpub and derivation path, bech32", Tag("bech32")) { f =>
     import f._
-    listener.send(wallet, GetRootPub)
-    val GetRootPubResponse(vpub, path) = listener.expectMsgType[GetRootPubResponse]
+    listener.send(wallet, GetXpub)
+    val GetXpubResponse(vpub, path) = listener.expectMsgType[GetXpubResponse]
     assert(vpub == "vpub5Y8LGrnzn7VL1A2nAivXf4bPBV3t6rx4s3suatFPvZXQqK4QtfSz5AgKxz8cDupddFozJLrotikBeoSdspvEdS9YSZ5h3LwmoDqaug8UaH7")
     assert(path == "m/84'/1'/0'")
 
@@ -295,8 +295,8 @@ class ElectrumWalletSimulatedClientSpec extends TestkitBaseClass {
 
     val data = {
       val master = DeterministicWallet.generate(seed)
-      val accountMaster = accountKey(master, rootPath(walletParameters.walletType, walletParameters.chainHash))
-      val changeMaster = changeKey(master, rootPath(walletParameters.walletType, walletParameters.chainHash))
+      val accountMaster = accountKey(master, accountPath(walletParameters.walletType, walletParameters.chainHash))
+      val changeMaster = changeKey(master, accountPath(walletParameters.walletType, walletParameters.chainHash))
       val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
       val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
       val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
