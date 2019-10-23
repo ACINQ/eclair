@@ -43,6 +43,17 @@ class MultiPartHandler(nodeParams: NodeParams,
   // NB: this is safe because this handler will be called from within an actor
   private var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
 
+  /**
+   * Can be overridden for a more fine-grained controle of whether or not to handle this payload.
+   * If the call returns false, then the pattern matching will fail and the payload will be passed to other handlers.
+   */
+  def doHandle(p: FinalPayload): Boolean = true
+
+  /**
+   * Can be overridden to do custom processing on successfully received payments.
+   */
+  def onSuccess(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
+
   override def handle(implicit ctx: ActorContext, log: LoggingAdapter): PartialFunction[Any, Unit] = {
 
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, allowMultiPart) =>
@@ -66,7 +77,7 @@ class MultiPartHandler(nodeParams: NodeParams,
         case Failure(exception) => ctx.sender ! Status.Failure(exception)
       }
 
-    case p: FinalPayload => db.getIncomingPayment(p.add.paymentHash) match {
+    case p: FinalPayload if doHandle(p) => db.getIncomingPayment(p.add.paymentHash) match {
       case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
         case Some(cmdFail) =>
           ctx.sender ! cmdFail
