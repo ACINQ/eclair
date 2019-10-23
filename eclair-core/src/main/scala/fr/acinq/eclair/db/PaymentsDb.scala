@@ -26,7 +26,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
 
-trait PaymentsDb extends IncomingPaymentsDb with OugoingPaymentsDb
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
@@ -54,7 +54,7 @@ trait IncomingPaymentsDb {
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
 }
 
-trait OugoingPaymentsDb {
+trait OutgoingPaymentsDb {
 
   /** Create a record for a non yet finalized outgoing payment. */
   def addOutgoingPayment(outgoingPayment: OutgoingPayment): Unit
