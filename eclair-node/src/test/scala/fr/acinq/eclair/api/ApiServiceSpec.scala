@@ -35,6 +35,7 @@ import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.Relayer.UsableBalance
 import fr.acinq.eclair.payment.{PaymentFailed, _}
+import fr.acinq.eclair.router.{NetworkStats, Stats}
 import fr.acinq.eclair.wire.NodeAddress
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{FunSuite, Matchers}
@@ -432,6 +433,29 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(status == OK)
         assert(entityAs[String] == "\"" + rawUUID + "\"")
         eclair.sendToRoute(None, expectedRoute, 1234 msat, ByteVector32.One, CltvExpiryDelta(190), None)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'networkstats' response should return expected statistics") {
+    val capStat=Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
+    val cltvStat=Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
+    val feeBaseStat=Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
+    val feePropStat=Stats(32l, 11l, 13l, 22l, 42l, 51l, 53l)
+    val networkStats=new NetworkStats(1,2,capStat,cltvStat,feeBaseStat,feePropStat)
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    eclair.networkStats()(any[Timeout]) returns Future.successful(Some(networkStats))
+
+    Post("/networkstats") ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val resp = entityAs[String]
+        eclair.networkStats()(any[Timeout]).wasCalled(once)
+        matchTestJson("networkstats", resp)
       }
   }
 
