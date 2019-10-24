@@ -24,8 +24,8 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
-import fr.acinq.eclair.channel.{HasCommitments, _}
-import fr.acinq.eclair.payment.{Relayed, Relayer}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.{Origin, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
@@ -33,9 +33,9 @@ import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 /**
-  * Ties network connections to peers.
-  * Created by PM on 14/02/2017.
-  */
+ * Ties network connections to peers.
+ * Created by PM on 14/02/2017.
+ */
 class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, hostedChannelGateway: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
@@ -113,25 +113,25 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   }
 
   /**
-    * Retrieves a peer based on its public key.
-    *
-    * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)) where N is the number of
-    * peers. We could make it O(1) by using our own HashMap, but it creates other problems when we need to remove an
-    * existing peer. This seems like a reasonable trade-off because we only make this call once per connection, and N
-    * should never be very big anyway.
-    *
-    * @param remoteNodeId
-    * @return
-    */
+   * Retrieves a peer based on its public key.
+   *
+   * NB: Internally akka uses a TreeMap to store the binding, so this lookup is O(log(N)) where N is the number of
+   * peers. We could make it O(1) by using our own HashMap, but it creates other problems when we need to remove an
+   * existing peer. This seems like a reasonable trade-off because we only make this call once per connection, and N
+   * should never be very big anyway.
+   *
+   * @param remoteNodeId
+   * @return
+   */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   /**
-    *
-    * @param remoteNodeId
-    * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
-    * @param offlineChannels
-    * @return
-    */
+   *
+   * @param remoteNodeId
+   * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
+   * @param offlineChannels
+   * @return
+   */
   def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
@@ -156,14 +156,14 @@ object Switchboard extends Logging {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
-    * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
-    * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
-    *
-    * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
-    * get closed, which is a major inconvenience.
-    *
-    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
-    */
+   * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
+   * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
+   *
+   * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
+   * get closed, which is a major inconvenience.
+   *
+   * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
+   */
   def checkBrokenHtlcsLink(channels: Seq[HasCommitments], hostedChannels: Set[HOSTED_DATA_COMMITMENTS], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
@@ -185,9 +185,9 @@ object Switchboard extends Logging {
     } yield htlc.add
 
     // Here we do it differently because we need the origin information.
-    val relayed_out = channels.flatMap(_.commitments.originChannels.values).collect { case r: Relayed => r }.toSet
+    val relayed_out = channels.flatMap(_.commitments.originChannels.values).collect { case r: Origin.Relayed => r }.toSet
 
-    val hosted_relayed_out = hostedChannels.flatMap(_.originChannels.values).collect { case r: Relayed => r }
+    val hosted_relayed_out = hostedChannels.flatMap(_.originChannels.values).collect { case r: Origin.Relayed => r }
 
     val all_htlcs_in = htlcs_in ++ hosted_htlcs_in
 

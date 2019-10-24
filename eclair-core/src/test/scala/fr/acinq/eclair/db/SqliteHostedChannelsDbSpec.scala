@@ -13,7 +13,7 @@ import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.payment.Origin
 
 import scala.util.Random
 
@@ -59,7 +59,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     channelVersion = ChannelVersion.STANDARD,
     lastCrossSignedState = lcss1,
     futureUpdates = List(Right(add1), Left(add2)),
-    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
+    originChannels = Map(42L -> Origin.Local(UUID.randomUUID, None), 15000L -> Origin.Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
     localSpec = cs,
     channelId = ByteVector32.Zeroes,
     isHost = false,

@@ -27,7 +27,8 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Deterministi
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain, Sphinx}
-import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
+import fr.acinq.eclair.payment.Origin.{Relayed, Local}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
@@ -39,15 +40,14 @@ import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.scalatest.FunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
-
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Random
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class ChannelCodecsSpec extends FunSuite {
 
@@ -558,4 +558,5 @@ object ChannelCodecsSpec {
       new ChannelVersionSerializer +
       new InputInfoSerializer
   }
+
 }

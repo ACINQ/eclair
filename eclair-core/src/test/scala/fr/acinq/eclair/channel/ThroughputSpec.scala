@@ -53,7 +53,7 @@ class ThroughputSpec extends FunSuite {
         case ('add, tgt: ActorRef) =>
           val r = randomBytes32
           val h = Crypto.sha256(r)
-          tgt ! CMD_ADD_HTLC(1 msat, h, CltvExpiry(1), Sphinx.emptyOnionPacket, upstream = Left(UUID.randomUUID()))
+          tgt ! CMD_ADD_HTLC(1 msat, h, CltvExpiry(1), Sphinx.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
           context.become(run(h2r + (h -> r)))
 
         case ('sig, tgt: ActorRef) => tgt ! CMD_SIGN

@@ -6,7 +6,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Local, PaymentLifecycle}
+import fr.acinq.eclair.payment.Origin.Local
+import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload

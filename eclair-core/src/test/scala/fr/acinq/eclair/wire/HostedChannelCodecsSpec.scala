@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomBytes64, randomKey}
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, HOSTED_DATA_COMMITMENTS}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
 import org.scalatest.FunSuite
@@ -58,7 +58,7 @@ class HostedChannelCodecsSpec extends FunSuite {
       channelVersion = ChannelVersion.STANDARD,
       lastCrossSignedState = lcss1,
       futureUpdates = List(Right(add1), Left(add2)),
-      originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
+      originChannels = Map(42L -> Origin.Local(UUID.randomUUID, None), 15000L -> Origin.Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, MilliSatoshi(11000000L), MilliSatoshi(10000000L))),
       localSpec = cs,
       channelId = ByteVector32.Zeroes,
       isHost = true,
