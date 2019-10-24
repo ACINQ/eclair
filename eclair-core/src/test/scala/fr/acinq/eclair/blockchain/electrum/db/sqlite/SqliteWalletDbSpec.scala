@@ -21,12 +21,9 @@ import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT, PersistentData, WalletType}
-import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.legacyVersion
-import fr.acinq.eclair.wire.ChannelCodecs.txCodec
 import org.scalatest.FunSuite
 import scodec.Codec
 import scodec.bits.BitVector
-import scodec.codecs.{constant, listOfN, provide, uint16}
 
 import scala.util.Random
 
@@ -110,6 +107,8 @@ class SqliteWalletDbSpec extends FunSuite {
     import SqliteWalletDb._
     import fr.acinq.eclair.wire.ChannelCodecs._
 
+    val legacyVersion = 0x0000
+
     val oldPersistentDataCodec: Codec[PersistentData] = (
       ("version" | constant(BitVector.fromInt(legacyVersion))) ::
         ("walletType" | provide(P2SH_SEGWIT.asInstanceOf[WalletType])) :: // old codecs did not have this but their wallet type was hardcoded to P2SH_SEGWIT
@@ -127,7 +126,11 @@ class SqliteWalletDbSpec extends FunSuite {
       val data = randomPersistentData(P2SH_SEGWIT)
       val encoded = oldPersistentDataCodec.encode(data).require
       val decoded = persistentDataCodec.decode(encoded).require.value
+      assert(data.walletType == decoded.walletType && decoded.walletType == P2SH_SEGWIT)
       assert(decoded === data.copy(locks = Set.empty[Transaction]))
+      val check = persistentDataCodec.encode(decoded).require // encode using the new codec
+      val redecoded = persistentDataCodec.decode(check).require.value
+      assert(redecoded == data.copy(locks = Set.empty[Transaction]))
     }
   }
 }
