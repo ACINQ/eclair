@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT, PersistentData, WalletType}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
@@ -197,13 +197,26 @@ object SqliteWalletDb {
 
   /**
     * change this value
-    * -if the new codec is incompatible with the old one
+    * - if the new codec is incompatible with the old one
     * - OR if you want to force a full sync from Electrum servers
     */
-  val version = 0x0000
+  val version = 0x0001
 
+  def walletTypeCodec(vers: Long): Codec[WalletType] = vers match {
+    case 0x0000 => provide(P2SH_SEGWIT)     // old versions supported only p2sh-segwit
+    case v if v == version => bool.xmap({   // new versions (from 0x0001) have a boolean encoded wallet-type
+      case false => P2SH_SEGWIT
+      case true => NATIVE_SEGWIT
+    }, {
+      case P2SH_SEGWIT => false
+      case NATIVE_SEGWIT => true
+    })
+  }
+
+  import shapeless._
   val persistentDataCodec: Codec[PersistentData] = (
-    ("version" | constant(BitVector.fromInt(version))) ::
+    ("version" | uint32) >>:~ { v =>
+      ("walletType" | walletTypeCodec(v)) ::
       ("accountKeysCount" | int32) ::
       ("changeKeysCount" | int32) ::
       ("status" | statusCodec) ::
@@ -212,7 +225,15 @@ object SqliteWalletDb {
       ("history" | historyCodec) ::
       ("proofs" | proofsCodec) ::
       ("pendingTransactions" | listOfN(uint16, txCodec)) ::
-      ("locks" | provide(Set.empty[Transaction]))).as[PersistentData]
+      ("locks" | provide(Set.empty[Transaction]))
+    }).xmap({
+    case ver :: walletType :: accountKeysCount :: changeKeysCount :: status :: transactions :: heights :: history :: proofs :: pendingTransactions :: locks :: HNil =>
+      PersistentData(walletType, accountKeysCount, changeKeysCount, status, transactions, heights, history, proofs, pendingTransactions, locks)
+  }, {
+    // when encoding force version to 0x0001
+    case data =>
+       version :: data.walletType :: data.accountKeysCount :: data.changeKeysCount :: data.status :: data.transactions :: data.heights :: data.history :: data.proofs :: data.pendingTransactions :: data.locks :: HNil
+  })
 
   def serialize(data: PersistentData): Array[Byte] = persistentDataCodec.encode(data).require.toByteArray
 

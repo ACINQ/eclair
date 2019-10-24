@@ -35,6 +35,7 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT}
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
@@ -261,7 +262,12 @@ class Setup(datadir: File,
         case Electrum(electrumClient) =>
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
-          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
+          val walletType = config.getString("electrum-wallet-type") match {
+            case "p2sh-segwit" => P2SH_SEGWIT
+            case "bech32" => NATIVE_SEGWIT
+            case wrongType => throw new IllegalArgumentException(s"Wrong type=$wrongType for electrum-wallet-type")
+          }
+          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(walletType, nodeParams.chainHash, walletDb)), "electrum-wallet")
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
