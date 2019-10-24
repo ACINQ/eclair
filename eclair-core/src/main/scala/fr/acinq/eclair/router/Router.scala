@@ -470,6 +470,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! updates
       stay
 
+    case Event('updatesMap, d) =>
+      sender ! d.channels
+      stay
+
     case Event('data, d) =>
       sender ! d
       stay
