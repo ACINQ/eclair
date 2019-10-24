@@ -416,5 +416,5 @@ class ElectrumWalletSimulatedClientBIP49Spec extends TestKit(ActorSystem("mySyst
 }
 
 class ElectrumWalletSimulatedClientBIP84Spec extends TestKit(ActorSystem("mySystem")) with ElectrumWalletSimulatedClientSpecBase {
-  override def walletType = ElectrumWallet.NATIVE_SEGWIT
+  override def walletType = ElectrumWallet.BECH32
 }

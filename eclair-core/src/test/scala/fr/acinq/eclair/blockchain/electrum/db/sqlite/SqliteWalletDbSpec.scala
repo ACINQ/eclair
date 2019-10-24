@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxI
 import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT, PersistentData, WalletType}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT, PersistentData, WalletType}
 import org.scalatest.FunSuite
 import scodec.Codec
 import scodec.bits.BitVector
@@ -95,7 +95,7 @@ class SqliteWalletDbSpec extends FunSuite {
     assert(db.readPersistentData() == None)
 
     for (i <- 0 until 50) {
-      val data = randomPersistentData(if (i % 2 == 0) NATIVE_SEGWIT else P2SH_SEGWIT)
+      val data = randomPersistentData(if (i % 2 == 0) BECH32 else P2SH_SEGWIT)
       db.persist(data)
       val Some(check) = db.readPersistentData()
       assert(check === data.copy(locks = Set.empty[Transaction]))

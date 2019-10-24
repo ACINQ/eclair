@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT, PersistentData, WalletType}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT, PersistentData, WalletType}
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
@@ -206,10 +206,10 @@ object SqliteWalletDb {
     case 0x0000 => provide(P2SH_SEGWIT)     // old versions supported only p2sh-segwit
     case v if v == version => bool.xmap({   // new versions (from 0x0001) have a boolean encoded wallet-type
       case false => P2SH_SEGWIT
-      case true => NATIVE_SEGWIT
+      case true => BECH32
     }, {
       case P2SH_SEGWIT => false
-      case NATIVE_SEGWIT => true
+      case BECH32 => true
     })
   }
 

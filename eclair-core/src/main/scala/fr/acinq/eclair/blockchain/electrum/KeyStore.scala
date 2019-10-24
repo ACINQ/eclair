@@ -3,7 +3,7 @@ package fr.acinq.eclair.blockchain.electrum
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath, derivePrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, NATIVE_SEGWIT, P2SH_SEGWIT, Utxo, WalletType}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{Data, BECH32, P2SH_SEGWIT, Utxo, WalletType}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import scodec.bits.ByteVector
 
@@ -149,7 +149,7 @@ class BIP49KeyStore(override val master: ExtendedPrivateKey, override val chainH
 
 class BIP84KeyStore(override val master: ExtendedPrivateKey, override val chainHash: ByteVector32) extends KeyStore {
 
-  override def toWalletType: WalletType = NATIVE_SEGWIT
+  override def toWalletType: WalletType = BECH32
 
   val rootPath = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => "m/84'/1'/0'"

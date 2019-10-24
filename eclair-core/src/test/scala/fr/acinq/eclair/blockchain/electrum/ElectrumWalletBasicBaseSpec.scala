@@ -21,7 +21,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NATIVE_SEGWIT, P2SH_SEGWIT}
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT}
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging
@@ -45,7 +45,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
   val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
   val keyStore = walletType match {
     case P2SH_SEGWIT => new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
-    case NATIVE_SEGWIT => new BIP84KeyStore(master, Block.RegtestGenesisBlock.hash)
+    case BECH32 => new BIP84KeyStore(master, Block.RegtestGenesisBlock.hash)
   }
   val params = ElectrumWallet.WalletParameters(walletType, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
   val state = Data.createNew(keyStore, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), params)
@@ -219,5 +219,5 @@ class ElectrumWalletBasicBIP49Spec extends ElectrumWalletBasicBaseSpec {
 }
 
 class ElectrumWalletBasicBIP84Spec extends ElectrumWalletBasicBaseSpec {
-  override def walletType: ElectrumWallet.WalletType = NATIVE_SEGWIT
+  override def walletType: ElectrumWallet.WalletType = BECH32
 }

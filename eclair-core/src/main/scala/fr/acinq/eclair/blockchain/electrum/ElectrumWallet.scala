@@ -57,7 +57,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
   val keyStore = walletType match {
     case P2SH_SEGWIT => new BIP49KeyStore(master, chainHash)
-    case NATIVE_SEGWIT => new BIP84KeyStore(master, chainHash)
+    case BECH32 => new BIP84KeyStore(master, chainHash)
   }
 
   client ! ElectrumClient.AddStatusListener(self)
@@ -234,7 +234,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
       val isChange = data.changeKeyMap.contains(scriptHash)
-      log.info(s"received status=$status for scriptHash=$scriptHash keyIndex=${key.path.lastChildNumber}  isChange=$isChange")
+      log.info(s"received status=$status for scriptHash=$scriptHash key=${keyStore.computeAddress(key)}  isChange=$isChange")
 
       // let's retrieve the tx history for this key
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
@@ -244,7 +244,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
           // first time this script hash is used, need to generate a new key
           val newKey = if (isChange) keyStore.changeKey(data.changeKeys.last.path.lastChildNumber + 1) else keyStore.accountKey(data.accountKeys.last.path.lastChildNumber + 1)
           val newScriptHash = computeScriptHashFromScriptPubKey(keyStore.computePublicKeyScript(newKey.publicKey))
-          log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash isChange=$isChange")
+          log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash key=${keyStore.computeAddress(newKey)} isChange=$isChange")
           // listens to changes for the newly generated key
           client ! ElectrumClient.ScriptHashSubscription(newScriptHash, self)
           if (isChange) (data.accountKeys, data.changeKeys :+ newKey) else (data.accountKeys :+ newKey, data.changeKeys)
@@ -542,7 +542,7 @@ object ElectrumWallet {
 
   trait WalletType
   case object P2SH_SEGWIT extends WalletType
-  case object NATIVE_SEGWIT extends WalletType
+  case object BECH32 extends WalletType
   // @formatter:on
 
   /**
