@@ -17,14 +17,13 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, FSM, PoisonPill, Props}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, ExtendedPublicKey, KeyPath, derivePrivateKey, hardened}
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, DeterministicWallet, OP_0, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
-import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -554,16 +553,6 @@ object ElectrumWallet {
 
   def totalAmount(utxos: Seq[Utxo]): Satoshi = Satoshi(utxos.map(_.item.value).sum)
 
-  def totalAmount(utxos: Set[Utxo]): Satoshi = totalAmount(utxos.toSeq)
-
-  /**
-   *
-   * @param weight       transaction weight
-   * @param feeRatePerKw fee rate
-   * @return the fee for this tx weight
-   */
-  def computeFee(weight: Int, feeRatePerKw: Long): Satoshi = Satoshi((weight * feeRatePerKw) / 1000)
-
   def computeDepth(currentHeight: Long, txHeight: Long): Long =
     if (txHeight <= 0) {
       // txHeight is 0 if tx in unconfirmed, and -1 if one of its inputs is unconfirmed
@@ -677,8 +666,6 @@ object ElectrumWallet {
     }
 
     def isMine(txIn: TxIn): Boolean = keyStore.extractPubKey(txIn).exists(pub => publicScriptMap.contains(Script.write(keyStore.computePublicKeyScript(pub))))
-
-    def isSpend(txIn: TxIn, publicKey: PublicKey): Boolean = keyStore.extractPubKey(txIn).contains(publicKey)
 
     /**
      *
@@ -974,8 +961,6 @@ object ElectrumWallet {
       Data(keyStore, blockchain, firstAccountKeys, firstChangeKeys, Map(), Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set(), List(), None)
     }
   }
-
-  case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
 
   case class PersistentData(walletType: WalletType,
                             accountKeysCount: Int,
