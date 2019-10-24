@@ -21,6 +21,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT}
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging
@@ -29,10 +30,12 @@ import scodec.bits.ByteVector
 
 import scala.util.{Failure, Random, Success, Try}
 
-class ElectrumWalletBasicSpec extends FunSuite with Logging {
+trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
 
   import ElectrumWallet._
-  import ElectrumWalletBasicSpec._
+  import ElectrumWalletBasicBaseSpec._
+
+  def walletType: WalletType
 
   val swipeRange = 10
   val dustLimit = 546 sat
@@ -40,23 +43,17 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   val minimumFee = 2000 sat
 
   val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
-  val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
-  val accountIndex = 0
+  val keyStore = walletType match {
+    case P2SH_SEGWIT => new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
+    case BECH32 => new BIP84KeyStore(master, Block.RegtestGenesisBlock.hash)
+  }
+  val params = ElectrumWallet.WalletParameters(walletType, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
+  val state = Data.createNew(keyStore, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), params)
 
-  val changeMaster = changeKey(master, Block.RegtestGenesisBlock.hash)
-  val changeIndex = 0
-
-  val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
-  val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
-
-  val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
-
-  val state = Data(params, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), firstAccountKeys, firstChangeKeys)
-    .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
-    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey)
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, data.keyStore.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(data.keyStore.computePublicKeyScript(key.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -65,8 +62,8 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   }
 
   def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
-    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey)
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, data.keyStore.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(data.keyStore.computePublicKeyScript(keyamount._1.publicKey))
     val scriptHashHistory = data.history.getOrElse(scriptHash, List.empty[ElectrumClient.TransactionHistoryItem])
     data.copy(
       history = data.history.updated(scriptHash, ElectrumClient.TransactionHistoryItem(100, tx.txid) :: scriptHashHistory),
@@ -75,23 +72,6 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   }
 
   def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
-
-
-  test("compute addresses") {
-    val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
-    assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
-    assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
-  }
-
-  test("implement BIP49") {
-    val mnemonics = "pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist".split(" ")
-    val seed = MnemonicCode.toSeed(mnemonics, "")
-    val master = DeterministicWallet.generate(seed)
-
-    val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
-    val firstKey = derivePrivateKey(accountMaster, 0)
-    assert(segwitAddress(firstKey, Block.RegtestGenesisBlock.hash) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
-  }
 
   test("complete transactions (enough funds)") {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
@@ -224,7 +204,7 @@ class ElectrumWalletBasicSpec extends FunSuite with Logging {
   }
 }
 
-object ElectrumWalletBasicSpec {
+object ElectrumWalletBasicBaseSpec {
   /**
    *
    * @param actualFeeRate actual fee rate
@@ -232,4 +212,12 @@ object ElectrumWalletBasicSpec {
    * @return true if actual fee rate is within 10% of target
    */
   def isFeerateOk(actualFeeRate: Long, targetFeeRate: Long): Boolean = Math.abs(actualFeeRate - targetFeeRate) < 0.1 * (actualFeeRate + targetFeeRate)
+}
+
+class ElectrumWalletBasicBIP49Spec extends ElectrumWalletBasicBaseSpec {
+  override def walletType: ElectrumWallet.WalletType = P2SH_SEGWIT
+}
+
+class ElectrumWalletBasicBIP84Spec extends ElectrumWalletBasicBaseSpec {
+  override def walletType: ElectrumWallet.WalletType = BECH32
 }
