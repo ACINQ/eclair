@@ -976,6 +976,7 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
   {
     "id": "10886b3c-1803-415e-b97d-84d1003cda31",
     "parentId": "10886b3c-1803-415e-b97d-84d1003cda31",
+    "externalId": "cool-id",
     "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
     "amount": 10000,
     "targetNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
