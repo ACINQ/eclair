@@ -885,6 +885,7 @@ amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisato
 maxAttempts | Max number of retries | Yes | Integer
 feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (integer)
 maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
+externalId | Extra payment identifier specified by the caller | Yes | String
 
 ## SendToNode
 
@@ -919,6 +920,8 @@ paymentHash | The payment hash for this payment | No | 32bytes-HexString (String
 maxAttempts | Max number of retries | Yes | Integer
 feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (integer)
 maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
+externalId | Extra payment identifier specified by the caller | Yes | String
+
 
 ## SendToRoute
 
@@ -952,6 +955,8 @@ route | A list of nodeIds from source to destination of the payment | No | List 
 amountMsat | Amount in to pay | No | Millisatoshi (integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 finalCltvExpiry | The total CLTV expiry value for this payment | No | Integer
+externalId | Extra payment identifier specified by the caller | Yes | String
+
 
 ## GetSentInfo
 
