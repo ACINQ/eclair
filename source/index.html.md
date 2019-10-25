@@ -870,7 +870,8 @@ eclair-cli payinvoice --invoice=<some_invoice>
 
 Pays a **BOLT11** invoice, in case of failure the payment will be retried up to `maxAttempts` times, 
 default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where 
-the unique identifier for this payment attempt is immediately returned to the caller.
+the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an 
+extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 ### HTTP Request
 
@@ -904,7 +905,8 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 
 Sends money to a node, in case of failure the payment will be retried up to `maxAttempts` times, 
 default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where 
-the unique identifier for this payment attempt is immediately returned to the caller.
+the unique identifier for this payment attempt is immediately returned to the caller.It's possible to add an 
+extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 ### HTTP Request
 
@@ -941,7 +943,8 @@ eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<
 Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
 nodeIds that the payment will traverse, it can be a json-encoded array (same as [findroute](#findroute) output) or a comma 
-separated list of nodeIds. Note that the channels between the nodes in the route must be public.
+separated list of nodeIds. Note that the channels between the nodes in the route must be public.It's possible to add an 
+extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 ### HTTP Request
 
