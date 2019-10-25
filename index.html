@@ -1347,6 +1347,12 @@ the unique identifier for this payment attempt is immediately returned to the ca
 <td>Yes</td>
 <td>Integer</td>
 </tr>
+<tr>
+<td>externalId</td>
+<td>Extra payment identifier specified by the caller</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
 </tbody></table>
 <h2 id='sendtonode'>SendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/sendtonode"</span>
@@ -1409,6 +1415,12 @@ the unique identifier for this payment attempt is immediately returned to the ca
 <td>Yes</td>
 <td>Integer</td>
 </tr>
+<tr>
+<td>externalId</td>
+<td>Extra payment identifier specified by the caller</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
 </tbody></table>
 <h2 id='sendtoroute'>SendToRoute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">route</span><span class="o">=</span>node1,node2 <span class="se">\</span>
     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; -F <span class="nv">finalCltvExpiry</span><span class="o">=</span>&lt;some_value&gt; <span class="s2">"http://localhost:8080/sendtoroute"</span>
@@ -1459,6 +1471,12 @@ separated list of nodeIds. Note that the channels between the nodes in the route
 <td>The total CLTV expiry value for this payment</td>
 <td>No</td>
 <td>Integer</td>
+</tr>
+<tr>
+<td>externalId</td>
+<td>Extra payment identifier specified by the caller</td>
+<td>Yes</td>
+<td>String</td>
 </tr>
 </tbody></table>
 <h2 id='getsentinfo'>GetSentInfo</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/getsentinfo"</span>
