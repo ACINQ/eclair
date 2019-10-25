@@ -30,8 +30,10 @@ import fr.acinq.eclair.channel.{AddHtlcFailed, Channel, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.payment.Origin.Local
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle._
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router._
@@ -356,6 +358,61 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // this time the router can't find a route: game over
     assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(hops, Sphinx.DecryptedFailurePacket(b, failure)) :: RemoteFailure(hops2, Sphinx.DecryptedFailurePacket(b, failure2)) :: LocalFailure(RouteNotFound) :: Nil)
     awaitCond(paymentDb.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
+  }
+
+  test("payment failed (Update in assisted route)") { fixture =>
+    import fixture._
+    val nodeParams = TestConstants.Alice.nodeParams.copy(keyManager = testKeyManager)
+    val paymentDb = nodeParams.db.payments
+    val relayer = TestProbe()
+    val routerForwarder = TestProbe()
+    val id = UUID.randomUUID()
+    val progressHandler = PaymentLifecycle.DefaultPaymentProgressHandler(id, defaultPaymentRequest, paymentDb)
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, progressHandler, routerForwarder.ref, relayer.ref))
+    val monitor = TestProbe()
+    val sender = TestProbe()
+
+    paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
+    val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
+
+    // we build an assisted route for channel bc and cd
+    val assistedRoutes = Seq(Seq(
+      ExtraHop(b, channelId_bc, channelUpdate_bc.feeBaseMsat, channelUpdate_bc.feeProportionalMillionths, channelUpdate_bc.cltvExpiryDelta),
+      ExtraHop(c, channelId_cd, channelUpdate_cd.feeBaseMsat, channelUpdate_cd.feeProportionalMillionths, channelUpdate_cd.cltvExpiryDelta)
+    ))
+
+    val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)), maxAttempts = 5, assistedRoutes = assistedRoutes)
+    sender.send(paymentFSM, request)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
+
+    val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
+    routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = assistedRoutes, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
+    routerForwarder.forward(router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _, _) = paymentFSM.stateData
+    relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
+
+    // we change the cltv expiry
+    val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(42), htlcMinimumMsat = channelUpdate_bc.htlcMinimumMsat, feeBaseMsat = channelUpdate_bc.feeBaseMsat, feeProportionalMillionths = channelUpdate_bc.feeProportionalMillionths, htlcMaximumMsat = channelUpdate_bc.htlcMaximumMsat.get)
+    val failure = IncorrectCltvExpiry(CltvExpiry(5), channelUpdate_bc_modified)
+    // and node replies with a failure containing a new channel update
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
+
+    // payment lifecycle forwards the embedded channelUpdate to the router
+    routerForwarder.expectMsg(channelUpdate_bc_modified)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && paymentDb.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
+    val assistedRoutes1 = Seq(Seq(
+      ExtraHop(b, channelId_bc, channelUpdate_bc.feeBaseMsat, channelUpdate_bc.feeProportionalMillionths, channelUpdate_bc_modified.cltvExpiryDelta),
+      ExtraHop(c, channelId_cd, channelUpdate_cd.feeBaseMsat, channelUpdate_cd.feeProportionalMillionths, channelUpdate_cd.cltvExpiryDelta)
+    ))
+    routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = assistedRoutes1, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
+    routerForwarder.forward(router)
+
+    // router answers with a new route, taking into account the new update
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd2, _, _, _, _, _) = paymentFSM.stateData
+    relayer.expectMsg(ForwardShortId(channelId_ab, cmd2))
+    assert(cmd2.cltvExpiry > cmd1.cltvExpiry)
   }
 
   def testPermanentFailure(fixture: FixtureParam, failure: FailureMessage): Unit = {
