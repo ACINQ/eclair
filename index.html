@@ -1305,7 +1305,8 @@ eclair-cli payinvoice --invoice<span class="o">=</span>&lt;some_invoice&gt;
 </span></code></pre>
 <p>Pays a <strong>BOLT11</strong> invoice, in case of failure the payment will be retried up to <code>maxAttempts</code> times, 
 default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where 
-the unique identifier for this payment attempt is immediately returned to the caller.</p>
+the unique identifier for this payment attempt is immediately returned to the caller. It&#39;s possible to add an 
+extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
 <h3 id='http-request-16'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/payinvoice</code></p>
 <h3 id='parameters-14'>Parameters</h3>
@@ -1367,7 +1368,8 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
 </span></code></pre>
 <p>Sends money to a node, in case of failure the payment will be retried up to <code>maxAttempts</code> times, 
 default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where 
-the unique identifier for this payment attempt is immediately returned to the caller.</p>
+the unique identifier for this payment attempt is immediately returned to the caller.It&#39;s possible to add an 
+extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
 <h3 id='http-request-17'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
 <h3 id='parameters-15'>Parameters</h3>
@@ -1436,7 +1438,8 @@ eclair-cli sendtoroute --route<span class="o">=</span>node1,node2 --amountMsat<s
 <p>Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
 nodeIds that the payment will traverse, it can be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma 
-separated list of nodeIds. Note that the channels between the nodes in the route must be public.</p>
+separated list of nodeIds. Note that the channels between the nodes in the route must be public.It&#39;s possible to add an 
+extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
 <h3 id='http-request-18'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtoroute</code></p>
 <h3 id='parameters-16'>Parameters</h3>
