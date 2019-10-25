@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.Origin.Relayed
+import fr.acinq.eclair.payment.Origin.{Relayed => RelayedOrigin}
 import fr.acinq.eclair.payment.PaymentLifecycle.{buildCommand, buildOnion}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, PerHopPayload, RelayTlvPayload}
@@ -137,7 +137,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd1.message.upstream === Upstream.Relayed(add_ab))
 
     // channel returns an error
-    val origin = Relayed(channelId_ab, originHtlcId = 42, amountIn = 1100000 msat, amountOut = 1000000 msat)
+    val origin = RelayedOrigin(channelId_ab, originHtlcId = 42, amountIn = 1100000 msat, amountOut = 1000000 msat)
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc_1, paymentHash, HtlcValueTooHighInFlight(channelId_bc_1, UInt64(1000000000L), 1516977616L msat), origin, Some(channelUpdate_bc_1), originalCommand = Some(fwd1.message))))
 
     // second try
@@ -471,7 +471,7 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
 
     val paymentHash = randomBytes32
-    val origin = Relayed(channelId_ab, originHtlcId = 42, amountIn = 1100000 msat, amountOut = 1000000 msat)
+    val origin = RelayedOrigin(channelId_ab, originHtlcId = 42, amountIn = 1100000 msat, amountOut = 1000000 msat)
 
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ExpiryTooSmall(channelId_bc, CltvExpiry(100), CltvExpiry(0), 0), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ExpiryTooSoon(channelUpdate_bc)))
@@ -506,7 +506,7 @@ class RelayerSpec extends TestkitBaseClass {
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 42, paymentPreimage = ByteVector32.Zeroes)
-    val origin = Relayed(channelId_ab, 150, 11000000 msat, 10000000 msat)
+    val origin = RelayedOrigin(channelId_ab, 150, 11000000 msat, 10000000 msat)
     sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
@@ -524,7 +524,7 @@ class RelayerSpec extends TestkitBaseClass {
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
-    val origin = Relayed(channelId_ab, 150, 11000000 msat, 10000000 msat)
+    val origin = RelayedOrigin(channelId_ab, 150, 11000000 msat, 10000000 msat)
     sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
