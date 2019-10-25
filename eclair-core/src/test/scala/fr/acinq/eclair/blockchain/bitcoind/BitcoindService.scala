@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, StandardCopyOption}
 import java.util.UUID
 
@@ -71,7 +72,7 @@ trait BitcoindService extends Logging {
           .replace("28332", bitcoindRpcPort.toString)
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
-      Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
+      Files.write(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf.getBytes)
     }
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()

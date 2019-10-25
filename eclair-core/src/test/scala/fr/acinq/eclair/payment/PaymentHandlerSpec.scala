@@ -92,7 +92,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       val add = UpdateAddHtlc(ByteVector32(ByteVector.fill(32)(1)), 0, amountMsat, pr.paymentHash, cltvExpiry = CltvExpiryDelta(3).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket)
       sender.send(handler, add)
       assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(IncorrectOrUnknownPaymentDetails(amountMsat, nodeParams.currentBlockHeight)))
-      eventListener.expectNoMsg(300 milliseconds)
+      eventListener.expectNoMessage(300 milliseconds)
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
     }
   }

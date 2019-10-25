@@ -1,0 +1,1081 @@
+[
+{
+  "name":"[B"
+},
+{
+  "name":"akka.actor.ActorCell",
+  "allDeclaredFields":true,
+  "fields":[
+    {"name":"akka$actor$dungeon$Children$$_childrenRefsDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"akka$actor$dungeon$Children$$_functionRefsDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"akka$actor$dungeon$Children$$_nextNameDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"akka$actor$dungeon$Dispatch$$_mailboxDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.actor.DefaultSupervisorStrategy",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.actor.LightArrayRevolverScheduler",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.config.Config","akka.event.LoggingAdapter","java.util.concurrent.ThreadFactory"] }]
+},
+{
+  "name":"akka.actor.LightArrayRevolverScheduler$TaskHolder",
+  "fields":[{"name":"task", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.actor.LocalActorRefProvider",
+  "methods":[{"name":"<init>","parameterTypes":["java.lang.String","akka.actor.ActorSystem$Settings","akka.event.EventStream","akka.actor.DynamicAccess"] }]
+},
+{
+  "name":"akka.actor.LocalActorRefProvider$Guardian",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.actor.LocalActorRefProvider$SystemGuardian",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.actor.Props$EmptyActor",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.actor.RepointableActorRef",
+  "fields":[
+    {"name":"_cellDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_lookupDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.AbstractNodeQueue",
+  "fields":[{"name":"_tailDoNotCallMeDirectly", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.dispatch.AbstractNodeQueue$Node",
+  "fields":[{"name":"_nextDoNotCallMeDirectly", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.dispatch.BoundedControlAwareMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.BoundedDequeBasedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.BoundedMailbox",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.dispatch.BoundedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.ControlAwareMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.DequeBasedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.Mailbox",
+  "fields":[
+    {"name":"_statusDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_systemQueueDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.MessageDispatcher",
+  "fields":[
+    {"name":"_inhabitantsDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_shutdownScheduleDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.MultipleConsumerSemantics"
+},
+{
+  "name":"akka.dispatch.UnboundedControlAwareMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.UnboundedDequeBasedMailbox",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.dispatch.UnboundedDequeBasedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.UnboundedMailbox",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.dispatch.UnboundedMessageQueueSemantics"
+},
+{
+  "name":"akka.dispatch.forkjoin.ForkJoinPool",
+  "fields":[
+    {"name":"ctl", "allowUnsafeAccess":true}, 
+    {"name":"indexSeed", "allowUnsafeAccess":true}, 
+    {"name":"plock", "allowUnsafeAccess":true}, 
+    {"name":"stealCount", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.dispatch.forkjoin.ForkJoinPool$WorkQueue",
+  "fields":[{"name":"qlock", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.dispatch.forkjoin.ForkJoinTask",
+  "fields":[{"name":"status", "allowUnsafeAccess":true}]
+},
+{
+  "name":"akka.event.DeadLetterListener",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.event.EventStreamUnsubscriber",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.event.LoggerMailboxType",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.event.LoggerMessageQueueSemantics"
+},
+{
+  "name":"akka.event.slf4j.Slf4jLogger",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.event.slf4j.Slf4jLoggingFilter",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ActorSystem$Settings","akka.event.EventStream"] }]
+},
+{
+  "name":"akka.http.impl.engine.client.PoolInterfaceActor",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.http.impl.engine.client.PoolMasterActor",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.io.InetAddressDnsProvider",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"akka.io.InetAddressDnsResolver",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.SelectionHandler",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.SimpleDnsManager",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpConnection",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.io.TcpIncomingConnection",
+  "allDeclaredFields":true,
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpListener",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpManager",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.io.TcpOutgoingConnection",
+  "allDeclaredFields":true,
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.pattern.PromiseActorRef",
+  "fields":[
+    {"name":"_stateDoNotCallMeDirectly", "allowUnsafeAccess":true}, 
+    {"name":"_watchedByDoNotCallMeDirectly", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"akka.routing.ConsistentHashingPool",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.routing.RoundRobinPool",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.config.Config"] }]
+},
+{
+  "name":"akka.routing.RoutedActorCell$RouterActorCreator",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"akka.serialization.ByteArraySerializer",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
+},
+{
+  "name":"akka.serialization.JavaSerializer",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
+},
+{
+  "name":"akka.serialization.SerializationExtension$",
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"akka.stream.SinkRef"
+},
+{
+  "name":"akka.stream.SourceRef"
+},
+{
+  "name":"akka.stream.impl.fusing.ActorGraphInterpreter",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.stream.impl.io.TLSActor",
+  "allDeclaredFields":true
+},
+{
+  "name":"akka.stream.impl.streamref.StreamRefsProtocol"
+},
+{
+  "name":"akka.stream.serialization.StreamRefSerializer",
+  "methods":[{"name":"<init>","parameterTypes":["akka.actor.ExtendedActorSystem"] }]
+},
+{
+  "name":"ch.qos.logback.classic.encoder.PatternLayoutEncoder",
+  "allPublicMethods":true,
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ClassOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ContextNameConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.DateConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ExtendedThrowableProxyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.FileOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LevelConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LineOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LineSeparatorConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LocalSequenceNumberConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.LoggerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MDCConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MarkerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MessageConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.MethodOfCallerConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.NopThrowableInformationConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.PropertyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.RelativeTimeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.RootCauseFirstThrowableProxyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ThreadConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.ThrowableProxyConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.classic.pattern.color.HighlightingCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.ConsoleAppender",
+  "allPublicMethods":true,
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"ch.qos.logback.core.pattern.IdentityCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.ReplacingCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BlackCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldBlueCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldCyanCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldGreenCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldMagentaCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldRedCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldWhiteCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.BoldYellowCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.CyanCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.GrayCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.GreenCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.MagentaCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.RedCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.WhiteCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"ch.qos.logback.core.pattern.color.YellowCompositeConverter",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"com.fasterxml.jackson.databind.ext.Java7SupportImpl",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"com.google.common.util.concurrent.AbstractFuture",
+  "fields":[
+    {"name":"listeners", "allowUnsafeAccess":true}, 
+    {"name":"value", "allowUnsafeAccess":true}, 
+    {"name":"waiters", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"com.google.common.util.concurrent.AbstractFuture$Waiter",
+  "fields":[
+    {"name":"next", "allowUnsafeAccess":true}, 
+    {"name":"thread", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"com.typesafe.sslconfig.ssl.DefaultHostnameVerifier",
+  "methods":[{"name":"<init>","parameterTypes":["com.typesafe.sslconfig.util.LoggerFactory"] }]
+},
+{
+  "name":"fr.acinq.bitcoin.DeterministicWallet$KeyPath",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.bitcoin.DeterministicWallet$KeyPath$",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.AuditResponse",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.AuditResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.GetInfoResponse",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.GetInfoResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.api.ErrorResponse",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.api.ErrorResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet$Options",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet$Options$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.Error",
+  "allDeclaredFields":true,
+  "allPublicFields":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.Error$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCRequest",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCRequest$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCResponse",
+  "allDeclaredFields":true,
+  "allPublicFields":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.blockchain.bitcoind.rpc.JsonRPCResponse$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.Commitments",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.Commitments$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_CLOSING",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_CLOSING$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NEGOTIATING",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NEGOTIATING$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NORMAL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_NORMAL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_SHUTDOWN",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_SHUTDOWN$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_ACCEPT_CHANNEL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_ACCEPT_CHANNEL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CREATED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CREATED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_INTERNAL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_LOCKED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_SIGNED",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_SIGNED$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_OPEN_CHANNEL$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalChanges",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalChanges$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommit",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommit$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommitPublished",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalCommitPublished$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalParams",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.LocalParams$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.PublishableTxs",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.PublishableTxs$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RES_GETINFO",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RES_GETINFO$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteChanges",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteChanges$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteCommit",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteCommit$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteParams",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.channel.RemoteParams$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.crypto.TransportHandler",
+  "allDeclaredFields":true
+},
+{
+  "name":"fr.acinq.eclair.db.IncomingPayment",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.db.IncomingPayment$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.db.OutgoingPayment",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.db.OutgoingPayment$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.db.Stats",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.db.Stats$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.io.Client",
+  "allDeclaredFields":true
+},
+{
+  "name":"fr.acinq.eclair.io.Peer$PeerInfo",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.io.Peer$PeerInfo$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.Auditor",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentInitiator",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentLifecycle",
+  "allDeclaredFields":true,
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentReceived",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentReceived$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentRelayed",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentRelayed$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSent",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSent$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSettlingOnChain",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.PaymentSettlingOnChain$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.payment.Relayer",
+  "allDeclaredConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.UsableBalances",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.payment.UsableBalances$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.router.ChannelDesc",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.router.ChannelDesc$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.transactions.CommitmentSpec",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.transactions.CommitmentSpec$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.wire.ChannelUpdate",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.wire.ChannelUpdate$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.wire.FundingCreated",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.wire.FundingCreated$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"fr.acinq.eclair.wire.NodeAnnouncement",
+  "allDeclaredFields":true,
+  "allPublicMethods":true,
+  "allPublicConstructors":true
+},
+{
+  "name":"fr.acinq.eclair.wire.NodeAnnouncement$",
+  "allPublicMethods":true,
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"io.netty.buffer.AbstractByteBufAllocator",
+  "allDeclaredMethods":true
+},
+{
+  "name":"io.netty.buffer.AbstractReferenceCountedByteBuf",
+  "fields":[{"name":"refCnt", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.channel.socket.nio.NioSocketChannel",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"io.netty.util.ReferenceCountUtil",
+  "allDeclaredMethods":true
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueColdProducerFields",
+  "fields":[{"name":"producerLimit", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueConsumerFields",
+  "fields":[{"name":"consumerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.BaseMpscLinkedArrayQueueProducerFields",
+  "fields":[{"name":"producerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueConsumerIndexField",
+  "fields":[{"name":"consumerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerIndexField",
+  "fields":[{"name":"producerIndex", "allowUnsafeAccess":true}]
+},
+{
+  "name":"io.netty.util.internal.shaded.org.jctools.queues.MpscArrayQueueProducerLimitField",
+  "fields":[{"name":"producerLimit", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.io.Serializable"
+},
+{
+  "name":"java.lang.Object",
+  "allDeclaredFields":true
+},
+{
+  "name":"java.lang.String",
+  "fields":[{"name":"value", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.lang.Thread",
+  "fields":[
+    {"name":"parkBlocker", "allowUnsafeAccess":true}, 
+    {"name":"threadLocalRandomProbe", "allowUnsafeAccess":true}
+  ]
+},
+{
+  "name":"java.lang.Throwable",
+  "methods":[
+    {"name":"addSuppressed","parameterTypes":["java.lang.Throwable"] }, 
+    {"name":"getSuppressed","parameterTypes":[] }
+  ]
+},
+{
+  "name":"java.lang.management.ManagementFactory",
+  "methods":[{"name":"getRuntimeMXBean","parameterTypes":[] }]
+},
+{
+  "name":"java.lang.management.RuntimeMXBean",
+  "methods":[{"name":"getName","parameterTypes":[] }]
+},
+{
+  "name":"java.nio.Bits",
+  "methods":[{"name":"unaligned","parameterTypes":[] }]
+},
+{
+  "name":"java.nio.Buffer",
+  "fields":[{"name":"address", "allowUnsafeAccess":true}]
+},
+{
+  "name":"java.nio.DirectByteBuffer",
+  "fields":[{"name":"cleaner", "allowUnsafeAccess":true}],
+  "methods":[{"name":"<init>","parameterTypes":["long","int"] }]
+},
+{
+  "name":"javax.management.ObjectName"
+},
+{
+  "name":"org.sqlite.JDBC"
+},
+{
+  "name":"scala.Symbol"
+},
+{
+  "name":"scala.collection.Seq$",
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"scala.collection.generic.GenericCompanion",
+  "methods":[{"name":"apply","parameterTypes":["scala.collection.Seq"] }]
+},
+{
+  "name":"scala.collection.generic.GenericTraversableTemplate"
+},
+{
+  "name":"scala.concurrent.Future$InternalCallbackExecutor$",
+  "fields":[{"name":"MODULE$"}]
+},
+{
+  "name":"sun.misc.Cleaner",
+  "methods":[{"name":"clean","parameterTypes":[] }]
+},
+{
+  "name":"sun.misc.Unsafe",
+  "allDeclaredFields":true,
+  "methods":[
+    {"name":"copyMemory","parameterTypes":["java.lang.Object","long","java.lang.Object","long","long"] }, 
+    {"name":"getAndSetObject","parameterTypes":["java.lang.Object","long","java.lang.Object"] }
+  ]
+},
+{
+  "name":"sun.misc.VM",
+  "methods":[{"name":"maxDirectMemory","parameterTypes":[] }]
+},
+{
+  "name":"sun.nio.ch.SelectorImpl",
+  "fields":[
+    {"name":"publicSelectedKeys"}, 
+    {"name":"selectedKeys"}
+  ]
+},
+{
+  "name":"sun.reflect.Reflection",
+  "methods":[{"name":"getCallerClass","parameterTypes":["int"] }]
+}
+]

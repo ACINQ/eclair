@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
+        <artifactId>eclair_2.12</artifactId>
         <version>0.3.3-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-node-gui_2.11</artifactId>
+    <artifactId>eclair-node-gui_2.12</artifactId>
     <packaging>jar</packaging>
 
     <name>eclair-node-gui</name>

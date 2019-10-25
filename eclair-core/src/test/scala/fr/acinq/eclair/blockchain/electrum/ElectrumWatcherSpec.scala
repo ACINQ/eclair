@@ -115,7 +115,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
     val listener = TestProbe()
     probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
-    listener.expectNoMsg(1 second)
+    listener.expectNoMessage(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]
     generateBlocks(bitcoincli, 2)

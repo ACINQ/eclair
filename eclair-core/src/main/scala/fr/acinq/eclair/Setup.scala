@@ -82,8 +82,7 @@ class Setup(datadir: File,
   secureRandom.nextInt()
 
   datadir.mkdirs()
-  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val config = appConfig.getConfig("eclair")
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
@@ -191,6 +190,7 @@ class Setup(datadir: File,
             case Block.RegtestGenesisBlock.hash => ("/electrum/servers_regtest.json", false) // in regtest we connect in plaintext
             case Block.TestnetGenesisBlock.hash => ("/electrum/servers_testnet.json", true)
             case Block.LivenetGenesisBlock.hash => ("/electrum/servers_mainnet.json", true)
+            case _ => throw new IllegalArgumentException(s"chain hash=${nodeParams.chainHash} did not match")
           }
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
           ElectrumClientPool.readServerAddresses(stream, sslEnabled)

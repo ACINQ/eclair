@@ -30,7 +30,7 @@ import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Random
@@ -45,7 +45,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
-    "eclair.auto-reconnect" -> false))
+    "eclair.auto-reconnect" -> false).asJava)
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
@@ -121,7 +121,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
           val feerate = satoshi2btc(Satoshi(fees(blocks))).toBigDecimal
-          Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))
+          Future.successful(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
       }
     }

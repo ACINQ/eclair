@@ -136,8 +136,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // sig -> a
     alice2bob.forward(bob)
 
-    alice2bob.expectNoMsg(500 millis)
-    bob2alice.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localNextHtlcId == 1
 
@@ -166,7 +166,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val ba_rev_0 = bob2alice.expectMsgType[RevokeAndAck]
     val ba_sig_0 = bob2alice.expectMsgType[CommitSig]
 
-    bob2alice.expectNoMsg(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
@@ -203,8 +203,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // and b will attempt a new signature
     bob2alice.expectMsg(ba_sig_0)
 
-    alice2bob.expectNoMsg(500 millis)
-    bob2alice.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localNextHtlcId == 1
 
@@ -357,14 +357,14 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == OFFLINE)
 
     // alice and bob will not announce that their channel is OFFLINE
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
 
     // we make alice update here relay fee
     sender.send(alice, CMD_UPDATE_RELAY_FEE(4200 msat, 123456))
     sender.expectMsg("ok")
 
     // alice doesn't broadcast the new channel_update yet
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
 
     // then we reconnect them
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
@@ -383,7 +383,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(Announcements.isEnabled(channelUpdate.channelFlags))
 
     // no more messages
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
   }
 
   test("broadcast disabled channel_update while offline") { f =>
@@ -397,7 +397,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == OFFLINE)
 
     // alice and bob will not announce that their channel is OFFLINE
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
 
     // we attempt to send a payment
     sender.send(alice, CMD_ADD_HTLC(4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
@@ -447,7 +447,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
-    alice2blockchain.expectNoMsg(500 millis)
+    alice2blockchain.expectNoMessage(500 millis)
   }
 
   test("pending non-relayed fail htlcs will timeout upstream") { f =>
@@ -468,8 +468,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0)))))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
-    bob2blockchain.expectNoMsg(250 millis)
-    alice2blockchain.expectNoMsg(250 millis)
+    bob2blockchain.expectNoMessage(250 millis)
+    alice2blockchain.expectNoMessage(250 millis)
   }
 
   test("handle feerate changes while offline (funder scenario)") { f =>
@@ -513,8 +513,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // this time Alice will ignore feerate changes for the offline channel
     sender.send(alice, CurrentFeerates(highFeerate))
-    alice2blockchain.expectNoMsg()
-    alice2bob.expectNoMsg()
+    alice2blockchain.expectNoMessage()
+    alice2bob.expectNoMessage()
   }
 
   test("handle feerate changes while offline (fundee scenario)") { f =>

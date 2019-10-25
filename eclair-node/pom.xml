@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
+        <artifactId>eclair_2.12</artifactId>
         <version>0.3.3-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-node_2.11</artifactId>
+    <artifactId>eclair-node_2.12</artifactId>
     <packaging>jar</packaging>
 
     <name>eclair-node</name>
@@ -61,29 +61,68 @@
                             <type>fat</type>
                             <fileName>${project.name}-${project.version}</fileName>
                             <fileDesc>-${git.commit.id.abbrev}</fileDesc>
-                            <manifest>
-                                <entry>
-                                    <key>Java-Agents</key>
-                                    <value>kanela-agent-1.0.1.jar</value>
-                                </entry>
-                            </manifest>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.oracle.substratevm</groupId>
+                <artifactId>native-image-maven-plugin</artifactId>
+                <version>${graal.version}</version>
+                <configuration>
+                    <imageName>eclair-native</imageName>
+                    <mainClass>
+                        fr.acinq.eclair.Boot
+                    </mainClass>
+                    <buildArgs>
+                        -H:IncludeResources=.*\.properties
+                        -H:ConfigurationFileDirectories=../graal-config
+                        -H:+ReportUnsupportedElementsAtRuntime
+                        -H:+ReportExceptionStackTraces
+                        -H:+TraceClassInitialization
+                        --initialize-at-build-time
+                        <!-- sqlite -->
+                        --initialize-at-build-time=org.sqlite.JDBC
+                        --initialize-at-build-time=org.sqlite.core.DB\$ProgressObserver
+                        --initialize-at-build-time=org.sqlite.core.DB
+                        --initialize-at-build-time=org.sqlite.core.NativeDB
+                        --initialize-at-build-time=org.sqlite.ProgressHandler
+                        --initialize-at-build-time=org.sqlite.Function
+                        --initialize-at-build-time=org.sqlite.Function\$Aggregate
+                        --initialize-at-build-time=org.sqlite.Function\$Window
+                        <!-- bitcoin-lib -->
+                        --initialize-at-run-time=fr.acinq.bitcoin.Crypto$
+                        <!-- akka and typesafe config-->
+                        --initialize-at-run-time=akka.protobuf.DescriptorProtos
+                        --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$EnvVariablesHolder
+                        --initialize-at-run-time=com.typesafe.config.impl.ConfigImpl$SystemPropertiesHolder
+                        <!-- netty -->
+                        --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslServerContext
+                        --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslClientContext
+                        --initialize-at-run-time=io.netty.handler.ssl.JdkNpnApplicationProtocolNegotiator
+                        --initialize-at-run-time=io.netty.handler.ssl.ReferenceCountedOpenSslEngine
+                        --initialize-at-run-time=io.netty.handler.ssl.ConscryptAlpnSslEngine
+                        --initialize-at-run-time=io.netty.handler.ssl.JettyNpnSslEngine
+                        --initialize-at-run-time=io.netty.util.internal.logging.Log4JLogger
+                        <!-- ZMQ -->
+                        --initialize-at-run-time=zmq.util.Utils
+                        --no-server
+                        --no-fallback
+                        --allow-incomplete-classpath
+                        -J-Xmx4G
+                    </buildArgs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>native-image</goal>
+                        </goals>
+                        <phase>package</phase>
                     </execution>
                 </executions>
             </plugin>
         </plugins>
     </build>
-
-    <repositories>
-        <repository>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-            <id>bintray-kamon-io-releases</id>
-            <name>bintray</name>
-            <url>https://dl.bintray.com/kamon-io/releases</url>
-        </repository>
-    </repositories>
 
     <dependencies>
         <dependency>
@@ -109,6 +148,11 @@
             <artifactId>janino</artifactId>
             <version>3.0.7</version>
         </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+        </dependency>
         <!-- http server -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
@@ -118,34 +162,8 @@
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.19.0</version>
+            <version>1.27.0</version>
         </dependency>
-        <!-- metrics -->
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-apm-reporter_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-system-metrics_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-jdbc_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency>
-        <!--dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-annotation_${scala.version.short}</artifactId>
-            <version>2.0.0-RC1</version>
-        </dependency-->
-        <!--dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-akka-http_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency-->
         <!-- test dependencies -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
@@ -154,16 +172,16 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+          <groupId>com.typesafe.akka</groupId>
+          <artifactId>akka-stream-testkit_${scala.version.short}</artifactId>
+          <version>${akka.version}</version>
+          <scope>test</scope>
+        </dependency>
+      <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-scala-scalatest_2.11</artifactId>
+            <artifactId>mockito-scala-scalatest_2.12</artifactId>
             <version>1.4.1</version>
             <scope>test</scope>
-        </dependency>
-        <!-- agents -->
-        <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kanela-agent</artifactId>
-            <version>1.0.1</version>
         </dependency>
     </dependencies>
 </project>

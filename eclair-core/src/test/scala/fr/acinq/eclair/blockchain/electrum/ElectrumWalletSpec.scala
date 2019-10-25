@@ -38,7 +38,6 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {

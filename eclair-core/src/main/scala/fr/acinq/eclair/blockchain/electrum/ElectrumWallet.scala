@@ -570,6 +570,7 @@ object ElectrumWallet {
     chainHash match {
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
       case Block.LivenetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
+      case _ => throw new IllegalArgumentException(s"chain hash=$chainHash did not match")
     }
   }
 
@@ -594,6 +595,7 @@ object ElectrumWallet {
   def accountPath(chainHash: ByteVector32): List[Long] = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
+    case _ => throw new IllegalArgumentException(s"chain hash=$chainHash did not match")
   }
 
   /**
@@ -617,6 +619,7 @@ object ElectrumWallet {
     val prefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
+      case _ => throw new IllegalArgumentException(s"chain hash=$chainHash did not match")
     }
     (DeterministicWallet.encode(xpub, prefix), xpub.path.toString())
   }

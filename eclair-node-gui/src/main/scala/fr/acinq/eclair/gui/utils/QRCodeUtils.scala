@@ -28,8 +28,8 @@ import javafx.scene.paint.Color
 case object QRCodeUtils {
 
   def createQRCode(data: String, width: Int = 250, height: Int = 250, margin: Int = 5): WritableImage = {
-    import scala.collection.JavaConversions._
-    val hintMap = collection.mutable.Map[EncodeHintType, Object]()
+    import scala.collection.JavaConverters._
+    val hintMap = collection.mutable.Map[EncodeHintType, Object]().asJava
     hintMap.put(EncodeHintType.CHARACTER_SET, "UTF-8")
     hintMap.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.L)
     hintMap.put(EncodeHintType.MARGIN, margin.toString)

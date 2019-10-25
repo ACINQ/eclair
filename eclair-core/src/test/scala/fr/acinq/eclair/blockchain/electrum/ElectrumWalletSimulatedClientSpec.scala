@@ -140,7 +140,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectMsgType[NewWalletReceiveAddress]
 
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    listener.expectNoMsg(500 milliseconds)
+    listener.expectNoMessage(500 milliseconds)
   }
 
   test("disconnect if server sends a bad header") {

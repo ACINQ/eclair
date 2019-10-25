@@ -87,7 +87,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     if (expectSync) {
       router.expectMsgType[SendChannelQuery]
     } else {
-      router.expectNoMsg(1 second)
+      router.expectNoMessage(1 second)
     }
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
@@ -146,7 +146,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, Set(ChannelCodecsSpec.normal)))
     probe.send(peer, Peer.Reconnect)
-    probe.expectNoMsg()
+    probe.expectNoMessage()
   }
 
   test("ignore reconnect (no channel)") { f =>
@@ -155,7 +155,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
     probe.send(peer, Peer.Reconnect)
-    probe.expectNoMsg()
+    probe.expectNoMessage()
   }
 
   test("reconnect using the address from node_announcement") { f =>
@@ -297,7 +297,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val ping = Ping(Int.MaxValue, randomBytes(127))
     probe.send(peer, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
-    transport.expectNoMsg()
+    transport.expectNoMessage()
   }
 
   test("disconnect if no reply to ping") { f =>
@@ -318,7 +318,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
     probe.send(peer, rebroadcast)
-    transport.expectNoMsg(2 seconds)
+    transport.expectNoMessage(2 seconds)
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -370,7 +370,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       transport.send(peer, ann)
       router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, ann))
     }
-    transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
+    transport.expectNoMessage(1 second) // peer hasn't acknowledged the messages
 
     // let's assume that the router isn't happy with those channels because the funding tx is already spent
     for (c <- channels) {
@@ -381,7 +381,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       transport.send(peer, ann)
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
-    router.expectNoMsg(1 second)
+    router.expectNoMessage(1 second)
     // other routing messages go through
     transport.send(peer, query)
     router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, query))
@@ -394,7 +394,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       transport.send(peer, ann)
       router.expectMsg(Peer.PeerRoutingMessage(transport.ref, remoteNodeId, ann))
     }
-    transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
+    transport.expectNoMessage(1 second) // peer hasn't acknowledged the messages
 
     // now let's assume that the router isn't happy with those channels because the announcement is invalid
     router.send(peer, Peer.InvalidAnnouncement(channels(0)))

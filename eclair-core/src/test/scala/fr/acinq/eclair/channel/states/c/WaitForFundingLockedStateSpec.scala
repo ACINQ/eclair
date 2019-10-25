@@ -75,7 +75,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
     bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NORMAL)
-    bob2alice.expectNoMsg(200 millis)
+    bob2alice.expectNoMessage(200 millis)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
