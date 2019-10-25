@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Origin.Relayed
 import fr.acinq.eclair.payment.PaymentLifecycle.{buildCommand, buildOnion}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, PerHopPayload, RelayTlvPayload}
@@ -77,7 +78,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.amount === amount_bc)
     assert(fwd.message.cltvExpiry === expiry_bc)
-    assert(fwd.message.upstream === Right(add_ab))
+    assert(fwd.message.upstream === Upstream.Relayed(add_ab))
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -106,7 +107,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.amount === amount_bc)
     assert(fwd.message.cltvExpiry === expiry_bc)
-    assert(fwd.message.upstream === Right(add_ab))
+    assert(fwd.message.upstream === Upstream.Relayed(add_ab))
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
@@ -133,7 +134,7 @@ class RelayerSpec extends TestkitBaseClass {
     // first try
     val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd1.shortChannelId === channelUpdate_bc_1.shortChannelId)
-    assert(fwd1.message.upstream === Right(add_ab))
+    assert(fwd1.message.upstream === Upstream.Relayed(add_ab))
 
     // channel returns an error
     val origin = Relayed(channelId_ab, originHtlcId = 42, amountIn = 1100000 msat, amountOut = 1000000 msat)
@@ -142,7 +143,7 @@ class RelayerSpec extends TestkitBaseClass {
     // second try
     val fwd2 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd2.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd2.message.upstream === Right(add_ab))
+    assert(fwd2.message.upstream === Upstream.Relayed(add_ab))
 
     // failure again
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcValueTooHighInFlight(channelId_bc, UInt64(1000000000L), 1516977616L msat), origin, Some(channelUpdate_bc), originalCommand = Some(fwd2.message))))
@@ -206,7 +207,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd1.message.upstream === Right(add_ab))
+    assert(fwd1.message.upstream === Upstream.Relayed(add_ab))
 
     sender.send(relayer, Status.Failure(Register.ForwardShortIdFailure(fwd1)))
 
@@ -232,7 +233,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd.message.upstream === Right(add_ab))
+    assert(fwd.message.upstream === Upstream.Relayed(add_ab))
 
     sender.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)
