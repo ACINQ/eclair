@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair
 
-import java.io.File
+import java.io.{File, InputStream}
+import java.util.logging.LogManager
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -24,9 +25,8 @@ import akka.stream.{ActorMaterializer, BindFailedException}
 import com.typesafe.config.Config
 import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
-import kamon.Kamon
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{Await, ExecutionContext}
 import scala.util.{Failure, Success}
 
 /**
@@ -37,16 +37,11 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    val plugins = Plugin.loadPlugins(args.map(new File(_)))
+    val plugins = Seq.empty[Plugin] //Plugin.loadPlugins(args.map(new File(_)))
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
-
-    if (setup.config.getBoolean("enable-kamon")) {
-      Kamon.init(setup.appConfig)
-    }
-
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
@@ -80,8 +75,10 @@ object Boot extends App with Logging {
         override val password = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
       }.route
-      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).onFailure {
-        case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
+      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).onComplete {
+        case Failure(_: BindFailedException) => onError(TCPBindException(config.getInt("api.port")))
+        case Failure(thr) => onError(thr)
+        case Success(value) => ()
       }
     } else {
       logger.info("json API disabled")

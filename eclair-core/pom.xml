@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
+        <artifactId>eclair_2.12</artifactId>
         <version>0.3.3-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-core_2.11</artifactId>
+    <artifactId>eclair-core_2.12</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
@@ -205,16 +205,28 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
-        <!-- MONITORING -->
+        <!-- graal -->
         <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-core_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
+            <groupId>com.github.vmencik</groupId>
+            <artifactId>graal-akka-http_${scala.version.short}</artifactId>
+            <version>${graal.akka.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-akka_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
+            <groupId>com.github.vmencik</groupId>
+            <artifactId>graal-akka-slf4j_${scala.version.short}</artifactId>
+            <version>${graal.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.sdk</groupId>
+            <artifactId>graal-sdk</artifactId>
+            <version>${graal.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.substratevm</groupId>
+            <artifactId>svm</artifactId>
+            <version>${graal.version}</version>
+            <scope>provided</scope>
         </dependency>
         <!-- TESTS -->
         <dependency>
@@ -256,7 +268,7 @@
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-scala-scalatest_2.11</artifactId>
+            <artifactId>mockito-scala-scalatest_2.12</artifactId>
             <version>1.4.1</version>
             <scope>test</scope>
         </dependency>

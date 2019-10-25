@@ -22,13 +22,13 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{AddHtlcFailed, AvailableBalanceChanged, CMD_ADD_HTLC, CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, ChannelUnavailable, Commitments, ExpiryTooBig, ExpiryTooSmall, HtlcTimedout, InsufficientFunds, LocalChannelDown, LocalChannelUpdate, Register, TooManyAcceptedHtlcs, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.Origin.{Relayed, Local}
+import fr.acinq.eclair.payment.Origin.{Local => LocalOrigin, Relayed => RelayedOrigin}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
 import grizzled.slf4j.Logging
+import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -138,15 +138,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case Status.Failure(addFailed: AddHtlcFailed) =>
       import addFailed.paymentHash
       addFailed.origin match {
-        case Local(id, None) =>
+        case LocalOrigin(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the failure on the event stream and update the status in paymentDb
           val result = PaymentFailed(id, paymentHash, Nil)
           nodeParams.db.payments.updateOutgoingPayment(result)
           context.system.eventStream.publish(result)
-        case Local(_, Some(sender)) =>
+        case LocalOrigin(_, Some(sender)) =>
           sender ! Status.Failure(addFailed)
-        case Relayed(originChannelId, originHtlcId, _, _) =>
+        case RelayedOrigin(originChannelId, originHtlcId, _, _) =>
           addFailed.originalCommand match {
             case Some(CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
               log.info(s"retrying htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId")
@@ -161,16 +161,16 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardFulfill(fulfill, to, add) =>
       to match {
-        case Local(id, None) =>
+        case LocalOrigin(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost,
           // we publish the success on the event stream and update the status in paymentDb
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
           val result = PaymentSent(id, add.paymentHash, fulfill.paymentPreimage, Seq(PaymentSent.PartialPayment(id, add.amountMsat, feesPaid, add.channelId, None)))
           nodeParams.db.payments.updateOutgoingPayment(result)
           context.system.eventStream.publish(result)
-        case Local(_, Some(sender)) =>
+        case LocalOrigin(_, Some(sender)) =>
           sender ! fulfill
-        case Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
+        case RelayedOrigin(originChannelId, originHtlcId, amountIn, amountOut) =>
           val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
           context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
@@ -178,30 +178,30 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardFail(fail, to, add) =>
       to match {
-        case Local(id, None) =>
+        case LocalOrigin(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
           val result = PaymentFailed(id, add.paymentHash, Nil)
           nodeParams.db.payments.updateOutgoingPayment(result)
           context.system.eventStream.publish(result)
-        case Local(_, Some(sender)) =>
+        case LocalOrigin(_, Some(sender)) =>
           sender ! fail
-        case Relayed(originChannelId, originHtlcId, _, _) =>
+        case RelayedOrigin(originChannelId, originHtlcId, _, _) =>
           val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
       }
 
     case ForwardFailMalformed(fail, to, add) =>
       to match {
-        case Local(id, None) =>
+        case LocalOrigin(id, None) =>
           // we sent the payment, but we probably restarted and the reference to the original sender was lost
           // we publish the failure on the event stream and update the status in paymentDb
           val result = PaymentFailed(id, add.paymentHash, Nil)
           nodeParams.db.payments.updateOutgoingPayment(result)
           context.system.eventStream.publish(result)
-        case Local(_, Some(sender)) =>
+        case LocalOrigin(_, Some(sender)) =>
           sender ! fail
-        case Relayed(originChannelId, originHtlcId, _, _) =>
+        case RelayedOrigin(originChannelId, originHtlcId, _, _) =>
           val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
       }

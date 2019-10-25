@@ -197,9 +197,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // test starts here
     alice ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), Platform.currentTime.milliseconds.toSeconds)
-    alice2bob.expectNoMsg(200 millis)
-    alice2blockchain.expectNoMsg(200 millis)
-    assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
+    alice2bob.expectNoMessage(200 millis)
+    alice2blockchain.expectNoMessage(200 millis)
+    assert(alice.stateName == CLOSING) // the above expectNoMessage will make us wait, so this checks that we are still in CLOSING
   }
 
   test("recv GetTxResponse (funder, tx not found)", Tag("funding_unconfirmed")) { f =>
@@ -215,9 +215,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // test starts here
     alice ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds)
-    alice2bob.expectNoMsg(200 millis)
+    alice2bob.expectNoMessage(200 millis)
     alice2blockchain.expectMsg(PublishAsap(fundingTx)) // we republish the funding tx
-    assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
+    assert(alice.stateName == CLOSING) // the above expectNoMessage will make us wait, so this checks that we are still in CLOSING
   }
 
   test("recv GetTxResponse (fundee, tx found)", Tag("funding_unconfirmed")) { f =>
@@ -233,9 +233,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // test starts here
     bob ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), Platform.currentTime.milliseconds.toSeconds)
-    bob2alice.expectNoMsg(200 millis)
-    bob2blockchain.expectNoMsg(200 millis)
-    assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
+    bob2alice.expectNoMessage(200 millis)
+    bob2blockchain.expectNoMessage(200 millis)
+    assert(bob.stateName == CLOSING) // the above expectNoMessage will make us wait, so this checks that we are still in CLOSING
   }
 
   test("recv GetTxResponse (fundee, tx not found)", Tag("funding_unconfirmed")) { f =>
@@ -251,9 +251,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // test starts here
     bob ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds)
-    bob2alice.expectNoMsg(200 millis)
-    bob2blockchain.expectNoMsg(200 millis)
-    assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
+    bob2alice.expectNoMessage(200 millis)
+    bob2blockchain.expectNoMessage(200 millis)
+    assert(bob.stateName == CLOSING) // the above expectNoMessage will make us wait, so this checks that we are still in CLOSING
   }
 
   test("recv GetTxResponse (fundee, tx not found, timeout)", Tag("funding_unconfirmed")) { f =>
@@ -271,7 +271,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSince = Platform.currentTime.milliseconds.toSeconds - 15.days.toSeconds))
     bob ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds)
     bob2alice.expectMsgType[Error]
-    bob2blockchain.expectNoMsg(200 millis)
+    bob2blockchain.expectNoMessage(200 millis)
     assert(bob.stateName == CLOSED)
   }
 
@@ -288,9 +288,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // test starts here
     bob ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds - 3.hours.toSeconds)
-    bob2alice.expectNoMsg(200 millis)
-    bob2blockchain.expectNoMsg(200 millis)
-    assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
+    bob2alice.expectNoMessage(200 millis)
+    bob2blockchain.expectNoMessage(200 millis)
+    assert(bob.stateName == CLOSING) // the above expectNoMessage will make us wait, so this checks that we are still in CLOSING
   }
 
   test("recv CMD_ADD_HTLC") { f =>
@@ -303,7 +303,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
-    alice2bob.expectNoMsg(200 millis)
+    alice2bob.expectNoMessage(200 millis)
   }
 
   test("recv CMD_FULFILL_HTLC (unexisting htlc)") { f =>
@@ -473,7 +473,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
     // the htlc will not settle on chain
-    listener.expectNoMsg(2 seconds)
+    listener.expectNoMessage(2 seconds)
   }
 
   test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
@@ -502,7 +502,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
     // the htlc will not settle on chain
-    listener.expectNoMsg(2 seconds)
+    listener.expectNoMessage(2 seconds)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
@@ -601,7 +601,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].copy(revokedCommitPublished = Nil) == initialState)
@@ -620,7 +620,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(1).commitTx.tx)
     // alice publishes and watches the penalty tx
@@ -629,7 +629,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(2).commitTx.tx)
     // alice publishes and watches the penalty tx
@@ -640,7 +640,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 3)
   }
@@ -659,7 +659,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.commitTx == bobRevokedTx.commitTx.tx)
 
     // actual test starts here
@@ -691,7 +691,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.commitTx == bobRevokedTx.commitTx.tx)
 
     // actual test starts here

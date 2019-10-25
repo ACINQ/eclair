@@ -108,7 +108,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
-    alice2bob.expectNoMsg(200 millis)
+    alice2bob.expectNoMessage(200 millis)
   }
 
   test("recv CMD_FULFILL_HTLC") { f =>
@@ -336,7 +336,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     sender.send(alice, CMD_SIGN)
-    sender.expectNoMsg(1 second) // just ignored
+    sender.expectNoMessage(1 second) // just ignored
     //sender.expectMsg("cannot sign when there are no changes")
   }
 
@@ -355,7 +355,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test starts here
     sender.send(bob, CMD_SIGN)
-    sender.expectNoMsg(300 millis)
+    sender.expectNoMessage(300 millis)
     assert(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo === Left(waitForRevocation))
   }
 
@@ -492,7 +492,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice still hasn't forwarded the fail because it is not yet cross-signed
-    relayerA.expectNoMsg()
+    relayerA.expectNoMessage()
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
@@ -518,7 +518,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice still hasn't forwarded the fail because it is not yet cross-signed
-    relayerA.expectNoMsg()
+    relayerA.expectNoMessage()
 
     // actual test begins
     bob2alice.expectMsgType[RevokeAndAck]
@@ -653,7 +653,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val event = CurrentFeerates(FeeratesPerKw.single(10010))
     sender.send(alice, event)
-    alice2bob.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
   }
 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
@@ -661,7 +661,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val event = CurrentFeerates(FeeratesPerKw.single(11000))
     sender.send(bob, event)
-    bob2alice.expectNoMsg(500 millis)
+    bob2alice.expectNoMessage(500 millis)
   }
 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { f =>
@@ -699,7 +699,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0)))
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -745,7 +745,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0)))
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.isDefined)
@@ -778,7 +778,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc1-penalty
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc2-penalty
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     Transaction.correctlySpends(mainPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -833,7 +833,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(4))) // htlc-delayed
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)

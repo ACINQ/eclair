@@ -31,8 +31,8 @@ import fr.acinq.eclair.payment.{Origin, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
+import grizzled.slf4j.Logging
 
 /**
  * Ties network connections to peers.

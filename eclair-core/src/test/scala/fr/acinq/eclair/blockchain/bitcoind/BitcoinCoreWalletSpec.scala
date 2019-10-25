@@ -32,7 +32,7 @@ import org.json4s.JsonAST.{JString, _}
 import org.json4s.DefaultFormats
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -48,7 +48,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
-    "eclair.auto-reconnect" -> false))
+    "eclair.auto-reconnect" -> false).asJava)
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
@@ -82,8 +82,8 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
         port = config.getInt("bitcoind.rpcport")) {
 
         override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
-          case "getbalance" => Future(apiAmount)
-          case "fundrawtransaction" => Future(JObject(List("hex" -> JString(hexOut), "changepos" -> JInt(1), "fee" -> apiAmount)))
+          case "getbalance" => Future.successful(apiAmount)
+          case "fundrawtransaction" => Future.successful(JObject(List("hex" -> JString(hexOut), "changepos" -> JInt(1), "fee" -> apiAmount)))
           case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
         }
       }
