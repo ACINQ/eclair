@@ -211,7 +211,7 @@ object Commitments {
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
-    val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN).toList
+    val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
@@ -253,7 +253,7 @@ object Commitments {
     // let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
-    val incomingHtlcs = reduced.htlcs.filter(_.direction == IN).toList
+    val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
