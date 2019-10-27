@@ -27,6 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
@@ -172,9 +173,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
   setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
-  val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
+  val defaultRouteParams: RouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
-  val db = nodeParams.db.network
+  val db: NetworkDb = nodeParams.db.network
 
   {
     log.info("loading network announcements from db...")

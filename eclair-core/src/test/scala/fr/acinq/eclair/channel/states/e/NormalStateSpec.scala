@@ -36,7 +36,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT, Transactions}
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, AssignScid, AssignScidReply, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, _}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -2231,7 +2231,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMsg(1 second)
   }
@@ -2243,7 +2243,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
     channelUpdateListener.expectNoMsg(1 second)
   }
@@ -2254,7 +2254,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMsg(1 second)
   }
@@ -2265,10 +2265,32 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null))
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
-    // LocalChannelUpdate should not be published
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // LocalChannelUpdate should not be published (should this be changed to: "LocalChannelUpdate SHOULD be published"?)
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
     channelUpdateListener.expectNoMsg(1 second)
+  }
+
+  test("both recv BITCOIN_FUNDING_DEEPLYBURIED, then Alice initiates scid change (private channel, short channel id changed)") { f =>
+    import f._
+    val sender = TestProbe()
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null))
+    // private channel: we send the channel_update directly to the peer
+    val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate] // Bob has also emitted a ChannelUpdate
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
+    // LocalChannelUpdate should not be published (should this be changed to: "LocalChannelUpdate SHOULD be published"?)
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    channelUpdateListener.expectMsgType[LocalChannelUpdate] // Bob has also got BITCOIN_FUNDING_DEEPLYBURIED
+    sender.send(alice, CMD_REQUEST_RANDOM_SCID)
+    sender.send(bob, alice2bob.expectMsgType[AssignScid])
+    val bobReply = bob2alice.expectMsgType[AssignScidReply]
+    sender.send(alice, bobReply)
+    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == bobReply.shortChannelId)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == bobReply.shortChannelId)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == bobReply.shortChannelId)
+    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == bobReply.shortChannelId)
   }
 
   test("recv AnnouncementSignatures", Tag("channels_public")) { f =>
