@@ -25,7 +25,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, _}
+import fr.acinq.eclair._
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -82,7 +82,9 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  val announceChannel: Boolean = (channelFlags & 0x01) != 0
+  val announceChannel: Boolean = Features.isBitSet(0, channelFlags)
+
+  val zeroconfSpendablePushChannel: Boolean = Features.isBitSet(3, channelFlags)
 
   lazy val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation

@@ -118,13 +118,14 @@ final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = f
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
-final case object CMD_SIGN extends Command
+case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends Command
 final case class CMD_UPDATE_RELAY_FEE(feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends Command
-final case object CMD_FORCECLOSE extends Command
-final case object CMD_GETSTATE extends Command
-final case object CMD_GETSTATEDATA extends Command
-final case object CMD_GETINFO extends Command
+case object CMD_FORCECLOSE extends Command
+case object CMD_GETSTATE extends Command
+case object CMD_GETSTATEDATA extends Command
+case object CMD_GETINFO extends Command
+case object CMD_REQUEST_RANDOM_SCID extends Command
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data)
 
 /*
@@ -225,6 +226,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
+  val PrivateTurbo = 0x08.toByte
   val AnnounceChannel = 0x01.toByte
   val Empty = 0x00.toByte
 }
