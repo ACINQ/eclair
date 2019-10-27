@@ -894,8 +894,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex, _), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=$shortChannelId")
-      // if final shortChannelId is different from the one we had before, we need to re-announce it
-      val d1 = if (shortChannelId != d.shortChannelId) {
+      // if final shortChannelId is different from the one we had before, we need to re-announce it unless old shortChannelId is random and channel is strictly private
+      val d1 = if (shortChannelId != d.shortChannelId && (!d.shortChannelId.isRandom || d.commitments.privateToAnnounceChannel)) {
         log.info(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId} new=$shortChannelId")
         refreshAndReannounceScid(d, shortChannelId)
       } else {
@@ -910,7 +910,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         goto(NORMAL) using d1.copy(buried = true) storing()
       }
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel || d.commitments.privateToAnnounceChannel =>
       // channels are publicly announced if both parties want it (defined as feature bit)
       if (d.buried) {
         // we are aware that the channel has reached enough confirmations
@@ -1694,11 +1694,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // if channel is private, we send the channel_update directly to remote
       // they need it "to learn the other end's forwarding parameters" (BOLT 7)
       (stateData, nextStateData) match {
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
-          // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && (d2.buried || d2.shortChannelId.isRandom) =>
+          // for a private channel, when the tx was just buried or random scid has been assigned already we need to send the channel_update to our peer (even if it didn't change)
           forwarder ! d2.channelUpdate
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
-          // otherwise, we only send it when it is different, and tx is already buried
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && (d2.buried || d2.shortChannelId.isRandom) =>
+          // otherwise, we only send it when it is different, and tx is already buried or random scid has been assigned already (maybe for the second time)
           forwarder ! d2.channelUpdate
         case _ => ()
       }

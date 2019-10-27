@@ -71,7 +71,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
     val channelVersion = ChannelVersion.STANDARD
-    val channelFlags = if (tags.contains("channels_public")) ChannelFlags.Announce else ChannelFlags.Private
+    val channelFlags = if (tags.contains("channels_public")) ChannelFlags.Announce else if (tags.contains("channels_private_public")) ChannelFlags.PrivateThenAnnounce else ChannelFlags.Private
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
@@ -92,8 +92,8 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 500001, 42, fundingTx) // Normal scid > 500000
+    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 500001, 42, fundingTx) // Normal scid > 500000
     alice2blockchain.expectMsgType[WatchLost]
     bob2blockchain.expectMsgType[WatchLost]
     alice2bob.expectMsgType[FundingLocked]
