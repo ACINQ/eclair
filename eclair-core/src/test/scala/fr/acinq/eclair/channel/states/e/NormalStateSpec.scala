@@ -2341,6 +2341,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFlags === ChannelFlags.Announce)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFlags === ChannelFlags.Announce)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == ShortChannelId("500002x22x0"))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == ShortChannelId("500002x22x0"))
   }
 
   test("recv AnnouncementSignatures", Tag("channels_public")) { f =>
