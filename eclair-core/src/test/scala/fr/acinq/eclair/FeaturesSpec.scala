@@ -72,5 +72,7 @@ class FeaturesSpec extends FunSuite {
     assert(isBitSet(0, 1.toByte) && !isBitSet(3, 1.toByte)) // public ordinary channel
     assert(!isBitSet(0, 8.toByte) && isBitSet(3, 8.toByte)) // private zeroconfSpendablePushChannel channel
     assert(isBitSet(0, 9.toByte) && isBitSet(3, 9.toByte)) // public zeroconfSpendablePushChannel channel
+    assert(!isBitSet(0, 16.toByte) && !isBitSet(3, 16.toByte) && isBitSet(4, 16.toByte)) // private ordinary channel which becomes public
+    assert(!isBitSet(0, 24.toByte) && isBitSet(3, 24.toByte) && isBitSet(4, 24.toByte)) // private zeroconfSpendablePushChannel channel which becomes public
   }
 }

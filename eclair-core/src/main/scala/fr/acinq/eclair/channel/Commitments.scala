@@ -86,6 +86,8 @@ case class Commitments(channelVersion: ChannelVersion,
 
   val zeroconfSpendablePushChannel: Boolean = Features.isBitSet(3, channelFlags)
 
+  val privateToAnnounceChannel: Boolean = Features.isBitSet(4, channelFlags)
+
   lazy val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)

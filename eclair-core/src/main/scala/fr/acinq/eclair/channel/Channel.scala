@@ -505,7 +505,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
             }
           }
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling(publishFundingTx)
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling publishFundingTx
       }
 
     case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
@@ -889,8 +889,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: DATA_NORMAL) => handleNewBlock(c, d)
 
-    case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
-      handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex, _), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
@@ -902,12 +901,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else {
         d
       }
-      val localAnnSigs_opt = if (d.commitments.announceChannel) {
-        // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
-        Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
-      } else None
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using d1.copy(buried = true) storing() sending localAnnSigs_opt.toSeq
+      if (d.commitments.announceChannel || d.commitments.privateToAnnounceChannel) {
+        // if channel is or wants to become public we need to send our announcement_signatures in order to generate the channel_announcement
+        val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId)
+        goto(NORMAL) using d1.copy(commitments = d.commitments.copy(channelFlags = ChannelFlags.Announce), buried = true) storing() sending localAnnSigs
+      } else {
+        goto(NORMAL) using d1.copy(buried = true) storing()
+      }
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
       // channels are publicly announced if both parties want it (defined as feature bit)
@@ -1163,8 +1164,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
-    case Event(c@CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
-      handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1440,8 +1440,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) =>
-      handleOfflineFeerate(c, d)
+    case Event(c: CurrentFeerates, d: HasCommitments) => handleOfflineFeerate(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -1579,8 +1578,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) =>
-      handleOfflineFeerate(c, d)
+    case Event(c: CurrentFeerates, d: HasCommitments) => handleOfflineFeerate(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
@@ -1655,7 +1653,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(CurrentBlockCount(_), _) => stay
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentFeerates(_), _) => stay
+    case Event(_: CurrentFeerates, _) => stay
 
     // we only care about this event in NORMAL state
     case Event(_: BroadcastChannelUpdate, _) => stay

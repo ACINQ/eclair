@@ -226,9 +226,17 @@ final case class RemoteParams(nodeId: PublicKey,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
-  val PrivateTurbo = 0x08.toByte
-  val AnnounceChannel = 0x01.toByte
-  val Empty = 0x00.toByte
+  val AnnounceTurbo: Byte = 0x09.toByte // Send: immediately, Receive: deeply buried, Initially public: true, Becomes public: true
+
+  val PrivateTurbo: Byte = 0x08.toByte // Send: immediately, Receive: deeply buried, Initially public: false, Becomes public: false
+
+  val PrivateThenAnnounceTurbo: Byte = 0x24.toByte // Send: immediately, Receive: immediately, Initially public: false, Becomes public: true
+
+  val PrivateThenAnnounce: Byte = 0x16.toByte // Send: depth ok, Receive: deeply buried, Initially public: false, Becomes public: true
+
+  val Announce: Byte = 0x01.toByte // Send: depth ok, Receive: deeply buried, Initially public: true, Becomes public: true
+
+  val Private: Byte = 0x00.toByte // Send: depth ok, Receive: deeply buried, Initially public: false, Becomes public: false
 }
 
 case class ChannelVersion(bits: BitVector) {
@@ -237,19 +245,19 @@ case class ChannelVersion(bits: BitVector) {
   def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
   def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
   def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
-  def isSet(bit: Int) = bits.reverse.get(bit)
+  def isSet(bit: Int): Boolean = bits.reverse.get(bit)
 }
 
 object ChannelVersion {
   import scodec.bits._
-  val LENGTH_BITS = 4 * 8
+  val LENGTH_BITS: Int = 4 * 8
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
 
   def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
-  val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+  val USE_PUBKEY_KEYPATH: ChannelVersion = fromBit(USE_PUBKEY_KEYPATH_BIT)
 
-  val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
+  val STANDARD: ChannelVersion = ZEROES | USE_PUBKEY_KEYPATH
 }
 // @formatter:on
