@@ -66,6 +66,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdUnassigned])
 
   private val commandBuffer = context.actorOf(Props(new CommandBuffer(nodeParams, register)))
 
@@ -88,7 +89,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
 
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
-      log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
+      log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId because channel is down")
+      context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
+
+    case ShortChannelIdUnassigned(_, channelId, shortChannelId, remoteNodeId) =>
+      log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId because scid has changed")
       context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
     case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>
