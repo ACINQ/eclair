@@ -870,6 +870,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // if final shortChannelId is different from the one we had before, we need to re-announce it
       val channelUpdate = if (shortChannelId != d.shortChannelId) {
         log.info(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId} new=$shortChannelId")
+        // remove old scid reference from Router (will get new one via LocalChannelUpdate) and Register (will get new one via ShortChannelIdAssigned)
+        context.system.eventStream.publish(ShortChannelIdUnassigned(self, d.channelId, d.shortChannelId, remoteNodeId))
         // we need to re-announce this shortChannelId
         context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
         // we re-announce the channelUpdate for the same reason

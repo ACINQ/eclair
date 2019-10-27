@@ -33,6 +33,7 @@ class Register extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelRestored])
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdUnassigned])
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
@@ -50,6 +51,9 @@ class Register extends Actor with ActorLogging {
 
     case ShortChannelIdAssigned(_, channelId, shortChannelId) =>
       context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
+
+    case ShortChannelIdUnassigned(_, _, oldShortChannelId, _) =>
+      context become main(channels, shortIds - oldShortChannelId, channelsTo)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1

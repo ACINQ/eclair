@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import akka.Done
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -164,6 +164,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: LoggingAdapter = log
 
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdUnassigned])
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
@@ -237,25 +238,17 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           }
       }
 
+    case Event(ShortChannelIdUnassigned(_, channelId, oldShortChannelId, remoteNodeId) , d: Data) =>
+      removePrivateChannelByShortId(channelId, oldShortChannelId, remoteNodeId, d)
+
     case Event(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId), d: Data) =>
       // a local channel has permanently gone down
       if (d.channels.contains(shortChannelId)) {
         // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
         // so let's not do anything here
         stay
-      } else if (d.privateChannels.contains(shortChannelId)) {
-        // the channel was private or public-but-not-yet-announced, let's do the clean up
-        log.debug("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
-        val desc1 = ChannelDesc(shortChannelId, nodeParams.nodeId, remoteNodeId)
-        val desc2 = ChannelDesc(shortChannelId, remoteNodeId, nodeParams.nodeId)
-        // we remove the corresponding updates from the graph
-        val graph1 = d.graph
-          .removeEdge(desc1)
-          .removeEdge(desc2)
-        // and we remove the channel and channel_update from our state
-        stay using d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
       } else {
-        stay
+        removePrivateChannelByShortId(channelId, shortChannelId, remoteNodeId, d)
       }
 
     case Event(SyncProgress(progress), d: Data) =>
@@ -872,6 +865,19 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
     }
+
+  def removePrivateChannelByShortId(channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, d: Data): FSM.State[router.State, Data] = {
+    // the channel was private or public-but-not-yet-announced, let's do the clean up
+    log.debug("attempting to remove private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+    val desc1 = ChannelDesc(shortChannelId, nodeParams.nodeId, remoteNodeId)
+    val desc2 = ChannelDesc(shortChannelId, remoteNodeId, nodeParams.nodeId)
+    // we remove the corresponding updates from the graph
+    val graph1 = d.graph
+      .removeEdge(desc1)
+      .removeEdge(desc2)
+    // and we remove the channel and channel_update from our state
+    stay using d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
+  }
 
   override def mdc(currentMessage: Any): MDC = currentMessage match {
     case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
