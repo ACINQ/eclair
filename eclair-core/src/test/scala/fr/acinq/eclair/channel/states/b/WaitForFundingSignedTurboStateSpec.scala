@@ -20,6 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.Channel.watchSeenInMempool
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
@@ -63,7 +64,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     // This is a Turbo channel so alice becomes WAIT_FOR_FUNDING_LOCKED right away and sends a FundingLocked
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     // Bob sees funding in a mempool and sends FundingLocked right away
-    bob ! Channel.WATCH_EVENT_CONFIRMED_TURBO(fundingTx)
+    watchSeenInMempool(bob, fundingTx)
     val msg1 = alice2bob.expectMsgType[FundingLocked]
     val msg2 = bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
