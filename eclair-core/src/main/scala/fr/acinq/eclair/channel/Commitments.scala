@@ -190,7 +190,8 @@ object Commitments {
       }
     }
 
-    val htlcValueInFlight = outgoingHtlcs.map(_.add.amountMsat).sum
+    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
+    val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.add.amountMsat).sum
     if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
@@ -231,7 +232,8 @@ object Commitments {
       }
     }
 
-    val htlcValueInFlight = incomingHtlcs.map(_.add.amountMsat).sum
+    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
+    val htlcValueInFlight = incomingHtlcs.toSeq.map(_.add.amountMsat).sum
     if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }

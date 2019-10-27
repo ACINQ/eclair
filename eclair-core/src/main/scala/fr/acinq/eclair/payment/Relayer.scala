@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Origin.{Relayed, Local}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, UInt64, nodeFee}
@@ -35,8 +36,12 @@ import scala.collection.mutable
 
 // @formatter:off
 sealed trait Origin
-case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
+object Origin {
+  /** Our node is the origin of the payment. */
+  case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
+  /** Our node forwarded a single incoming HTLC to an outgoing channel. */
+  case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
+}
 
 sealed trait ForwardMessage
 case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
@@ -125,7 +130,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
 
-    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Right(add), _, _)))) =>
+    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
@@ -143,11 +148,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           sender ! Status.Failure(addFailed)
         case Relayed(originChannelId, originHtlcId, _, _) =>
           addFailed.originalCommand match {
-            case Some(cmd) =>
+            case Some(CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
               log.info(s"retrying htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId")
-              // NB: cmd.upstream.right is defined since this is a relayed payment
-              self ! ForwardAdd(cmd.upstream.right.get, cmd.previousFailures :+ addFailed)
-            case None =>
+              self ! ForwardAdd(add, previousFailures :+ addFailed)
+            case _ =>
               val failure = translateError(addFailed)
               val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
               log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmdFail.reason}")
@@ -377,7 +381,7 @@ object Relayer extends Logging {
       case Some(channelUpdate) if relayPayload.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amountToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, upstream = Right(add), commit = true, previousFailures = previousFailures))
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, Upstream.Relayed(add), commit = true, previousFailures = previousFailures))
     }
   }
 

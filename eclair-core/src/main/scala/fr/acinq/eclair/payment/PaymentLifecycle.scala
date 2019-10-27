@@ -22,7 +22,7 @@ import akka.actor.{ActorContext, ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
@@ -291,7 +291,7 @@ object PaymentLifecycle {
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, upstream = Left(id), commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, Upstream.Local(id), commit = true) -> onion.sharedSecrets
   }
 
   /**
