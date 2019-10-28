@@ -202,14 +202,17 @@ object SqliteWalletDb {
     */
   val version = 0x0001
 
+  val p2shSegwitWalletType = 0x00.toByte
+  val bech32WalletType = 0x01.toByte
+
   def walletTypeCodec(vers: Long): Codec[WalletType] = vers match {
     case 0x0000 => provide(P2SH_SEGWIT)     // old versions supported only p2sh-segwit
-    case v if v == version => bool.xmap({   // new versions (from 0x0001) have a boolean encoded wallet-type
-      case false => P2SH_SEGWIT
-      case true => BECH32
+    case v if v == version => byte.xmap({   // new versions (from 0x0001) have a byte encoded wallet-type
+      case b if b == p2shSegwitWalletType => P2SH_SEGWIT
+      case b if b == bech32WalletType     => BECH32
     }, {
-      case P2SH_SEGWIT => false
-      case BECH32 => true
+      case P2SH_SEGWIT => p2shSegwitWalletType
+      case BECH32      => bech32WalletType
     })
   }
 
