@@ -21,12 +21,19 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{Base58, Base58Check, Block, Btc, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair._
+import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
+import fr.acinq.eclair.wire.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, _}
-import org.json4s.{DefaultFormats}
+import org.json4s.DefaultFormats
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -79,47 +86,95 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val tx = Transaction.read(signedTx)
     val txid = tx.txid.toString()
 
-    // test starts here
-    val client = new ExtendedBitcoinClient(bitcoinClient)
-    // we publish it a first time
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-    // we publish the tx a second time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-    // let's confirm the tx
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(generatingAddress) = sender.expectMsgType[JValue]
-    bitcoinClient.invoke("generatetoaddress", 1, generatingAddress).pipeTo(sender.ref)
-    sender.expectMsgType[JValue]
-    // and publish the tx a third time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
+  def nonWalletTransaction(): (Transaction, ShortChannelId) = {
 
-    // now let's spent the output of the tx
-    val spendingTx = {
-      val pos = if (changePos == 0) 1 else 0
-      bitcoinClient.invoke("createrawtransaction", Array(Map("txid" -> txid, "vout" -> pos)), Map(address -> 5.99999)).pipeTo(sender.ref)
-      val JString(unsignedtx) = sender.expectMsgType[JValue]
-      bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx).pipeTo(sender.ref)
-      val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
-      signedTx
-    }
-    bitcoinClient.invoke("sendrawtransaction", spendingTx).pipeTo(sender.ref)
-    val JString(spendingTxid) = sender.expectMsgType[JValue]
+    val amountToReceive = Btc(0.1)
+    val probe = TestProbe()
+    val master = DeterministicWallet.generate(randomBytes32)
+    val (privKey, privKey1) = (DeterministicWallet.derivePrivateKey(master, 0), DeterministicWallet.derivePrivateKey(master, 1))
+    val (pubKey, pubKey1) = (privKey.publicKey, privKey1.publicKey)
+    val externalWalletAddress = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, Crypto.hash160(pubKey.value))
 
-    // and publish the tx a fourth time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-    // let's confirm the tx
-    bitcoinClient.invoke("generatetoaddress", 1, generatingAddress).pipeTo(sender.ref)
-    sender.expectMsgType[JValue]
-    // and publish the tx a fifth time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
+    // send bitcoins from our wallet to an external wallet
+    bitcoinrpcclient.invoke("sendtoaddress", externalWalletAddress, amountToReceive.toBigDecimal.toString()).pipeTo(probe.ref)
+    val JString(spendingToExternalTxId) = probe.expectMsgType[JValue]
 
-    // this one should be rejected
-    client.publishTransaction(Transaction.read("02000000000101b9e2a3f518fd74e696d258fed3c78c43f84504e76c99212e01cf225083619acf00000000000d0199800136b34b00000000001600145464ce1e5967773922506e285780339d72423244040047304402206795df1fd93c285d9028c384aacf28b43679f1c3f40215fd7bd1abbfb816ee5a022047a25b8c128e692d4717b6dd7b805aa24ecbbd20cfd664ab37a5096577d4a15d014730440220770f44121ed0e71ec4b482dded976f2febd7500dfd084108e07f3ce1e85ec7f5022025b32dc0d551c47136ce41bfb80f5a10de95c0babb22a3ae2d38e6688b32fcb20147522102c2662ab3e4fa18a141d3be3317c6ee134aff10e6cd0a91282a25bf75c0481ebc2102e952dd98d79aa796289fa438e4fdeb06ed8589ff2a0f032b0cfcb4d7b564bc3252aea58d1120")).pipeTo(sender.ref)
-    sender.expectMsgType[Failure]
+    bitcoinrpcclient.invoke("getrawtransaction", spendingToExternalTxId).pipeTo(probe.ref)
+    val JString(rawTx) = probe.expectMsgType[JValue]
+    val incomingTx = Transaction.read(rawTx)
+    val outIndex = incomingTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2pkh(pubKey)))
+
+    assert(outIndex >= 0)
+
+    generateBlocks(bitcoincli, 1)
+
+    // tx spending bitcoin from external wallet to external wallet
+    val tx = Transaction(
+      version = 2L,
+      txIn = TxIn(OutPoint(incomingTx, outIndex), ByteVector.empty,  TxIn.SEQUENCE_FINAL) :: Nil,
+      txOut = TxOut(amountToReceive.toSatoshi - 200.sat, Script.write(Script.pay2pkh(pubKey1))) :: Nil, // amount - fee
+      lockTime = 0
+    )
+
+    val sig = Transaction.signInput(tx, 0, Script.pay2pkh(pubKey), SIGHASH_ALL, 2500 sat, SigVersion.SIGVERSION_BASE, privKey.privateKey)
+    val tx1 = tx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(pubKey.value) :: Nil)
+    Transaction.correctlySpends(tx1, Seq(incomingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
+    val txId = probe.expectMsgType[JString].s
+    generateBlocks(bitcoincli, 1) // bury it in a block
+
+    bitcoinrpcclient.invoke("getbestblockhash").pipeTo(probe.ref)
+    val blockHash = probe.expectMsgType[JString].s
+
+    bitcoinrpcclient.invoke("getblock", blockHash, 0).pipeTo(probe.ref)
+    val JString(rawBlock) = probe.expectMsgType[JString]
+    val block = Block.read(rawBlock)
+    val txIndex = block.tx.indexWhere(_.txid.toHex == txId)
+
+    bitcoinrpcclient.invoke("getblockchaininfo").pipeTo(probe.ref)
+    val height = (probe.expectMsgType[JValue] \ "blocks").extract[Int]
+
+    (tx1, ShortChannelId(height, txIndex, 0))
   }
+
+  test("validate short channel Ids") {
+    val sender = TestProbe()
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val (channelTransaction, channelShortId) = nonWalletTransaction() // create a non wallet transaction
+
+    // we won't be able to get the raw transaction if it's non-wallet
+    client.getRawTransaction(channelTransaction.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    // likewise we can't get the channel short id from the txId
+    client.getTransactionShortId(channelTransaction.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    val mockChannelAnnouncement = ChannelAnnouncement(
+      nodeSignature1 = ByteVector64.Zeroes,
+      nodeSignature2 = ByteVector64.Zeroes,
+      bitcoinSignature1 = ByteVector64.Zeroes,
+      bitcoinSignature2 = ByteVector64.Zeroes,
+      features = ByteVector.empty,
+      chainHash = ByteVector32.Zeroes,
+      shortChannelId = channelShortId,
+      nodeId1 = PrivateKey(randomBytes32).publicKey,
+      nodeId2 = PrivateKey(randomBytes32).publicKey,
+      bitcoinKey1 = PrivateKey(randomBytes32).publicKey,
+      bitcoinKey2 = PrivateKey(randomBytes32).publicKey
+    )
+
+    // but we can validate if a short channel id is unspent
+    client.validate(mockChannelAnnouncement).pipeTo(sender.ref)
+    sender.expectMsg(ValidateResult(mockChannelAnnouncement, Right(channelTransaction, UtxoStatus.Unspent)))
+  }
+
+
 }

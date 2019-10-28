@@ -139,7 +139,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               }
           }
 
-        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+        case w: WatchConfirmed =>
+          for {
+            _ <- client.watchScript(w.publicKeyScript.toHex, 0)
+          } yield checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
 
         case _: WatchLost => () // TODO: not implemented
 
