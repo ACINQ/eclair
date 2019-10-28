@@ -40,15 +40,21 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       _ <- rpcClient.invoke("rescanblockchain", rescanSinceHeight)
     } yield Unit
 
+  /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    */
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("gettransaction", txId) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("gettransaction", txId)
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
+  /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    */
   def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
-    rpcClient.invoke("gettransaction", txId) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("gettransaction", txId)
       .map(json => (json \ "blockhash").extractOpt[String])
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
@@ -91,6 +97,9 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       JString(hex) = json \ "hex"
     } yield Transaction.read(hex)
 
+  /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    */
   def getTransactionMeta(txId: String)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
       tx_opt <- getTransaction(txId) map(Some(_)) recover { case _ => None }
@@ -104,6 +113,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } yield json != JNull
 
   /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
     *
     * @param txId transaction id
     * @param ec
@@ -166,24 +176,18 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
         _ = span0.finish()
         span1 = Kamon.spanBuilder("getblock").start()
-        txid: String <- rpcClient.invoke("getblock", blockHash).map {
-          case json => Try {
-            val JArray(txs) = json \ "tx"
-            txs(txIndex).extract[String]
-          } getOrElse ByteVector32.Zeroes.toHex
-        }
+        // we force non verbose output to retrieve the entire serialized block
+        block <- rpcClient.invoke("getblock", blockHash, 0).collect { case JString(s) => Block.read(s) }
         _ = span1.finish()
-        span2 = Kamon.spanBuilder("getrawtx").start()
-        tx <- getTransaction(txid)
-        _ = span2.finish()
+        tx = block.tx(txIndex)
         span3 = Kamon.spanBuilder("utxospendable-mempool").start()
-        unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
+        unspent <- isTransactionOutputSpendable(tx.txid.toHex, outputIndex, includeMempool = true)
         _ = span3.finish()
         fundingTxStatus <- if (unspent) {
           Future.successful(UtxoStatus.Unspent)
         } else {
           // if this returns true, it means that the spending tx is *not* in the blockchain
-          isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+          isTransactionOutputSpendable(tx.txid.toHex, outputIndex, includeMempool = false).map {
             case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
           }
         }
