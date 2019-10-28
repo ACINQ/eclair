@@ -120,7 +120,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
         case (Success(_), Success(_), Success(Some(feerate))) if feerate <= 0 =>
           feerateError.setText("Fee rate must be greater than 0")
         case (Success(capacitySat), Success(pushMsat), Success(feeratePerByte_opt)) =>
-          val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+          val channelFlags = if (publicChannel.isSelected) ChannelFlags.Announce else ChannelFlags.Private
           handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, MilliSatoshi(pushMsat), feeratePerByte_opt.map(fr.acinq.eclair.feerateByte2Kw), Some(channelFlags), Some(30 seconds))))
           stage.close()
         case (Failure(t), _, _) =>

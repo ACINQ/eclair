@@ -242,6 +242,11 @@ trait Service extends ExtraDirectives with Logging {
                             complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
                           }
                         } ~
+                        path("createinvoicewithextrahops") {
+                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
+                            complete(eclairApi.receiveWithExtraHops(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
+                          }
+                        } ~
                         path("getinvoice") {
                           formFields(paymentHashFormParam) { paymentHash =>
                             completeOrNotFound(eclairApi.getInvoice(paymentHash))
