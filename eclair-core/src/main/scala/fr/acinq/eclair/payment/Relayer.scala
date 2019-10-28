@@ -50,7 +50,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
+case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 // @formatter:on
 
 /**
@@ -76,12 +76,12 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case GetUsableBalances =>
       val state: Map[ShortChannelId, UsableBalances] = for {
         (scid, OutgoingChannel(nextNodeId, channelUpdate, commitments)) <- channelUpdates
-        if Announcements.isEnabled(channelUpdate.channelFlags)
       } yield (scid, UsableBalances(remoteNodeId = nextNodeId,
         shortChannelId = channelUpdate.shortChannelId,
         canSend = commitments.availableBalanceForSend,
         canReceive = commitments.availableBalanceForReceive,
-        isPublic = commitments.announceChannel))
+        isPublic = commitments.announceChannel,
+        isEnabled = Announcements.isEnabled(channelUpdate.channelFlags)))
       sender ! state
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>

@@ -557,7 +557,7 @@ class RelayerSpec extends TestkitBaseClass {
     relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = 2), makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     sender.send(relayer, GetUsableBalances)
     val usableBalances4 = sender.expectMsgType[Map[ShortChannelId, UsableBalances]].values
-    assert(usableBalances4.isEmpty)
+    assert(usableBalances4.head.isEnabled === false)
 
     relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     sender.send(relayer, GetUsableBalances)
