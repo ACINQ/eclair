@@ -90,7 +90,7 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 
-  def getRemoteUpdate(localNodeId: PublicKey): List[ExtraHop] =
+  def getExtraHopFromRemoteUpdate(localNodeId: PublicKey): List[ExtraHop] =
     for {
       upd <- (update_1_opt ++ update_2_opt).toList
       updateNodeId = getNodeIdSameSideAs(upd)
@@ -130,6 +130,10 @@ case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Op
 case object GetNetworkStats
 
 case object GetRoutingState
+
+case class GetExtraHops(localNodeId: PublicKey)
+
+case class GetExtraHopsReply(extraHops: List[List[ExtraHop]])
 
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
 
@@ -274,6 +278,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(GetNetworkStats, d: Data) =>
       sender ! d.stats
+      stay
+
+    case Event(GetExtraHops(localNodeId), d: Data) =>
+      sender ! GetExtraHopsReply(d.privateChannels.values.toList.map(_.getExtraHopFromRemoteUpdate(localNodeId)).filter(_.nonEmpty))
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>

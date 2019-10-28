@@ -74,14 +74,15 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
     case GetUsableBalances =>
-      sender ! channelUpdates.values
-        .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
-        .map(o => UsableBalances(
-          remoteNodeId = o.nextNodeId,
-          shortChannelId = o.channelUpdate.shortChannelId,
-          canSend = o.commitments.availableBalanceForSend,
-          canReceive = o.commitments.availableBalanceForReceive,
-          isPublic = o.commitments.announceChannel))
+      val state: Map[ShortChannelId, UsableBalances] = for {
+        (scid, OutgoingChannel(nextNodeId, channelUpdate, commitments)) <- channelUpdates
+        if Announcements.isEnabled(channelUpdate.channelFlags)
+      } yield (scid, UsableBalances(remoteNodeId = nextNodeId,
+        shortChannelId = channelUpdate.shortChannelId,
+        canSend = commitments.availableBalanceForSend,
+        canReceive = commitments.availableBalanceForReceive,
+        isPublic = commitments.announceChannel))
+      sender ! state
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)

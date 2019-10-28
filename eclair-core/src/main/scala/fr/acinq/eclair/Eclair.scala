@@ -288,5 +288,5 @@ class EclairImpl(appKit: Kit) extends Eclair {
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
-  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
+  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Map[ShortChannelId, UsableBalances]].map(_.values)
 }
