@@ -73,7 +73,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
 
   def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
 
-  test("complete transactions (enough funds)") {
+  test(s"complete transactions (enough funds $walletType)") {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val (confirmed1, unconfirmed1) = state1.balance
 
@@ -93,7 +93,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
     assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
   }
 
-  test("complete transactions (insufficient funds)") {
+  test(s"complete transactions (insufficient funds $walletType)") {
     val state1 = addFunds(state, state.accountKeys.head, 5 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(6 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val e = intercept[IllegalArgumentException] {
@@ -101,7 +101,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
     }
   }
 
-  test("compute the effect of tx") {
+  test(s"compute the effect of tx ($walletType)") {
     val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val (state2, tx1, fee1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
@@ -111,7 +111,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
     assert(sent - received - fee == btc2satoshi(0.5 btc))
   }
 
-  test("use actual transaction weight to compute fees") {
+  test(s"use actual transaction weight to compute fees ($walletType)") {
     val state1 = addFunds(state, (state.accountKeys(0), 5000000 sat) :: (state.accountKeys(1), 6000000 sat) :: (state.accountKeys(2), 4000000 sat) :: Nil)
 
     {
@@ -150,7 +150,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
     }
   }
 
-  test("spend all our balance") {
+  test(s"spend all our balance ($walletType)") {
     val state1 = addFunds(state, state.accountKeys(0), 1 btc)
     val state2 = addFunds(state1, state1.accountKeys(1), 2 btc)
     val state3 = addFunds(state2, state2.changeKeys(0), 0.5 btc)
@@ -164,7 +164,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
     assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
   }
 
-  test("check that issue #1146 is fixed") {
+  test(s"check that issue #1146 is fixed ($walletType)") {
     val state3 = addFunds(state, state.changeKeys(0), 0.5 btc)
 
     val pub1 = state.accountKeys(0).publicKey
@@ -181,7 +181,7 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
     assert(Try(state3.completeTransaction(tx1, 750, 0 sat, dustLimit, true)).isSuccess)
   }
 
-  test("fuzzy test") {
+  test(s"fuzzy test ($walletType)") {
     val random = new Random()
     (0 to 10) foreach { _ =>
       val funds = for (i <- 0 until random.nextInt(10)) yield {

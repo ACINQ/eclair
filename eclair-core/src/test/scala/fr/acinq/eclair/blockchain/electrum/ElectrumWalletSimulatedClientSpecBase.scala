@@ -103,7 +103,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     assert((xpub, path) == keyStore.computeXPub)
   }
 
-  test("tell wallet is ready when a new block comes in, even if nothing else has changed") {
+  test(s"tell wallet is ready when a new block comes in, even if nothing else has changed ($walletType)") {
     val last = wallet.stateData.blockchain.tip
     assert(last.header == headers.last)
     val header = makeHeader(last.header)
@@ -114,7 +114,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     assert(address == keyStore.computeAddress(keyStore.accountKey(0)))
   }
 
-  test("tell wallet is ready when it is reconnected, even if nothing has changed") {
+  test(s"tell wallet is ready when it is reconnected, even if nothing has changed ($walletType)") {
     // disconnect wallet
     sender.send(wallet, ElectrumClient.ElectrumDisconnected)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
@@ -131,7 +131,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     listener.expectMsgType[NewWalletReceiveAddress]
   }
 
-  test("don't send the same ready message more then once") {
+  test(s"don't send the same ready message more then once ($walletType)") {
     // listener should be notified
     val last = wallet.stateData.blockchain.tip
     assert(last.header == headers.last)
@@ -145,7 +145,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     listener.expectNoMsg(500 milliseconds)
   }
 
-  test("disconnect if server sends a bad header") {
+  test(s"disconnect if server sends a bad header ($walletType)") {
     val last = wallet.stateData.blockchain.bestchain.last
     val bad = makeHeader(last.header, 42L).copy(bits = Long.MaxValue)
 
@@ -169,8 +169,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     reconnect
   }
 
-
-  test("disconnect if server sends an invalid transaction") {
+  test(s"disconnect if server sends an invalid transaction ($walletType)") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
     }
@@ -215,7 +214,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     assert(ready.unconfirmedBalance === 0.sat)
   }
 
-  test("clear status when we have pending history requests") {
+  test(s"clear status when we have pending history requests ($walletType)") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
     }
@@ -233,7 +232,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     reconnect
   }
 
-  test("handle pending transaction requests") {
+  test(s"handle pending transaction requests ($walletType)") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
     }
@@ -256,7 +255,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
     assert(wallet.stateData.pendingTransactionRequests == Set(tx.txid))
   }
 
-  test("handle disconnect/reconnect events") {
+  test(s"handle disconnect/reconnect events ($walletType)") {
     val data = {
       val master = DeterministicWallet.generate(seed)
       val data1 = Data.createNew(this.wallet.stateData.keyStore, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), walletParameters)
