@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ChannelReestablish, _}
+import fr.acinq.eclair.wire._
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
@@ -48,11 +48,11 @@ object Channel {
   val ANNOUNCEMENTS_MINCONF = 6
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-  val MAX_FUNDING = 16777216 sat // = 2^24
+  val MAX_FUNDING: Satoshi = 16777216 sat // = 2^24
   val MAX_ACCEPTED_HTLCS = 483
 
   // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
-  val MIN_DUSTLIMIT = 546 sat
+  val MIN_DUSTLIMIT: Satoshi = 546 sat
 
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
@@ -65,10 +65,10 @@ object Channel {
   val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
   // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-  val FUNDING_TIMEOUT_FUNDEE = 5 days
+  val FUNDING_TIMEOUT_FUNDEE: FiniteDuration = 5 days
 
   // pruning occurs if no new update has been received in two weeks (BOLT 7)
-  val REFRESH_CHANNEL_UPDATE_INTERVAL = 10 days
+  val REFRESH_CHANNEL_UPDATE_INTERVAL: FiniteDuration = 10 days
 
   case class BroadcastChannelUpdate(reason: BroadcastReason)
 
