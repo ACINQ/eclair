@@ -133,8 +133,6 @@ case object GetRoutingState
 
 case class GetExtraHops(localNodeId: PublicKey)
 
-case class GetExtraHopsReply(extraHops: List[List[ExtraHop]])
-
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
 
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
@@ -281,7 +279,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(GetExtraHops(localNodeId), d: Data) =>
-      sender ! GetExtraHopsReply(d.privateChannels.values.toList.map(_.getExtraHopFromRemoteUpdate(localNodeId)).filter(_.nonEmpty))
+      sender ! d.privateChannels.values.toList.map(_.getExtraHopFromRemoteUpdate(localNodeId))
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>
