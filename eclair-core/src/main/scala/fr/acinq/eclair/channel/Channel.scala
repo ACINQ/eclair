@@ -894,9 +894,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex, _), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=$shortChannelId")
-      // if final shortChannelId is different from the one we had before, we need to re-announce it unless old shortChannelId is random and channel is strictly private
-      val d1 = if (shortChannelId != d.shortChannelId && (!d.shortChannelId.isRandom || d.commitments.privateToAnnounceChannel)) {
-        log.info(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId} new=$shortChannelId")
+      val scidHasChangedDueToReorg = shortChannelId != d.shortChannelId && !d.shortChannelId.isRandom // previous scid was not random but blockchain based which means a reorg has happened
+      val useMostRecentScidAnyway = shortChannelId != d.shortChannelId && d.commitments.privateToAnnounceChannel // previous scid could be random, but we are about to become public so overwrite it anyway
+      val d1 = if (scidHasChangedDueToReorg || useMostRecentScidAnyway) {
+        log.info(s"short channel id changed: old=${d.shortChannelId} new=$shortChannelId")
         refreshAndReannounceScid(d, shortChannelId)
       } else {
         d

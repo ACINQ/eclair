@@ -2494,5 +2494,4 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(!Announcements.isEnabled(update2a.channelUpdate.channelFlags))
     awaitCond(alice.stateName == OFFLINE)
   }
-
 }
