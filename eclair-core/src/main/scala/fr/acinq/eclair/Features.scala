@@ -38,8 +38,8 @@ object Features {
   val VARIABLE_LENGTH_ONION_MANDATORY = 8
   val VARIABLE_LENGTH_ONION_OPTIONAL = 9
 
-  val OPTION_SCID_ASSIGN_MANDATORY = 12
-  val OPTION_SCID_ASSIGN_OPTIONAL = 13
+  val OPTION_SCID_ASSIGN_MANDATORY = 14
+  val OPTION_SCID_ASSIGN_OPTIONAL = 15
 
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
