@@ -538,30 +538,30 @@ class RelayerSpec extends TestkitBaseClass {
     relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, -2000 msat, 300000 msat))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000 msat, -5000 msat))
     sender.send(relayer, GetUsableBalances)
-    val usableBalances1 = sender.expectMsgType[Iterable[UsableBalances]]
+    val usableBalances1 = sender.expectMsgType[Map[ShortChannelId, UsableBalances]].values
     assert(usableBalances1.size === 2)
     assert(usableBalances1.head.canSend === 0.msat && usableBalances1.head.canReceive === 300000.msat && usableBalances1.head.shortChannelId == channelUpdate_ab.shortChannelId)
     assert(usableBalances1.last.canReceive === 0.msat && usableBalances1.last.canSend === 400000.msat && usableBalances1.last.shortChannelId == channelUpdate_bc.shortChannelId)
 
     relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, 0 msat, makeCommitments(channelId_bc, 200000 msat, 500000 msat))
     sender.send(relayer, GetUsableBalances)
-    val usableBalances2 = sender.expectMsgType[Iterable[UsableBalances]]
+    val usableBalances2 = sender.expectMsgType[Map[ShortChannelId, UsableBalances]].values
     assert(usableBalances2.last.canReceive === 500000.msat && usableBalances2.last.canSend === 200000.msat)
 
     relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, 0 msat, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
     sender.send(relayer, GetUsableBalances)
-    val usableBalances3 = sender.expectMsgType[Iterable[UsableBalances]]
+    val usableBalances3 = sender.expectMsgType[Map[ShortChannelId, UsableBalances]].values
     assert(usableBalances3.size === 1 && usableBalances3.head.canSend === 100000.msat)
 
     relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = 2), makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     sender.send(relayer, GetUsableBalances)
-    val usableBalances4 = sender.expectMsgType[Iterable[UsableBalances]]
-    assert(usableBalances4.isEmpty)
+    val usableBalances4 = sender.expectMsgType[Map[ShortChannelId, UsableBalances]].values
+    assert(usableBalances4.head.isEnabled === false)
 
     relayer ! LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     sender.send(relayer, GetUsableBalances)
-    val usableBalances5 = sender.expectMsgType[Iterable[UsableBalances]]
+    val usableBalances5 = sender.expectMsgType[Map[ShortChannelId, UsableBalances]].values
     assert(usableBalances5.size === 1)
   }
 }
