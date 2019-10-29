@@ -36,7 +36,7 @@ sealed trait Watch {
   def event: BitcoinEvent
 }
 // we need a public key script to use electrum apis
-final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent) extends Watch
+final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent, rescanHeight: Option[Int] = None) extends Watch
 object WatchConfirmed {
   // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
   // we support both p2pkh and p2wpkh scripts
