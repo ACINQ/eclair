@@ -139,7 +139,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               }
           }
 
-        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+        case w: WatchConfirmed =>
+          for {
+            _ <- client.watchScript(w.publicKeyScript.toHex, w.rescanHeight.getOrElse(MAX_PRUNE_HEIGHT))
+          } yield checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
 
         case _: WatchLost => () // TODO: not implemented
 
@@ -225,6 +228,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 }
 
 object ZmqWatcher {
+
+  val MAX_PRUNE_HEIGHT = 500000 // roughly around when segwit was activated
 
   def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
