@@ -2324,7 +2324,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def maybeAskRandomScid(d: DATA_NORMAL): Unit =
     if (d.commitments.channelFlags == ChannelFlags.PrivateThenAnnounceTurbo && !d.commitments.localParams.isFunder && !d.shortChannelId.isRandomlyAssigned) {
       // In a specific case of private turbo channel which later becomes public a fundee keeps asking funder for random scid assigning to enable receiving ASAP
-      self ! CMD_REQUEST_RANDOM_SCID
+      context.system.scheduler.scheduleOnce(1 second, self, CMD_REQUEST_RANDOM_SCID)
     }
 
   override def mdc(currentMessage: Any): MDC = {
