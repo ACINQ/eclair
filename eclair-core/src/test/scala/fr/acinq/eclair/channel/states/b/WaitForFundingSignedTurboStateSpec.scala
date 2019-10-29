@@ -52,7 +52,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     }
   }
 
-  test("recv FundingSigned with valid signature") { f =>
+  test("Both become NORMAL as soon as funding is seen on blockchain, then fundee requests random scid, then channel becomes public on deeply buried") { f =>
     import f._
     val sender = TestProbe()
     bob2alice.expectMsgType[FundingSigned]
