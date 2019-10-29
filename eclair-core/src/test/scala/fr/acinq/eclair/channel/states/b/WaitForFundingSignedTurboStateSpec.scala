@@ -20,7 +20,6 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.Channel.watchSeenInMempool
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
@@ -32,7 +31,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -40,7 +39,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.fromValidHex("00" * 32), TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.PrivateTurbo, ChannelVersion.USE_PUBKEY_KEYPATH)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.fromValidHex("00" * 32), TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.PrivateThenAnnounceTurbo, ChannelVersion.USE_PUBKEY_KEYPATH)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.fromValidHex("00" * 32), Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -49,7 +48,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
       alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)))
     }
   }
 
@@ -57,19 +56,21 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     import f._
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
+    bob2blockchain.expectMsgType[WatchSpent]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchSeenInMempool]
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    // This is a Turbo channel so alice becomes WAIT_FOR_FUNDING_LOCKED right away and sends a FundingLocked
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
-    // Bob sees funding in a mempool and sends FundingLocked right away
-    watchSeenInMempool(bob, fundingTx)
-    val msg1 = alice2bob.expectMsgType[FundingLocked]
-    val msg2 = bob2alice.expectMsgType[FundingLocked]
-    bob2alice.forward(alice)
-    // Alice becomes NORMAL on receiving bob's FundingLocked
+    alice2blockchain.expectMsgType[WatchSeenInMempool]
+    alice2bob.forward(bob, WatchEventSeenInMempool(BITCOIN_FUNDING_DEPTHOK, fundingTx))
+    bob2alice.forward(alice, WatchEventSeenInMempool(BITCOIN_FUNDING_DEPTHOK, fundingTx))
+    bob2alice.forward(alice, bob2alice.expectMsgType[FundingLocked])
+    alice2bob.forward(bob, alice2bob.expectMsgType[FundingLocked])
     awaitCond(alice.stateName == NORMAL)
+    awaitCond(bob.stateName == NORMAL)
   }
 
   test("recv FundingSigned with invalid signature") { f =>

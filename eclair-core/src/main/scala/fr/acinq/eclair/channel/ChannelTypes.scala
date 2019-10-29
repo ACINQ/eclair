@@ -226,17 +226,17 @@ final case class RemoteParams(nodeId: PublicKey,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
-  val AnnounceTurbo: Byte = 0x09.toByte // Send: immediately, Receive: deeply buried, Initially public: true, Becomes public: true
+  val AnnounceTurbo: Byte = 9.toByte // Send: immediately, Receive: deeply buried, Initially public: true, Becomes public: true
 
-  val PrivateTurbo: Byte = 0x08.toByte // Send: immediately, Receive: deeply buried, Initially public: false, Becomes public: false
+  val PrivateTurbo: Byte = 8.toByte // Send: immediately, Receive: deeply buried, Initially public: false, Becomes public: false
 
-  val PrivateThenAnnounceTurbo: Byte = 0x24.toByte // Send: immediately, Receive: immediately, Initially public: false, Becomes public: true
+  val PrivateThenAnnounceTurbo: Byte = 24.toByte // Send: immediately, Receive: immediately, Initially public: false, Becomes public: true
 
-  val PrivateThenAnnounce: Byte = 0x16.toByte // Send: depth ok, Receive: deeply buried, Initially public: false, Becomes public: true
+  val PrivateThenAnnounce: Byte = 16.toByte // Send: depth ok, Receive: deeply buried, Initially public: false, Becomes public: true
 
-  val Announce: Byte = 0x01.toByte // Send: depth ok, Receive: deeply buried, Initially public: true, Becomes public: true
+  val Announce: Byte = 1.toByte // Send: depth ok, Receive: deeply buried, Initially public: true, Becomes public: true
 
-  val Private: Byte = 0x00.toByte // Send: depth ok, Receive: deeply buried, Initially public: false, Becomes public: false
+  val Private: Byte = 0.toByte // Send: depth ok, Receive: deeply buried, Initially public: false, Becomes public: false
 }
 
 case class ChannelVersion(bits: BitVector) {

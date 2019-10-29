@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.channel.ChannelFlags
 import org.scalatest.FunSuite
 import scodec.bits._
 
@@ -68,11 +69,11 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("channel features") {
-    assert(!isBitSet(0, 0.toByte) && !isBitSet(3, 0.toByte)) // private ordinary channel
-    assert(isBitSet(0, 1.toByte) && !isBitSet(3, 1.toByte)) // public ordinary channel
-    assert(!isBitSet(0, 8.toByte) && isBitSet(3, 8.toByte)) // private zeroconfSpendablePushChannel channel
-    assert(isBitSet(0, 9.toByte) && isBitSet(3, 9.toByte)) // public zeroconfSpendablePushChannel channel
-    assert(!isBitSet(0, 16.toByte) && !isBitSet(3, 16.toByte) && isBitSet(4, 16.toByte)) // private ordinary channel which becomes public
-    assert(!isBitSet(0, 24.toByte) && isBitSet(3, 24.toByte) && isBitSet(4, 24.toByte)) // private zeroconfSpendablePushChannel channel which becomes public
+    assert(!isBitSet(0, ChannelFlags.Private) && !isBitSet(3, ChannelFlags.Private)) // private ordinary channel
+    assert(isBitSet(0, ChannelFlags.Announce) && !isBitSet(3, ChannelFlags.Announce)) // public ordinary channel
+    assert(!isBitSet(0, ChannelFlags.PrivateTurbo) && isBitSet(3, ChannelFlags.PrivateTurbo)) // private zeroconfSpendablePushChannel channel
+    assert(isBitSet(0, ChannelFlags.AnnounceTurbo) && isBitSet(3, ChannelFlags.AnnounceTurbo)) // public zeroconfSpendablePushChannel channel
+    assert(!isBitSet(0, ChannelFlags.PrivateThenAnnounce) && !isBitSet(3, ChannelFlags.PrivateThenAnnounce) && isBitSet(4, ChannelFlags.PrivateThenAnnounce)) // private ordinary channel which becomes public
+    assert(!isBitSet(0, ChannelFlags.PrivateThenAnnounceTurbo) && isBitSet(3, ChannelFlags.PrivateThenAnnounceTurbo) && isBitSet(4, ChannelFlags.PrivateThenAnnounceTurbo)) // private zeroconfSpendablePushChannel channel which becomes public
   }
 }
