@@ -175,6 +175,11 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     // but we can validate if a short channel id is unspent
     client.validate(mockChannelAnnouncement).pipeTo(sender.ref)
     sender.expectMsg(ValidateResult(mockChannelAnnouncement, Right(channelTransaction, UtxoStatus.Unspent)))
+
+    // if the output does not exist, validation fails
+    client.validate(mockChannelAnnouncement.copy(shortChannelId = ShortChannelId(10, 10, 10))).pipeTo(sender.ref)
+    val validationResult = sender.expectMsgType[ValidateResult]
+    assert(validationResult.fundingTx.isLeft)
   }
 
 
