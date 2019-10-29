@@ -54,6 +54,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
 
   test("recv FundingSigned with valid signature") { f =>
     import f._
+    val sender = TestProbe()
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     bob2blockchain.expectMsgType[WatchSpent]
@@ -71,6 +72,24 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     alice2bob.forward(bob, alice2bob.expectMsgType[FundingLocked])
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
+    bob2alice.forward(alice, bob2alice.expectMsgType[AssignScid])
+    val aliceScidReply = alice2bob.expectMsgType[AssignScidReply]
+    alice2bob.forward(bob, aliceScidReply)
+    val aliceChanUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    alice2bob.forward(bob, aliceChanUpdate)
+    val bobChanUpdate = bob2alice.expectMsgType[ChannelUpdate]
+    bob2alice.forward(alice, bobChanUpdate)
+    assert(aliceChanUpdate.shortChannelId === aliceScidReply.shortChannelId)
+    assert(bobChanUpdate.shortChannelId === aliceScidReply.shortChannelId)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == aliceScidReply.shortChannelId)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == aliceScidReply.shortChannelId)
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 500002, 22, null))
+    sender.send(bob, alice2bob.expectMsgType[AnnouncementSignatures])
+    bob2alice.expectNoMsg(100 millis) // Bob still has not received BITCOIN_FUNDING_DEEPLYBURIED so can't react to announcement sigs, but re-schedules receiving them
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 500002, 22, null))
+    sender.send(alice, bob2alice.expectMsgType[AnnouncementSignatures])
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFlags === ChannelFlags.Announce)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFlags === ChannelFlags.Announce)
   }
 
   test("recv FundingSigned with invalid signature") { f =>

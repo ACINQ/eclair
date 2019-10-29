@@ -81,7 +81,7 @@ object Channel {
 
   case object TickChannelOpenTimeout
 
-  // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitely specify the peer to allow for testing)
+  // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitly specify the peer to allow for testing)
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef)
 
   // @formatter:off
@@ -561,7 +561,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimum, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.schedule(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-      goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None) storing()
+      val data = DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None)
+      goto(NORMAL) using data storing() calling maybeAskRandomScid(data)
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
       log.debug(s"received remote announcement signatures, delaying")
@@ -589,18 +590,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(CMD_REQUEST_RANDOM_SCID, d: DATA_NORMAL) if !d.commitments.announceChannel => stay sending AssignScid(d.channelId)
+    case Event(CMD_REQUEST_RANDOM_SCID, d: DATA_NORMAL) if !d.commitments.announceChannel =>
+      log.info(s"requesting random scid from remote peer")
+      stay sending AssignScid(d.channelId)
 
     case Event(_: AssignScid, d: DATA_NORMAL) if !d.commitments.announceChannel =>
       val d1 = refreshAndReannounceScid(d, newShortChannelId = ShortChannelId.random)
       log.info(s"peer has requested a random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
-      // Send AssignScidReply before sending refreshed ChannelUpdate in transition (?)
       forwarder ! AssignScidReply(d1.channelId, d1.shortChannelId)
       // we use GOTO instead of stay because we want to fire transitions
       goto(NORMAL) using d1 storing()
 
     case Event(AssignScidReply(_, newShortChannelId), d: DATA_NORMAL) if !d.commitments.announceChannel =>
-      // Remote peer will send AssignScidReply, then refreshed ChannelUpdate, but is it still possible that "Peer -> AssignScidReply -> Channel -> Events on transition -> Router" would happen later than "Peer -> refreshed ChannelUpdate -> Relayer" (in which case refreshed ChannelUpdate won't be applied until next reconnect?)
       val d1 = refreshAndReannounceScid(d, newShortChannelId)
       log.info(s"peer has provided a new random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
       // we use GOTO instead of stay because we want to fire transitions
@@ -1529,8 +1530,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           }
           // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
           setTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds, repeat = false)
-
-          goto(NORMAL) using d.copy(commitments = commitments1)
+          goto(NORMAL) using d.copy(commitments = commitments1) calling maybeAskRandomScid(d)
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
@@ -2319,6 +2319,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case Failure(t) =>
         log.error(t, "Incorrect funding")
         goto(CLOSED)
+    }
+
+  def maybeAskRandomScid(d: DATA_NORMAL): Unit =
+    if (d.commitments.channelFlags == ChannelFlags.PrivateThenAnnounceTurbo && !d.commitments.localParams.isFunder && !d.shortChannelId.isRandomlyAssigned) {
+      // In a specific case of private turbo channel which later becomes public a fundee keeps asking funder for random scid assigning to enable receiving ASAP
+      self ! CMD_REQUEST_RANDOM_SCID
     }
 
   override def mdc(currentMessage: Any): MDC = {
