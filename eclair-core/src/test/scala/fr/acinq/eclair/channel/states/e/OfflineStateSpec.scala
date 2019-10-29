@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, ScriptFlags, Tran
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -74,7 +75,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -155,7 +156,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -604,7 +605,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
 
     // we attempt to send a payment
-    sender.send(alice, CMD_ADD_HTLC(4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     val failure = sender.expectMsgType[Status.Failure]
     val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
 
