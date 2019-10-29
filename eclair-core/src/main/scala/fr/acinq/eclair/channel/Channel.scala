@@ -244,12 +244,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
 
-        case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          // TODO: should we wait for an acknowledgment from the watcher?
+        case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+          // add watchers
+          log.info(s"adding watchers to restore the channel")
+          blockchain ! WatchConfirmed(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           // we make sure that the funding tx has been published
-          blockchain ! GetTxWithMeta(funding.commitments.commitInput.outPoint.txid)
+          blockchain ! GetTxWithMeta(data.commitments.commitInput.outPoint.txid)
+          goto(OFFLINE) using data
+
+        case _: DATA_WAIT_FOR_FUNDING_LOCKED =>
+          // add watchers
+          log.info("adding watchers to restore the channel")
+          blockchain ! WatchConfirmed(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
           goto(OFFLINE) using data
 
         case _ =>
