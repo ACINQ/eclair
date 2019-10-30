@@ -36,7 +36,7 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' and 'option_scid_assign' features") {
-    val features = hex"0110a"
+    val features = hex"410A"
     assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
       && hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) && hasFeature(features, OPTION_SCID_ASSIGN_MANDATORY))
   }
@@ -49,9 +49,9 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("'option_scid_assign' feature") {
-    assert(hasFeature(hex"01000", OPTION_SCID_ASSIGN_MANDATORY))
-    assert(hasFeature(hex"02000", OPTION_SCID_ASSIGN_OPTIONAL))
-    assert(hasScidAssign(hex"02000"))
+    assert(hasFeature(hex"4000", OPTION_SCID_ASSIGN_MANDATORY))
+    assert(hasFeature(hex"8000", OPTION_SCID_ASSIGN_OPTIONAL))
+    assert(hasScidAssign(hex"8000"))
   }
 
   test("features compatibility") {
