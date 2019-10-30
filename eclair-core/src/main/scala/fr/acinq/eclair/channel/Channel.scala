@@ -602,22 +602,25 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(CMD_REQUEST_RANDOM_SCID, d: DATA_NORMAL) if !d.commitments.announceChannel => stay sending AssignScid(d.channelId)
+    case Event(CMD_REQUEST_RANDOM_SCID, d: DATA_NORMAL) if !d.commitments.announceChannel =>
+      log.info(s"requesting random scid from remote peer")
+      stay sending AssignScid(d.channelId)
 
     case Event(_: AssignScid, d: DATA_NORMAL) if !d.commitments.announceChannel =>
       val d1 = refreshAndReannounceScid(d, newShortChannelId = ShortChannelId.random)
       log.info(s"peer has requested a random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
-      // Send AssignScidReply before sending refreshed ChannelUpdate in transition (?)
-      forwarder ! AssignScidReply(d1.channelId, d1.shortChannelId)
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using d1 storing()
+      goto(NORMAL) using d1 storing() sending AssignScidReply(d1.channelId, d1.shortChannelId)
 
-    case Event(AssignScidReply(_, newShortChannelId), d: DATA_NORMAL) if !d.commitments.announceChannel =>
-      // Remote peer will send AssignScidReply, then refreshed ChannelUpdate, but is it still possible that "Peer -> AssignScidReply -> Channel -> Events on transition -> Router" would happen later than "Peer -> refreshed ChannelUpdate -> Relayer" (in which case refreshed ChannelUpdate won't be applied until next reconnect?)
-      val d1 = refreshAndReannounceScid(d, newShortChannelId)
-      log.info(s"peer has provided a new random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
+    case Event(msg @ AssignScidReply(_, newShortChannelId), d: DATA_NORMAL) if !d.commitments.announceChannel =>
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using d1 storing()
+      if (newShortChannelId != d.shortChannelId) {
+        val d1 = refreshAndReannounceScid(d, newShortChannelId)
+        log.info(s"peer has provided a new random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
+        goto(NORMAL) using d1 storing() sending msg
+      } else {
+        goto(NORMAL)
+      }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
