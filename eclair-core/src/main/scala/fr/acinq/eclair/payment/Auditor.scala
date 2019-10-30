@@ -72,7 +72,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case e: NetworkFeePaid => db.add(e)
 
-    case e: AvailableBalanceChanged => balanceEventThrottler ! e
+    case e: AvailableBalanceChanged if e.localBalance != e.commitments.remoteCommit.spec.toRemote => balanceEventThrottler ! e
 
     case e: ChannelErrorOccurred =>
       val metric = Kamon.counter("channels.errors")
