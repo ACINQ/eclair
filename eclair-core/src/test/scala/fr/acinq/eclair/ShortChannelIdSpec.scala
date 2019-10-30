@@ -58,4 +58,10 @@ class ShortChannelIdSpec extends FunSuite {
     assert(Try(ShortChannelId("42000x27")).isFailure)
     assert(Try(ShortChannelId("42000x")).isFailure)
   }
+
+  test("random short ids are bounded and don't clash") {
+    val randomShortIds = List.fill(10000)(ShortChannelId.random)
+    assert(randomShortIds.forall(_.isRandomlyAssigned))
+    assert(randomShortIds.distinct.size === randomShortIds.size)
+  }
 }

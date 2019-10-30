@@ -83,7 +83,7 @@ object Helpers {
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
+  def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel, remoteNodeId: PublicKey): Unit = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
@@ -123,6 +123,9 @@ object Helpers {
 
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+
+    val canNotProposeTurbo = Features.isBitSet(ChannelFlags.TurboPosition, open.channelFlags) && !nodeParams.turboWhitelist.contains(remoteNodeId)
+    if (canNotProposeTurbo) throw TurboChannelOfferFromStranger(open.temporaryChannelId, remoteNodeId)
   }
 
   /**

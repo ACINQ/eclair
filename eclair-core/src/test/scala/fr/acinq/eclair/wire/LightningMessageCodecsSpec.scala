@@ -87,11 +87,17 @@ class LightningMessageCodecsSpec extends FunSuite {
     val ping = Ping(100, bin(10, 1))
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L)
+    val assign_scid = AssignScid(randomBytes32)
+    val assign_scid_reply = AssignScidReply(randomBytes32, ShortChannelId(1))
+    val unassign_scid = UnassignScid(randomBytes32)
+    val unassign_scid_reply = UnassignScidReply(randomBytes32)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
+        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id ::
+        query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish ::
+        assign_scid :: assign_scid_reply :: unassign_scid :: unassign_scid_reply :: Nil
 
     msgs.foreach {
       msg => {
