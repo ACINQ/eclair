@@ -26,7 +26,7 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   def toLong: Long = id
 
-  def isRandom: Boolean = ShortChannelId.coordinates(this).blockHeight <= ShortChannelId.MAX_RANDOM_BLOCK_HEIGHT
+  def isRandomlyAssigned: Boolean = ShortChannelId.coordinates(this).blockHeight <= ShortChannelId.MAX_RANDOM_BLOCK_HEIGHT
 
   override def toString: String = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)

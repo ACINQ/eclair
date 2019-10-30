@@ -885,7 +885,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=$shortChannelId")
       // if final shortChannelId is different from the one we had before, we need to re-announce it unless old shortChannelId is a random (which we can only have if channel is private)
-      val d1 = if (shortChannelId != d.shortChannelId && !d.shortChannelId.isRandom) {
+      val d1 = if (shortChannelId != d.shortChannelId && !d.shortChannelId.isRandomlyAssigned) {
         log.info(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId} new=$shortChannelId")
         refreshAndReannounceScid(d, shortChannelId)
       } else {
@@ -1687,10 +1687,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // if channel is private, we send the channel_update directly to remote
       // they need it "to learn the other end's forwarding parameters" (BOLT 7)
       (stateData, nextStateData) match {
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && (d2.buried || d2.shortChannelId.isRandom) =>
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && (d2.buried || d2.shortChannelId.isRandomlyAssigned) =>
           // for a private channel, when the tx was just buried or random scid has been assigned already we need to send the channel_update to our peer (even if it didn't change)
           forwarder ! d2.channelUpdate
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && (d2.buried || d2.shortChannelId.isRandom) =>
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && (d2.buried || d2.shortChannelId.isRandomlyAssigned) =>
           // otherwise, we only send it when it is different, and tx is already buried or random scid has been assigned already (maybe for the second time)
           forwarder ! d2.channelUpdate
         case _ => ()
