@@ -226,6 +226,8 @@ final case class RemoteParams(nodeId: PublicKey,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
+  val TurboPosition = 3
+
   val AnnounceTurbo: Byte = 9.toByte // Send: immediately, Receive: deeply buried, Initially public: true, Becomes public: true
 
   val PrivateTurbo: Byte = 8.toByte // Send: immediately, Receive: deeply buried, Initially public: false, Becomes public: false

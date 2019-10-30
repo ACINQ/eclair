@@ -84,7 +84,7 @@ case class Commitments(channelVersion: ChannelVersion,
 
   val announceChannel: Boolean = Features.isBitSet(0, channelFlags)
 
-  val zeroconfSpendablePushChannel: Boolean = Features.isBitSet(3, channelFlags)
+  val zeroconfSpendablePushChannel: Boolean = Features.isBitSet(ChannelFlags.TurboPosition, channelFlags)
 
   val privateToAnnounceChannel: Boolean = Features.isBitSet(4, channelFlags)
 
