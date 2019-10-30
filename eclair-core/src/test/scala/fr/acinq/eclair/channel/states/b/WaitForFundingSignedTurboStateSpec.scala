@@ -77,6 +77,7 @@ class WaitForFundingSignedTurboStateSpec extends TestkitBaseClass with StateTest
     alice2bob.forward(bob, aliceScidReply)
     val aliceChanUpdate = alice2bob.expectMsgType[ChannelUpdate]
     alice2bob.forward(bob, aliceChanUpdate)
+    bob2alice.expectMsgType[AssignScidReply]
     val bobChanUpdate = bob2alice.expectMsgType[ChannelUpdate]
     bob2alice.forward(alice, bobChanUpdate)
     assert(aliceChanUpdate.shortChannelId === aliceScidReply.shortChannelId)

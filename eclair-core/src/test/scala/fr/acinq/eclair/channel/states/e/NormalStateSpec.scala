@@ -2307,6 +2307,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 500002, 22, null))
     sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 500002, 22, null))
     // private channel: we send the channel_update directly to the peer
+    alice2bob.expectMsgType[AssignScidReply]
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     bob2alice.expectMsgType[ChannelUpdate] // Bob has also emitted a ChannelUpdate
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
@@ -2323,6 +2324,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobReply = bob2alice.expectMsgType[AssignScidReply]
     sender.send(alice, bobReply)
     assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == bobReply.shortChannelId)
+    alice2bob.expectMsgType[AssignScidReply]
     assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId == bobReply.shortChannelId)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == bobReply.shortChannelId)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == bobReply.shortChannelId)
