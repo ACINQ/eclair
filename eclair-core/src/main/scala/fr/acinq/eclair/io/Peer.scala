@@ -411,7 +411,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(badMessage: BadMessage, d: ConnectedData) =>
       val behavior1 = badMessage match {
         case InvalidSignature(r) =>
-          val bin: String = LightningMessageCodecs.lightningMessageCodec.encode(r) match {
+          val bin: String = LightningMessageCodecs.meteredLightningMessageCodec.encode(r) match {
             case Attempt.Successful(b) => b.toHex
             case _ => "unknown"
           }
