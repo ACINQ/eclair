@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
@@ -28,7 +28,7 @@ import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestCo
 import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
 
-import scala.collection.SortedMap
+import scala.collection.{SortedMap, mutable}
 
 class SqliteNetworkDbSpec extends FunSuite {
 
@@ -102,6 +102,17 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateNode(node_1)
 
     assert(node_4.addresses == List(Tor2("aaaqeayeaudaocaj", 42000)))
+  }
+
+  test("correctly handle txids that start with 0") {
+    val sqlite = TestConstants.sqliteInMemory()
+    val db = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val sig = ByteVector64.Zeroes
+    val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val c_shrunk = shrink(c)
+    val txid = ByteVector32.fromValidHex("0001" * 16)
+    db.addChannel(c, txid, Satoshi(42))
+    assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c_shrunk, txid, Satoshi(42), None, None)))
   }
 
   def shrink(c: ChannelAnnouncement) = c.copy(bitcoinKey1 = null, bitcoinKey2 = null, bitcoinSignature1 = null, bitcoinSignature2 = null, nodeSignature1 = null, nodeSignature2 = null, chainHash = null, features = null)

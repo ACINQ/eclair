@@ -37,6 +37,7 @@ import scala.collection.{SortedSet, immutable, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 
+
 //TODO: re-enable this using a modified version of the old test
 // as is it won't work on because on Android router just ignore querier
 @Ignore

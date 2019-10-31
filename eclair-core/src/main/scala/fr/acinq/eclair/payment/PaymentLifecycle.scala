@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.WatchEventSpentBasic
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CMD_ADD_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentsDb}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
@@ -140,8 +140,17 @@ class PaymentLifecycle(nodeParams: NodeParams, progressHandler: PaymentProgressH
             }
             // in any case, we forward the update to the router
             router ! failureMessage.update
+            // we also update assisted routes, because they take precedence over the router's routing table
+            val assistedRoutes1 = c.assistedRoutes.map(_.map {
+              case extraHop: ExtraHop if extraHop.shortChannelId == failureMessage.update.shortChannelId => extraHop.copy(
+                cltvExpiryDelta = failureMessage.update.cltvExpiryDelta,
+                feeBase = failureMessage.update.feeBaseMsat,
+                feeProportionalMillionths = failureMessage.update.feeProportionalMillionths
+              )
+              case extraHop => extraHop
+            })
             // let's try again, router will have updated its state
-            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes, ignoreChannels, c.routeParams)
+            router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, assistedRoutes1, ignoreNodes, ignoreChannels, c.routeParams)
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
@@ -300,7 +309,7 @@ object PaymentLifecycle {
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, upstream = Left(id), commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, Upstream.Local(id), commit = true) -> onion.sharedSecrets
   }
 
   /**

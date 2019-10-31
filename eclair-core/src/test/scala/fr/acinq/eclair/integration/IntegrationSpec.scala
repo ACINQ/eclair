@@ -56,8 +56,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 15/03/2017.
-  */
+ * Created by PM on 15/03/2017.
+ */
 @Ignore
 class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
 

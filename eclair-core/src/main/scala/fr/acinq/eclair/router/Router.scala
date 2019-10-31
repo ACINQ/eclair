@@ -250,6 +250,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(GetRoutingState, d: Data) =>
       stay // ignored on Android
 
+    case Event(GetNetworkStats, d: Data) =>
+      stay // ignored on Android
+
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId).ann
       log.info("funding tx of channelId={} has been spent", shortChannelId)
@@ -276,6 +279,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(TickBroadcast, d) =>
       // On Android we don't rebroadcast announcements
       stay
+
+    case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
+      log.info("re-computing network statistics")
+      stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
 
     case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
       log.info("re-computing network statistics")
@@ -451,6 +458,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
+
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
         Kamon.runWithSpan(Kamon.spanBuilder("reply-channel-range").start(), finishSpan = true) {
 
@@ -469,7 +477,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           val timestamps_opt = routingMessage.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
           val checksums_opt = routingMessage.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
 
-          val shortChannelIdAndFlags = {
+          val shortChannelIdAndFlags = Kamon.runWithSpan(Kamon.spanBuilder("compute-flags").start(), finishSpan = true) {
             loop(shortChannelIds.array, timestamps_opt, checksums_opt)
           }
 

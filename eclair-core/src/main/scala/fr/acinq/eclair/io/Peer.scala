@@ -534,17 +534,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
   onTransition {
     case _ -> CONNECTED =>
-      //Metrics.connectedPeers.increment()
+      Metrics.connectedPeers.increment()
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
-      //Metrics.connectedPeers.decrement()
+      Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
   onTermination {
     case StopEvent(_, CONNECTED, d: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
-      //Metrics.connectedPeers.decrement()
+      Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
@@ -654,9 +654,9 @@ object Peer {
   // @formatter:on
 
   object Metrics {
-//    val peers = Kamon.rangeSampler("peers.count").withoutTags()
-//    val connectedPeers = Kamon.rangeSampler("peers.connected.count").withoutTags()
-//    val channels = Kamon.rangeSampler("channels.count").withoutTags()
+    val peers = Kamon.rangeSampler("peers.count").withoutTags()
+    val connectedPeers = Kamon.rangeSampler("peers.connected.count").withoutTags()
+    val channels = Kamon.rangeSampler("channels.count").withoutTags()
   }
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {

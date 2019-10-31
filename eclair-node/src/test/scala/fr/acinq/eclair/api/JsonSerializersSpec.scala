@@ -25,7 +25,6 @@ import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
-import org.json4s.jackson.Serialization
 import org.scalatest.{FunSuite, Matchers}
 import scodec.bits._
 
@@ -34,8 +33,6 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   test("deserialize Map[OutPoint, ByteVector]") {
     val output1 = OutPoint(ByteVector32(hex"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
     val output2 = OutPoint(ByteVector32(hex"3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
-
-
     val map = Map(
       output1 -> hex"dead",
       output2 -> hex"beef"
@@ -43,12 +40,12 @@ class JsonSerializersSpec extends FunSuite with Matchers {
 
     // it won't work with the default key serializer
     val error = intercept[org.json4s.MappingException] {
-      Serialization.write(map)(org.json4s.DefaultFormats)
+      JsonSupport.serialization.write(map)(org.json4s.DefaultFormats)
     }
     assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.OutPoint."))
 
     // but it works with our custom key serializer
-    val json = Serialization.write(map)(org.json4s.DefaultFormats + new ByteVectorSerializer + new OutPointKeySerializer)
+    val json = JsonSupport.serialization.write(map)(org.json4s.DefaultFormats + new ByteVectorSerializer + new OutPointKeySerializer)
     assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
   }
 
@@ -58,15 +55,15 @@ class JsonSerializersSpec extends FunSuite with Matchers {
     val tor2 = Tor2("aaaqeayeaudaocaj", 7777)
     val tor3 = Tor3("aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc", 9999)
 
-    Serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
-    Serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
-    Serialization.write(tor2)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocaj.onion:7777""""
-    Serialization.write(tor3)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc.onion:9999""""
+    JsonSupport.serialization.write(ipv4)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""10.0.0.1:8888""""
+    JsonSupport.serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
+    JsonSupport.serialization.write(tor2)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocaj.onion:7777""""
+    JsonSupport.serialization.write(tor3)(org.json4s.DefaultFormats + new NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc.onion:9999""""
   }
 
   test("Direction serialization") {
-    Serialization.write(IN)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""IN""""
-    Serialization.write(OUT)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""OUT""""
+    JsonSupport.serialization.write(IN)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""IN""""
+    JsonSupport.serialization.write(OUT)(org.json4s.DefaultFormats + new DirectionSerializer) shouldBe s""""OUT""""
   }
 
   test("Payment Request") {
@@ -78,7 +75,7 @@ class JsonSerializersSpec extends FunSuite with Matchers {
   test("type hints") {
     implicit val formats = JsonSupport.json4sJacksonFormats.withTypeHintFieldName("type") + CustomTypeHints(Map(classOf[PaymentSettlingOnChain] -> "payment-settling-onchain")) + new MilliSatoshiSerializer
     val e1 = PaymentSettlingOnChain(UUID.randomUUID, 42 msat, randomBytes32)
-    assert(Serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
+    assert(JsonSupport.serialization.writePretty(e1).contains("\"type\" : \"payment-settling-onchain\""))
   }
 
   test("transaction serializer") {

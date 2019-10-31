@@ -32,7 +32,6 @@ import scodec.bits.ByteVector
 import scala.collection.immutable.SortedMap
 
 class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends NetworkDb with Logging {
-
   import SqliteUtils._
   import SqliteUtils.ExtendedResultSet._
 

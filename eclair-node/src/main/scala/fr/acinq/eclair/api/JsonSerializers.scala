@@ -22,7 +22,6 @@ import java.util.UUID
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.{ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
@@ -248,6 +247,8 @@ object JsonSupport extends Json4sJacksonSupport {
     new UInt64Serializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
+    new CltvExpirySerializer +
+    new CltvExpiryDeltaSerializer +
     new ShortChannelIdSerializer +
     new StateSerializer +
     new ShaChainSerializer +

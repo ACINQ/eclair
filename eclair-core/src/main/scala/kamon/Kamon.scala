@@ -20,6 +20,8 @@ object Kamon {
 
     def increment() = this
 
+    def decrement() = this
+
     def record(a: Long) = this
   }
 
@@ -30,6 +32,8 @@ object Kamon {
   def counter(name: String) = Mock
 
   def histogram(name: String) = Mock
+
+  def rangeSampler(name: String) = Mock
 
   def runWithContextEntry[T, K](key: Context.Key[K], value: K)(f: => T): T = f
 

@@ -32,11 +32,11 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
-  val VARIABLE_LENGTH_ONION_MANDATORY = 8
-  val VARIABLE_LENGTH_ONION_OPTIONAL = 9
-
   val CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY = 10
   val CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL = 11
+
+  val VARIABLE_LENGTH_ONION_MANDATORY = 8
+  val VARIABLE_LENGTH_ONION_OPTIONAL = 9
 
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
