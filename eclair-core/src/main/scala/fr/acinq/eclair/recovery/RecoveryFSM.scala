@@ -3,19 +3,21 @@ package fr.acinq.eclair.recovery
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
-import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, Script, ScriptWitness, Transaction}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.channel.{Channel, HasCommitments, PleasePublishYourCommitment}
-import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.{KeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.{ConnectedData, Disconnect, FinalChannelId}
 import fr.acinq.eclair.io.Switchboard.peerActorName
 import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnected, Switchboard}
 import fr.acinq.eclair.recovery.RecoveryFSM._
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -76,11 +78,20 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
       }
   }
 
+  // extract our funding pubkey from witness
+  // compute channel key path from funding pubkey
+  // compute points necessary to redeem our outputs
+  // create txs and broadcast
   def recoverFromCommitment(commitTx: Transaction, channelReestablish: ChannelReestablish) = {
-    // extract our funding pubkey from witness
-    // compute channel key path from funding pubkey
-    // compute points necessary to redeem out outputs
-    // create txs and broadcast
+    val ScriptWitness(ByteVector.empty :: sig1 :: sig2 :: redeemScript :: Nil) = commitTx.txIn.head.witness
+    val (pubKey1, pubKey2) = Script.parse(redeemScript) match {
+      case OP_2 :: OP_PUSHDATA(key1, _) :: OP_PUSHDATA(key2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil => (key1, key2)
+      case _ => throw new IllegalArgumentException(s"error script doesn't match. script=$redeemScript")
+    }
+
+    val commitmentNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
+    assert(commitmentNumber == channelReestablish.nextLocalCommitmentNumber - 1)
+
     logger.info("we made it!")
   }
 
