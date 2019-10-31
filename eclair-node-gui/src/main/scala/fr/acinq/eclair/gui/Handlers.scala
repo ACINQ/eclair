@@ -53,7 +53,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     logger.info(s"opening a connection to nodeUri=$nodeUri")
     (for {
       kit <- fKit
-      conn <- kit.switchboard ? Peer.Connect(nodeUri)
+      conn <- kit.switchboard ? Peer.Connect(nodeUri.nodeId, Some(nodeUri.address), turboAllowed = false)
     } yield (kit, conn)) onComplete {
       case Success((k, _)) =>
         logger.info(s"connection to $nodeUri successful")
