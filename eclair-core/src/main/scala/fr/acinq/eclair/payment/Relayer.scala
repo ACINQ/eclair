@@ -91,8 +91,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       context become main(channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments)), node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
 
     case LocalChannelUpdateWithOldRandomScid(_, channelId, oldShortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
-    log.debug(s"updating local channel with old scid info for channelId=$channelId oldShortChannelId=$oldShortChannelId newShortChannelId=${channelUpdate.shortChannelId} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-    context become main(channelUpdates + (oldShortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments)), node2channels.addBinding(remoteNodeId, oldShortChannelId))
+      log.debug(s"updating local channel with old scid info for channelId=$channelId oldShortChannelId=$oldShortChannelId newShortChannelId=${channelUpdate.shortChannelId} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+      context become main(channelUpdates + (oldShortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments)), node2channels.addBinding(remoteNodeId, oldShortChannelId))
 
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId because channel is down")
