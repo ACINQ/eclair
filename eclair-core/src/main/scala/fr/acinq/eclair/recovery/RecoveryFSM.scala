@@ -3,13 +3,13 @@ package fr.acinq.eclair.recovery
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
-import fr.acinq.bitcoin.{ByteVector32, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, Script, ScriptWitness, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Script, ScriptWitness, Transaction}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.channel.{Channel, HasCommitments, PleasePublishYourCommitment}
-import fr.acinq.eclair.crypto.{KeyManager, TransportHandler}
+import fr.acinq.eclair.channel.{Channel, ChannelClosed, Commitments, DATA_CLOSING, HasCommitments, INPUT_RESTORED, PleasePublishYourCommitment}
+import fr.acinq.eclair.crypto.{Generators, KeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.{ConnectedData, Disconnect, FinalChannelId}
 import fr.acinq.eclair.io.Switchboard.peerActorName
 import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnected, Switchboard}
@@ -29,6 +29,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
 
   context.system.eventStream.subscribe(self, classOf[PeerConnected])
+  context.system.eventStream.subscribe(self, classOf[ChannelClosed])
   self ! RecoveryConnect(nodeURI)
 
   override def receive: Receive = waitingForConnection()
@@ -69,30 +70,41 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
       logger.info(s"looking for the commitment transaction")
       bitcoinClient.lookForSpendingTx(None, d.fundingTx.txid.toHex, d.fundingOutIndex).onComplete {
         case Success(commitTx) =>
-          recoverFromCommitment(commitTx, d.channelReestablish)
-          logger.info(s"recovery done")
-          d.peer ! Disconnect
-          self ! PoisonPill
+          logger.info(s"found commitTx=${commitTx.txid}")
+
+          val commitmentNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
+          assert(commitmentNumber == d.channelReestablish.nextLocalCommitmentNumber - 1)
+
+          val fundingPubKey = recoverFundingKeyFromCommitment(nodeParams, commitTx, d.channelReestablish, commitmentNumber)
+          val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
+          val commitmentPoint = nodeParams.keyManager.commitmentPoint(channelKeyPath, commitmentNumber)
+          val paymentBasePoint = nodeParams.keyManager.paymentPoint(channelKeyPath)
+          val localPaymentKey = Generators.derivePubKey(paymentBasePoint.publicKey, commitmentPoint)
+
+          // FIXME: add final script pubkey
+          val claimTx = Transactions.makeClaimP2WPKHOutputTx(commitTx, nodeParams.dustLimit, localPaymentKey, ByteVector.empty, nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(6))
+          val sig = nodeParams.keyManager.sign(claimTx, paymentBasePoint, d.channelReestablish.myCurrentPerCommitmentPoint.get)
+          val claimSigned = Transactions.addSigs(claimTx, localPaymentKey, sig)
+          bitcoinClient.publishTransaction(claimSigned.tx)
+          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckClaimPublished)
+          context.become(waitToPublishClaimTx(DATA_WAIT_FOR_CLAIM_TX(d.peer, claimSigned.tx)))
+
         case Failure(_) =>
           context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckCommitmentPublished)
       }
   }
 
-  // extract our funding pubkey from witness
-  // compute channel key path from funding pubkey
-  // compute points necessary to redeem our outputs
-  // create txs and broadcast
-  def recoverFromCommitment(commitTx: Transaction, channelReestablish: ChannelReestablish) = {
-    val ScriptWitness(ByteVector.empty :: sig1 :: sig2 :: redeemScript :: Nil) = commitTx.txIn.head.witness
-    val (pubKey1, pubKey2) = Script.parse(redeemScript) match {
-      case OP_2 :: OP_PUSHDATA(key1, _) :: OP_PUSHDATA(key2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil => (key1, key2)
-      case _ => throw new IllegalArgumentException(s"error script doesn't match. script=$redeemScript")
-    }
-
-    val commitmentNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
-    assert(commitmentNumber == channelReestablish.nextLocalCommitmentNumber - 1)
-
-    logger.info("we made it!")
+  def waitToPublishClaimTx(d: DATA_WAIT_FOR_CLAIM_TX): Receive = {
+    case CheckClaimPublished =>
+      bitcoinClient.getTransaction(d.claimTx.txid.toHex).onComplete {
+        case Success(claimTx) =>
+          logger.info(s"claim transaction published txid=${claimTx.txid}")
+          d.peer ! Disconnect
+          self ! PoisonPill
+        case Failure(_) =>
+          bitcoinClient.publishTransaction(d.claimTx)
+          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckClaimPublished)
+      }
   }
 
   /**
@@ -139,12 +151,46 @@ object RecoveryFSM {
   sealed trait Data
   case class DATA_WAIT_FOR_REMOTE_INFO(peer: ActorRef) extends Data
   case class DATA_WAIT_FOR_REMOTE_PUBLISH(peer: ActorRef, channelReestablish: ChannelReestablish, fundingTx: Transaction, fundingOutIndex: Int) extends Data
+  case class DATA_WAIT_FOR_CLAIM_TX(peer: ActorRef, claimTx: Transaction) extends Data
 
   sealed trait Event
   case class RecoveryConnect(remote: NodeURI) extends Event
   case class ChannelFound(channelId: ByteVector32, reestablish: ChannelReestablish) extends Event
   case class SendErrorToRemote(error: Error) extends Event
   case object CheckCommitmentPublished extends Event
+  case object CheckClaimPublished extends Event
+
+  // extract our funding pubkey from witness
+  def recoverFundingKeyFromCommitment(nodeParams: NodeParams, commitTx: Transaction, channelReestablish: ChannelReestablish, commitmentNumber: Long): PublicKey = {
+    val (key1, key2) = extractKeysFromWitness(commitTx.txIn.head.witness, channelReestablish, commitmentNumber)
+
+    if(isOurChannelKey(nodeParams.keyManager, commitTx, key1, commitmentNumber))
+      key1
+    else if(isOurChannelKey(nodeParams.keyManager, commitTx, key2, commitmentNumber))
+      key2
+    else
+      throw new IllegalArgumentException("key not found")
+  }
+
+  def extractKeysFromWitness(witness: ScriptWitness, channelReestablish: ChannelReestablish, commitmentNumber: Long): (PublicKey, PublicKey) = {
+    val ScriptWitness(Seq(ByteVector.empty, sig1, sig2, redeemScript)) = witness
+
+    Script.parse(redeemScript) match {
+      case OP_2 :: OP_PUSHDATA(key1, _) :: OP_PUSHDATA(key2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil => (PublicKey(key1), PublicKey(key2))
+      case _ => throw new IllegalArgumentException(s"commitTx redeem script doesn't match, script=$redeemScript")
+    }
+  }
+
+  def isOurChannelKey(keyManager: KeyManager, commitTx: Transaction, key: PublicKey, commitmentNumber: Long): Boolean = {
+    val channelKeyPath = KeyManager.channelKeyPath(key)
+    val commitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitmentNumber)
+    val paymentBasePoint = keyManager.paymentPoint(channelKeyPath).publicKey
+    val localPaymentKey = Generators.derivePubKey(paymentBasePoint, commitmentPoint)
+
+    val toRemoteScriptPubkey = Script.write(Script.pay2wpkh(localPaymentKey))
+    commitTx.txOut.exists(_.publicKeyScript == toRemoteScriptPubkey)
+  }
+
 }
 
 class RecoverySwitchBoard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet) {
