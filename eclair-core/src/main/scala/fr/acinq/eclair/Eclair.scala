@@ -21,9 +21,11 @@ import java.util.UUID
 import akka.actor.{ActorRef, Props}
 import akka.pattern._
 import akka.util.Timeout
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -294,8 +296,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
 
   override def doRecovery(uri: NodeURI): Unit = {
+    implicit val shttp = OkHttpFutureBackend()
 
-    ???
-//    val recoveryFSM = appKit.system.actorOf(Props(new RecoveryFSM(appKit.nodeParams, appKit.)))
+    val bitcoinRpcClient = new BasicBitcoinJsonRPCClient(
+      user = appKit.nodeParams.config.getString("bitcoind.rpcuser"),
+      password = appKit.nodeParams.config.getString("bitcoind.rpcpassword"),
+      host = appKit.nodeParams.config.getString("bitcoind.host"),
+      port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
+    )
+
+    appKit.system.actorOf(Props(new RecoveryFSM(uri, appKit.nodeParams, appKit.authenticator, appKit.router, appKit.switchboard, appKit.wallet, appKit.watcher, appKit.relayer, bitcoinRpcClient)), RecoveryFSM.actorName)
   }
 }
