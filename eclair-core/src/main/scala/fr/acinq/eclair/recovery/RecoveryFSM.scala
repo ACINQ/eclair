@@ -212,7 +212,7 @@ class RecoveryPeer(override val nodeParams: NodeParams, remoteNodeId: PublicKey,
 
   def recoveryFSM: ActorSelection = context.system.actorSelection(context.system / RecoveryFSM.actorName)
 
-  override def whenConnected(event: Event): State = event match {
+  override def whenConnected: StateFunction = {
     case Event(SendErrorToRemote(error), d: ConnectedData) =>
       d.transport ! error
       stay
@@ -223,7 +223,7 @@ class RecoveryPeer(override val nodeParams: NodeParams, remoteNodeId: PublicKey,
       // when recovering we don't immediately reply channel_reestablish/error
       stay
 
-    case _ => super.whenConnected(event)
+    case event => super.whenConnected(event)
   }
 
 }

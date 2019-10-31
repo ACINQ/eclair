@@ -213,11 +213,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
   }
 
-  when(CONNECTED) {
-    case event => whenConnected(event)
-  }
+  when(CONNECTED)(whenConnected)
 
-  def whenConnected(event: Event): State = event match {
+  def whenConnected: StateFunction = {
     case Event(StateTimeout, _: ConnectedData) =>
       // the first ping is sent after the connection has been quiet for a while
       // we don't want to send pings right after connection, because peer will be syncing and may not be able to
