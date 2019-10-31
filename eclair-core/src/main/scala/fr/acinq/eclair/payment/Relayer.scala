@@ -50,7 +50,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) ex
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
 case object GetUsableBalances
-case class UsableBalances(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
+case class UsableBalances(remoteNodeId: PublicKey, channelId: ByteVector32, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 // @formatter:on
 
 /**
@@ -63,9 +63,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: LoggingAdapter = log
 
+  context.system.eventStream.subscribe(self, classOf[LocalChannelUpdateWithOldRandomScid])
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdUnassigned])
 
   private val commandBuffer = context.actorOf(Props(new CommandBuffer(nodeParams, register)))
 
@@ -73,22 +75,33 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   def main(channelUpdates: Map[ShortChannelId, OutgoingChannel], node2channels: mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]): Receive = {
     case GetUsableBalances =>
-      sender ! channelUpdates.values
-        .filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
-        .map(o => UsableBalances(
-          remoteNodeId = o.nextNodeId,
-          shortChannelId = o.channelUpdate.shortChannelId,
-          canSend = o.commitments.availableBalanceForSend,
-          canReceive = o.commitments.availableBalanceForReceive,
-          isPublic = o.commitments.announceChannel))
+      val state: Map[ShortChannelId, UsableBalances] = for {
+        (scid, OutgoingChannel(nextNodeId, channelUpdate, commitments)) <- channelUpdates
+      } yield (scid, UsableBalances(remoteNodeId = nextNodeId,
+        channelId = commitments.channelId, // Relayer may see duplicate commitments which belongs to same channel but with different scid key, we can't filter those out here so let API caller decide
+        shortChannelId = channelUpdate.shortChannelId,
+        canSend = commitments.availableBalanceForSend,
+        canReceive = commitments.availableBalanceForReceive,
+        isPublic = commitments.announceChannel,
+        isEnabled = Announcements.isEnabled(channelUpdate.channelFlags)))
+      sender ! state
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
       val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments))
       context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
 
+    case LocalChannelUpdateWithOldRandomScid(_, channelId, oldShortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
+      log.debug(s"updating local channel with old scid info for channelId=$channelId oldShortChannelId=$oldShortChannelId newShortChannelId=${channelUpdate.shortChannelId} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+      val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments))
+      context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
+
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
-      log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
+      log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId because channel is down")
+      context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
+
+    case ShortChannelIdUnassigned(_, channelId, shortChannelId, remoteNodeId) =>
+      log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId because scid has changed")
       context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
     case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>

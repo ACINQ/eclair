@@ -87,7 +87,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
 
     // send Peer.Connect to switchboard, it will forward to the Peer and the peer will look up the address on the db
-    probe.send(switchboard, Peer.Connect(remoteNodeId, None))
+    probe.send(switchboard, Peer.Connect(remoteNodeId, None, turboAllowed = false))
 
     // assert that the peer called `networkDb.getNode` - because it received a Peer.Connect(remoteNodeId, None)
     awaitAssert(mockNetworkDb.getNode(remoteNodeId).wasCalled(once))

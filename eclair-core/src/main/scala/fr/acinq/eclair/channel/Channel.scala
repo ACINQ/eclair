@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ChannelReestablish, _}
+import fr.acinq.eclair.wire._
 
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
@@ -48,11 +48,12 @@ object Channel {
   val ANNOUNCEMENTS_MINCONF = 6
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-  val MAX_FUNDING = 16777216 sat // = 2^24
+  val MAX_FUNDING_SATOSHIS: Satoshi = 1000000000 sat // = 10 BTC
+
   val MAX_ACCEPTED_HTLCS = 483
 
   // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
-  val MIN_DUSTLIMIT = 546 sat
+  val MIN_DUSTLIMIT: Satoshi = 546 sat
 
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
@@ -65,10 +66,10 @@ object Channel {
   val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
   // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-  val FUNDING_TIMEOUT_FUNDEE = 5 days
+  val FUNDING_TIMEOUT_FUNDEE: FiniteDuration = 5 days
 
   // pruning occurs if no new update has been received in two weeks (BOLT 7)
-  val REFRESH_CHANNEL_UPDATE_INTERVAL = 10 days
+  val REFRESH_CHANNEL_UPDATE_INTERVAL: FiniteDuration = 10 days
 
   case class BroadcastChannelUpdate(reason: BroadcastReason)
 
@@ -81,7 +82,7 @@ object Channel {
 
   case object TickChannelOpenTimeout
 
-  // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitely specify the peer to allow for testing)
+  // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitly specify the peer to allow for testing)
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef)
 
   // @formatter:off
@@ -101,6 +102,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   implicit def implicitLog: akka.event.LoggingAdapter = log
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
+
+  var lastRandomScid: Option[ShortChannelId] = None
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
@@ -226,7 +229,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId))
-
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
           val candidateChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks,
             normal.commitments.remoteParams.htlcMinimum, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, normal.commitments.localCommit.spec.totalFunds, enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
@@ -241,7 +243,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
           val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(channelUpdate1.timestamp)
           context.system.scheduler.schedule(initialDelay = periodicRefreshInitialDelay, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
@@ -438,7 +439,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // NB: we don't send a ChannelSignatureSent for the first commit
           log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          // Real BITCOIN_FUNDING_DEPTHOK will also be sent after mempool one and will be ignored if channel is NORMAL by then or will act as a fallback case if we only get to see the funding confirmed right away
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          if (commitments.zeroconfSpendablePushChannel) blockchain ! WatchSeenInMempool(self, commitments.commitInput.outPoint.txid, BITCOIN_FUNDING_DEPTHOK)
           context.system.scheduler.scheduleOnce(FUNDING_TIMEOUT_FUNDEE, self, BITCOIN_FUNDING_TIMEOUT)
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, now, None, Right(fundingSigned)) storing() sending fundingSigned
       }
@@ -459,8 +462,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
-          wallet.rollback(fundingTx)
-          replyToUser(Left(LocalError(cause)))
+          rollbackFundingTx(fundingTx, Left(LocalError(cause)), channelId)
           handleLocalError(InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx), d, Some(msg))
         case Success(_) =>
           val commitInput = localCommitTx.input
@@ -475,7 +477,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          // Real BITCOIN_FUNDING_DEPTHOK will also be sent after mempool one and will be ignored if channel is NORMAL by then or will act as a fallback case if we only get to see the funding confirmed right away
           blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          if (commitments.zeroconfSpendablePushChannel) blockchain ! WatchSeenInMempool(self, commitments.commitInput.outPoint.txid, BITCOIN_FUNDING_DEPTHOK)
           log.info(s"committing txid=${fundingTx.txid}")
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
@@ -493,25 +497,22 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
             }
           }
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling(publishFundingTx)
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling publishFundingTx
       }
 
     case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
-      replyToUser(Right("closed"))
+      rollbackFundingTx(d.fundingTx, Right("closed"), d.channelId)
       goto(CLOSED) replying "ok"
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
-      replyToUser(Left(RemoteError(e)))
+      rollbackFundingTx(d.fundingTx, Left(RemoteError(e)), d.channelId)
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
-      wallet.rollback(d.fundingTx)
-      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      rollbackFundingTx(d.fundingTx, Left(LocalError(new RuntimeException("disconnected"))), d.channelId)
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
@@ -526,24 +527,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       log.info(s"received their FundingLocked, deferring message")
       stay using d.copy(deferred = Some(msg)) // no need to store, they will re-send if we get disconnected
 
-    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex, fundingTx), d@DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, deferred, _)) =>
-      Try(Transaction.correctlySpends(commitments.localCommit.publishableTxs.commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-        case Success(_) =>
-          log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
-          blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
-          val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, commitments.channelVersion)
-          val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-          val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
-          deferred.foreach(self ! _)
-          // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
-          // as soon as it reaches NORMAL state, and before it is announced on the network
-          // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
-          val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
-          goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, fundingLocked) storing() sending fundingLocked
-        case Failure(t) =>
-          log.error(t, "")
-          goto(CLOSED)
-      }
+    case Event(WatchEventSeenInMempool(BITCOIN_FUNDING_DEPTHOK, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.zeroconfSpendablePushChannel =>
+      log.info(s"channelId=${d.commitments.channelId} is turbo and txid=${fundingTx.txid} was seen in mempool")
+      goToLockedOrAbort(blockHeight = ShortChannelId.TURBO_CHANNEL_BLOCK_NUMBER, txIndex = ShortChannelId.pseudoTxOrderNumber, fundingTx, d)
+
+    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      log.info(s"channelId=${d.commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
+      goToLockedOrAbort(blockHeight, txIndex, fundingTx, d)
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
       log.debug(s"received remote announcement signatures, delaying")
@@ -574,7 +564,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimum, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.schedule(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, interval = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-      goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None) storing()
+      val data = DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None)
+      goto(NORMAL) using data storing() calling maybeAskRandomScid(data)
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
       log.debug(s"received remote announcement signatures, delaying")
@@ -602,6 +593,26 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
 
   when(NORMAL)(handleExceptions {
+    case Event(CMD_REQUEST_RANDOM_SCID, d: DATA_NORMAL) if !d.commitments.announceChannel =>
+      log.info(s"requesting random scid from remote peer")
+      stay sending AssignScid(d.channelId)
+
+    case Event(_: AssignScid, d: DATA_NORMAL) if !d.commitments.announceChannel =>
+      val d1 = refreshAndReannounceScid(d, newShortChannelId = ShortChannelId.random)
+      log.info(s"peer has requested a random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
+      // we use GOTO instead of stay because we want to fire transitions
+      goto(NORMAL) using d1 storing() sending AssignScidReply(d1.channelId, d1.shortChannelId)
+
+    case Event(msg @ AssignScidReply(_, newShortChannelId), d: DATA_NORMAL) if !d.commitments.announceChannel =>
+      // we use GOTO instead of stay because we want to fire transitions
+      if (newShortChannelId != d.shortChannelId) {
+        val d1 = refreshAndReannounceScid(d, newShortChannelId)
+        log.info(s"peer has provided a new random scid: old=${d.shortChannelId} new=${d1.shortChannelId}")
+        goto(NORMAL) using d1 storing() sending msg
+      } else {
+        goto(NORMAL)
+      }
+
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
@@ -726,10 +737,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 self ! BroadcastChannelUpdate(AboveReserve)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
-              if (nextRemoteCommit.spec.toRemote != d.commitments.remoteCommit.spec.toRemote) {
-                // we send this event only when our balance changes (note that remoteCommit.toRemote == toLocal)
-                context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemote, commitments1))
-              }
+              context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemote, commitments1))
+              for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelUpdateWithOldRandomScid(self, commitments1.channelId, scid, remoteNodeId, d.channelAnnouncement, d.channelUpdate, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
               handleCommandSuccess(sender, d.copy(commitments = commitments1)) storing() sending commit
@@ -861,28 +870,37 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: DATA_NORMAL) => handleNewBlock(c, d)
 
-    case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
-      handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex, _), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=$shortChannelId")
-      // if final shortChannelId is different from the one we had before, we need to re-announce it
-      val channelUpdate = if (shortChannelId != d.shortChannelId) {
-        log.info(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId} new=$shortChannelId")
-        // we need to re-announce this shortChannelId
-        context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
-        // we re-announce the channelUpdate for the same reason
-        Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
-      } else d.channelUpdate
-      val localAnnSigs_opt = if (d.commitments.announceChannel) {
-        // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
-        Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
-      } else None
+      val scidHasChangedDueToReorg = shortChannelId != d.shortChannelId && !d.shortChannelId.isRandomlyAssigned // previous scid was not random but blockchain based which means a reorg has happened
+      val useMostRecentScidAnyway = shortChannelId != d.shortChannelId && d.commitments.privateToAnnounceChannel // previous scid could be random, but we are about to become public so overwrite it anyway
+      val d1 = if (d.shortChannelId.isTurboScid || scidHasChangedDueToReorg || useMostRecentScidAnyway) {
+        log.info(s"short channel id changed: old=${d.shortChannelId} new=$shortChannelId")
+        context.system.scheduler.scheduleOnce(30 minutes) {
+          log.info(s"unassigning old scid=${d.shortChannelId}")
+          // Do not remove an old scid right away in case if this channel has just transitioned from private to public and may not be well visible on graph yet
+          // instead keep it for some time and keep updating relayer with most recent commitments (user got invoice while it was private, tried to pay once it got public but not well visible yet)
+          context.system.eventStream.publish(ShortChannelIdUnassigned(self, d.channelId, d.shortChannelId, remoteNodeId))
+          lastRandomScid = None
+        }
+        lastRandomScid = Some(d.shortChannelId)
+        announceNewScid(d, shortChannelId)
+      } else {
+        d
+      }
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate) storing() sending localAnnSigs_opt.toSeq
+      if (d.commitments.announceChannel || d.commitments.privateToAnnounceChannel) {
+        // if channel is or wants to become public we need to send our announcement_signatures in order to generate the channel_announcement
+        val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId)
+        goto(NORMAL) using d1.copy(commitments = d.commitments.copy(channelFlags = ChannelFlags.Announce), buried = true) storing() sending localAnnSigs
+      } else {
+        goto(NORMAL) using d1.copy(buried = true) storing()
+      }
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel || d.commitments.privateToAnnounceChannel =>
       // channels are publicly announced if both parties want it (defined as feature bit)
       if (d.buried) {
         // we are aware that the channel has reached enough confirmations
@@ -1136,8 +1154,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
-    case Event(c@CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
-      handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1372,7 +1389,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
       // in that case we rollback the tx
-      wallet.rollback(fundingTx)
+      rollbackFundingTx(fundingTx, Right("interrupted"), ByteVector32.Zeroes)
       stay
 
     case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymore
@@ -1413,8 +1430,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) =>
-      handleOfflineFeerate(c, d)
+    case Event(c: CurrentFeerates, d: HasCommitments) => handleOfflineFeerate(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -1448,7 +1464,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
+      // Real BITCOIN_FUNDING_DEPTHOK will also be sent after mempool one and will be ignored if channel is NORMAL by then or will act as a fallback case if we only get to see the funding confirmed right away
       blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+      if (d.commitments.zeroconfSpendablePushChannel) blockchain ! WatchSeenInMempool(self, d.commitments.commitInput.outPoint.txid, BITCOIN_FUNDING_DEPTHOK)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
@@ -1524,8 +1542,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           }
           // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
           setTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds, repeat = false)
-
-          goto(NORMAL) using d.copy(commitments = commitments1)
+          goto(NORMAL) using d.copy(commitments = commitments1) calling maybeAskRandomScid(d)
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
@@ -1552,8 +1569,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) =>
-      handleOfflineFeerate(c, d)
+    case Event(c: CurrentFeerates, d: HasCommitments) => handleOfflineFeerate(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
@@ -1628,7 +1644,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(CurrentBlockCount(_), _) => stay
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentFeerates(_), _) => stay
+    case Event(_: CurrentFeerates, _) => stay
 
     // we only care about this event in NORMAL state
     case Event(_: BroadcastChannelUpdate, _) => stay
@@ -1669,11 +1685,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // if channel is private, we send the channel_update directly to remote
       // they need it "to learn the other end's forwarding parameters" (BOLT 7)
       (stateData, nextStateData) match {
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
-          // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && (d2.buried || d2.shortChannelId.isRandomlyAssigned) =>
+          // for a private channel, when the tx was just buried or random scid has been assigned already we need to send the channel_update to our peer (even if it didn't change)
           forwarder ! d2.channelUpdate
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
-          // otherwise, we only send it when it is different, and tx is already buried
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && (d2.buried || d2.shortChannelId.isRandomlyAssigned) =>
+          // otherwise, we only send it when it is different, and tx is already buried or random scid has been assigned already (maybe for the second time)
           forwarder ! d2.channelUpdate
         case _ => ()
       }
@@ -1683,6 +1699,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
           log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelUpdateWithOldRandomScid(self, normal.commitments.channelId, scid, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
           // don't do anything if neither the channel_update nor the channel_announcement didn't change
           ()
@@ -1690,6 +1707,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
           log.info(s"emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelUpdateWithOldRandomScid(self, normal.commitments.channelId, scid, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
           // in any other case (e.g. WAIT_FOR_INIT_INTERNAL->OFFLINE) we do nothing
           ()
@@ -1697,6 +1715,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
           // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
           context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
+          for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, scid, normal.commitments.remoteParams.nodeId))
         case _ => ()
       }
   }
@@ -1711,6 +1730,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           888    888  d8888888888 888   Y8888 888  .d88P 888      888        888  T88b  Y88b  d88P
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
+
+  def rollbackFundingTx(tx: Transaction, message: Either[Channel.ChannelError, String], channelId: ByteVector32) = {
+    wallet.rollback(tx)
+    log.info(s"Rolled back a funding tx=$tx with peer=$remoteNodeId for channel=$channelId")
+    context.system.eventStream.publish(ChannelFundingRolledBack(tx.txid, remoteNodeId, channelId))
+    replyToUser(message)
+  }
 
   /**
    * This function is used to return feedback to user at channel opening
@@ -2241,11 +2267,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
   }
 
-  implicit def state2mystate(state: FSM.State[fr.acinq.eclair.channel.State, Data]): MyState = MyState(state)
+  type NormalFSMState = FSM.State[fr.acinq.eclair.channel.State, Data]
 
-  case class MyState(state: FSM.State[fr.acinq.eclair.channel.State, Data]) {
+  implicit class MyState(state: NormalFSMState) {
 
-    def storing(): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def storing(): NormalFSMState = {
       state.stateData match {
         case d: HasCommitments =>
           log.debug(s"updating database record for channelId={}", d.channelId)
@@ -2258,12 +2284,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
     }
 
-    def sending(msgs: Seq[LightningMessage]): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def sending(msgs: Seq[LightningMessage]): NormalFSMState = {
       msgs.foreach(sending)
       state
     }
 
-    def sending(msg: LightningMessage): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def sending(msg: LightningMessage): NormalFSMState = {
       forwarder ! msg
       state
     }
@@ -2272,14 +2298,52 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
      * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
      * particularly useful to publish transactions only after we are sure that the state has been persisted.
      */
-    def calling(f: => Unit): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def calling(f: => Unit): NormalFSMState = {
       f
       state
     }
 
   }
 
-  def now = Platform.currentTime.milliseconds.toSeconds
+  def now: Long = Platform.currentTime.milliseconds.toSeconds
+
+  def refreshAndReannounceScid(d: DATA_NORMAL, newShortChannelId: ShortChannelId): DATA_NORMAL = {
+    // remove old scid reference from Router (will get new one via LocalChannelUpdate), Relayer (will get new one via LocalChannelUpdate), Register (will get new one via ShortChannelIdAssigned)
+    context.system.eventStream.publish(ShortChannelIdUnassigned(self, d.channelId, d.shortChannelId, remoteNodeId))
+    announceNewScid(d, newShortChannelId)
+  }
+
+  def announceNewScid(d: DATA_NORMAL, newShortChannelId: ShortChannelId): DATA_NORMAL = {
+    context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, newShortChannelId))
+    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, newShortChannelId, d.channelUpdate.cltvExpiryDelta,
+      d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds,
+      enable = Helpers.aboveReserve(d.commitments))
+    d.copy(shortChannelId = newShortChannelId, channelUpdate = channelUpdate)
+  }
+
+  def goToLockedOrAbort(blockHeight: Int, txIndex: Int, fundingTx: Transaction, d: DATA_WAIT_FOR_FUNDING_CONFIRMED): NormalFSMState =
+    Try(Transaction.correctlySpends(d.commitments.localCommit.publishableTxs.commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+      case Success(_) =>
+        blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+        val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
+        val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+        val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
+        d.deferred.foreach(self ! _)
+        // this is the temporary channel id that we will use in our channel_update message, the goal is to be able to use our channel
+        // as soon as it reaches NORMAL state, and before it is announced on the network
+        // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
+        val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
+        goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(d.commitments, shortChannelId, fundingLocked) storing() sending fundingLocked
+      case Failure(t) =>
+        log.error(t, "Incorrect funding")
+        goto(CLOSED)
+    }
+
+  def maybeAskRandomScid(d: DATA_NORMAL): Unit =
+    if (d.commitments.channelFlags == ChannelFlags.PrivateThenAnnounceTurbo && !d.commitments.localParams.isFunder && !d.shortChannelId.isRandomlyAssigned) {
+      // In a specific case of private turbo channel which later becomes public a fundee keeps asking funder for random scid assigning to enable receiving ASAP
+      context.system.scheduler.scheduleOnce(1 second, self, CMD_REQUEST_RANDOM_SCID)
+    }
 
   override def mdc(currentMessage: Any): MDC = {
     val id = currentMessage match {
