@@ -31,8 +31,9 @@ import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
+import fr.acinq.eclair.router.{ChannelDesc, GetExtraHops, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
 
@@ -47,20 +48,19 @@ case class TimestampQueryFilters(from: Long, to: Long)
 
 object TimestampQueryFilters {
   /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
-  val MaxEpochMilliseconds = Duration.fromNanos(Long.MaxValue).toMillis
+  val MaxEpochMilliseconds: Long = Duration.fromNanos(Long.MaxValue).toMillis
 
-  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
+  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]): TimestampQueryFilters = {
     // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
     val from = from_opt.getOrElse(0L).seconds.toMillis
     val to = to_opt.map(_.seconds.toMillis).getOrElse(MaxEpochMilliseconds)
-
     TimestampQueryFilters(from, to)
   }
 }
 
 trait Eclair {
 
-  def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
+  def connect(target: Either[NodeURI, PublicKey], turboAllowed: Boolean)(implicit timeout: Timeout): Future[String]
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
@@ -79,6 +79,8 @@ trait Eclair {
   def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
+
+  def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -120,9 +122,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
 
-  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
-    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[String]
-    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
+  override def connect(target: Either[NodeURI, PublicKey], turboAllowed: Boolean)(implicit timeout: Timeout): Future[String] = target match {
+    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri.nodeId, Some(uri.address), turboAllowed)).mapTo[String]
+    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None, turboAllowed)).mapTo[String]
   }
 
   override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {
@@ -187,6 +189,18 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = {
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
     (appKit.paymentHandler ? ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
+  }
+
+  override def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = {
+    fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
+    val amountThreshold = amount_opt.getOrElse(0 msat)
+    for {
+      allUsableBalances <- (appKit.relayer ? GetUsableBalances).mapTo[Map[ShortChannelId, UsableBalances]] // NORMAL channels which are online right now
+      allNonEmptyExtraHops <- (appKit.router ? GetExtraHops(appKit.nodeParams.nodeId)).mapTo[List[List[ExtraHop]]].map(_.filter(_.nonEmpty)) // those where remote update is present
+      usableExtraHops = allNonEmptyExtraHops.filter(oneHopRoute => allUsableBalances.get(oneHopRoute.head.shortChannelId).exists(_.canReceive >= amountThreshold)).take(4) // can receive given amount, limit result to maybe not make QR unreadable
+      receive = ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, extraHops = usableExtraHops, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)
+      pr <- (appKit.paymentHandler ? receive).mapTo[PaymentRequest]
+    } yield pr
   }
 
   override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {
@@ -288,5 +302,5 @@ class EclairImpl(appKit: Kit) extends Eclair {
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
-  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
+  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Map[ShortChannelId, UsableBalances]].map(_.values)
 }

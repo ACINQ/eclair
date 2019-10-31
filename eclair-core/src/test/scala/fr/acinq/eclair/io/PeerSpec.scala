@@ -71,7 +71,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, turboAllowed = false, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
@@ -112,7 +112,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.send(peer, Peer.Init(None, Set.empty))
     val CurrentState(_, INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
     val Transition(_, INSTANTIATING, DISCONNECTED) = monitor.expectMsgType[Transition[_]]
-    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
+    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, turboAllowed = false))
     probe.expectMsg(s"no address found")
   }
 
@@ -128,8 +128,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val CurrentState(_, INSTANTIATING) = monitor.expectMsgType[CurrentState[_]]
     val Transition(_, INSTANTIATING, DISCONNECTED) = monitor.expectMsgType[Transition[_]]
 
-    probe.send(peer, Peer.Connect(remoteNodeId, None))
-    awaitCond(peer.stateData.address_opt == Some(fakeIPAddress.socketAddress))
+    probe.send(peer, Peer.Connect(remoteNodeId, None, turboAllowed = false))
+    awaitCond(peer.stateData.address_opt === Some(fakeIPAddress.socketAddress))
   }
 
   test("ignore connect to same address") { f =>
@@ -137,7 +137,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
-    probe.send(peer, Peer.Connect(NodeURI.parse("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@1.2.3.4:9735")))
+    val uri = NodeURI.parse("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@1.2.3.4:9735")
+    probe.send(peer, Connect(uri.nodeId, Some(uri.address), turboAllowed = false))
     probe.expectMsg("reconnection in progress")
   }
 

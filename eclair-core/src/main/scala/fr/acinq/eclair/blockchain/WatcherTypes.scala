@@ -34,6 +34,7 @@ import scala.util.{Failure, Success, Try}
 sealed trait Watch {
   def channel: ActorRef
   def event: BitcoinEvent
+  def txId: ByteVector32
 }
 // we need a public key script to use electrum apis
 final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent) extends Watch
@@ -64,6 +65,7 @@ object WatchSpentBasic {
 }
 // TODO: notify me if confirmation number gets below minDepth?
 final case class WatchLost(channel: ActorRef, txId: ByteVector32, minDepth: Long, event: BitcoinEvent) extends Watch
+final case class WatchSeenInMempool(channel: ActorRef, txId: ByteVector32, event: BitcoinEvent) extends Watch
 
 trait WatchEvent {
   def event: BitcoinEvent
@@ -72,6 +74,7 @@ final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIn
 final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends WatchEvent
 final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
 final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
+final case class WatchEventSeenInMempool(event: BitcoinEvent, tx: Transaction) extends WatchEvent
 
 /**
   * Publish the provided tx as soon as possible depending on locktime and csv
