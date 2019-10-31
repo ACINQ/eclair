@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.channel.ChannelFlags
 import org.scalatest.FunSuite
 import scodec.bits._
 
@@ -35,9 +36,10 @@ class FeaturesSpec extends FunSuite {
     assert(hasFeature(hex"02", Features.OPTION_DATA_LOSS_PROTECT_OPTIONAL))
   }
 
-  test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
-    val features = hex"010a"
-    assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL) && hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY))
+  test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' and 'option_scid_assign' features") {
+    val features = hex"410A"
+    assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+      && hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) && hasFeature(features, OPTION_SCID_ASSIGN_MANDATORY))
   }
 
   test("'variable_length_onion' feature") {
@@ -47,15 +49,31 @@ class FeaturesSpec extends FunSuite {
     assert(hasVariableLengthOnion(hex"0200"))
   }
 
+  test("'option_scid_assign' feature") {
+    assert(hasFeature(hex"4000", OPTION_SCID_ASSIGN_MANDATORY))
+    assert(hasFeature(hex"8000", OPTION_SCID_ASSIGN_OPTIONAL))
+    assert(hasScidAssign(hex"8000"))
+  }
+
   test("features compatibility") {
     assert(areSupported(ByteVector.fromLong(1L << INITIAL_ROUTING_SYNC_BIT_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY)))
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << OPTION_SCID_ASSIGN_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << OPTION_SCID_ASSIGN_OPTIONAL)))
     assert(areSupported(hex"0b"))
     assert(!areSupported(hex"14"))
     assert(!areSupported(hex"0141"))
   }
 
+  test("channel features") {
+    assert(!isBitSet(0, ChannelFlags.Private) && !isBitSet(3, ChannelFlags.Private)) // private ordinary channel
+    assert(isBitSet(0, ChannelFlags.Announce) && !isBitSet(3, ChannelFlags.Announce)) // public ordinary channel
+    assert(!isBitSet(0, ChannelFlags.PrivateTurbo) && isBitSet(3, ChannelFlags.PrivateTurbo)) // private zeroconfSpendablePushChannel channel
+    assert(isBitSet(0, ChannelFlags.AnnounceTurbo) && isBitSet(3, ChannelFlags.AnnounceTurbo)) // public zeroconfSpendablePushChannel channel
+    assert(!isBitSet(0, ChannelFlags.PrivateThenAnnounce) && !isBitSet(3, ChannelFlags.PrivateThenAnnounce) && isBitSet(4, ChannelFlags.PrivateThenAnnounce)) // private ordinary channel which becomes public
+    assert(!isBitSet(0, ChannelFlags.PrivateThenAnnounceTurbo) && isBitSet(3, ChannelFlags.PrivateThenAnnounceTurbo) && isBitSet(4, ChannelFlags.PrivateThenAnnounceTurbo)) // private zeroconfSpendablePushChannel channel which becomes public
+  }
 }
