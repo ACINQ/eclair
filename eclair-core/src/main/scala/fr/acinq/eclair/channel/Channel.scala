@@ -737,6 +737,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemote, commitments1))
+              for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelUpdateWithOldRandomScid(self, commitments1.channelId, scid, remoteNodeId, d.channelAnnouncement, d.channelUpdate, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
               handleCommandSuccess(sender, d.copy(commitments = commitments1)) storing() sending commit
@@ -878,6 +879,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val d1 = if (d.shortChannelId.isTurboScid || scidHasChangedDueToReorg || useMostRecentScidAnyway) {
         log.info(s"short channel id changed: old=${d.shortChannelId} new=$shortChannelId")
         context.system.scheduler.scheduleOnce(30 minutes) {
+          log.info(s"unassigning old scid=${d.shortChannelId}")
           // Do not remove an old scid right away in case if this channel has just transitioned from private to public and may not be well visible on graph yet
           // instead keep it for some time and keep updating relayer with most recent commitments (user got invoice while it was private, tried to pay once it got public but not well visible yet)
           context.system.eventStream.publish(ShortChannelIdUnassigned(self, d.channelId, d.shortChannelId, remoteNodeId))
@@ -1712,6 +1714,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
           // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
           context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
+          for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, scid, normal.commitments.remoteParams.nodeId))
         case _ => ()
       }
   }
