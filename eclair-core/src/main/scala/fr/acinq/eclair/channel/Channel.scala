@@ -879,7 +879,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val useMostRecentScidAnyway = shortChannelId != d.shortChannelId && d.commitments.privateToAnnounceChannel // previous scid could be random, but we are about to become public so overwrite it anyway
       val d1 = if (d.shortChannelId.isTurboScid || scidHasChangedDueToReorg || useMostRecentScidAnyway) {
         log.info(s"short channel id changed: old=${d.shortChannelId} new=$shortChannelId")
-        context.system.scheduler.scheduleOnce(30 minutes) {
+        context.system.scheduler.scheduleOnce(1 hour) {
           log.info(s"unassigning old scid=${d.shortChannelId}")
           // Do not remove an old scid right away in case if this channel has just transitioned from private to public and may not be well visible on graph yet
           // instead keep it for some time and keep updating relayer with most recent commitments (user got invoice while it was private, tried to pay once it got public but not well visible yet)

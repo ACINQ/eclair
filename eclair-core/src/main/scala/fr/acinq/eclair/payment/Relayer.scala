@@ -88,13 +88,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-      val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments))
-      context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
+      context become main(channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments)), node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
 
     case LocalChannelUpdateWithOldRandomScid(_, channelId, oldShortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
-      log.debug(s"updating local channel with old scid info for channelId=$channelId oldShortChannelId=$oldShortChannelId newShortChannelId=${channelUpdate.shortChannelId} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-      val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments))
-      context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
+    log.debug(s"updating local channel with old scid info for channelId=$channelId oldShortChannelId=$oldShortChannelId newShortChannelId=${channelUpdate.shortChannelId} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+    context become main(channelUpdates + (oldShortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments)), node2channels.addBinding(remoteNodeId, oldShortChannelId))
 
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId because channel is down")
