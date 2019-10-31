@@ -60,7 +60,7 @@ object TimestampQueryFilters {
 
 trait Eclair {
 
-  def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
+  def connect(target: Either[NodeURI, PublicKey], turboAllowed: Boolean)(implicit timeout: Timeout): Future[String]
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
@@ -122,9 +122,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
 
-  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
-    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[String]
-    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
+  override def connect(target: Either[NodeURI, PublicKey], turboAllowed: Boolean)(implicit timeout: Timeout): Future[String] = target match {
+    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri.nodeId, Some(uri.address), turboAllowed)).mapTo[String]
+    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None, turboAllowed)).mapTo[String]
   }
 
   override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {

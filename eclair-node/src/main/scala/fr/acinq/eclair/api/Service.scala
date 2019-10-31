@@ -130,12 +130,12 @@ trait Service extends ExtraDirectives with Logging {
                         complete(eclairApi.getInfoResponse())
                       } ~
                         path("connect") {
-                          formFields("uri".as[NodeURI]) { uri =>
-                            complete(eclairApi.connect(Left(uri)))
-                          } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
-                            complete(eclairApi.connect(Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT))))))
-                          } ~ formFields(nodeIdFormParam) { nodeId =>
-                            complete(eclairApi.connect(Right(nodeId)))
+                          formFields("uri".as[NodeURI], "turboAllowed".as[Boolean].?) { (uri, turboAllowed_opt) =>
+                            complete(eclairApi.connect(Left(uri), turboAllowed_opt.getOrElse(false)))
+                          } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?, "turboAllowed".as[Boolean].?) { (nodeId, host, port_opt, turboAllowed_opt) =>
+                            complete(eclairApi.connect(Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT)))), turboAllowed_opt.getOrElse(false)))
+                          } ~ formFields(nodeIdFormParam, "turboAllowed".as[Boolean].?) { (nodeId, turboAllowed_opt) =>
+                            complete(eclairApi.connect(Right(nodeId), turboAllowed_opt.getOrElse(false)))
                           }
                         } ~
                         path("disconnect") {

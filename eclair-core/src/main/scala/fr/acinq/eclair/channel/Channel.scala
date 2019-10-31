@@ -269,7 +269,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit))) =>
       log.info(s"received OpenChannel=$open")
-      Try(Helpers.validateParamsFundee(nodeParams, open, remoteNodeId)) match {
+      Try(Helpers.validateParamsFundee(nodeParams, open)) match {
         case Failure(t) => handleLocalError(t, d, Some(open))
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))

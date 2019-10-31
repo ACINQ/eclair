@@ -224,7 +224,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val remoteUri = NodeURI.parse("030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735")
 
     val eclair = mock[Eclair]
-    eclair.connect(any[Either[NodeURI, PublicKey]])(any[Timeout]) returns Future.successful("connected")
+    eclair.connect(any[Either[NodeURI, PublicKey]], turboAllowed = false)(any[Timeout]) returns Future.successful("connected")
     val mockService = new MockService(eclair)
 
     Post("/connect", FormData("nodeId" -> remoteNodeId.toString()).toEntity) ~>
@@ -234,7 +234,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"connected\"")
-        eclair.connect(Right(remoteNodeId))(any[Timeout]).wasCalled(once)
+        eclair.connect(Right(remoteNodeId), turboAllowed = false)(any[Timeout]).wasCalled(once)
       }
 
     Post("/connect", FormData("uri" -> remoteUri.toString).toEntity) ~>
@@ -244,7 +244,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"connected\"")
-        eclair.connect(Left(remoteUri))(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
+        eclair.connect(Left(remoteUri), turboAllowed = false)(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
       }
   }
 
