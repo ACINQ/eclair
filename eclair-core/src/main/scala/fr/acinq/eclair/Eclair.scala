@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import java.util.UUID
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, Props}
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -32,6 +32,7 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.recovery.RecoveryFSM
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
@@ -111,6 +112,8 @@ trait Eclair {
   def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]]
+
+  def doRecovery(uri: NodeURI): Unit
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -289,4 +292,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
   )
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
+
+  override def doRecovery(uri: NodeURI): Unit = {
+
+    ???
+//    val recoveryFSM = appKit.system.actorOf(Props(new RecoveryFSM(appKit.nodeParams, appKit.)))
+  }
 }

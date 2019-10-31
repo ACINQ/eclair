@@ -18,11 +18,13 @@ package fr.acinq.eclair
 
 import java.io.File
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.stream.{ActorMaterializer, BindFailedException}
-import com.typesafe.config.Config
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.recovery.{RecoverySwitchBoard, RecoveryTool}
 import grizzled.slf4j.Logging
 import kamon.Kamon
 
@@ -41,7 +43,17 @@ object Boot extends App with Logging {
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
-    val setup = new Setup(datadir)
+
+    val tempConfig = ConfigFactory.load()
+    val setup = if(tempConfig.hasPath("recovery-tool")){
+      new Setup(new File("/tmp/eclair_recovery_datadir")) {
+        override def getSwitchboard(authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet): ActorRef = {
+          system.actorOf(SimpleSupervisor.props(Props(new RecoverySwitchBoard(nodeParams, authenticator, watcher, router, relayer, wallet)), "switchboard", SupervisorStrategy.Resume))
+        }
+      }
+    } else {
+      new Setup(datadir)
+    }
 
     if (setup.config.getBoolean("enable-kamon")) {
       Kamon.init(setup.appConfig)
@@ -52,6 +64,10 @@ object Boot extends App with Logging {
       case Success(kit) =>
         startApiServiceIfEnabled(setup.config, kit)
         plugins.foreach(_.onKit(kit))
+        if(setup.config.hasPath("recovery-tool")){
+          RecoveryTool.interactiveRecovery(kit)
+        }
+
       case Failure(t) => onError(t)
     }
   } catch {
