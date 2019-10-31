@@ -57,32 +57,40 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
           logger.info(s"found unspent channel funding_tx=${fundingTx.txid} outputIndex=$outIndex")
           logger.info(s"asking remote to close the channel")
           d.peer ! Error(channelId, PleasePublishYourCommitment(channelId).toString)
-          context.system.scheduler.scheduleOnce(10 seconds)(self ! CheckCommitmentPublished)
+          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckCommitmentPublished)
           context.become(waitForRemoteToPublishCommitment(DATA_WAIT_FOR_REMOTE_PUBLISH(d.peer, reestablish, fundingTx, outIndex)))
       }
   }
 
   def waitForRemoteToPublishCommitment(d: DATA_WAIT_FOR_REMOTE_PUBLISH): Receive = {
     case CheckCommitmentPublished =>
+      logger.info(s"looking for the commitment transaction")
       bitcoinClient.lookForSpendingTx(None, d.fundingTx.txid.toHex, d.fundingOutIndex).onComplete {
         case Success(commitTx) =>
-          recoverFromCommitment(commitTx)
+          recoverFromCommitment(commitTx, d.channelReestablish)
           logger.info(s"recovery done")
           d.peer ! Disconnect
           self ! PoisonPill
-        case Failure(_) => context.system.scheduler.scheduleOnce(10 seconds)(self ! CheckCommitmentPublished)
+        case Failure(_) =>
+          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckCommitmentPublished)
       }
   }
 
-  def recoverFromCommitment(commitTx: Transaction) = {
+  def recoverFromCommitment(commitTx: Transaction, channelReestablish: ChannelReestablish) = {
+    // extract our funding pubkey from witness
+    // compute channel key path from funding pubkey
+    // compute points necessary to redeem out outputs
+    // create txs and broadcast
     logger.info("we made it!")
   }
 
+  /**
+    * Given a channelId tries to guess the fundingTxId and retrieve the funding transaction
+    */
   def lookupFundingTx(channelId: ByteVector32): Option[(Transaction, Int)] = {
     val candidateFundingTxIds = fundingIds(channelId)
-    logger.info(s"computed funding txids=${candidateFundingTxIds.map(_._1)}")
     val fundingTx_opt = Await.result(Future.sequence(candidateFundingTxIds.map { case (txId, _) =>
-      transactionExists(txId)
+      getTransaction(txId)
     }).map(_.flatten.headOption), 60 seconds)
 
     fundingTx_opt.map { funding =>
@@ -91,7 +99,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
   }
 
   /**
-    * Extracts the funding_txid and output index from channelId
+    * Extracts the funding_txid and output index from channelId, brute forces the ids up to @param limit
     */
   def fundingIds(channelId: ByteVector32, limit: Int = 5): Seq[(ByteVector32, Int)] = {
     0 until limit map { i =>
@@ -99,7 +107,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
     }
   }
 
-  def transactionExists(txId: ByteVector32): Future[Option[Transaction]] = {
+  def getTransaction(txId: ByteVector32): Future[Option[Transaction]] = {
     bitcoinClient.getTransaction(txId.toHex).collect {
       case tx: Transaction => Some(tx)
     }.recover {
@@ -155,6 +163,7 @@ class RecoveryPeer(override val nodeParams: NodeParams, remoteNodeId: PublicKey,
     case Event(msg: ChannelReestablish, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
       recoveryFSM ! ChannelFound(msg.channelId, msg)
+      // when recovering we don't immediately reply channel_reestablish/error
       stay
 
     case _ => super.whenConnected(event)
