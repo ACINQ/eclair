@@ -2245,6 +2245,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(1 second)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
     channelUpdateListener.expectNoMsg(1 second)
   }
 
@@ -2268,6 +2269,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // LocalChannelUpdate should not be published (should this be changed to: "LocalChannelUpdate SHOULD be published"?)
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
     channelUpdateListener.expectNoMsg(1 second)
   }
 
@@ -2282,7 +2284,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // LocalChannelUpdate should not be published (should this be changed to: "LocalChannelUpdate SHOULD be published"?)
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
     channelUpdateListener.expectMsgType[LocalChannelUpdate] // Bob has also got BITCOIN_FUNDING_DEEPLYBURIED
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
     sender.send(alice, CMD_REQUEST_RANDOM_SCID)
     sender.send(bob, alice2bob.expectMsgType[AssignScid])
     val bobReply = bob2alice.expectMsgType[AssignScidReply]
@@ -2334,11 +2338,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFlags === ChannelFlags.PrivateThenAnnounce)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isEmpty)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isEmpty)
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 500002, 22, null))
     sender.send(bob, alice2bob.expectMsgType[AnnouncementSignatures])
     bob2alice.expectNoMsg(100 millis) // Bob still has not received BITCOIN_FUNDING_DEEPLYBURIED so can't react to announcement sigs, but re-schedules receiving them
     sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 500002, 22, null))
     sender.send(alice, bob2alice.expectMsgType[AnnouncementSignatures])
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[LocalChannelUpdateWithOldRandomScid]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFlags === ChannelFlags.Announce)

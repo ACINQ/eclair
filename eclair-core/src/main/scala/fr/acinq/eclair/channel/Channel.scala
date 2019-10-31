@@ -102,6 +102,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
+  var lastRandomScid: Option[ShortChannelId] = None
+
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
   // this will be used to make sure the current commitment fee is up-to-date
@@ -875,7 +877,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val useMostRecentScidAnyway = shortChannelId != d.shortChannelId && d.commitments.privateToAnnounceChannel // previous scid could be random, but we are about to become public so overwrite it anyway
       val d1 = if (d.shortChannelId.isTurboScid || scidHasChangedDueToReorg || useMostRecentScidAnyway) {
         log.info(s"short channel id changed: old=${d.shortChannelId} new=$shortChannelId")
-        refreshAndReannounceScid(d, shortChannelId)
+        context.system.scheduler.scheduleOnce(30 minutes) {
+          // Do not remove an old scid right away in case if this channel has just transitioned from private to public and may not be well visible on graph yet
+          // instead keep it for some time and keep updating relayer with most recent commitments (user got invoice while it was private, tried to pay once it got public but not well visible yet)
+          context.system.eventStream.publish(ShortChannelIdUnassigned(self, d.channelId, d.shortChannelId, remoteNodeId))
+          lastRandomScid = None
+        }
+        lastRandomScid = Some(d.shortChannelId)
+        announceNewScid(d, shortChannelId)
       } else {
         d
       }
@@ -1687,6 +1696,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
           log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelUpdateWithOldRandomScid(self, normal.commitments.channelId, scid, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
           // don't do anything if neither the channel_update nor the channel_announcement didn't change
           ()
@@ -1694,6 +1704,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
           log.info(s"emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          for (scid <- lastRandomScid) context.system.eventStream.publish(LocalChannelUpdateWithOldRandomScid(self, normal.commitments.channelId, scid, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
           // in any other case (e.g. WAIT_FOR_INIT_INTERNAL->OFFLINE) we do nothing
           ()
@@ -2295,11 +2306,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def refreshAndReannounceScid(d: DATA_NORMAL, newShortChannelId: ShortChannelId): DATA_NORMAL = {
     // remove old scid reference from Router (will get new one via LocalChannelUpdate), Relayer (will get new one via LocalChannelUpdate), Register (will get new one via ShortChannelIdAssigned)
     context.system.eventStream.publish(ShortChannelIdUnassigned(self, d.channelId, d.shortChannelId, remoteNodeId))
-    // we need to re-announce this shortChannelId
+    announceNewScid(d, newShortChannelId)
+  }
+
+  def announceNewScid(d: DATA_NORMAL, newShortChannelId: ShortChannelId): DATA_NORMAL = {
     context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, newShortChannelId))
-    // we re-announce the channelUpdate for the same reason
     val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, newShortChannelId, d.channelUpdate.cltvExpiryDelta,
-      d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
+      d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds,
+      enable = Helpers.aboveReserve(d.commitments))
     d.copy(shortChannelId = newShortChannelId, channelUpdate = channelUpdate)
   }
 

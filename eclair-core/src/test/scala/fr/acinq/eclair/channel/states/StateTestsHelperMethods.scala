@@ -59,6 +59,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val relayerA = TestProbe()
     val relayerB = TestProbe()
     val channelUpdateListener = TestProbe()
+    system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdateWithOldRandomScid])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
