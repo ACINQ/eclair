@@ -44,11 +44,11 @@ object Boot extends App with Logging {
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
 
-    val tempConfig = ConfigFactory.load()
-    val setup = if(tempConfig.hasPath("recovery-tool")){
-      new Setup(new File("/tmp/eclair_recovery_datadir")) {
+    val setup = if(ConfigFactory.load().hasPath("eclair.recovery-tool")){
+      new Setup(datadir) {
+        logger.info(s"recovery mode enabled")
         override def getSwitchboard(authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet): ActorRef = {
-          system.actorOf(SimpleSupervisor.props(Props(new RecoverySwitchBoard(nodeParams, authenticator, watcher, router, relayer, wallet)), "switchboard", SupervisorStrategy.Resume))
+          system.actorOf(SimpleSupervisor.props(Props(new RecoverySwitchBoard(nodeParams, authenticator, watcher, router, relayer, wallet)), "recovery-switchboard", SupervisorStrategy.Resume))
         }
       }
     } else {
