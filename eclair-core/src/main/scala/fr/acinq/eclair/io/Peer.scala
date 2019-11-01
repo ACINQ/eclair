@@ -41,7 +41,7 @@ import scala.util.Random
 /**
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, turboAllowed: Boolean, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -64,8 +64,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   when(DISCONNECTED) {
-    case Event(Peer.Connect(_, address_opt), d: DisconnectedData) =>
-      address_opt
+    case Event(pc: Peer.Connect, d: DisconnectedData) =>
+      pc.address_opt
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromNodeAnnouncement) match {
         case None =>
@@ -301,6 +301,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
       d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
+        case None if Features.isBitSet(ChannelFlags.TurboPosition, msg.channelFlags) && !(nodeParams.turboWhitelist.contains(remoteNodeId) || turboAllowed) =>
+          log.warning(s"ignoring open_channel with turbo bit from non-whitelisted nodeId=$remoteNodeId")
+          stay
         case None =>
           val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
           val temporaryChannelId = msg.temporaryChannelId
@@ -594,7 +597,8 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, turboAllowed: Boolean, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) =
+    Props(new Peer(nodeParams, remoteNodeId, turboAllowed, authenticator, watcher, router, relayer, wallet))
 
   // @formatter:off
 
@@ -620,17 +624,12 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
-    def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
-  }
-  object Connect {
-    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
-  }
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], turboAllowed: Boolean)
   case object Reconnect
   case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
-    require(fundingSatoshis < Channel.MAX_FUNDING, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING}")
+    require(fundingSatoshis < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
     require(pushMsat >= 0.msat, s"pushMsat must be positive")

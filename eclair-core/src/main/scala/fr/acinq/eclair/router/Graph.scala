@@ -302,8 +302,8 @@ object Graph {
       val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
       // Every edge is weighted by channel capacity, larger channels add less weight
-      val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW)
-      val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
+      val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW_MSAT)
+      val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW_MSAT.toLong, CAPACITY_CHANNEL_HIGH_MSAT.toLong)
 
       // Every edge is weighted by its cltv-delta value, normalized
       val channelCltvDelta = edge.update.cltvExpiryDelta.toInt
@@ -351,8 +351,8 @@ object Graph {
     val BLOCK_TIME_TWO_MONTHS = 8640
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW = (1000 sat).toMilliSatoshi
-    val CAPACITY_CHANNEL_HIGH = Channel.MAX_FUNDING.toMilliSatoshi
+    val CAPACITY_CHANNEL_LOW_MSAT: MilliSatoshi = 1000000 msat
+    val CAPACITY_CHANNEL_HIGH_MSAT: MilliSatoshi = Channel.MAX_FUNDING_SATOSHIS.toMilliSatoshi // 2^24 sat
 
     // Low/High bound for CLTV channel value
     val CLTV_LOW = 9
@@ -382,7 +382,7 @@ object Graph {
      */
     case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate)
 
-    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
+    case class DirectedGraph(vertices: Map[PublicKey, List[GraphEdge]]) {
 
       def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
 
