@@ -26,6 +26,8 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   def toLong: Long = id
 
+  def isRandomlyAssigned: Boolean = ShortChannelId.coordinates(this).blockHeight <= ShortChannelId.MAX_RANDOM_BLOCK_HEIGHT
+
   override def toString: String = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
     s"${blockHeight}x${txIndex}x${outputIndex}"
@@ -36,10 +38,18 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 }
 
 object ShortChannelId {
+  val MAX_RANDOM_BLOCK_HEIGHT = 500000
 
   def apply(s: String): ShortChannelId = s.split("x").toList match {
     case blockHeight :: txIndex :: outputIndex :: Nil => ShortChannelId(toShortId(blockHeight.toInt, txIndex.toInt, outputIndex.toInt))
     case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
+  }
+
+  def random: ShortChannelId = {
+    val boundedBlock = secureRandom.nextInt(MAX_RANDOM_BLOCK_HEIGHT + 1)
+    val pseudoTransaction = secureRandom.nextInt(16777215 + 1)
+    val pseudoOutput = secureRandom.nextInt(65534 + 1)
+    ShortChannelId(boundedBlock, pseudoTransaction, pseudoOutput)
   }
 
   def apply(blockHeight: Int, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight, txIndex, outputIndex))
