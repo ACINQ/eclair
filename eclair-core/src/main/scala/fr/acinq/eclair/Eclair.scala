@@ -80,7 +80,7 @@ trait Eclair {
 
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
-  def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
+  def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], excludeIsolatedPeers: Boolean, vertexThreshold: Int)(implicit timeout: Timeout): Future[PaymentRequest]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -191,12 +191,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentHandler ? ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
   }
 
-  override def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = {
+  override def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], excludeIsolatedPeers: Boolean, vertexThreshold: Int)(implicit timeout: Timeout): Future[PaymentRequest] = {
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
     val amountThreshold = amount_opt.getOrElse(0 msat)
     for {
       allUsableBalances <- (appKit.relayer ? GetUsableBalances).mapTo[Map[ShortChannelId, UsableBalances]] // NORMAL channels which are online right now
-      allNonEmptyExtraHops <- (appKit.router ? GetExtraHops(appKit.nodeParams.nodeId)).mapTo[List[List[ExtraHop]]].map(_.filter(_.nonEmpty)) // those where remote update is present
+      allNonEmptyExtraHops <- (appKit.router ? GetExtraHops(excludeIsolatedPeers, vertexThreshold)).mapTo[List[List[ExtraHop]]].map(_.filter(_.nonEmpty)) // those where remote update is present
       usableExtraHops = allNonEmptyExtraHops.filter(oneHopRoute => allUsableBalances.get(oneHopRoute.head.shortChannelId).exists(_.canReceive >= amountThreshold)).take(4) // can receive given amount, limit result to maybe not make QR unreadable
       receive = ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, extraHops = usableExtraHops, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)
       pr <- (appKit.paymentHandler ? receive).mapTo[PaymentRequest]

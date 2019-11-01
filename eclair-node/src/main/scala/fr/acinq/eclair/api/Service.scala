@@ -243,8 +243,8 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("createinvoicewithextrahops") {
-                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
-                            complete(eclairApi.receiveWithExtraHops(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
+                          formFields("description".as[String], "excludeIsolatedPeers".as[Boolean], "vertexThreshold".as[Int], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, excludeIsolatedPeers, vertexThreshold, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
+                            complete(eclairApi.receiveWithExtraHops(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, excludeIsolatedPeers, vertexThreshold))
                           }
                         } ~
                         path("getinvoice") {

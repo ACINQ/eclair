@@ -90,7 +90,7 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 
-  def getExtraHopFromRemoteUpdate(localNodeId: PublicKey): List[ExtraHop] =
+  def getExtraHopFromRemoteUpdate: List[ExtraHop] =
     for {
       upd <- (update_1_opt ++ update_2_opt).toList
       updateNodeId = getNodeIdSameSideAs(upd)
@@ -131,7 +131,7 @@ case object GetNetworkStats
 
 case object GetRoutingState
 
-case class GetExtraHops(localNodeId: PublicKey)
+case class GetExtraHops(excludeIsolatedPeers: Boolean, vertexThreshold: Int)
 
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
 
@@ -278,8 +278,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! d.stats
       stay
 
-    case Event(GetExtraHops(localNodeId), d: Data) =>
-      sender ! d.privateChannels.values.toList.map(_.getExtraHopFromRemoteUpdate(localNodeId))
+    case Event(GetExtraHops(excludeIsolatedPeers, vertexThreshold: Int), d: Data) =>
+      val privChannels = d.privateChannels.values.filter(pc => !excludeIsolatedPeers || d.nodes.contains(pc.remoteNodeId) && d.graph.vertices.get(pc.remoteNodeId).exists(_.size > vertexThreshold))
+      sender ! privChannels.toList.map(_.getExtraHopFromRemoteUpdate)
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>
