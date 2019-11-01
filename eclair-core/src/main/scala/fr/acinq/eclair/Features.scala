@@ -38,6 +38,9 @@ object Features {
   val VARIABLE_LENGTH_ONION_MANDATORY = 8
   val VARIABLE_LENGTH_ONION_OPTIONAL = 9
 
+  val OPTION_SCID_ASSIGN_MANDATORY = 14
+  val OPTION_SCID_ASSIGN_OPTIONAL = 15
+
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
 
@@ -53,16 +56,20 @@ object Features {
   def hasVariableLengthOnion(features: ByteVector): Boolean = hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) || hasFeature(features, VARIABLE_LENGTH_ONION_OPTIONAL)
 
   /**
+   * Check if our peer supports assigning of random shortChannelId for private channels
+   */
+  def hasScidAssign(features: ByteVector): Boolean = hasFeature(features, OPTION_SCID_ASSIGN_MANDATORY) || hasFeature(features, OPTION_SCID_ASSIGN_OPTIONAL)
+
+  /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits).
     */
   def areSupported(features: BitVector): Boolean = {
-    val supportedMandatoryFeatures = Set[Long](OPTION_DATA_LOSS_PROTECT_MANDATORY, VARIABLE_LENGTH_ONION_MANDATORY)
+    val supportedMandatoryFeatures = Set[Long](OPTION_DATA_LOSS_PROTECT_MANDATORY, VARIABLE_LENGTH_ONION_MANDATORY, OPTION_SCID_ASSIGN_MANDATORY)
     val reversed = features.reverse
     for (i <- 0L until reversed.length by 2) {
       if (reversed.get(i) && !supportedMandatoryFeatures.contains(i)) return false
     }
-
     true
   }
 

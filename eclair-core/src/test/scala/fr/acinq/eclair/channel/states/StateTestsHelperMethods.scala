@@ -92,8 +92,8 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 500001, 42, fundingTx) // Normal scid > 500000
+    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 500001, 42, fundingTx) // Normal scid > 500000
     alice2blockchain.expectMsgType[WatchLost]
     bob2blockchain.expectMsgType[WatchLost]
     alice2bob.expectMsgType[FundingLocked]

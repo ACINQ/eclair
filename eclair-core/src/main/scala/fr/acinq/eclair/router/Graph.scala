@@ -382,7 +382,7 @@ object Graph {
      */
     case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate)
 
-    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
+    case class DirectedGraph(vertices: Map[PublicKey, List[GraphEdge]]) {
 
       def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
 

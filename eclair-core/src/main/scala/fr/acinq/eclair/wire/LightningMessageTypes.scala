@@ -285,3 +285,11 @@ object ReplyChannelRange {
 case class GossipTimestampFilter(chainHash: ByteVector32,
                                  firstTimestamp: Long,
                                  timestampRange: Long) extends RoutingMessage with HasChainHash
+
+case class AssignScid(channelId: ByteVector32) extends HasChannelId
+
+case class AssignScidReply(channelId: ByteVector32, shortChannelId: ShortChannelId) extends HasChannelId
+
+case class UnassignScid(channelId: ByteVector32) extends HasChannelId
+
+case class UnassignScidReply(channelId: ByteVector32) extends HasChannelId
