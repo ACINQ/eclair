@@ -291,7 +291,6 @@ object LightningMessageCodecs {
     .typecase(65531, HostedMessagesCodecs.lastCrossSignedStateCodec)
     .typecase(65529, HostedMessagesCodecs.stateUpdateCodec)
     .typecase(65527, HostedMessagesCodecs.stateOverrideCodec)
-
 }
 
 object HostedMessagesCodecs {
