@@ -131,7 +131,7 @@ case object GetNetworkStats
 
 case object GetRoutingState
 
-case class GetExtraHops(excludeIsolatedPeers: Boolean, vertexThreshold: Int)
+case class GetExtraHops(includeIsolatedPeers: Boolean, vertexThreshold: Int)
 
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
 
@@ -278,8 +278,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! d.stats
       stay
 
-    case Event(GetExtraHops(excludeIsolatedPeers, vertexThreshold: Int), d: Data) =>
-      val privChannels = d.privateChannels.values.filter(pc => !excludeIsolatedPeers || d.nodes.contains(pc.remoteNodeId) && d.graph.vertices.get(pc.remoteNodeId).exists(_.size > vertexThreshold))
+    case Event(GetExtraHops(includeIsolatedPeers, vertexThreshold: Int), d: Data) =>
+      val privChannels = d.privateChannels.values.filter(pc => includeIsolatedPeers || d.nodes.contains(pc.remoteNodeId) && d.graph.vertices.get(pc.remoteNodeId).exists(_.size > vertexThreshold))
       sender ! privChannels.toList.map(_.getExtraHopFromRemoteUpdate)
       stay
 
