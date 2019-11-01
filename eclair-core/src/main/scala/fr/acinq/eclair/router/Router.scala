@@ -209,6 +209,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   when(NORMAL) {
     // We do not care about hosted channels here so only process normal Commitments
+    case Event(LocalChannelUpdate(_, _, _, _, _, _, _: HOSTED_DATA_COMMITMENTS), _) => stay
+
     case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u, _: Commitments), d: Data) =>
       d.channels.get(shortChannelId) match {
         case Some(_) =>
@@ -721,7 +723,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       context.system.eventStream.publish(progress)
       self ! progress
       stay using d.copy(sync = sync1)
-
   }
 
   initialize()
