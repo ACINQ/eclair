@@ -287,10 +287,10 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
     .typecase(65535, HostedMessagesCodecs.invokeHostedChannelCodec)
-    .typecase(65534, HostedMessagesCodecs.initHostedChannelCodec)
-    .typecase(65533, HostedMessagesCodecs.lastCrossSignedStateCodec)
-    .typecase(65532, HostedMessagesCodecs.stateUpdateCodec)
-    .typecase(65531, HostedMessagesCodecs.stateOverrideCodec)
+    .typecase(65533, HostedMessagesCodecs.initHostedChannelCodec)
+    .typecase(65531, HostedMessagesCodecs.lastCrossSignedStateCodec)
+    .typecase(65529, HostedMessagesCodecs.stateUpdateCodec)
+    .typecase(65527, HostedMessagesCodecs.stateOverrideCodec)
 
 }
 
