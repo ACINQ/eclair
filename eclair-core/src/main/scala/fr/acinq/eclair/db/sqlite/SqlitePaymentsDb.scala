@@ -76,6 +76,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("DROP table _received_payments_old")
 
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
+      statement.executeUpdate("CREATE UNIQUE INDEX IF NOT EXISTS external_id_idx ON sent_payments(external_id)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_created_idx ON sent_payments(created_at)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_created_idx ON received_payments(created_at)")
@@ -179,8 +180,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] =
-    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE id = ? OR external_id = ?")) { statement =>
       statement.setString(1, id.toString)
+      statement.setString(2, id.toString)
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(parseOutgoingPayment(rs))

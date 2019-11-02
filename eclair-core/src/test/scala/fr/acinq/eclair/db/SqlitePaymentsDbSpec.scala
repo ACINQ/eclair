@@ -271,9 +271,10 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
 
     val parentId = UUID.randomUUID()
+    val externalId = UUID.randomUUID()
     val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), paymentHash1, davePriv, "Some invoice", expirySeconds = None, timestamp = 0)
     val s1 = OutgoingPayment(UUID.randomUUID(), parentId, None, paymentHash1, 123 msat, alice, 100, Some(i1), OutgoingPaymentStatus.Pending)
-    val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some("1"), paymentHash1, 456 msat, bob, 200, None, OutgoingPaymentStatus.Pending)
+    val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some(externalId.toString), paymentHash1, 456 msat, bob, 200, None, OutgoingPaymentStatus.Pending)
 
     assert(db.listOutgoingPayments(0, Platform.currentTime).isEmpty)
     db.addOutgoingPayment(s1)
@@ -316,6 +317,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.updateOutgoingPayment(paymentSent)
     assert(db.getOutgoingPayment(s1.id) === Some(ss1))
     assert(db.getOutgoingPayment(s2.id) === Some(ss2))
+    assert(db.getOutgoingPayment(externalId) === Some(ss2))
     assert(db.listOutgoingPayments(parentId) === Seq(ss1, ss2, ss3, ss4))
 
     // can't update again once it's in a final state
