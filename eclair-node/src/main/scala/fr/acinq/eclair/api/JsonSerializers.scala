@@ -19,6 +19,7 @@ package fr.acinq.eclair.api
 import java.net.InetSocketAddress
 import java.util.UUID
 
+import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -40,6 +41,9 @@ import scodec.bits.ByteVector
  * JSON Serializers.
  * Note: in general, deserialization does not need to be implemented.
  */
+class ActorRefSerializer extends CustomSerializer[ActorRef](_ => ({ null }, {
+  case x: ActorRef => JString(x.path.toString)
+}))
 class ByteVectorSerializer extends CustomSerializer[ByteVector](_ => ( {
   null
 }, {
@@ -281,6 +285,7 @@ object JsonSupport extends Json4sSupport {
   implicit val serialization = jackson.Serialization
 
   implicit val formats = (org.json4s.DefaultFormats +
+    new ActorRefSerializer +
     new ByteVectorSerializer +
     new ByteVector32Serializer +
     new ByteVector64Serializer +

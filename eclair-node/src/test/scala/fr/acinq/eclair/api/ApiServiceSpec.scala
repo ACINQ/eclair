@@ -25,12 +25,13 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
+import akka.testkit.TestProbe
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.ChannelFundingRolledBack
+import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -443,7 +444,21 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       mockService.route ~>
       check {
-        val cfrb = ChannelFundingRolledBack(ByteVector32.Zeroes, remoteNodeId = PublicKey.fromBin(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), channelId = ByteVector32.Zeroes)
+        val dummy = TestProbe("dummy").ref
+        val pubkey = PublicKey(ByteVector.fromValidHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), checkValid = false)
+        val cc = ChannelCreated(dummy, dummy, remoteNodeId = pubkey, isFunder = true, temporaryChannelId = ByteVector32.Zeroes, initialFeeratePerKw = 10, fundingTxFeeratePerKw = Some(10))
+        val expectedSerializedCc = """{"type":"channel-created","channel":"akka://fr-acinq-eclair-api-ApiServiceSpec/system/dummy-3","peer":"akka://fr-acinq-eclair-api-ApiServiceSpec/system/dummy-3","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","isFunder":true,"temporaryChannelId":"0000000000000000000000000000000000000000000000000000000000000000","initialFeeratePerKw":10,"fundingTxFeeratePerKw":10}"""
+        assert(serialization.write(cc) === expectedSerializedCc)
+        system.eventStream.publish(cc)
+        wsClient.expectMessage(expectedSerializedCc)
+
+        val cfp = ChannelFundingPublished(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
+        val expectedSerializedCfp = """{"type":"channel-funding-published","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        assert(serialization.write(cfp) === expectedSerializedCfp)
+        system.eventStream.publish(cfp)
+        wsClient.expectMessage(expectedSerializedCfp)
+
+        val cfrb = ChannelFundingRolledBack(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
         val expectedSerializedCfrb = """{"type":"channel-funding-rolled-back","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
         assert(serialization.write(cfrb) === expectedSerializedCfrb)
         system.eventStream.publish(cfrb)
