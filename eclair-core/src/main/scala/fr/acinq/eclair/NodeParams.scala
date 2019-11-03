@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.{Channel, HostedParams}
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.RouterConf
@@ -79,7 +79,8 @@ case class NodeParams(keyManager: KeyManager,
                       minFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
-                      maxPaymentAttempts: Int) {
+                      maxPaymentAttempts: Int,
+                      hostedParams: HostedParams) {
 
   val privateKey: Crypto.PrivateKey = keyManager.nodeKey.privateKey
 
@@ -278,7 +279,14 @@ object NodeParams {
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")
       ),
       socksProxy_opt = socksProxy_opt,
-      maxPaymentAttempts = config.getInt("max-payment-attempts")
+      maxPaymentAttempts = config.getInt("max-payment-attempts"),
+      hostedParams = HostedParams(
+        cltvDelta = CltvExpiryDelta(config.getInt("hosted.cltv-delta")),
+        onChainRefundThreshold = Satoshi(config.getLong("hosted.on-chain-refund-threshold")),
+        liabilityDeadlineBlockdays = config.getInt("hosted.liability-deadline-blockdays"),
+        defaultCapacity = MilliSatoshi(config.getLong("hosted.default-capacity")),
+        defaultClientBalance = MilliSatoshi(config.getLong("hosted.default-client-balance"))
+      )
     )
   }
 }

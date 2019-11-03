@@ -518,4 +518,14 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS)
     aliceTestProbe.expectTerminated(alice)
   }
+
+  test("Bob sends an HTLC while offline") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, cmdAdd1) = makeCmdAdd(25000000 msat, Bob.nodeParams.nodeId, currentBlockHeight)
+    reachNormal(f, channelId)
+    bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
+    sender.send(bob, cmdAdd1)
+    sender.expectMsgType[Status.Failure]
+  }
 }

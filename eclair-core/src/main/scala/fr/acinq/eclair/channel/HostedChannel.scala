@@ -81,8 +81,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         stay sending Error(channelId, message)
       } else {
         val init = InitHostedChannel(maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat, htlcMinimumMsat = nodeParams.htlcMinimum,
-          maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs, channelCapacityMsat = defaultHostedChanCapacity, liabilityDeadlineBlockdays = minHostedLiabilityBlockdays,
-          minimalOnchainRefundAmountSatoshis = maxHostedOnChainRefund, initialClientBalanceMsat = defaultHostedInitialClientBalance)
+          maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs, channelCapacityMsat = nodeParams.hostedParams.defaultCapacity, liabilityDeadlineBlockdays = nodeParams.hostedParams.liabilityDeadlineBlockdays,
+          minimalOnchainRefundAmountSatoshis = nodeParams.hostedParams.onChainRefundThreshold, initialClientBalanceMsat = nodeParams.hostedParams.defaultClientBalance)
         stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, invoke.refundScriptPubKey) sending init
       }
 
@@ -109,10 +109,10 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(CMD_HOSTED_MESSAGE(channelId, init: InitHostedChannel), data: HOSTED_DATA_CLIENT_WAIT_HOST_INIT) =>
       proceedOrClose(channelId) {
-        if (init.liabilityDeadlineBlockdays < minHostedLiabilityBlockdays) throw new ChannelException(channelId, "Their liability deadline is too low")
+        if (init.liabilityDeadlineBlockdays < nodeParams.hostedParams.liabilityDeadlineBlockdays) throw new ChannelException(channelId, "Their liability deadline is too low")
+        if (init.minimalOnchainRefundAmountSatoshis > nodeParams.hostedParams.onChainRefundThreshold) throw new ChannelException(channelId, "Their minimal on-chain refund is too high")
+        if (init.channelCapacityMsat < nodeParams.hostedParams.defaultCapacity) throw new ChannelException(channelId, "Their proposed channel capacity is too low")
         if (init.initialClientBalanceMsat > init.channelCapacityMsat) throw new ChannelException(channelId, "Their init balance for us is larger than capacity")
-        if (init.minimalOnchainRefundAmountSatoshis > maxHostedOnChainRefund) throw new ChannelException(channelId, "Their minimal on-chain refund is too high")
-        if (init.channelCapacityMsat < maxHostedOnChainRefund) throw new ChannelException(channelId, "Their proposed channel capacity is too low")
       } {
         val locallySignedLCSS = LastCrossSignedState(data.refundScriptPubKey, initHostedChannel = init, blockDay = nodeParams.currentBlockDay,
           localBalanceMsat = init.initialClientBalanceMsat, remoteBalanceMsat = init.channelCapacityMsat - init.initialClientBalanceMsat, localUpdates = 0L, remoteUpdates = 0L,
@@ -377,7 +377,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       log.info(s"rejecting htlc request in state=$stateName in a hosted channel")
       // This may happen if CMD_ADD_HTLC message had been issued while this channel was NORMAL but became OFFLINE/CLOSED by the time it arrived
-      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
+      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, nodeParams.hostedParams.cltvDelta,
         commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
 
@@ -446,7 +446,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   def restoreEmptyCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = {
     val localCommitmentSpec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat)
-    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, minHostedCltvDelta,
+    val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, nodeParams.hostedParams.cltvDelta,
       localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
     HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
       channelId, isHost, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overriddenBalanceProposal = None)

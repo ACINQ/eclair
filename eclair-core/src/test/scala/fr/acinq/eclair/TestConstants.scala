@@ -20,9 +20,10 @@ import java.sql.{Connection, DriverManager}
 import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.channel.{HostedParams, LocalParams}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -124,10 +125,17 @@ object TestConstants {
         searchRatioChannelCapacity = 0.0
       ),
       socksProxy_opt = None,
-      maxPaymentAttempts = 5
+      maxPaymentAttempts = 5,
+      hostedParams = HostedParams(
+        cltvDelta = CltvExpiryDelta(432),
+        onChainRefundThreshold = Satoshi(1000000L),
+        liabilityDeadlineBlockdays = 1000,
+        defaultCapacity = MilliSatoshi(100000000000L),
+        defaultClientBalance = MilliSatoshi(100000000L)
+      )
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = true,
@@ -202,10 +210,17 @@ object TestConstants {
         searchRatioChannelCapacity = 0.0
       ),
       socksProxy_opt = None,
-      maxPaymentAttempts = 5
+      maxPaymentAttempts = 5,
+      hostedParams = HostedParams(
+        cltvDelta = CltvExpiryDelta(432),
+        onChainRefundThreshold = Satoshi(1000000L),
+        liabilityDeadlineBlockdays = 1000,
+        defaultCapacity = MilliSatoshi(100000000000L),
+        defaultClientBalance = MilliSatoshi(100000000L)
+      )
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       isFunder = false,

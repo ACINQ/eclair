@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.eclair._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.HostedChannel.LocalOrRemoteUpdate
 import fr.acinq.eclair.payment.Origin
@@ -217,3 +217,5 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
     }
   }
 }
+
+case class HostedParams(cltvDelta: CltvExpiryDelta, onChainRefundThreshold: Satoshi, liabilityDeadlineBlockdays: Int, defaultCapacity: MilliSatoshi, defaultClientBalance: MilliSatoshi)
