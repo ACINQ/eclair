@@ -34,6 +34,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
+import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
@@ -89,10 +90,16 @@ trait Service extends ExtraDirectives with Logging {
 
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+        context.system.eventStream.subscribe(self, classOf[ChannelCreated])
+        context.system.eventStream.subscribe(self, classOf[ChannelFundingRolledBack])
+        context.system.eventStream.subscribe(self, classOf[ChannelFundingPublished])
       }
 
       def receive: Receive = {
         case message: PaymentEvent => flowInput.offer(serialization.write(message))
+        case message: ChannelCreated => flowInput.offer(serialization.write(message))
+        case message: ChannelFundingRolledBack => flowInput.offer(serialization.write(message))
+        case message: ChannelFundingPublished => flowInput.offer(serialization.write(message))
       }
 
     }))

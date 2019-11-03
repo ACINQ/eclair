@@ -30,6 +30,7 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.ChannelFundingRolledBack
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -442,6 +443,12 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       mockService.route ~>
       check {
+        val cfrb = ChannelFundingRolledBack(ByteVector32.Zeroes, remoteNodeId = PublicKey.fromBin(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), channelId = ByteVector32.Zeroes)
+        val expectedSerializedCfrb = """{"type":"channel-funding-rolled-back","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        assert(serialization.write(cfrb) === expectedSerializedCfrb)
+        system.eventStream.publish(cfrb)
+        wsClient.expectMessage(expectedSerializedCfrb)
+
         val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, timestamp = 1553784963659L)
         val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"timestamp":1553784963659}"""
         assert(serialization.write(pf) === expectedSerializedPf)

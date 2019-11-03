@@ -23,7 +23,7 @@ import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.channel.{ChannelVersion, State}
+import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack, ChannelIdAssigned, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
@@ -268,6 +268,12 @@ object CustomTypeHints {
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
     classOf[PaymentFailed] -> "payment-failed"
   ))
+
+  val channelEvent = CustomTypeHints(Map(
+    classOf[ChannelCreated] -> "channel-created",
+    classOf[ChannelFundingRolledBack] -> "channel-funding-rolled-back",
+    classOf[ChannelFundingPublished] -> "channel-funding-published"
+  ))
 }
 
 object JsonSupport extends Json4sSupport {
@@ -305,6 +311,7 @@ object JsonSupport extends Json4sSupport {
     new JavaUUIDSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
-    CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
+    CustomTypeHints.paymentEvent +
+    CustomTypeHints.channelEvent).withTypeHintFieldName("type")
 
 }
