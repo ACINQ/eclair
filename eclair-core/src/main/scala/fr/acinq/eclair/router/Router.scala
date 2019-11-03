@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import akka.Done
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -27,6 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
@@ -88,6 +89,13 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
   def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+
+  def getExtraHopFromRemoteUpdate: List[ExtraHop] =
+    for {
+      upd <- (update_1_opt ++ update_2_opt).toList
+      updateNodeId = getNodeIdSameSideAs(upd)
+      if updateNodeId != localNodeId
+    } yield ExtraHop(updateNodeId, upd.shortChannelId, upd.feeBaseMsat, upd.feeProportionalMillionths, upd.cltvExpiryDelta)
 }
 // @formatter:on
 
@@ -122,6 +130,8 @@ case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Op
 case object GetNetworkStats
 
 case object GetRoutingState
+
+case class GetExtraHops(includeIsolatedPeers: Boolean, vertexThreshold: Int)
 
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
 
@@ -164,6 +174,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: LoggingAdapter = log
 
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdUnassigned])
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
@@ -171,9 +182,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
   setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
-  val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
+  val defaultRouteParams: RouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
-  val db = nodeParams.db.network
+  val db: NetworkDb = nodeParams.db.network
 
   {
     log.info("loading network announcements from db...")
@@ -237,25 +248,17 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           }
       }
 
+    case Event(ShortChannelIdUnassigned(_, channelId, oldShortChannelId, remoteNodeId) , d: Data) =>
+      removePrivateChannelByShortId(channelId, oldShortChannelId, remoteNodeId, d)
+
     case Event(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId), d: Data) =>
       // a local channel has permanently gone down
       if (d.channels.contains(shortChannelId)) {
         // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
         // so let's not do anything here
         stay
-      } else if (d.privateChannels.contains(shortChannelId)) {
-        // the channel was private or public-but-not-yet-announced, let's do the clean up
-        log.debug("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
-        val desc1 = ChannelDesc(shortChannelId, nodeParams.nodeId, remoteNodeId)
-        val desc2 = ChannelDesc(shortChannelId, remoteNodeId, nodeParams.nodeId)
-        // we remove the corresponding updates from the graph
-        val graph1 = d.graph
-          .removeEdge(desc1)
-          .removeEdge(desc2)
-        // and we remove the channel and channel_update from our state
-        stay using d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
       } else {
-        stay
+        removePrivateChannelByShortId(channelId, shortChannelId, remoteNodeId, d)
       }
 
     case Event(SyncProgress(progress), d: Data) =>
@@ -273,6 +276,11 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(GetNetworkStats, d: Data) =>
       sender ! d.stats
+      stay
+
+    case Event(GetExtraHops(includeIsolatedPeers, vertexThreshold: Int), d: Data) =>
+      val privChannels = d.privateChannels.values.filter(pc => includeIsolatedPeers || d.nodes.contains(pc.remoteNodeId) && d.graph.vertices.get(pc.remoteNodeId).exists(_.size > vertexThreshold))
+      sender ! privChannels.toList.map(_.getExtraHopFromRemoteUpdate)
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>
@@ -873,6 +881,19 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       d
     }
 
+  def removePrivateChannelByShortId(channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, d: Data): FSM.State[router.State, Data] = {
+    // the channel was private or public-but-not-yet-announced, let's do the clean up
+    log.debug("attempting to remove private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+    val desc1 = ChannelDesc(shortChannelId, nodeParams.nodeId, remoteNodeId)
+    val desc2 = ChannelDesc(shortChannelId, remoteNodeId, nodeParams.nodeId)
+    // we remove the corresponding updates from the graph
+    val graph1 = d.graph
+      .removeEdge(desc1)
+      .removeEdge(desc2)
+    // and we remove the channel and channel_update from our state
+    stay using d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
+  }
+
   override def mdc(currentMessage: Any): MDC = currentMessage match {
     case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
     case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
@@ -899,7 +920,7 @@ object Router {
     // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
     // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
     // We also need to make sure the channel isn't excluded by our heuristics.
-    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
+    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW_MSAT)
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
       case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>

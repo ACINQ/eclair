@@ -25,11 +25,13 @@ import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
 import akka.stream.ActorMaterializer
+import akka.testkit.TestProbe
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -144,8 +146,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      UsableBalances(canSend = 100000000 msat, canReceive = 20000000 msat, shortChannelId = ShortChannelId(1), remoteNodeId = aliceNodeId, isPublic = true),
-      UsableBalances(canSend = 400000000 msat, canReceive = 30000000 msat, shortChannelId = ShortChannelId(2), remoteNodeId = aliceNodeId, isPublic = false)
+      UsableBalances(canSend = 100000000 msat, channelId = ByteVector32.Zeroes, canReceive = 20000000 msat, shortChannelId = ShortChannelId(1), remoteNodeId = aliceNodeId, isPublic = true, isEnabled = false),
+      UsableBalances(canSend = 400000000 msat, channelId = ByteVector32.Zeroes, canReceive = 30000000 msat, shortChannelId = ShortChannelId(2), remoteNodeId = aliceNodeId, isPublic = false, isEnabled = true)
     ))
 
     Post("/usablebalances") ~>
@@ -224,7 +226,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val remoteUri = NodeURI.parse("030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735")
 
     val eclair = mock[Eclair]
-    eclair.connect(any[Either[NodeURI, PublicKey]])(any[Timeout]) returns Future.successful("connected")
+    eclair.connect(any[Either[NodeURI, PublicKey]], turboAllowed = false)(any[Timeout]) returns Future.successful("connected")
     val mockService = new MockService(eclair)
 
     Post("/connect", FormData("nodeId" -> remoteNodeId.toString()).toEntity) ~>
@@ -234,7 +236,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"connected\"")
-        eclair.connect(Right(remoteNodeId))(any[Timeout]).wasCalled(once)
+        eclair.connect(Right(remoteNodeId), turboAllowed = false)(any[Timeout]).wasCalled(once)
       }
 
     Post("/connect", FormData("uri" -> remoteUri.toString).toEntity) ~>
@@ -244,7 +246,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"connected\"")
-        eclair.connect(Left(remoteUri))(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
+        eclair.connect(Left(remoteUri), turboAllowed = false)(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
       }
   }
 
@@ -442,6 +444,26 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       mockService.route ~>
       check {
+        val dummy = TestProbe("dummy").ref
+        val pubkey = PublicKey(ByteVector.fromValidHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), checkValid = false)
+        val cc = ChannelCreated(dummy, dummy, remoteNodeId = pubkey, isFunder = true, temporaryChannelId = ByteVector32.Zeroes, initialFeeratePerKw = 10, fundingTxFeeratePerKw = Some(10))
+        val expectedSerializedCc = """{"type":"channel-created","channel":"akka://fr-acinq-eclair-api-ApiServiceSpec/system/dummy-3","peer":"akka://fr-acinq-eclair-api-ApiServiceSpec/system/dummy-3","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","isFunder":true,"temporaryChannelId":"0000000000000000000000000000000000000000000000000000000000000000","initialFeeratePerKw":10,"fundingTxFeeratePerKw":10}"""
+        assert(serialization.write(cc) === expectedSerializedCc)
+        system.eventStream.publish(cc)
+        wsClient.expectMessage(expectedSerializedCc)
+
+        val cfp = ChannelFundingPublished(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
+        val expectedSerializedCfp = """{"type":"channel-funding-published","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        assert(serialization.write(cfp) === expectedSerializedCfp)
+        system.eventStream.publish(cfp)
+        wsClient.expectMessage(expectedSerializedCfp)
+
+        val cfrb = ChannelFundingRolledBack(ByteVector32.Zeroes, remoteNodeId = pubkey, channelId = ByteVector32.Zeroes)
+        val expectedSerializedCfrb = """{"type":"channel-funding-rolled-back","txid":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","channelId":"0000000000000000000000000000000000000000000000000000000000000000"}"""
+        assert(serialization.write(cfrb) === expectedSerializedCfrb)
+        system.eventStream.publish(cfrb)
+        wsClient.expectMessage(expectedSerializedCfrb)
+
         val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, timestamp = 1553784963659L)
         val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"timestamp":1553784963659}"""
         assert(serialization.write(pf) === expectedSerializedPf)
