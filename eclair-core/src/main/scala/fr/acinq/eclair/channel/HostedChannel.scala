@@ -80,8 +80,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         val message = InvalidFinalScript(channelId).getMessage
         stay sending Error(channelId, message)
       } else {
-        val init = InitHostedChannel(maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat, htlcMinimumMsat = nodeParams.htlcMinimum,
-          maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs, channelCapacityMsat = nodeParams.hostedParams.defaultCapacity, liabilityDeadlineBlockdays = nodeParams.hostedParams.liabilityDeadlineBlockdays,
+        val init = InitHostedChannel(maxHtlcValueInFlightMsat = nodeParams.hostedParams.maxHtlcValueInFlightMsat, htlcMinimumMsat = nodeParams.hostedParams.htlcMinimum,
+          maxAcceptedHtlcs = nodeParams.hostedParams.maxAcceptedHtlcs, channelCapacityMsat = nodeParams.hostedParams.defaultCapacity, liabilityDeadlineBlockdays = nodeParams.hostedParams.liabilityDeadlineBlockdays,
           minimalOnchainRefundAmountSatoshis = nodeParams.hostedParams.onChainRefundThreshold, initialClientBalanceMsat = nodeParams.hostedParams.defaultClientBalance)
         stay using HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init, invoke.refundScriptPubKey) sending init
       }
@@ -377,8 +377,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       log.info(s"rejecting htlc request in state=$stateName in a hosted channel")
       // This may happen if CMD_ADD_HTLC message had been issued while this channel was NORMAL but became OFFLINE/CLOSED by the time it arrived
-      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, nodeParams.hostedParams.cltvDelta,
-        commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
+      val disabledChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId,
+        nodeParams.hostedParams.cltvDelta, commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.hostedParams.feeBase,
+        nodeParams.hostedParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
 
     case Event(any, _) =>
@@ -426,7 +427,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       relayer ! CommandBuffer.CommandAck(channelId, htlcId)
       state
     }
-
   }
 
   def restoreMissingChannel(channelId: ByteVector32, remoteLCSS: LastCrossSignedState, isHost: Boolean): HostedFsmState = {
@@ -447,7 +447,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   def restoreEmptyCommits(localLCSS: LastCrossSignedState, channelId: ByteVector32, isHost: Boolean): HOSTED_DATA_COMMITMENTS = {
     val localCommitmentSpec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat)
     val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, nodeParams.hostedParams.cltvDelta,
-      localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.feeBase, nodeParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
+      localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.hostedParams.feeBase, nodeParams.hostedParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
     HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
       channelId, isHost, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overriddenBalanceProposal = None)
   }

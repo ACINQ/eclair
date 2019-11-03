@@ -281,11 +281,16 @@ object NodeParams {
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       hostedParams = HostedParams(
+        feeBase = MilliSatoshi(config.getLong("hosted.fee-base-msat")),
+        feeProportionalMillionth = config.getInt("hosted.fee-proportional-millionths"),
         cltvDelta = CltvExpiryDelta(config.getInt("hosted.cltv-delta")),
-        onChainRefundThreshold = Satoshi(config.getLong("hosted.on-chain-refund-threshold")),
+        onChainRefundThreshold = Satoshi(config.getLong("hosted.on-chain-refund-threshold-sat")),
         liabilityDeadlineBlockdays = config.getInt("hosted.liability-deadline-blockdays"),
-        defaultCapacity = MilliSatoshi(config.getLong("hosted.default-capacity")),
-        defaultClientBalance = MilliSatoshi(config.getLong("hosted.default-client-balance"))
+        defaultCapacity = MilliSatoshi(config.getLong("hosted.default-capacity-msat")),
+        defaultClientBalance = MilliSatoshi(config.getLong("hosted.default-client-balance-msat")),
+        maxHtlcValueInFlightMsat = UInt64(config.getLong("hosted.max-htlc-value-in-flight-msat")),
+        htlcMinimum = MilliSatoshi(config.getLong("hosted.htlc-minimum-msat")),
+        maxAcceptedHtlcs = config.getInt("hosted.max-accepted-htlcs")
       )
     )
   }

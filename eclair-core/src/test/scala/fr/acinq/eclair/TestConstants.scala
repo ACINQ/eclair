@@ -127,11 +127,16 @@ object TestConstants {
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       hostedParams = HostedParams(
+        feeBase = MilliSatoshi(1000L),
+        feeProportionalMillionth = 100,
         cltvDelta = CltvExpiryDelta(432),
         onChainRefundThreshold = Satoshi(1000000L),
         liabilityDeadlineBlockdays = 1000,
         defaultCapacity = MilliSatoshi(100000000000L),
-        defaultClientBalance = MilliSatoshi(100000000L)
+        defaultClientBalance = MilliSatoshi(100000000L),
+        maxHtlcValueInFlightMsat = UInt64(5000000000L),
+        htlcMinimum = MilliSatoshi(1000L),
+        maxAcceptedHtlcs = 5
       )
     )
 
@@ -212,11 +217,16 @@ object TestConstants {
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       hostedParams = HostedParams(
+        feeBase = MilliSatoshi(1000L),
+        feeProportionalMillionth = 100,
         cltvDelta = CltvExpiryDelta(432),
         onChainRefundThreshold = Satoshi(1000000L),
         liabilityDeadlineBlockdays = 1000,
         defaultCapacity = MilliSatoshi(100000000000L),
-        defaultClientBalance = MilliSatoshi(100000000L)
+        defaultClientBalance = MilliSatoshi(100000000L),
+        maxHtlcValueInFlightMsat = UInt64(5000000000L),
+        htlcMinimum = MilliSatoshi(1000L),
+        maxAcceptedHtlcs = 5
       )
     )
 

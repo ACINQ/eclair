@@ -218,4 +218,6 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   }
 }
 
-case class HostedParams(cltvDelta: CltvExpiryDelta, onChainRefundThreshold: Satoshi, liabilityDeadlineBlockdays: Int, defaultCapacity: MilliSatoshi, defaultClientBalance: MilliSatoshi)
+case class HostedParams(feeBase: MilliSatoshi, feeProportionalMillionth: Int, cltvDelta: CltvExpiryDelta, onChainRefundThreshold: Satoshi,
+                        liabilityDeadlineBlockdays: Int, defaultCapacity: MilliSatoshi, defaultClientBalance: MilliSatoshi,
+                        maxHtlcValueInFlightMsat: UInt64, htlcMinimum: MilliSatoshi, maxAcceptedHtlcs: Int)
