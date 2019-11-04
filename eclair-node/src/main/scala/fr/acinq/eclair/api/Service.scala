@@ -284,6 +284,9 @@ trait Service extends ExtraDirectives with Logging {
                           formFields(channelIdFormParam, "newLocalBalanceMsat".as[MilliSatoshi]) { (channelId, newLocalBalance) =>
                             complete(eclairApi.overrideHostedChannel(channelId, newLocalBalance))
                           }
+                        } ~
+                        path("getnewaddress") {
+                          complete(eclairApi.newAddress())
                         }
                     } ~ get {
                       path("ws") {
@@ -300,3 +303,4 @@ trait Service extends ExtraDirectives with Logging {
     }
   }
 }
+
