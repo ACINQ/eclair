@@ -20,6 +20,7 @@ import java.io.File
 import java.sql.{Connection, DriverManager}
 
 import fr.acinq.eclair.db.sqlite._
+import grizzled.slf4j.Logging
 
 trait Databases {
 
@@ -35,13 +36,14 @@ trait Databases {
 
   val pendingRelay: PendingRelayDb
 
-  def backup(file: File) : Unit
+  def backup(file: File): Unit
 }
 
-object Databases {
+object Databases extends Logging {
 
   /**
     * Given a parent folder it creates or loads all the databases from a JDBC connection
+    *
     * @param dbdir
     * @return
     */
@@ -51,7 +53,7 @@ object Databases {
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-
+    logger.info("successful lock on eclair.sqlite")
     databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
   }
 
@@ -62,9 +64,10 @@ object Databases {
     override val peers = new SqlitePeersDb(eclairJdbc)
     override val payments = new SqlitePaymentsDb(eclairJdbc)
     override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
+
     override def backup(file: File): Unit = {
       SqliteUtils.using(eclairJdbc.createStatement()) {
-        statement =>  {
+        statement => {
           statement.executeUpdate(s"backup to ${file.getAbsolutePath}")
         }
       }
