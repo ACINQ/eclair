@@ -17,13 +17,14 @@
 package fr.acinq.eclair
 
 import kamon.Kamon
+import kamon.tag.TagSet
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object KamonExt {
 
-  def time[T](name: String)(f: => T) = {
-    val timer = Kamon.timer(name).withoutTags().start()
+  def time[T](name: String, tags: TagSet = TagSet.Empty)(f: => T) = {
+    val timer = Kamon.timer(name).withTags(tags).start()
     try {
       f
     } finally {
@@ -31,8 +32,8 @@ object KamonExt {
     }
   }
 
-  def timeFuture[T](name: String)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
-    val timer = Kamon.timer(name).withoutTags().start()
+  def timeFuture[T](name: String, tags: TagSet = TagSet.Empty)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+    val timer = Kamon.timer(name).withTags(tags).start()
     val res = f
     res onComplete { case _ => timer.stop }
     res
