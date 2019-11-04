@@ -21,6 +21,7 @@ import java.sql.{Connection, DriverManager}
 
 import fr.acinq.eclair.db.sqlite._
 import grizzled.slf4j.Logging
+import org.sqlite.SQLiteException
 
 trait Databases {
 
@@ -49,12 +50,26 @@ object Databases extends Logging {
     */
   def sqliteJDBC(dbdir: File): Databases = {
     dbdir.mkdir()
-    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
-    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
-    SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-    logger.info("successful lock on eclair.sqlite")
-    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    var sqliteEclair: Connection = null
+    var sqliteNetwork: Connection = null
+    var sqliteAudit: Connection = null
+    try {
+      sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
+      sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
+      sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
+      SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
+      logger.info("successful lock on eclair.sqlite")
+      databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    } catch {
+      case t: Throwable => {
+        logger.error("could not create connection to sqlite databases: ", t)
+        if (sqliteEclair != null) sqliteEclair.close()
+        if (sqliteNetwork != null) sqliteNetwork.close()
+        if (sqliteAudit != null) sqliteAudit.close()
+        throw t
+      }
+    }
+
   }
 
   def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
