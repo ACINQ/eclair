@@ -51,13 +51,14 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
 
-  def receive: Receive = watching(Set(), Map(), SortedMap(), None)
+  def receive: Receive = watching(Map.empty, Set.empty, Map.empty, SortedMap.empty, None)
 
-  def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
+  def watching(mempoolWatches: Map[ByteVector32, WatchSeenInMempool], watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
       KamonExt.time("watcher.newtx.checkwatch.time") {
         log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+        mempoolWatches.get(tx.txid).foreach(w => self ! TriggerEvent(w, WatchEventSeenInMempool(w.event, tx)))
         tx.txIn
           .map(_.outPoint)
           .flatMap(watchedUtxos.get)
@@ -77,20 +78,24 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row
       val task = context.system.scheduler.scheduleOnce(2 seconds, self, TickNewBlock)
-      context become watching(watches, watchedUtxos, block2tx, Some(task))
+      context become watching(mempoolWatches, watches, watchedUtxos, block2tx, Some(task))
 
     case TickNewBlock =>
-      client.getBlockCount.map {
-        case count =>
-          log.debug(s"setting blockCount=$count")
-          blockCount.set(count)
-          context.system.eventStream.publish(CurrentBlockCount(count))
+      for (count <- client.getBlockCount) {
+        log.debug(s"setting blockCount=$count")
+        blockCount.set(count)
+        context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
       KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
         Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
       }
-      context become watching(watches, watchedUtxos, block2tx, None)
+      context become watching(mempoolWatches, watches, watchedUtxos, block2tx, None)
+
+    case TriggerEvent(w: WatchSeenInMempool, e) if mempoolWatches.contains(w.txId) =>
+      log.info(s"triggering $w")
+      w.channel ! e
+      context become watching(mempoolWatches - w.txId, watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
       log.info(s"triggering $w")
@@ -99,33 +104,41 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         case _: WatchSpent =>
           // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
           // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
-          ()
+          context become watching(mempoolWatches - w.txId, watches, watchedUtxos, block2tx, nextTick)
         case _ =>
-          context become watching(watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, None)
+          context become watching(mempoolWatches - w.txId, watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, None)
       }
 
-    case CurrentBlockCount(count) => {
+    case CurrentBlockCount(count) =>
       val toPublish = block2tx.filterKeys(_ <= count)
-      toPublish.values.flatten.map(tx => publish(tx))
-      context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, None)
-    }
+      toPublish.values.flatten.foreach(tx => publish(tx))
+      context become watching(mempoolWatches, watches, watchedUtxos, block2tx -- toPublish.keys, None)
+
+    case w: WatchSeenInMempool if !mempoolWatches.contains(w.txId) =>
+      for {
+        mempoolTxs <- client.getMempool
+        mempoolTx <- mempoolTxs
+        if mempoolTx.txid == w.txId
+      } self ! NewTransaction(mempoolTx)
+      log.debug(s"adding watch $w for $sender")
+      context.watch(w.channel)
+      context become watching(mempoolWatches + (w.txId -> w), watches, watchedUtxos, block2tx, nextTick)
 
     case w: Watch if !watches.contains(w) =>
       w match {
         case WatchSpentBasic(_, txid, outputIndex, _, _) =>
-          // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
-          client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
-            case false =>
-              log.info(s"output=$outputIndex of txid=$txid has already been spent")
-              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-          }
+          for {
+            // Note: we assume parent tx was published, we just need to make sure this particular output has not been spent
+            false <- client.isTransactionOutputSpendable(txid.toString(), outputIndex, includeMempool = true)
+            _ = log.info(s"output=$outputIndex of txid=$txid has already been spent")
+          } self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
 
         case WatchSpent(_, txid, outputIndex, _, _) =>
           // first let's see if the parent tx was published or not
           client.getTxConfirmations(txid.toString()).collect {
             case Some(_) =>
               // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
+              client.isTransactionOutputSpendable(txid.toString(), outputIndex, includeMempool = true).collect {
                 case false =>
                   log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
                   client.getMempool().map { mempoolTxs =>
@@ -144,7 +157,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               }
           }
 
-        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
 
         case _: WatchLost => () // TODO: not implemented
 
@@ -153,7 +166,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
       log.debug(s"adding watch $w for $sender")
       context.watch(w.channel)
-      context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
+      context become watching(mempoolWatches, watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
 
     case PublishAsap(tx) =>
       val blockCount = this.blockCount.get()
@@ -161,14 +174,14 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
-        val parentTxid = tx.txIn(0).outPoint.txid
+        val parentTxid = tx.txIn.head.outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
         self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
-        context become watching(watches, watchedUtxos, block2tx1, None)
+        context become watching(mempoolWatches, watches, watchedUtxos, block2tx1, None)
       } else publish(tx)
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
@@ -179,7 +192,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       if (absTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
-        context become watching(watches, watchedUtxos, block2tx1, None)
+        context become watching(mempoolWatches, watches, watchedUtxos, block2tx1, None)
       } else publish(tx)
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
@@ -189,8 +202,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     case Terminated(channel) =>
       // we remove watches associated to dead actor
       val deprecatedWatches = watches.filter(_.channel == channel)
+      val mempoolWatches1 = mempoolWatches.filterNot { case (_, w) => w.channel == channel }
       val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
-      context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
+      context.become(watching(mempoolWatches1, watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
     case 'watches => sender ! watches
 
@@ -205,7 +219,6 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     client.publishTransaction(tx)(singleThreadExecutionContext).recover {
       case t: Throwable if t.getMessage.contains("(code: -25)") && !isRetry => // we retry only once
         import akka.pattern.after
-
         import scala.concurrent.duration._
         after(3 seconds, context.system.scheduler)(Future.successful({})).map(x => publish(tx, isRetry = true))
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
@@ -222,7 +235,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           case tx =>
             client.getTransactionShortId(w.txId.toString).map {
               case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
-          }
+            }
         }
     }
   }

@@ -34,6 +34,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
+import fr.acinq.eclair.channel.{ChannelCreated, ChannelFundingPublished, ChannelFundingRolledBack}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
@@ -89,10 +90,16 @@ trait Service extends ExtraDirectives with Logging {
 
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+        context.system.eventStream.subscribe(self, classOf[ChannelCreated])
+        context.system.eventStream.subscribe(self, classOf[ChannelFundingRolledBack])
+        context.system.eventStream.subscribe(self, classOf[ChannelFundingPublished])
       }
 
       def receive: Receive = {
         case message: PaymentEvent => flowInput.offer(serialization.write(message))
+        case message: ChannelCreated => flowInput.offer(serialization.write(message))
+        case message: ChannelFundingRolledBack => flowInput.offer(serialization.write(message))
+        case message: ChannelFundingPublished => flowInput.offer(serialization.write(message))
       }
 
     }))
@@ -130,12 +137,12 @@ trait Service extends ExtraDirectives with Logging {
                         complete(eclairApi.getInfoResponse())
                       } ~
                         path("connect") {
-                          formFields("uri".as[NodeURI]) { uri =>
-                            complete(eclairApi.connect(Left(uri)))
-                          } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?) { (nodeId, host, port_opt) =>
-                            complete(eclairApi.connect(Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT))))))
-                          } ~ formFields(nodeIdFormParam) { nodeId =>
-                            complete(eclairApi.connect(Right(nodeId)))
+                          formFields("uri".as[NodeURI], "turboAllowed".as[Boolean].?) { (uri, turboAllowed_opt) =>
+                            complete(eclairApi.connect(Left(uri), turboAllowed_opt.getOrElse(false)))
+                          } ~ formFields(nodeIdFormParam, "host".as[String], "port".as[Int].?, "turboAllowed".as[Boolean].?) { (nodeId, host, port_opt, turboAllowed_opt) =>
+                            complete(eclairApi.connect(Left(NodeURI(nodeId, HostAndPort.fromParts(host, port_opt.getOrElse(NodeURI.DEFAULT_PORT)))), turboAllowed_opt.getOrElse(false)))
+                          } ~ formFields(nodeIdFormParam, "turboAllowed".as[Boolean].?) { (nodeId, turboAllowed_opt) =>
+                            complete(eclairApi.connect(Right(nodeId), turboAllowed_opt.getOrElse(false)))
                           }
                         } ~
                         path("disconnect") {
@@ -240,6 +247,11 @@ trait Service extends ExtraDirectives with Logging {
                         path("createinvoice") {
                           formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
                             complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
+                          }
+                        } ~
+                        path("createinvoicewithextrahops") {
+                          formFields("description".as[String], "vertexThreshold".as[Int], "includeIsolatedPeers".as[Boolean].?, amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, vertexThreshold, includeIsolatedPeers_opt, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
+                            complete(eclairApi.receiveWithExtraHops(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, includeIsolatedPeers_opt.getOrElse(false), vertexThreshold))
                           }
                         } ~
                         path("getinvoice") {

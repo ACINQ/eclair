@@ -74,6 +74,7 @@ object TestConstants {
       localFeatures = ByteVector.fromValidHex("088a"),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
+      turboWhitelist = Set.empty,
       dustLimit = 1100 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
@@ -152,6 +153,7 @@ object TestConstants {
       localFeatures = ByteVector.empty, // no announcement
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
+      turboWhitelist = Set.empty,
       dustLimit = 1000 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),

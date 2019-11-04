@@ -74,19 +74,19 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, states, nodeaddress_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
           val address_opt = nodeaddress_opt.map(_.socketAddress)
-          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
+          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet, turboAllowed = false)
           peer ! Peer.Reconnect
       }
   }
 
   def receive: Receive = {
 
-    case Peer.Connect(publicKey, _) if publicKey == nodeParams.nodeId =>
+    case c: Peer.Connect if c.nodeId == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case c: Peer.Connect =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(c.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(c.nodeId, previousKnownAddress = None, offlineChannels = Set.empty, c.turboAllowed)
       peer forward c
 
     case d: Peer.Disconnect =>
@@ -103,7 +103,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
     case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty, turboAllowed = false)
       peer forward auth
 
     case r: Rebroadcast => context.children.foreach(_ forward r)
@@ -125,12 +125,12 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   /**
    * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
    */
-  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
+  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments], turboAllowed: Boolean) = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${context.children.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = peerActorName(remoteNodeId))
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, turboAllowed, authenticator, watcher, router, relayer, wallet), name = peerActorName(remoteNodeId))
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
         peer
     }

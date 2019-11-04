@@ -259,37 +259,53 @@ object LightningMessageCodecs {
       ("timestampRange" | uint32)
     ).as[GossipTimestampFilter]
 
-  val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
-    .typecase(16, initCodec)
-    .typecase(17, errorCodec)
-    .typecase(18, pingCodec)
-    .typecase(19, pongCodec)
-    .typecase(32, openChannelCodec)
-    .typecase(33, acceptChannelCodec)
-    .typecase(34, fundingCreatedCodec)
-    .typecase(35, fundingSignedCodec)
-    .typecase(36, fundingLockedCodec)
-    .typecase(38, shutdownCodec)
-    .typecase(39, closingSignedCodec)
-    .typecase(128, updateAddHtlcCodec)
-    .typecase(130, updateFulfillHtlcCodec)
-    .typecase(131, updateFailHtlcCodec)
-    .typecase(132, commitSigCodec)
-    .typecase(133, revokeAndAckCodec)
-    .typecase(134, updateFeeCodec)
-    .typecase(135, updateFailMalformedHtlcCodec)
-    .typecase(136, channelReestablishCodec)
-    .typecase(256, channelAnnouncementCodec)
-    .typecase(257, nodeAnnouncementCodec)
-    .typecase(258, channelUpdateCodec)
-    .typecase(259, announcementSignaturesCodec)
-    .typecase(261, queryShortChannelIdsCodec)
-    .typecase(262, replyShortChanelIdsEndCodec)
-    .typecase(263, queryChannelRangeCodec)
-    .typecase(264, replyChannelRangeCodec)
-    .typecase(265, gossipTimestampFilterCodec)
+  val assignScidCodec: Codec[AssignScid] = ("channelId" | bytes32).as[AssignScid]
 
-  val meteredLightningMessageCodec = Codec[LightningMessage](
+  val assignScidReplyCodec: Codec[AssignScidReply] = {
+    ("channelId" | bytes32) ::
+      ("shortChannelId" | shortchannelid)
+  }.as[AssignScidReply]
+
+  val unassignScidCodec: Codec[UnassignScid] = ("channelId" | bytes32).as[UnassignScid]
+
+  val unassignScidReplyCodec: Codec[UnassignScidReply] = ("channelId" | bytes32).as[UnassignScidReply]
+
+  val lightningMessageCodec: DiscriminatorCodec[LightningMessage, Int] =
+    discriminated[LightningMessage].by(uint16)
+      .typecase(16, initCodec)
+      .typecase(17, errorCodec)
+      .typecase(18, pingCodec)
+      .typecase(19, pongCodec)
+      .typecase(32, openChannelCodec)
+      .typecase(33, acceptChannelCodec)
+      .typecase(34, fundingCreatedCodec)
+      .typecase(35, fundingSignedCodec)
+      .typecase(36, fundingLockedCodec)
+      .typecase(38, shutdownCodec)
+      .typecase(39, closingSignedCodec)
+      .typecase(128, updateAddHtlcCodec)
+      .typecase(130, updateFulfillHtlcCodec)
+      .typecase(131, updateFailHtlcCodec)
+      .typecase(132, commitSigCodec)
+      .typecase(133, revokeAndAckCodec)
+      .typecase(134, updateFeeCodec)
+      .typecase(135, updateFailMalformedHtlcCodec)
+      .typecase(136, channelReestablishCodec)
+      .typecase(256, channelAnnouncementCodec)
+      .typecase(257, nodeAnnouncementCodec)
+      .typecase(258, channelUpdateCodec)
+      .typecase(259, announcementSignaturesCodec)
+      .typecase(261, queryShortChannelIdsCodec)
+      .typecase(262, replyShortChanelIdsEndCodec)
+      .typecase(263, queryChannelRangeCodec)
+      .typecase(264, replyChannelRangeCodec)
+      .typecase(265, gossipTimestampFilterCodec)
+      .typecase(260, assignScidCodec)
+      .typecase(268, assignScidReplyCodec)
+      .typecase(270, unassignScidCodec)
+      .typecase(272, unassignScidReplyCodec)
+
+  val meteredLightningMessageCodec: Codec[LightningMessage] = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
     (bits: BitVector) => {
       // this is a bit more involved, because we don't know beforehand what the type of the message will be
@@ -304,5 +320,4 @@ object LightningMessageCodecs {
       res
     }
   )
-
 }
