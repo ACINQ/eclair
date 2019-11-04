@@ -1303,6 +1303,28 @@ amountMsat | The amount that should go through the route | No | Millisatoshi (In
 
 # Miscellaneous
 
+## GetNewAddress
+
+```shell
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/getnewaddress"
+
+# with eclair-cli
+eclair-cli getnewaddress
+```
+> The above command returns:
+
+```json
+"2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs"
+```
+
+Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
+to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
+depend on the configured address-type in bitcoin.conf.
+
+### HTTP Request
+
+`POST http://localhost:8080/getnewaddress`
+
 ## Audit
 
 ```shell
