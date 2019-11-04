@@ -131,6 +131,12 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
       }
     }
   }
+
+  override def clearCache(data: PersistentData): Unit = {
+    val data1 = data.copy(status = Map.empty, transactions = Map.empty, heights = Map.empty, history = Map.empty, proofs = Map.empty, pendingTransactions = List.empty)
+    persist(data1)
+  }
+
 }
 
 object SqliteWalletDb {

@@ -350,6 +350,26 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
       wallet.stateData.transactions.keySet == expected
     }
   }
+
+  test(s"clear wallet cache ($walletType)") {
+    while (client.msgAvailable) {
+      client.receiveOne(100 milliseconds)
+    }
+
+    awaitAssert(wallet.stateData.history.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.heights.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.pendingTransactions.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.proofs.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.status.nonEmpty, 5 seconds)
+
+    wallet ! ClearWalletCache
+
+    awaitAssert(wallet.stateData.history.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.heights.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.pendingTransactions.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.proofs.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.status.isEmpty, 5 seconds)
+  }
 }
 
 object ElectrumWalletSimulatedClientSpec {

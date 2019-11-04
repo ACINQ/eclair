@@ -468,6 +468,11 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       stay replying GetXpubResponse(pub, path)
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
+
+    // clears the wallet cache forcing a fully resync from electrum server
+    case Event(ClearWalletCache, data) =>
+      walletDb.clearCache(PersistentData(data))
+      stay
   }
 
   initialize()
@@ -524,6 +529,8 @@ object ElectrumWallet {
 
   case class IsDoubleSpent(tx: Transaction) extends Request
   case class IsDoubleSpentResponse(tx: Transaction, isDoubleSpent: Boolean) extends Response
+
+  case object ClearWalletCache extends Request
 
   sealed trait WalletEvent
   /**

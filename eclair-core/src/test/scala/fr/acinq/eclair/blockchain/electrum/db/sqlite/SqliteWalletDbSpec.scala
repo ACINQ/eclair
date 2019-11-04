@@ -133,4 +133,42 @@ class SqliteWalletDbSpec extends FunSuite {
       assert(redecoded == data.copy(locks = Set.empty[Transaction]))
     }
   }
+
+  test("clear wallet cache") {
+    val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
+
+    val p2shData = randomPersistentData(P2SH_SEGWIT)
+    assert(p2shData.history.nonEmpty)
+    assert(p2shData.proofs.nonEmpty)
+    assert(p2shData.transactions.nonEmpty)
+    assert(p2shData.pendingTransactions.nonEmpty)
+    assert(p2shData.heights.nonEmpty)
+
+    db.persist(p2shData)
+    db.clearCache(p2shData)
+
+    val Some(clearP2shData) = db.readPersistentData()
+    assert(clearP2shData.history.isEmpty)
+    assert(clearP2shData.proofs.isEmpty)
+    assert(clearP2shData.transactions.isEmpty)
+    assert(clearP2shData.pendingTransactions.isEmpty)
+    assert(clearP2shData.heights.isEmpty)
+
+    val bech32Data = randomPersistentData(BECH32)
+    assert(bech32Data.history.nonEmpty)
+    assert(bech32Data.proofs.nonEmpty)
+    assert(bech32Data.transactions.nonEmpty)
+    assert(bech32Data.pendingTransactions.nonEmpty)
+    assert(bech32Data.heights.nonEmpty)
+
+    db.persist(bech32Data)
+    db.clearCache(bech32Data)
+
+    val Some(clearBech32Data) = db.readPersistentData()
+    assert(clearBech32Data.history.isEmpty)
+    assert(clearBech32Data.proofs.isEmpty)
+    assert(clearBech32Data.transactions.isEmpty)
+    assert(clearBech32Data.pendingTransactions.isEmpty)
+    assert(clearBech32Data.heights.isEmpty)
+  }
 }
