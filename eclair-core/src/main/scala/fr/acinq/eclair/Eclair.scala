@@ -23,8 +23,8 @@ import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.TimestampQueryFilters._
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -193,11 +193,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def newAddress(): Future[String] = {
-    if(appKit.nodeParams.watcherType == ELECTRUM){
-      return Future.failed(new IllegalArgumentException("Can't use this API with electrum backend"))
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.getFinalAddress
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
-
-    appKit.wallet.getFinalAddress
   }
 
   override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {
