@@ -280,7 +280,7 @@ trait Service extends ExtraDirectives with Logging {
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
                         } ~
-                        path("getdepositaddress"){
+                        path("getnewaddress"){
                           complete(eclairApi.depositAddress())
                         }
                     } ~ get {
