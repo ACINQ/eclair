@@ -359,6 +359,9 @@
             <a href="#miscellaneous" class="toc-h1 toc-link" data-title="Miscellaneous">Miscellaneous</a>
               <ul class="toc-list-h2">
                   <li>
+                    <a href="#getnewaddress" class="toc-h2 toc-link" data-title="GetNewAddress">GetNewAddress</a>
+                  </li>
+                  <li>
                     <a href="#audit" class="toc-h2 toc-link" data-title="Audit">Audit</a>
                   </li>
                   <li>
@@ -1867,7 +1870,22 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 <td>Millisatoshi (Integer)</td>
 </tr>
 </tbody></table>
-<h1 id='miscellaneous'>Miscellaneous</h1><h2 id='audit'>Audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
+<h1 id='miscellaneous'>Miscellaneous</h1><h2 id='getnewaddress'>GetNewAddress</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/getnewaddress"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli getnewaddress
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="s2">"2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs"</span><span class="w">
+</span></code></pre>
+<p>Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
+to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
+depend on the configured address-type in bitcoin.conf.</p>
+<h3 id='http-request-26'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/getnewaddress</code></p>
+<h2 id='audit'>Audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
 
 <span class="c"># with eclair-cli</span>
 eclair-cli audit
@@ -1918,7 +1936,7 @@ eclair-cli audit
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments. All monetary
 values are expressed in millisatoshi.</p>
-<h3 id='http-request-26'>HTTP Request</h3>
+<h3 id='http-request-27'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
 <h3 id='parameters-24'>Parameters</h3>
 <table><thead>
@@ -1962,7 +1980,7 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations, currency values are in Satoshis.</p>
-<h3 id='http-request-27'>HTTP Request</h3>
+<h3 id='http-request-28'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
 <h3 id='parameters-25'>Parameters</h3>
 <table><thead>
@@ -2006,7 +2024,7 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels, the information is then aggregated in order to display
 statistics about the routing activity of the channels, values are in Satoshis.</p>
-<h3 id='http-request-28'>HTTP Request</h3>
+<h3 id='http-request-29'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
 <h2 id='usablebalances'>UsableBalances</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/usablebalances"</span>
 
@@ -2027,7 +2045,7 @@ eclair-cli usablebalances
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the available balance of local channels.</p>
-<h3 id='http-request-29'>HTTP Request</h3>
+<h3 id='http-request-30'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/usablebalances</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>WS</h2>
 <blockquote>
@@ -2116,7 +2134,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <td>A payment failed</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-30'>HTTP Request</h3>
+<h3 id='http-request-31'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
