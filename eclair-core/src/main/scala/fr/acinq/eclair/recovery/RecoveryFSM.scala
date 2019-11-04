@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.channel.{Channel, ChannelClosed, Commitments, DATA_CLOSING, HasCommitments, INPUT_RESTORED, PleasePublishYourCommitment}
+import fr.acinq.eclair.channel.{Channel, ChannelClosed, Commitments, DATA_CLOSING, HasCommitments, Helpers, INPUT_RESTORED, PleasePublishYourCommitment}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.{ConnectedData, Disconnect, FinalChannelId}
 import fr.acinq.eclair.io.Switchboard.peerActorName
@@ -29,7 +29,6 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
 
   context.system.eventStream.subscribe(self, classOf[PeerConnected])
-  context.system.eventStream.subscribe(self, classOf[ChannelClosed])
   self ! RecoveryConnect(nodeURI)
 
   override def receive: Receive = waitingForConnection()
@@ -49,7 +48,6 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
   def waitingForRemoteChannelInfo(d: DATA_WAIT_FOR_REMOTE_INFO): Receive = {
     case ChannelFound(channelId, reestablish) =>
       logger.info(s"peer=${nodeURI.nodeId} knows channelId=$channelId")
-
       lookupFundingTx(channelId) match {
         case None =>
           logger.info(s"could not find funding transaction...disconnecting")
@@ -81,8 +79,8 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
           val paymentBasePoint = nodeParams.keyManager.paymentPoint(channelKeyPath)
           val localPaymentKey = Generators.derivePubKey(paymentBasePoint.publicKey, commitmentPoint)
 
-          // FIXME: add final script pubkey
-          val claimTx = Transactions.makeClaimP2WPKHOutputTx(commitTx, nodeParams.dustLimit, localPaymentKey, ByteVector.empty, nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(6))
+          val finalScriptPubkey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
+          val claimTx = Transactions.makeClaimP2WPKHOutputTx(commitTx, nodeParams.dustLimit, localPaymentKey, finalScriptPubkey, nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(6))
           val sig = nodeParams.keyManager.sign(claimTx, paymentBasePoint, d.channelReestablish.myCurrentPerCommitmentPoint.get)
           val claimSigned = Transactions.addSigs(claimTx, localPaymentKey, sig)
           bitcoinClient.publishTransaction(claimSigned.tx)
