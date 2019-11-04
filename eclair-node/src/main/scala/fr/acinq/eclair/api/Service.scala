@@ -281,7 +281,7 @@ trait Service extends ExtraDirectives with Logging {
                           complete(eclairApi.usableBalances())
                         } ~
                         path("getnewaddress"){
-                          complete(eclairApi.depositAddress())
+                          complete(eclairApi.newAddress())
                         }
                     } ~ get {
                       path("ws") {
