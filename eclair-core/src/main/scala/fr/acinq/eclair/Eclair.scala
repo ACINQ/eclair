@@ -24,6 +24,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -81,6 +82,8 @@ trait Eclair {
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
   def receiveWithExtraHops(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], includeIsolatedPeers: Boolean, vertexThreshold: Int)(implicit timeout: Timeout): Future[PaymentRequest]
+
+  def newAddress(): Future[String]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -201,6 +204,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
       receive = ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, extraHops = usableExtraHops, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)
       pr <- (appKit.paymentHandler ? receive).mapTo[PaymentRequest]
     } yield pr
+  }
+
+  override def newAddress(): Future[String] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.getFinalAddress
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
   }
 
   override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {

@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
@@ -55,18 +56,20 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   def watching(mempoolWatches: Map[ByteVector32, WatchSeenInMempool], watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      log.debug(s"analyzing txid=${tx.txid}")
-      mempoolWatches.get(tx.txid).foreach(w => self ! TriggerEvent(w, WatchEventSeenInMempool(w.event, tx)))
-      tx.txIn
-        .map(_.outPoint)
-        .flatMap(watchedUtxos.get)
-        .flatten // List[Watch] -> Watch
-        .collect {
-          case w: WatchSpentBasic =>
-            self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-          case w: WatchSpent =>
-            self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
-        }
+      KamonExt.time("watcher.newtx.checkwatch.time") {
+        log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+        mempoolWatches.get(tx.txid).foreach(w => self ! TriggerEvent(w, WatchEventSeenInMempool(w.event, tx)))
+        tx.txIn
+          .map(_.outPoint)
+          .flatMap(watchedUtxos.get)
+          .flatten // List[Watch] -> Watch
+          .collect {
+            case w: WatchSpentBasic =>
+              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+            case w: WatchSpent =>
+              self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+          }
+      }
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
@@ -84,7 +87,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
-      watches.collect { case w: WatchConfirmed => checkConfirmed(w) }
+      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+        Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
+      }
       context become watching(mempoolWatches, watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w: WatchSeenInMempool, e) if mempoolWatches.contains(w.txId) =>
@@ -220,15 +225,19 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     }
   }
 
-  def checkConfirmed(w: WatchConfirmed): Unit = {
+  def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth
-    for {
-      Some(confirmations) <- client.getTxConfirmations(w.txId.toString) if confirmations >= w.minDepth
-      tx <- client.getTransaction(w.txId.toString)
-      (height, index) <- client.getTransactionShortId(w.txId.toString)
-    } self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
+    client.getTxConfirmations(w.txId.toString).map {
+      case Some(confirmations) if confirmations >= w.minDepth =>
+        client.getTransaction(w.txId.toString).map {
+          case tx =>
+            client.getTransactionShortId(w.txId.toString).map {
+              case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
+            }
+        }
+    }
   }
 
 }
