@@ -90,8 +90,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.auto-reconnect" -> false,
     "eclair.to-remote-delay-blocks" -> 144))
 
-  implicit val formats = DefaultFormats
-
   override def beforeAll(): Unit = {
     startBitcoind()
   }
