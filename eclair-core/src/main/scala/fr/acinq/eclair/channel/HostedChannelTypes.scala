@@ -21,6 +21,9 @@ case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: P
 case class CMD_HOSTED_INVOKE_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
 case class CMD_HOSTED_OVERRIDE(channelId: ByteVector32, newLocalBalance: MilliSatoshi) extends HasHostedChanIdCommand
+case class CMD_HOSTED_EXTERNAL_FULFILL(channelId: ByteVector32, htlcId: Long, remoteNodeId: PublicKey, paymentPreimage: ByteVector32) extends HasHostedChanIdCommand {
+  val fulfillCmd = CMD_HOSTED_MESSAGE(channelId, UpdateFulfillHtlc(channelId, htlcId, paymentPreimage))
+}
 
 sealed trait HostedData
 case object HostedNothing extends HostedData

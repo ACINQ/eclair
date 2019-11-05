@@ -114,7 +114,12 @@ object ChannelErrorCodes {
     ERR_HOSTED_CHANNEL_DENIED
   )
 
-  def toHostedAscii(error: Error): String = if (knownHostedCodes.contains(error.tag)) toAscii(error.taggedData) else toAscii(error.data)
+  def toHostedAscii(error: Error): String =
+    knownHostedCodes.contains(error.tag) match {
+      case true if error.taggedData.isEmpty => s"hosted-code-${error.tag.toHex}"
+      case true => toAscii(error.taggedData)
+      case false => toAscii(error.data)
+    }
 
   def toAscii(data: ByteVector): String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
 }

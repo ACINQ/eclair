@@ -48,9 +48,9 @@ case class TimestampQueryFilters(from: Long, to: Long)
 
 object TimestampQueryFilters {
   /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
-  val MaxEpochMilliseconds = Duration.fromNanos(Long.MaxValue).toMillis
+  val MaxEpochMilliseconds: Long = Duration.fromNanos(Long.MaxValue).toMillis
 
-  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
+  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]): TimestampQueryFilters = {
     // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
     val from = from_opt.getOrElse(0L).seconds.toMillis
     val to = to_opt.map(_.seconds.toMillis).getOrElse(MaxEpochMilliseconds)
@@ -115,7 +115,9 @@ trait Eclair {
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]]
 
-  def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String]
+  def overrideHostedChannel(remoteNodeId: PublicKey, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String]
+
+  def fulfillHostedExternal(remoteNodeId: PublicKey, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -302,5 +304,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
 
-  def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String] = (appKit.hostedChannelGateway ? CMD_HOSTED_OVERRIDE(channelId, newLocalBalance)).mapTo[String]
+  def overrideHostedChannel(remoteNodeId: PublicKey, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String] = {
+    val cmd = CMD_HOSTED_OVERRIDE(hostedChanId(appKit.nodeParams.nodeId.value, remoteNodeId.value), newLocalBalance)
+    (appKit.hostedChannelGateway ? cmd).mapTo[String]
+  }
+
+  def fulfillHostedExternal(remoteNodeId: PublicKey, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String] = {
+    val cmd = CMD_HOSTED_EXTERNAL_FULFILL(hostedChanId(appKit.nodeParams.nodeId.value, remoteNodeId.value), htlcId, remoteNodeId, paymentPreimage)
+    (appKit.hostedChannelGateway ? cmd).mapTo[String]
+  }
 }

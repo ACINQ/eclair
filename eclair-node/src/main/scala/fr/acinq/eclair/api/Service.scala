@@ -238,7 +238,7 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("createinvoice") {
-                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
+                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, paymentPreimageFromParam.?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
                             complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
                           }
                         } ~
@@ -281,8 +281,13 @@ trait Service extends ExtraDirectives with Logging {
                           complete(eclairApi.usableBalances())
                         } ~
                         path("overridehostedchannel") {
-                          formFields(channelIdFormParam, "newLocalBalanceMsat".as[MilliSatoshi]) { (channelId, newLocalBalance) =>
-                            complete(eclairApi.overrideHostedChannel(channelId, newLocalBalance))
+                          formFields(nodeIdFormParam, "newLocalBalanceMsat".as[MilliSatoshi]) { (remoteNodeId, newLocalBalance) =>
+                            complete(eclairApi.overrideHostedChannel(remoteNodeId, newLocalBalance))
+                          }
+                        } ~
+                        path("fulfillhostedexternal") {
+                          formFields(nodeIdFormParam, "htlcId".as[Long], paymentPreimageFromParam) { (remoteNodeId, htlcId, paymentPreimage) =>
+                            complete(eclairApi.fulfillHostedExternal(remoteNodeId, htlcId, paymentPreimage))
                           }
                         } ~
                         path("getnewaddress") {

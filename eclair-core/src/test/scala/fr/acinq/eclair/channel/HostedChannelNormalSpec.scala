@@ -77,6 +77,41 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.toLocal === 99925000000L.msat)
   }
 
+  test("Bob -> Alice send and fulfill one HTLC externally") { f =>
+    import f._
+    reachNormal(f, channelId)
+    val (paymentPreimage, cmdAdd) = makeCmdAdd(25000000 msat, Alice.nodeParams.nodeId, currentBlockHeight)
+    bob ! cmdAdd
+    bob ! CMD_SIGN
+    val bobUpdateAdd = bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobUpdateAdd))
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 0)
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bob2alice.expectMsgType[StateUpdate]))
+    alice2bob.forward(bob, CMD_HOSTED_MESSAGE(channelId, alice2bob.expectMsgType[StateUpdate]))
+    // Alice LCSS is updated
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == IN) === 1)
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == IN) === 1)
+    // Alice can now resolve a pending incoming HTLC by forwarding to to Relayer
+    val aliceForward = relayerA.expectMsgType[ForwardAdd]
+    assert(aliceForward.add === bobUpdateAdd)
+    // Bob LCSS is updated
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].localSpec.htlcs.count(_.direction == OUT) === 1)
+    assert(bob.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextLocalSpec.htlcs.count(_.direction == OUT) === 1)
+    // Further StateUpdate exchange is halted because signature is the same
+    alice2bob.expectNoMsg(100 millis)
+    bob2alice.expectNoMsg(100 millis)
+    val sender = TestProbe()
+    val cmd = CMD_HOSTED_EXTERNAL_FULFILL(channelId, bobUpdateAdd.id, Alice.nodeParams.nodeId, paymentPreimage)
+    sender.send(bob, CMD_HOSTED_MESSAGE(cmd.channelId, wire.Error(cmd.channelId, "External fulfill attempt")))
+    sender.send(bob, cmd.fulfillCmd)
+    sender.expectMsgType[String]
+    relayerB.expectMsgType[ForwardFulfill]
+    awaitCond(bob.stateName === CLOSED)
+  }
+
   test("Bob -> Alice send and fulfill a wrong HTLC") { f =>
     import f._
     reachNormal(f, channelId)

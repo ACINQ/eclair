@@ -361,17 +361,19 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFulfill(fulfill)) match {
         case Failure(cause) if commits.localError.isEmpty =>
-          localSuspend(commits, ByteVector.view(cause.getMessage.getBytes))
+          localSuspend(commits, ByteVector.view(cause.getMessage.getBytes)) replying s"Failed reason=${cause.getMessage}"
         case Success(Right((commits1, origin, htlc))) =>
           relayer ! ForwardFulfill(fulfill, origin, htlc)
-          if (commits.getError.isDefined) {
-            val resolvedOutgoingHtlcLeftoverIds1 = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id
-            stay using commits1.copy(resolvedOutgoingHtlcLeftoverIds = resolvedOutgoingHtlcLeftoverIds1) storing()
-          } else {
-            stay using commits1 storing()
+          commits.getError match {
+            case Some(error) =>
+              val resolvedOutgoingHtlcLeftoverIds1 = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id
+              val commits2 = commits1.copy(resolvedOutgoingHtlcLeftoverIds = resolvedOutgoingHtlcLeftoverIds1)
+              stay using commits2 storing() replying s"Relayed hash=${fulfill.paymentHash}, error=${ChannelErrorCodes.toHostedAscii(error)}"
+            case None =>
+              stay using commits1 storing() replying s"Relayed hash=${fulfill.paymentHash}"
           }
-        case _ =>
-          stay
+        case otherwise =>
+          stay replying s"Failed reason=$otherwise"
       }
 
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
@@ -383,7 +385,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), c)
 
     case Event(any, _) =>
-      log.debug(s"Hosted channel failed to handle $any in state=$stateName, data=$stateData, remoteNodeId=$remoteNodeId")
+      println(s"Hosted channel failed to handle $any in state=$stateName, data=$stateData, remoteNodeId=$remoteNodeId")
       stay
   }
 
