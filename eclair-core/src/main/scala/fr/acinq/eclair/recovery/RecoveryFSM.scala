@@ -21,7 +21,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: ActorRef, router: ActorRef, switchboard: ActorRef, val wallet: EclairWallet, blockchain: ActorRef, relayer: ActorRef, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends Actor with Logging {
 
@@ -70,8 +70,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
         case Success(commitTx) =>
           logger.info(s"found commitTx=${commitTx.txid}")
 
-          val commitmentNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
-          assert(commitmentNumber == d.channelReestablish.nextLocalCommitmentNumber - 1)
+          val commitmentNumber = d.channelReestablish.nextRemoteRevocationNumber - 1
 
           val fundingPubKey = recoverFundingKeyFromCommitment(nodeParams, commitTx, d.channelReestablish, commitmentNumber)
           val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
@@ -162,12 +161,12 @@ object RecoveryFSM {
   def recoverFundingKeyFromCommitment(nodeParams: NodeParams, commitTx: Transaction, channelReestablish: ChannelReestablish, commitmentNumber: Long): PublicKey = {
     val (key1, key2) = extractKeysFromWitness(commitTx.txIn.head.witness, channelReestablish, commitmentNumber)
 
-    if(isOurChannelKey(nodeParams.keyManager, commitTx, key1, commitmentNumber))
+    if(isOurFundingKey(nodeParams.keyManager, commitTx, key1, channelReestablish.myCurrentPerCommitmentPoint.get, commitmentNumber))
       key1
-    else if(isOurChannelKey(nodeParams.keyManager, commitTx, key2, commitmentNumber))
+    else if(isOurFundingKey(nodeParams.keyManager, commitTx, key2, channelReestablish.myCurrentPerCommitmentPoint.get, commitmentNumber))
       key2
     else
-      throw new IllegalArgumentException("key not found")
+      throw new IllegalArgumentException("key not found, output trimmed?")
   }
 
   def extractKeysFromWitness(witness: ScriptWitness, channelReestablish: ChannelReestablish, commitmentNumber: Long): (PublicKey, PublicKey) = {
@@ -179,13 +178,12 @@ object RecoveryFSM {
     }
   }
 
-  def isOurChannelKey(keyManager: KeyManager, commitTx: Transaction, key: PublicKey, commitmentNumber: Long): Boolean = {
+  def isOurFundingKey(keyManager: KeyManager, commitTx: Transaction, key: PublicKey, remotePerCommitmentPoint: PublicKey, commitmentNumber: Long): Boolean = {
     val channelKeyPath = KeyManager.channelKeyPath(key)
-    val commitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitmentNumber)
     val paymentBasePoint = keyManager.paymentPoint(channelKeyPath).publicKey
-    val localPaymentKey = Generators.derivePubKey(paymentBasePoint, commitmentPoint)
-
+    val localPaymentKey = Generators.derivePubKey(paymentBasePoint, remotePerCommitmentPoint)
     val toRemoteScriptPubkey = Script.write(Script.pay2wpkh(localPaymentKey))
+
     commitTx.txOut.exists(_.publicKeyScript == toRemoteScriptPubkey)
   }
 
