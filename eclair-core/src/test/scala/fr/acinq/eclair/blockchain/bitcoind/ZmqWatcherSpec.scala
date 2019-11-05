@@ -16,13 +16,67 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
+import java.util.concurrent.atomic.AtomicLong
+
+import akka.actor.ActorSystem
+import akka.testkit.{TestKit, TestProbe}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.OutPoint
-import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed, WatchSpent, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed, WatchEventSpent, WatchSpent, WatchSpentBasic}
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.randomBytes32
-import org.scalatest.FunSuite
+import grizzled.slf4j.Logging
+import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
 
-class ZmqWatcherSpec extends FunSuite {
+import scala.collection.JavaConversions._
+import scala.concurrent.Await
+import scala.concurrent.duration._
+
+class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging  {
+
+  val commonConfig = ConfigFactory.parseMap(Map(
+    "eclair.chain" -> "regtest",
+    "eclair.spv" -> false,
+    "eclair.server.public-ips.1" -> "localhost",
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
+    "eclair.router-broadcast-interval" -> "2 second",
+    "eclair.auto-reconnect" -> false))
+
+  val config = ConfigFactory.load(commonConfig).getConfig("eclair")
+
+  override def beforeAll(): Unit = {
+    startBitcoind()
+  }
+
+  override def afterAll(): Unit = {
+    stopBitcoind()
+  }
+
+  test("wait bitcoind ready") {
+    waitForBitcoindReady()
+  }
+
+  test("zmq watcher should detect if a non wallet tx is being spent") {
+    val probe = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(), bitcoinClient))
+
+    // tx is an unspent and confirmed non wallet transaction
+    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system)
+    val isSpendable = Await.result(bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false)(system.dispatcher), 10 seconds)
+    assert(isSpendable)
+
+    // now tx is spent by tx1
+    val (tx1, _) = ExternalWalletHelper.spendNonWalletTx(tx)(system)
+    val isSpendable1 = Await.result(bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false)(system.dispatcher), 10 seconds)
+    assert(!isSpendable1)
+
+    probe.send(watcher, WatchSpent(probe.ref, tx, 0, BITCOIN_FUNDING_SPENT))
+    val ws = probe.expectMsgType[WatchEventSpent]
+    assert(ws.tx.txid == tx1.txid)
+  }
 
   test("add/remove watches from/to utxo map") {
     import ZmqWatcher._
