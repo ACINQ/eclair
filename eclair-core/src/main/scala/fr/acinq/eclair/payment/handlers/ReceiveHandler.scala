@@ -16,12 +16,13 @@
 
 package fr.acinq.eclair.payment.handlers
 
+import akka.actor.Actor.Receive
 import akka.actor.ActorContext
 import akka.event.LoggingAdapter
 
 
 trait ReceiveHandler {
 
-  def handle(implicit ctx: ActorContext, log: LoggingAdapter): PartialFunction[Any, Unit]
+  def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive
 
 }

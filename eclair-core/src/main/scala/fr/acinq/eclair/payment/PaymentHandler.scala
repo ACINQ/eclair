@@ -27,21 +27,14 @@ import fr.acinq.eclair.payment.handlers.{MultiPartHandler, ReceiveHandler}
  */
 class PaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
+  receive(new MultiPartHandler(nodeParams, nodeParams.db.payments))
+
   override def receive: Receive = {
-    val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments)
-    normal(Seq(defaultHandler), defaultHandler.handle(context, log))
-  }
-
-  def normal(handlers: Seq[ReceiveHandler], handle: Receive): Receive = {
-
     case handler: ReceiveHandler =>
       log.info(s"registering handler of type=${handler.getClass.getSimpleName}")
       // NB: the last handler that was added will be the first called
-      context become normal(handler +: handlers, handler.handle(context, log) orElse handle)
-
-    case msg => handle(msg)
+      context become (handler.handle(context, log) orElse receive)
   }
-
 }
 
 object PaymentHandler {

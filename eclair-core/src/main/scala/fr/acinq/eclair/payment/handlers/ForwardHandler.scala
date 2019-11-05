@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.payment.handlers
 
+import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
 
@@ -23,5 +24,5 @@ import akka.event.LoggingAdapter
  * Simple handler that forwards all messages to an actor
  */
 class ForwardHandler(actor: ActorRef) extends ReceiveHandler {
-  override def handle(implicit ctx: ActorContext, log: LoggingAdapter): PartialFunction[Any, Unit] = { case msg => actor forward msg}
+  override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = { case msg => actor forward msg}
 }

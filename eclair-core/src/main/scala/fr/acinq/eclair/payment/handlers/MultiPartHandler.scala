@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.payment.handlers
 
+import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
@@ -54,7 +55,7 @@ class MultiPartHandler(nodeParams: NodeParams,
    */
   def onSuccess(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
-  override def handle(implicit ctx: ActorContext, log: LoggingAdapter): PartialFunction[Any, Unit] = {
+  override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = {
 
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, allowMultiPart) =>
       Try {
