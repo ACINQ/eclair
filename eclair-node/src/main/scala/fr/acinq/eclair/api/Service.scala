@@ -228,6 +228,9 @@ class Service(password: String, eclairApi: Eclair)(implicit actorSystem: ActorSy
               } ~
               path("usablebalances") {
                 complete(eclairApi.usableBalances())
+              } ~
+              path("getnewaddress"){
+                complete(eclairApi.newAddress())
               }
           }
         }

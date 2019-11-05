@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
+import fr.acinq.eclair.KamonExt
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.Serialization
@@ -38,7 +39,8 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     case o => o
   }
 
-  def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] =
+  def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
+    KamonExt.timeFuture("bitcoin.rpc.basic.invoke.time") {
     for {
       res <- sttp
         .post(uri"$scheme://$host:$port")
@@ -47,5 +49,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
         .response(asJson[Seq[JsonRPCResponse]])
         .send()
     } yield res.unsafeBody
+    }
+  }
 
 }
