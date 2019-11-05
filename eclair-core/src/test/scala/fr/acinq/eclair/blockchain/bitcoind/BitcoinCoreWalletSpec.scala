@@ -52,9 +52,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
-
-  implicit val formats = DefaultFormats
-
+  
   override def beforeAll(): Unit = {
     startBitcoind()
   }
