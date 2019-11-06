@@ -27,6 +27,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
 
   implicit val ec = context.system.dispatcher
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
+  val CHECK_CLAIM_POLL_INTERVAL = 3 seconds
 
   context.system.eventStream.subscribe(self, classOf[PeerConnected])
   self ! RecoveryConnect(nodeURI)
@@ -70,24 +71,24 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
         case Success(commitTx) =>
           logger.info(s"found commitTx=${commitTx.txid}")
 
-          val commitmentNumber = d.channelReestablish.nextRemoteRevocationNumber - 1
-
+          val remotePerCommitmentSecret = d.channelReestablish.myCurrentPerCommitmentPoint.get
           val fundingPubKey = recoverFundingKeyFromCommitment(nodeParams, commitTx, d.channelReestablish)
           val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
-          val commitmentPoint = nodeParams.keyManager.commitmentPoint(channelKeyPath, commitmentNumber)
           val paymentBasePoint = nodeParams.keyManager.paymentPoint(channelKeyPath)
-          val localPaymentKey = Generators.derivePubKey(paymentBasePoint.publicKey, commitmentPoint)
+          val localPaymentKey = Generators.derivePubKey(paymentBasePoint.publicKey, remotePerCommitmentSecret)
 
           val finalScriptPubkey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
           val claimTx = Transactions.makeClaimP2WPKHOutputTx(commitTx, nodeParams.dustLimit, localPaymentKey, finalScriptPubkey, nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(6))
-          val sig = nodeParams.keyManager.sign(claimTx, paymentBasePoint, d.channelReestablish.myCurrentPerCommitmentPoint.get)
+          val sig = nodeParams.keyManager.sign(claimTx, paymentBasePoint, remotePerCommitmentSecret)
           val claimSigned = Transactions.addSigs(claimTx, localPaymentKey, sig)
+          logger.info(s"successfully created claim-main-output transaction txid=${claimSigned.tx.txid}")
+          logger.info(s"publishing transaction")
           bitcoinClient.publishTransaction(claimSigned.tx)
-          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckClaimPublished)
+          context.system.scheduler.scheduleOnce(CHECK_CLAIM_POLL_INTERVAL)(self ! CheckClaimPublished)
           context.become(waitToPublishClaimTx(DATA_WAIT_FOR_CLAIM_TX(d.peer, claimSigned.tx)))
 
         case Failure(_) =>
-          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckCommitmentPublished)
+          context.system.scheduler.scheduleOnce(CHECK_CLAIM_POLL_INTERVAL)(self ! CheckCommitmentPublished)
       }
   }
 
@@ -100,7 +101,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
           self ! PoisonPill
         case Failure(_) =>
           bitcoinClient.publishTransaction(d.claimTx)
-          context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckClaimPublished)
+          context.system.scheduler.scheduleOnce(CHECK_CLAIM_POLL_INTERVAL)(self ! CheckClaimPublished)
       }
   }
 
@@ -170,7 +171,7 @@ object RecoveryFSM {
   }
 
   def extractKeysFromWitness(witness: ScriptWitness, channelReestablish: ChannelReestablish): (PublicKey, PublicKey) = {
-    val ScriptWitness(Seq(ByteVector.empty, sig1, sig2, redeemScript)) = witness
+    val ScriptWitness(Seq(ByteVector.empty, _, _, redeemScript)) = witness
 
     Script.parse(redeemScript) match {
       case OP_2 :: OP_PUSHDATA(key1, _) :: OP_PUSHDATA(key2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil => (PublicKey(key1), PublicKey(key2))
