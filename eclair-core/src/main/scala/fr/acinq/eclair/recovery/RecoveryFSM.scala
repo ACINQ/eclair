@@ -72,7 +72,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
 
           val commitmentNumber = d.channelReestablish.nextRemoteRevocationNumber - 1
 
-          val fundingPubKey = recoverFundingKeyFromCommitment(nodeParams, commitTx, d.channelReestablish, commitmentNumber)
+          val fundingPubKey = recoverFundingKeyFromCommitment(nodeParams, commitTx, d.channelReestablish)
           val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
           val commitmentPoint = nodeParams.keyManager.commitmentPoint(channelKeyPath, commitmentNumber)
           val paymentBasePoint = nodeParams.keyManager.paymentPoint(channelKeyPath)
@@ -158,18 +158,18 @@ object RecoveryFSM {
   case object CheckClaimPublished extends Event
 
   // extract our funding pubkey from witness
-  def recoverFundingKeyFromCommitment(nodeParams: NodeParams, commitTx: Transaction, channelReestablish: ChannelReestablish, commitmentNumber: Long): PublicKey = {
-    val (key1, key2) = extractKeysFromWitness(commitTx.txIn.head.witness, channelReestablish, commitmentNumber)
+  def recoverFundingKeyFromCommitment(nodeParams: NodeParams, commitTx: Transaction, channelReestablish: ChannelReestablish): PublicKey = {
+    val (key1, key2) = extractKeysFromWitness(commitTx.txIn.head.witness, channelReestablish)
 
-    if(isOurFundingKey(nodeParams.keyManager, commitTx, key1, channelReestablish.myCurrentPerCommitmentPoint.get, commitmentNumber))
+    if(isOurFundingKey(nodeParams.keyManager, commitTx, key1, channelReestablish))
       key1
-    else if(isOurFundingKey(nodeParams.keyManager, commitTx, key2, channelReestablish.myCurrentPerCommitmentPoint.get, commitmentNumber))
+    else if(isOurFundingKey(nodeParams.keyManager, commitTx, key2, channelReestablish))
       key2
     else
       throw new IllegalArgumentException("key not found, output trimmed?")
   }
 
-  def extractKeysFromWitness(witness: ScriptWitness, channelReestablish: ChannelReestablish, commitmentNumber: Long): (PublicKey, PublicKey) = {
+  def extractKeysFromWitness(witness: ScriptWitness, channelReestablish: ChannelReestablish): (PublicKey, PublicKey) = {
     val ScriptWitness(Seq(ByteVector.empty, sig1, sig2, redeemScript)) = witness
 
     Script.parse(redeemScript) match {
@@ -178,10 +178,10 @@ object RecoveryFSM {
     }
   }
 
-  def isOurFundingKey(keyManager: KeyManager, commitTx: Transaction, key: PublicKey, remotePerCommitmentPoint: PublicKey, commitmentNumber: Long): Boolean = {
+  def isOurFundingKey(keyManager: KeyManager, commitTx: Transaction, key: PublicKey, channelReestablish: ChannelReestablish): Boolean = {
     val channelKeyPath = KeyManager.channelKeyPath(key)
     val paymentBasePoint = keyManager.paymentPoint(channelKeyPath).publicKey
-    val localPaymentKey = Generators.derivePubKey(paymentBasePoint, remotePerCommitmentPoint)
+    val localPaymentKey = Generators.derivePubKey(paymentBasePoint, channelReestablish.myCurrentPerCommitmentPoint.get)
     val toRemoteScriptPubkey = Script.write(Script.pay2wpkh(localPaymentKey))
 
     commitTx.txOut.exists(_.publicKeyScript == toRemoteScriptPubkey)

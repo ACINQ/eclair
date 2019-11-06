@@ -1,12 +1,11 @@
 package fr.acinq.eclair.recovery
 
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, Script, ScriptWitness, Transaction}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
-import fr.acinq.eclair.channel.{DATA_NORMAL, INPUT_DISCONNECTED, INPUT_RECONNECTED, NORMAL, OFFLINE}
+import fr.acinq.eclair.channel.{CMD_SIGN, DATA_NORMAL, INPUT_DISCONNECTED, INPUT_RECONNECTED, NORMAL, OFFLINE}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire.{ChannelReestablish, Init}
+import RecoveryFSM._
+import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Init, RevokeAndAck}
 import org.scalatest.{FunSuite, FunSuiteLike, Outcome}
 
 import scala.concurrent.duration._
@@ -26,15 +25,13 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("extract funding keys from witness") { f =>
+  test("recover out funding key and channel keypath from the remote commit tx") { f =>
     import f._
 
     val probe = TestProbe()
 
-    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val commitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx
-    val aliceCommitNumber = aliceStateData.commitments.localCommit.index
-    val fundingKeyPath = aliceStateData.commitments.localParams.fundingKeyPath
+    val aliceFundingKey = TestConstants.Alice.nodeParams.keyManager.fundingPublicKey(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.fundingKeyPath).publicKey
+    val remotePublishedCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // disconnect the peers to obtain a channel_reestablish on reconnection
     probe.send(alice, INPUT_DISCONNECTED)
@@ -45,13 +42,16 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
     val bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
 
-    // reconnect the input in alice's channel
-    probe.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
-    val aliceBobReestablish = alice2bob.expectMsgType[ChannelReestablish]
+    // reconnect the input in bob's channel, bob will send to alice a channel_reestablish
+    probe.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    val bobAliceReestablish = bob2alice.expectMsgType[ChannelReestablish]
 
-    val aliceFundingKey = TestConstants.Alice.nodeParams.keyManager.fundingPublicKey(fundingKeyPath).publicKey
-    val (key1, key2) = RecoveryFSM.extractKeysFromWitness(commitTx.tx.txIn.head.witness, aliceBobReestablish, aliceCommitNumber)
+    val (key1, key2) = extractKeysFromWitness(remotePublishedCommitTx.txIn.head.witness, bobAliceReestablish)
     assert(aliceFundingKey == key1 || aliceFundingKey == key2)
+    assert(isOurFundingKey(TestConstants.Alice.nodeParams.keyManager, remotePublishedCommitTx, aliceFundingKey, bobAliceReestablish))
+
+    val recoveredFundingKey = recoverFundingKeyFromCommitment(TestConstants.Alice.nodeParams, remotePublishedCommitTx, bobAliceReestablish)
+    assert(recoveredFundingKey == aliceFundingKey)
   }
 
 }
