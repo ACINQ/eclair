@@ -3,7 +3,7 @@ package fr.acinq.eclair.recovery
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
-import fr.acinq.bitcoin.{ByteVector32, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Script, ScriptWitness, Transaction}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ByteVector32, OP_0, OP_2, OP_CHECKMULTISIG, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Script, ScriptWitness, Transaction}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -27,7 +27,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
 
   implicit val ec = context.system.dispatcher
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
-  val CHECK_CLAIM_POLL_INTERVAL = 3 seconds
+  val CHECK_POLL_INTERVAL = 3 seconds
 
   context.system.eventStream.subscribe(self, classOf[PeerConnected])
   self ! RecoveryConnect(nodeURI)
@@ -67,11 +67,11 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
   def waitForRemoteToPublishCommitment(d: DATA_WAIT_FOR_REMOTE_PUBLISH): Receive = {
     case CheckCommitmentPublished =>
       logger.info(s"looking for the commitment transaction")
-      bitcoinClient.lookForSpendingTx(None, d.fundingTx.txid.toHex, d.fundingOutIndex).onComplete {
+      lookForCommitTx(d.fundingTx.txid, d.fundingOutIndex).onComplete {
         case Success(commitTx) =>
           logger.info(s"found commitTx=${commitTx.txid}")
 
-          val remotePerCommitmentSecret = d.channelReestablish.myCurrentPerCommitmentPoint.get
+          val Some(remotePerCommitmentSecret) = d.channelReestablish.myCurrentPerCommitmentPoint
           val fundingPubKey = recoverFundingKeyFromCommitment(nodeParams, commitTx, d.channelReestablish)
           val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
           val paymentBasePoint = nodeParams.keyManager.paymentPoint(channelKeyPath)
@@ -81,14 +81,13 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
           val claimTx = Transactions.makeClaimP2WPKHOutputTx(commitTx, nodeParams.dustLimit, localPaymentKey, finalScriptPubkey, nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(6))
           val sig = nodeParams.keyManager.sign(claimTx, paymentBasePoint, remotePerCommitmentSecret)
           val claimSigned = Transactions.addSigs(claimTx, localPaymentKey, sig)
-          logger.info(s"successfully created claim-main-output transaction txid=${claimSigned.tx.txid}")
-          logger.info(s"publishing transaction")
+          logger.info(s"publishing claim-main-output transaction address=${scriptPubKeyToAddress(finalScriptPubkey)} txid=${claimSigned.tx.txid}")
           bitcoinClient.publishTransaction(claimSigned.tx)
-          context.system.scheduler.scheduleOnce(CHECK_CLAIM_POLL_INTERVAL)(self ! CheckClaimPublished)
+          context.system.scheduler.scheduleOnce(CHECK_POLL_INTERVAL)(self ! CheckClaimPublished)
           context.become(waitToPublishClaimTx(DATA_WAIT_FOR_CLAIM_TX(d.peer, claimSigned.tx)))
 
         case Failure(_) =>
-          context.system.scheduler.scheduleOnce(CHECK_CLAIM_POLL_INTERVAL)(self ! CheckCommitmentPublished)
+          context.system.scheduler.scheduleOnce(CHECK_POLL_INTERVAL)(self ! CheckCommitmentPublished)
       }
   }
 
@@ -101,7 +100,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
           self ! PoisonPill
         case Failure(_) =>
           bitcoinClient.publishTransaction(d.claimTx)
-          context.system.scheduler.scheduleOnce(CHECK_CLAIM_POLL_INTERVAL)(self ! CheckClaimPublished)
+          context.system.scheduler.scheduleOnce(CHECK_POLL_INTERVAL)(self ! CheckClaimPublished)
       }
   }
 
@@ -134,6 +133,27 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
     }.recover {
       case _ => None
     }
+  }
+
+  /**
+    * Lookup a commitTx spending the fundingTx in the mempool and then in the blocks
+    */
+  def lookForCommitTx(fundingTxId: ByteVector32, fundingOutIndex: Int): Future[Transaction] = {
+    bitcoinClient.getMempool().map { mempoolTxs =>
+      mempoolTxs.find(_.txIn.exists(_.outPoint == OutPoint(fundingTxId, fundingOutIndex))).get
+    }.recoverWith { case _ =>
+      bitcoinClient.lookForSpendingTx(None, fundingTxId.toHex, fundingOutIndex)
+    }
+  }
+
+  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
+    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
+      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
+    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
+      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
+    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
+    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
+    case _ => ???
   }
 
 }
