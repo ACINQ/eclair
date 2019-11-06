@@ -4,11 +4,11 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorRef, ActorSelection, PoisonPill, Props}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ByteVector32, OP_0, OP_2, OP_CHECKMULTISIG, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Script, ScriptWitness, Transaction}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.channel.{Channel, ChannelClosed, Commitments, DATA_CLOSING, HasCommitments, Helpers, INPUT_RESTORED, PleasePublishYourCommitment}
+import fr.acinq.eclair.channel.{HasCommitments, Helpers, PleasePublishYourCommitment}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.{ConnectedData, Disconnect, FinalChannelId}
 import fr.acinq.eclair.io.Switchboard.peerActorName
@@ -23,32 +23,33 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: ActorRef, router: ActorRef, switchboard: ActorRef, val wallet: EclairWallet, blockchain: ActorRef, relayer: ActorRef, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends Actor with Logging {
+class RecoveryFSM(val nodeParams: NodeParams, authenticator: ActorRef, router: ActorRef, switchboard: ActorRef, val wallet: EclairWallet, blockchain: ActorRef, relayer: ActorRef, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends Actor with Logging {
 
   implicit val ec = context.system.dispatcher
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
   val CHECK_POLL_INTERVAL = 3 seconds
 
   context.system.eventStream.subscribe(self, classOf[PeerConnected])
-  self ! RecoveryConnect(nodeURI)
 
-  override def receive: Receive = waitingForConnection()
+  override def receive: Receive = waitingForConnection(None)
 
-  def waitingForConnection(): Receive = {
+  def waitingForConnection(remoteNodeUri: Option[NodeURI]): Receive = {
     case RecoveryConnect(nodeURI: NodeURI) =>
       logger.info(s"creating new recovery peer")
       val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, nodeURI.nodeId, authenticator, blockchain, router, relayer, wallet)))
       peer ! Peer.Init(previousKnownAddress = None, storedChannels = Set.empty)
       peer ! Peer.Connect(nodeURI.nodeId, Some(nodeURI.address))
-      context.become(waitingForConnection())
-    case PeerConnected(peer, nodeId) if nodeId == nodeURI.nodeId =>
-      logger.info(s"Connected to remote $nodeId")
-      context.become(waitingForRemoteChannelInfo(DATA_WAIT_FOR_REMOTE_INFO(peer)))
+      context.become(waitingForConnection(Some(nodeURI)))
+    case PeerConnected(peer, nodeId) if remoteNodeUri.forall(_.nodeId == nodeId) =>
+      logger.info(s"connected to remote $nodeId")
+      context.become(waitingForRemoteChannelInfo(DATA_WAIT_FOR_REMOTE_INFO(peer, nodeId)))
+    case GetState => sender ! RECOVERY_WAIT_FOR_CONNECTION
   }
 
   def waitingForRemoteChannelInfo(d: DATA_WAIT_FOR_REMOTE_INFO): Receive = {
+    case GetState => sender ! RECOVERY_WAIT_FOR_CHANNEL
     case ChannelFound(channelId, reestablish) =>
-      logger.info(s"peer=${nodeURI.nodeId} knows channelId=$channelId")
+      logger.info(s"peer=${d.remoteNodeId} knows channelId=$channelId")
       lookupFundingTx(channelId) match {
         case None =>
           logger.info(s"could not find funding transaction...disconnecting")
@@ -89,6 +90,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
         case Failure(_) =>
           context.system.scheduler.scheduleOnce(CHECK_POLL_INTERVAL)(self ! CheckCommitmentPublished)
       }
+    case GetState => sender ! RECOVERY_WAIT_FOR_COMMIT_PUBLISHED
   }
 
   def waitToPublishClaimTx(d: DATA_WAIT_FOR_CLAIM_TX): Receive = {
@@ -102,6 +104,7 @@ class RecoveryFSM(nodeURI: NodeURI, val nodeParams: NodeParams, authenticator: A
           bitcoinClient.publishTransaction(d.claimTx)
           context.system.scheduler.scheduleOnce(CHECK_POLL_INTERVAL)(self ! CheckClaimPublished)
       }
+    case GetState => sender ! RECOVERY_WAIT_FOR_CLAIM_PUBLISHED
   }
 
   /**
@@ -162,21 +165,27 @@ object RecoveryFSM {
 
   val actorName = "recovery-fsm-actor"
 
+  // formatter: off
+  // those states are used in the test
   sealed trait State
-  case object WAIT_FOR_CONNECTION extends State
-  case object WAIT_FOR_CHANNEL extends State
+  case object RECOVERY_WAIT_FOR_CONNECTION extends State
+  case object RECOVERY_WAIT_FOR_CHANNEL extends State
+  case object RECOVERY_WAIT_FOR_COMMIT_PUBLISHED extends State
+  case object RECOVERY_WAIT_FOR_CLAIM_PUBLISHED extends State
 
   sealed trait Data
-  case class DATA_WAIT_FOR_REMOTE_INFO(peer: ActorRef) extends Data
+  case class DATA_WAIT_FOR_REMOTE_INFO(peer: ActorRef, remoteNodeId: PublicKey) extends Data
   case class DATA_WAIT_FOR_REMOTE_PUBLISH(peer: ActorRef, channelReestablish: ChannelReestablish, fundingTx: Transaction, fundingOutIndex: Int) extends Data
   case class DATA_WAIT_FOR_CLAIM_TX(peer: ActorRef, claimTx: Transaction) extends Data
 
   sealed trait Event
+  case object GetState extends Event
   case class RecoveryConnect(remote: NodeURI) extends Event
   case class ChannelFound(channelId: ByteVector32, reestablish: ChannelReestablish) extends Event
   case class SendErrorToRemote(error: Error) extends Event
   case object CheckCommitmentPublished extends Event
   case object CheckClaimPublished extends Event
+  // formatter: on
 
   // extract our funding pubkey from witness
   def recoverFundingKeyFromCommitment(nodeParams: NodeParams, commitTx: Transaction, channelReestablish: ChannelReestablish): PublicKey = {

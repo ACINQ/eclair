@@ -5,6 +5,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.Kit
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
+import fr.acinq.eclair.recovery.RecoveryFSM.RecoveryConnect
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Random, Success, Try}
@@ -27,7 +28,8 @@ object RecoveryTool extends Logging {
       port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
     )
 
-    appKit.system.actorOf(Props(new RecoveryFSM(nodeUri, appKit.nodeParams, appKit.authenticator, appKit.router, appKit.switchboard, appKit.wallet, appKit.watcher, appKit.relayer, bitcoinRpcClient)), RecoveryFSM.actorName)
+    val recoveryFSM = appKit.system.actorOf(Props(new RecoveryFSM(appKit.nodeParams, appKit.authenticator, appKit.router, appKit.switchboard, appKit.wallet, appKit.watcher, appKit.relayer, bitcoinRpcClient)), RecoveryFSM.actorName)
+    recoveryFSM ! RecoveryConnect(nodeUri)
   }
 
   private def getInput[T](msg: String, parse: String => T): T = {

@@ -35,6 +35,7 @@ import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.recovery.RecoveryFSM
+import fr.acinq.eclair.recovery.RecoveryFSM.RecoveryConnect
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
@@ -305,6 +306,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
     )
 
-    appKit.system.actorOf(Props(new RecoveryFSM(uri, appKit.nodeParams, appKit.authenticator, appKit.router, appKit.switchboard, appKit.wallet, appKit.watcher, appKit.relayer, bitcoinRpcClient)), RecoveryFSM.actorName)
+    val recoveryFSM = appKit.system.actorOf(Props(new RecoveryFSM(appKit.nodeParams, appKit.authenticator, appKit.router, appKit.switchboard, appKit.wallet, appKit.watcher, appKit.relayer, bitcoinRpcClient)), RecoveryFSM.actorName)
+    recoveryFSM ! RecoveryConnect(uri)
   }
 }
