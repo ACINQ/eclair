@@ -27,7 +27,6 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         override val peers: PeersDb = Alice.nodeParams.db.peers
         override val payments: PaymentsDb = Alice.nodeParams.db.payments
         override val pendingRelay: PendingRelayDb = Alice.nodeParams.db.pendingRelay
-        override val dbDir: Option[File] = None
         override def backup(file: File): Unit = ()
       }
     )
@@ -68,7 +67,6 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         override val peers: PeersDb = Alice.nodeParams.db.peers
         override val payments: PaymentsDb = Alice.nodeParams.db.payments
         override val pendingRelay: PendingRelayDb = Alice.nodeParams.db.pendingRelay
-        override val dbDir: Option[File] = None
         override def backup(file: File): Unit = ()
       }
     )
