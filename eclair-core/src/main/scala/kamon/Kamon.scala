@@ -1,6 +1,7 @@
 package kamon
 
 import kamon.context.Context
+import kamon.tag.TagSet
 
 /**
  * Kamon does not work on Android and using it would not make sense anyway, we use this simplistic mocks instead
@@ -15,6 +16,8 @@ object Kamon {
     def finish() = this
 
     def withoutTags() = this
+
+    def withTags(args: TagSet) = this
 
     def withTag(args: String*) = this
 
