@@ -323,10 +323,21 @@ object PaymentRequest {
     import Features._
     import fr.acinq.eclair.Features.hasFeature
 
+    lazy val areSupported: Boolean = !bitmask
+      .reverse
+      .toIndexedSeq
+      .zipWithIndex
+      .exists {
+      case (true, idx) if idx % 2 == 1 => false // odd indexed bits are supported
+      case (true, idx) if idx == BASIC_MULTI_PART_PAYMENT_MANDATORY || idx == PAYMENT_SECRET_MANDATORY => false // known even fields are supported
+      case (value, _) => value
+    }
+
     lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
 
     lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
 
+    override def toString: String = s"Features(${bitmask.toBin})"
   }
 
   object Features {
@@ -336,7 +347,7 @@ object PaymentRequest {
     val PAYMENT_SECRET_MANDATORY = 2
     val PAYMENT_SECRET_OPTIONAL = 3
 
-    def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0) {
+    def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0L) {
       case (current, feature) => current + (1 << feature)
     }))
   }
