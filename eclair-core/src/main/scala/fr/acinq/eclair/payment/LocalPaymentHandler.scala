@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.wire._
