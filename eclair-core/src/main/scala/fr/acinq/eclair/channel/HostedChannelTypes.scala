@@ -21,16 +21,14 @@ case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: P
 case class CMD_HOSTED_INVOKE_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
 case class CMD_HOSTED_MESSAGE(channelId: ByteVector32, message: LightningMessage) extends HasHostedChanIdCommand
 case class CMD_HOSTED_OVERRIDE(channelId: ByteVector32, newLocalBalance: MilliSatoshi) extends HasHostedChanIdCommand
-case class CMD_HOSTED_EXTERNAL_FULFILL(channelId: ByteVector32, htlcId: Long, remoteNodeId: PublicKey, paymentPreimage: ByteVector32) extends HasHostedChanIdCommand {
+case class CMD_HOSTED_EXTERNAL_FULFILL(channelId: ByteVector32, htlcId: Long, paymentPreimage: ByteVector32) extends HasHostedChanIdCommand {
   val fulfillCmd = CMD_HOSTED_MESSAGE(channelId, UpdateFulfillHtlc(channelId, htlcId, paymentPreimage))
 }
 
 sealed trait HostedData
 case object HostedNothing extends HostedData
 case class HOSTED_DATA_CLIENT_WAIT_HOST_INIT(refundScriptPubKey: ByteVector) extends HostedData
-
 case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits: HOSTED_DATA_COMMITMENTS) extends HostedData
-
 case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel, refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }

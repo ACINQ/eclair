@@ -281,13 +281,13 @@ trait Service extends ExtraDirectives with Logging {
                           complete(eclairApi.usableBalances())
                         } ~
                         path("overridehostedchannel") {
-                          formFields(nodeIdFormParam, "newLocalBalanceMsat".as[MilliSatoshi]) { (remoteNodeId, newLocalBalance) =>
-                            complete(eclairApi.overrideHostedChannel(remoteNodeId, newLocalBalance))
+                          formFields(channelIdFormParam, "newLocalBalanceMsat".as[MilliSatoshi]) { (channelId, newLocalBalance) =>
+                            complete(eclairApi.overrideHostedChannel(channelId, newLocalBalance))
                           }
                         } ~
                         path("fulfillhostedexternal") {
-                          formFields(nodeIdFormParam, "htlcId".as[Long], paymentPreimageFromParam) { (remoteNodeId, htlcId, paymentPreimage) =>
-                            complete(eclairApi.fulfillHostedExternal(remoteNodeId, htlcId, paymentPreimage))
+                          formFields(channelIdFormParam, "htlcId".as[Long], paymentPreimageFromParam) { (channelId, htlcId, paymentPreimage) =>
+                            complete(eclairApi.fulfillHostedExternal(channelId, htlcId, paymentPreimage))
                           }
                         } ~
                         path("getnewaddress") {

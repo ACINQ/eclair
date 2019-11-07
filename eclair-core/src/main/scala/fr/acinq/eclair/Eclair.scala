@@ -115,9 +115,9 @@ trait Eclair {
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]]
 
-  def overrideHostedChannel(remoteNodeId: PublicKey, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String]
+  def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String]
 
-  def fulfillHostedExternal(remoteNodeId: PublicKey, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String]
+  def fulfillHostedExternal(channelId: ByteVector32, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -302,15 +302,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
       publicAddresses = appKit.nodeParams.publicAddresses)
   )
 
-  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] = (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
+  override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalances]] =
+    (appKit.relayer ? GetUsableBalances).mapTo[Iterable[UsableBalances]]
 
-  def overrideHostedChannel(remoteNodeId: PublicKey, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String] = {
-    val cmd = CMD_HOSTED_OVERRIDE(hostedChanId(appKit.nodeParams.nodeId.value, remoteNodeId.value), newLocalBalance)
-    (appKit.hostedChannelGateway ? cmd).mapTo[String]
-  }
+  def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String] =
+    (appKit.hostedChannelGateway ? CMD_HOSTED_OVERRIDE(channelId, newLocalBalance)).mapTo[String]
 
-  def fulfillHostedExternal(remoteNodeId: PublicKey, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String] = {
-    val cmd = CMD_HOSTED_EXTERNAL_FULFILL(hostedChanId(appKit.nodeParams.nodeId.value, remoteNodeId.value), htlcId, remoteNodeId, paymentPreimage)
-    (appKit.hostedChannelGateway ? cmd).mapTo[String]
-  }
+  def fulfillHostedExternal(channelId: ByteVector32, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String] =
+    (appKit.hostedChannelGateway ? CMD_HOSTED_EXTERNAL_FULFILL(channelId, htlcId, paymentPreimage)).mapTo[String]
 }

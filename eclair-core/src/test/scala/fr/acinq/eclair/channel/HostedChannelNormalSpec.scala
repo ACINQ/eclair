@@ -104,7 +104,7 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice2bob.expectNoMsg(100 millis)
     bob2alice.expectNoMsg(100 millis)
     val sender = TestProbe()
-    val cmd = CMD_HOSTED_EXTERNAL_FULFILL(channelId, bobUpdateAdd.id, Alice.nodeParams.nodeId, paymentPreimage)
+    val cmd = CMD_HOSTED_EXTERNAL_FULFILL(channelId, bobUpdateAdd.id, paymentPreimage)
     sender.send(bob, CMD_HOSTED_MESSAGE(cmd.channelId, wire.Error(cmd.channelId, "External fulfill attempt")))
     sender.send(bob, cmd.fulfillCmd)
     sender.expectMsgType[String]
