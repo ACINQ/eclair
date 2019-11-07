@@ -84,8 +84,12 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
   }
 
   onTransition {
+    case WAITING_FOR_HTLC -> WAITING_FOR_HTLC => () // don't do anything if we stay in that state
+    case WAITING_FOR_HTLC -> _ => cancelTimer(PaymentTimeout.toString)
+  }
+
+  onTransition {
     case _ -> PAYMENT_SUCCEEDED =>
-      cancelTimer(PaymentTimeout.toString)
       nextStateData match {
         case PaymentSucceeded(parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
@@ -94,7 +98,6 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
           log.error(s"unexpected payment success data ${d.getClass.getSimpleName}")
       }
     case _ -> PAYMENT_FAILED =>
-      cancelTimer(PaymentTimeout.toString)
       nextStateData match {
         case PaymentFailed(failure, parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
