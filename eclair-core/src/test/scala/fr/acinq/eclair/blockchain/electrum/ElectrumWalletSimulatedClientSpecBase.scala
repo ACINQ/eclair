@@ -258,7 +258,7 @@ trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
   test(s"handle disconnect/reconnect events ($walletType)") {
     val data = {
       val master = DeterministicWallet.generate(seed)
-      val data1 = Data.createNew(this.wallet.stateData.keyStore, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), walletParameters)
+      val data1 = Data.createNew(master, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), walletParameters)
 
       val amount1 = 1000000 sat
       val amount2 = 1500000 sat

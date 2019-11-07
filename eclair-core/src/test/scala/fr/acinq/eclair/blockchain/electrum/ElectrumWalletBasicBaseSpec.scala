@@ -43,12 +43,8 @@ trait ElectrumWalletBasicBaseSpec extends FunSuite with Logging {
   val minimumFee = 2000 sat
 
   val master = DeterministicWallet.generate(ByteVector32(ByteVector.fill(32)(1)))
-  val keyStore = walletType match {
-    case P2SH_SEGWIT => new BIP49KeyStore(master, Block.RegtestGenesisBlock.hash)
-    case BECH32 => new BIP84KeyStore(master, Block.RegtestGenesisBlock.hash)
-  }
   val params = ElectrumWallet.WalletParameters(walletType, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")))
-  val state = Data.createNew(keyStore, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), params)
+  val state = Data.createNew(master, Blockchain.fromCheckpoints(Block.RegtestGenesisBlock.hash, CheckPoint.load(Block.RegtestGenesisBlock.hash)), params)
 
 
   def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
