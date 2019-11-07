@@ -5,7 +5,6 @@ import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.channel.{CMD_SIGN, Channel, DATA_NORMAL, Data, INPUT_DISCONNECTED, INPUT_RECONNECTED, NORMAL, OFFLINE, State}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import RecoveryFSM._
-import akka.actor.Props
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.TestWallet
@@ -111,25 +110,20 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods with
       }
     }
 
-    val recoveryFSM = system.actorOf(Props(new RecoveryFSM(nodeParams, authenticator.ref, router.ref, switchboard.ref, new TestWallet, watcher.ref, relayer.ref, bitcoinRpcClient)), RecoveryFSM.actorName)
-
-    probe.send(recoveryFSM, GetState)
-    probe.expectMsgType[RECOVERY_WAIT_FOR_CONNECTION.type]
+    val recoveryFSM = TestFSMRef(new RecoveryFSM(nodeParams, authenticator.ref, router.ref, switchboard.ref, new TestWallet, watcher.ref, relayer.ref, bitcoinRpcClient))
+    recoveryFSM.setState(RECOVERY_WAIT_FOR_CONNECTION, DATA_WAIT_FOR_CONNECTION(remotePeerId))
 
     // skip peer connection
     probe.send(recoveryFSM, PeerConnected(remotePeer.ref, remotePeerId))
-
-    probe.send(recoveryFSM, GetState)
-    probe.expectMsgType[RECOVERY_WAIT_FOR_CHANNEL.type]
+    awaitCond(recoveryFSM.stateName == RECOVERY_WAIT_FOR_CHANNEL)
 
     // send a ChannelFound event with channel_reestablish to the recoveryFSM -- the channel has been found
     probe.send(recoveryFSM, ChannelFound(channelId, bobAliceReestablish))
 
-    probe.send(recoveryFSM, GetState)
-    probe.expectMsgType[RECOVERY_WAIT_FOR_COMMIT_PUBLISHED.type]
-
     // the recovery FSM replies with an error asking the remote to publish its commitment
     remotePeer.expectMsgType[eclair.wire.Error]
+
+    awaitCond(recoveryFSM.stateName == RECOVERY_WAIT_FOR_COMMIT_PUBLISHED)
   }
 
 }
