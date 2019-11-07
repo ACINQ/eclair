@@ -44,16 +44,18 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
       goto(PAYMENT_FAILED) using PaymentFailed(d.paidAmount, wire.PaymentTimeout, d.parts)
 
-    case Event(MultiPartHtlc(totalAmount2, htlc), d: WaitingForHtlc) =>
+    case Event(mph@MultiPartHtlc(_, htlc), d: WaitingForHtlc) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
-      val pp = PartialPayment(htlc.amountMsat, htlc.channelId)
-      if (totalAmount != totalAmount2) {
-        log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now $totalAmount2")
-        goto(PAYMENT_FAILED) using PaymentFailed(d.paidAmount, IncorrectOrUnknownPaymentDetails(totalAmount2, nodeParams.currentBlockHeight), PendingPayment(htlc.id, pp, sender) :: d.parts)
-      } else if (htlc.amountMsat + d.paidAmount >= totalAmount) {
-        goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(htlc.amountMsat + d.paidAmount, PendingPayment(htlc.id, pp, sender) :: d.parts)
+      val paidAmount1 = d.paidAmount + htlc.amountMsat
+      val part = PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender)
+      val parts1 = part +: d.parts
+      if (totalAmount != mph.totalAmount) {
+        log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now ${mph.totalAmount}")
+        goto(PAYMENT_FAILED) using PaymentFailed(paidAmount1, IncorrectOrUnknownPaymentDetails(mph.totalAmount, nodeParams.currentBlockHeight), parts1)
+      } else if (paidAmount1 >= totalAmount) {
+        goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(paidAmount1, parts1)
       } else {
-        stay using d.copy(paidAmount = d.paidAmount + htlc.amountMsat, parts = PendingPayment(htlc.id, pp, sender) :: d.parts)
+        stay using d.copy(paidAmount = paidAmount1, parts = parts1)
       }
   }
 
