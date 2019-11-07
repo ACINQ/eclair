@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.wire._
@@ -67,8 +67,10 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
           paymentRequest.amount match {
             case _ if paymentRequest.isExpired =>
+              log.warning(s"ignoring incoming payment for paymentHash=${htlc.paymentHash} which is expired")
               sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, nodeParams.currentBlockHeight)), commit = true)
             case _ if htlc.cltvExpiry < minFinalExpiry =>
+              log.warning(s"received payment with cltvExpiry too small for paymentHash=${htlc.paymentHash}")
               sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, nodeParams.currentBlockHeight)), commit = true)
             case Some(amount) if htlc.amountMsat < amount =>
               log.warning(s"received payment with amount too small for paymentHash=${htlc.paymentHash} amount=${htlc.amountMsat}")
@@ -84,6 +86,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
               context.system.eventStream.publish(PaymentReceived(htlc.paymentHash, PaymentReceived.PartialPayment(htlc.amountMsat, htlc.channelId) :: Nil))
           }
         case None =>
+          log.warning(s"received payment for unknown paymentHash=${htlc.paymentHash}")
           sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(htlc.amountMsat, nodeParams.currentBlockHeight)), commit = true)
       }
   }
