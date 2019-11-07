@@ -227,25 +227,6 @@ object PaymentLifecycle {
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, cfg, router, register)
 
   /**
-   * Use this message to create a Bolt 11 invoice to receive a payment.
-   *
-   * @param amount_opt        amount to receive in milli-satoshis.
-   * @param description       payment description.
-   * @param expirySeconds_opt number of seconds before the invoice expires (relative to the invoice creation time).
-   * @param extraHops         routing hints to help the payer.
-   * @param fallbackAddress   fallback Bitcoin address.
-   * @param paymentPreimage   payment preimage.
-   * @param allowMultiPart    allow multi-part payments.
-   */
-  case class ReceivePayment(amount_opt: Option[MilliSatoshi],
-                            description: String,
-                            expirySeconds_opt: Option[Long] = None,
-                            extraHops: List[List[ExtraHop]] = Nil,
-                            fallbackAddress: Option[String] = None,
-                            paymentPreimage: Option[ByteVector32] = None,
-                            allowMultiPart: Boolean = false)
-
-  /**
    * Send a payment to a pre-defined route without running the path-finding algorithm.
    *
    * @param paymentHash  payment hash.
