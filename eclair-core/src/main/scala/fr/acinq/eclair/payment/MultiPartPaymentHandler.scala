@@ -22,6 +22,8 @@ import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, MilliSatoshi, NodeParams, wire}
 
+import scala.collection.immutable.Queue
+
 /**
  * Created by t-bast on 18/07/2019.
  */
@@ -38,7 +40,7 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
 
   setTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry, repeat = false)
 
-  startWith(WAITING_FOR_HTLC, WaitingForHtlc(Nil))
+  startWith(WAITING_FOR_HTLC, WaitingForHtlc(Queue.empty))
 
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
@@ -49,7 +51,7 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
       val paidAmount1 = d.paidAmount + htlc.amountMsat
       val part = PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender)
-      val parts1 = part +: d.parts
+      val parts1 = d.parts :+ part
       if (totalAmount != mph.totalAmount) {
         log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now ${mph.totalAmount}")
         val failure = IncorrectOrUnknownPaymentDetails(mph.totalAmount, nodeParams.currentBlockHeight)
@@ -73,11 +75,11 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
   onTermination {
     // NB: order matters!
     case StopEvent(FSM.Normal, _, PaymentSucceeded(parts)) =>
-      parent ! MultiPartHtlcSucceeded(paymentHash, parts.reverse)
+      parent ! MultiPartHtlcSucceeded(paymentHash, parts)
     case StopEvent(FSM.Normal, _, d) =>
       log.error(s"unexpected payment success data ${d.getClass.getSimpleName}")
     case StopEvent(FSM.Failure(_), _, PaymentFailed(failure, parts)) =>
-      parent ! MultiPartHtlcFailed(paymentHash, failure, parts.reverse)
+      parent ! MultiPartHtlcFailed(paymentHash, failure, parts)
     case StopEvent(FSM.Failure(_), _, d) =>
       log.error(s"unexpected payment failure data ${d.getClass.getSimpleName}")
   }
@@ -99,9 +101,9 @@ object MultiPartPaymentHandler {
   /** An incoming partial payment. */
   case class MultiPartHtlc(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc)
   /** We successfully received all parts of the payment. */
-  case class MultiPartHtlcSucceeded(paymentHash: ByteVector32, parts: List[PendingPayment])
+  case class MultiPartHtlcSucceeded(paymentHash: ByteVector32, parts: Queue[PendingPayment])
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */
-  case class MultiPartHtlcFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: List[PendingPayment])
+  case class MultiPartHtlcFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: Queue[PendingPayment])
   /** We received an extraneous payment after we reached a final state (succeeded or failed). */
   case class ExtraHtlcReceived(paymentHash: ByteVector32, payment: PendingPayment, failure: Option[FailureMessage])
   // @formatter:on
@@ -113,12 +115,12 @@ object MultiPartPaymentHandler {
 
   // @formatter:off
   sealed trait Data {
-    def parts: List[PendingPayment]
+    def parts: Queue[PendingPayment]
     lazy val paidAmount = parts.map(_.payment.amount).sum
   }
-  case class WaitingForHtlc(parts: List[PendingPayment]) extends Data
-  case class PaymentSucceeded(parts: List[PendingPayment]) extends Data
-  case class PaymentFailed(failure: FailureMessage, parts: List[PendingPayment]) extends Data
+  case class WaitingForHtlc(parts: Queue[PendingPayment]) extends Data
+  case class PaymentSucceeded(parts: Queue[PendingPayment]) extends Data
+  case class PaymentFailed(failure: FailureMessage, parts: Queue[PendingPayment]) extends Data
   // @formatter:on
 
 }
