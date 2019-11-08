@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.db
 
+import java.io.File
+import java.sql.DriverManager
 import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
