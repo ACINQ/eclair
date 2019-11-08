@@ -25,11 +25,12 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 
 object Logs {
 
-  def mdc(remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, paymentId_opt: Option[UUID] = None): MDC =
+  def mdc(remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, parentPaymentId_opt: Option[UUID] = None, paymentId_opt: Option[UUID] = None): MDC =
     Seq(
-      remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs
+      remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs when they are not defined
       channelId_opt.map(c => "channelId" -> s" c:$c"),
-      paymentId_opt.map(p => "paymentId" -> s" p:$p")
+      parentPaymentId_opt.map(p => "parentPaymentId" -> s" p:$p"),
+      paymentId_opt.map(i => "paymentId" -> s" i:$i")
     ).flatten.toMap
 
   def withMdc(mdc: MDC)(f: => Any)(implicit log: DiagnosticLoggingAdapter) = {

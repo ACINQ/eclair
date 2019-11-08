@@ -190,7 +190,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(paymentId_opt = Some(id))
+    Logs.mdc(parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id))
   }
 
   initialize()
