@@ -1,7 +1,7 @@
 package fr.acinq.eclair.recovery
 
 
-import akka.actor.{ActorRef, ActorSelection, FSM, Props}
+import akka.actor.{ActorRef, FSM, Props}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ByteVector32, OP_0, OP_2, OP_CHECKMULTISIG, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Script, ScriptWitness, Transaction}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
@@ -38,7 +38,7 @@ class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCCl
     case Event(RecoveryConnect(nodeURI: NodeURI), Nothing) =>
       logger.info(s"creating new recovery peer")
       val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, nodeURI.nodeId)))
-      peer ! RecoveryPeer.Connect(nodeURI.nodeId, Some(nodeURI.address))
+      peer ! Peer.Connect(nodeURI.nodeId, Some(nodeURI.address))
       stay using DATA_WAIT_FOR_CONNECTION(nodeURI.nodeId)
 
     case Event(PeerConnected(peer, nodeId), d: DATA_WAIT_FOR_CONNECTION) if d.remoteNodeId == nodeId =>
@@ -52,13 +52,13 @@ class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCCl
       lookupFundingTx(channelId) match {
         case None =>
           logger.info(s"could not find funding transaction...disconnecting")
-          d.peer ! Disconnect
+          d.peer ! Disconnect(d.remoteNodeId)
           stop()
 
         case Some((fundingTx, outIndex)) =>
           logger.info(s"found unspent channel funding_tx=${fundingTx.txid} outputIndex=$outIndex")
           logger.info(s"asking remote to close the channel")
-          d.peer ! Error(channelId, PleasePublishYourCommitment(channelId).toString)
+          d.peer ! SendErrorToRemote(Error(channelId, PleasePublishYourCommitment(channelId).toString))
           context.system.scheduler.scheduleOnce(5 seconds)(self ! CheckCommitmentPublished)
           goto(RECOVERY_WAIT_FOR_COMMIT_PUBLISHED) using DATA_WAIT_FOR_REMOTE_PUBLISH(d.peer, reestablish, fundingTx, outIndex)
       }
@@ -188,7 +188,6 @@ object RecoveryFSM {
   case object CheckClaimPublished extends Event
   // formatter: on
 
-  // extract our funding pubkey from witness
   def recoverFundingKeyFromCommitment(nodeParams: NodeParams, commitTx: Transaction, channelReestablish: ChannelReestablish): PublicKey = {
     val (key1, key2) = extractKeysFromWitness(commitTx.txIn.head.witness, channelReestablish)
 

@@ -17,10 +17,6 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelReestablish, GossipTime
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs, NodeParams, SimpleSupervisor, wire}
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
-import scala.concurrent.duration._
-import scala.util.Random
-
 class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends FSMDiagnosticActorLogging[RecoveryPeer.State, RecoveryPeer.Data] {
 
   def recoveryFSM: ActorSelection = context.system.actorSelection(context.system / RecoveryFSM.actorName)
@@ -28,19 +24,20 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   val authenticator = context.system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
   authenticator ! self // register this actor as the receiver of the authentication handshake
 
-  startWith(DISCONNECTED, DisconnectedData(address_opt = None, channels = Map.empty, nextReconnectionDelay = nodeParams.maxReconnectInterval))
+  startWith(DISCONNECTED, DisconnectedData(address_opt = None))
 
   when(DISCONNECTED) {
+    // sent by Client after establishing a TCP connection
     case Event(p: PendingAuth, _) =>
       authenticator ! p
       stay
 
-    case Event(RecoveryPeer.Connect(_, Some(address)), d: DisconnectedData) =>
+    case Event(Peer.Connect(_, Some(address)), d: DisconnectedData) =>
       val inetAddress = Peer.hostAndPort2InetSocketAddress(address)
       context.actorOf(Client.props(nodeParams, self, inetAddress, remoteNodeId, origin_opt = Some(sender())))
       stay using d.copy(address_opt = Some(inetAddress))
 
-    case Event(Authenticated(_, transport, remoteNodeId1, address, outgoing, origin_opt), d: DisconnectedData) =>
+    case Event(Authenticated(_, transport, remoteNodeId1, address, _, origin_opt), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
@@ -52,46 +49,23 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
       transport ! localInit
 
-      val address_opt = if (outgoing) {
-        // we store the node address upon successful outgoing connection, so we can reconnect later
-        // any previous address is overwritten
-        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
-        Some(address)
-      } else None
-
-      goto(INITIALIZING) using InitializingData(address_opt, transport, d.channels, origin_opt, localInit)
+      goto(INITIALIZING) using InitializingData(Some(address), transport, origin_opt, localInit)
   }
 
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
-
-      if (Features.areSupported(remoteInit.localFeatures)) {
-        d.origin_opt.foreach(origin => origin ! "connected")
-        val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
-        log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
-        goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
-      } else {
-        log.warning(s"incompatible features, disconnecting")
-        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        d.transport ! PoisonPill
-        stay
+      if(!Features.areSupported(remoteInit.localFeatures)) {
+        log.warning(s"peer has unsupported features, continuing anyway")
       }
-
-    case Event(Authenticated(connection, _, _, _, _, origin_opt), _) =>
-      // two connections in parallel
-      origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("there is another connection attempt in progress")))
-      // we kill this one
-      log.warning(s"killing parallel connection $connection")
-      connection ! PoisonPill
-      stay
+      goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit)
 
     case Event(Terminated(actor), d: InitializingData) if actor == d.transport =>
       log.warning(s"lost connection to $remoteNodeId")
-      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels)
+      goto(DISCONNECTED) using DisconnectedData(d.address_opt)
 
-    case Event(Disconnect(nodeId), d: InitializingData) if nodeId == remoteNodeId =>
+    case Event(Peer.Disconnect(nodeId), d: InitializingData) if nodeId == remoteNodeId =>
       log.info("disconnecting")
       sender ! "disconnecting"
       d.transport ! PoisonPill
@@ -116,88 +90,27 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       // when recovering we don't immediately reply channel_reestablish/error
       stay
 
-    case Event(StateTimeout, _: ConnectedData) =>
-      // the first ping is sent after the connection has been quiet for a while
-      // we don't want to send pings right after connection, because peer will be syncing and may not be able to
-      // answer to our ping quickly enough, which will make us close the connection
-      log.debug(s"no messages sent/received for a while, start sending pings")
-      self ! SendPing
-      setStateTimeout(CONNECTED, None) // cancels the state timeout (it will be reset with forMax)
-      stay
 
-    case Event(SendPing, d: ConnectedData) =>
-      if (d.expectedPong_opt.isEmpty) {
-        // no need to use secure random here
-        val pingSize = Random.nextInt(1000)
-        val pongSize = Random.nextInt(1000)
-        val ping = wire.Ping(pongSize, ByteVector.fill(pingSize)(0))
-        setTimer(PingTimeout.toString, PingTimeout(ping), nodeParams.pingTimeout, repeat = false)
-        d.transport ! ping
-        stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
-      } else {
-        log.warning(s"can't send ping, already have one in flight")
-        stay
-      }
-
-    case Event(PingTimeout(ping), d: ConnectedData) =>
-      if (nodeParams.pingDisconnect) {
-        log.warning(s"no response to ping=$ping, closing connection")
-        d.transport ! PoisonPill
-      } else {
-        log.warning(s"no response to ping=$ping (ignored)")
-      }
-      stay
-
-    case Event(ping@wire.Ping(pongLength, _), d: ConnectedData) =>
-      d.transport ! TransportHandler.ReadAck(ping)
-      if (pongLength <= 65532) {
-        // see BOLT 1: we reply only if requested pong length is acceptable
-        d.transport ! wire.Pong(ByteVector.fill(pongLength)(0.toByte))
-      } else {
-        log.warning(s"ignoring invalid ping with pongLength=${ping.pongLength}")
-      }
-      stay
-
-    case Event(pong@wire.Pong(data), d: ConnectedData) =>
-      d.transport ! TransportHandler.ReadAck(pong)
-      d.expectedPong_opt match {
-        case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
-          // we use the pong size to correlate between pings and pongs
-          val latency = Platform.currentTime - timestamp
-          log.debug(s"received pong with latency=$latency")
-          cancelTimer(PingTimeout.toString())
-          // pings are sent periodically with some randomization
-          val nextDelay = nodeParams.pingInterval + Random.nextInt(10).seconds
-          setTimer(SendPing.toString, SendPing, nextDelay, repeat = false)
-        case None =>
-          log.debug(s"received unexpected pong with size=${data.length}")
-      }
-      stay using d.copy(expectedPong_opt = None)
-
-    case Event(err@wire.Error(channelId, reason), d: ConnectedData) =>
+    case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
       d.transport ! TransportHandler.ReadAck(err)
       log.error(s"connection-level error! channelId=$channelId reason=${new String(reason.toArray)}")
-      d.transport ! err
-      stay
-
-    case Event(msg: wire.OpenChannel, d: ConnectedData) =>
-      d.transport ! TransportHandler.ReadAck(msg)
-      log.info(s"peer sent us OpenChannel")
-      stay
+      d.transport ! wire.Error(err.channelId, UNKNOWN_CHANNEL_MESSAGE)
+      d.transport ! PoisonPill
+      goto(DISCONNECTED) using DisconnectedData(None)
 
     case Event(msg: wire.HasChannelId, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
-      log.info(s"received $msg from $remoteNodeId")
+      log.info(s"received ${msg.getClass.getSimpleName} from $remoteNodeId")
       stay
 
     case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
-      log.info(s"received $msg from $remoteNodeId")
+      log.info(s"received ${msg.getClass.getSimpleName} from $remoteNodeId")
       stay
 
-    case Event(msg: wire.RoutingMessage, d: ConnectedData) =>
-      log.info(s"peer sent us a $msg")
-      // ACK and do nothing
+    case Event(msg: wire.RoutingMessage, _) =>
+      log.info(s"peer sent us a ${msg.getClass.getSimpleName}")
+      // ACK and do nothing, we're in recovery mode
       sender ! TransportHandler.ReadAck(msg)
       stay
 
@@ -206,7 +119,7 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       d.transport forward readAck
       stay
 
-    case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
+    case Event(Peer.Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
       log.info(s"disconnecting")
       sender ! "disconnecting"
       d.transport ! PoisonPill
@@ -221,33 +134,13 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       context unwatch d.transport
       d.transport ! PoisonPill
       self ! h
-      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      goto(DISCONNECTED) using DisconnectedData(d.address_opt)
 
     case Event(unhandledMsg: LightningMessage, d: ConnectedData) =>
       // we ack unhandled messages because we don't want to block further reads on the connection
       d.transport ! TransportHandler.ReadAck(unhandledMsg)
       log.warning(s"acking unhandled message $unhandledMsg")
       stay
-  }
-
-  whenUnhandled {
-    case Event(_: Connect, _) =>
-      sender ! "already connected"
-      stay
-
-    case Event(_: Rebroadcast, _) => stay // ignored
-
-    case Event(_: RoutingState, _) => stay // ignored
-
-    case Event(_: TransportHandler.ReadAck, _) => stay // ignored
-
-    case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
-
-    case Event(SendPing, _) => stay // we got disconnected in the meantime
-
-    case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
-
-    case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
   }
 
   onTransition {
@@ -275,36 +168,17 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
 object RecoveryPeer {
 
+  val CHANNELID_ZERO = ByteVector32.Zeroes
+
   val UNKNOWN_CHANNEL_MESSAGE = ByteVector.view("unknown channel".getBytes())
 
-  sealed trait Data {
-    def address_opt: Option[InetSocketAddress]
-  }
-  case class Nothing() extends Data { override def address_opt = None }
-  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], nextReconnectionDelay: FiniteDuration = 10 seconds) extends Data
-  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, expectedPong_opt: Option[ExpectedPong] = None) extends Data
-  case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
-  case class PingTimeout(ping: Ping)
+  sealed trait Data
+  case class DisconnectedData(address_opt: Option[InetSocketAddress]) extends Data
+  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init) extends Data
 
   sealed trait State
   case object DISCONNECTED extends State
   case object INITIALIZING extends State
   case object CONNECTED extends State
-
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
-    def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
-  }
-  object Connect {
-    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
-  }
-  case object Reconnect
-  case class Disconnect(nodeId: PublicKey)
-  case object SendPing
-  case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
-
-  sealed trait ChannelId { def id: ByteVector32 }
-  case class TemporaryChannelId(id: ByteVector32) extends ChannelId
-  case class FinalChannelId(id: ByteVector32) extends ChannelId
-
 }
