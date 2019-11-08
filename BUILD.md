@@ -8,7 +8,7 @@
 
 ## Build
 
-To build the project and run the tests, simply run:
+First, make sure Docker is running. Then, to build the project and run the tests, simply run:
 
 ```shell
 mvn install
