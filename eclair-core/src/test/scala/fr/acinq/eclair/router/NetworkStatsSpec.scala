@@ -33,8 +33,8 @@ class NetworkStatsSpec extends FunSuite {
   import NetworkStatsSpec._
 
   test("network data missing") {
-    assert(NetworkStats(Nil) === None)
-    assert(NetworkStats(Seq(
+    assert(NetworkStats.computeStats(Nil) === None)
+    assert(NetworkStats.computeStats(Seq(
       PublicChannel(fakeChannelAnnouncement(randomKey.publicKey, randomKey.publicKey), randomBytes32, 10 sat, None, None),
       PublicChannel(fakeChannelAnnouncement(randomKey.publicKey, randomKey.publicKey), randomBytes32, 15 sat, None, None)
     )) === None)
@@ -49,7 +49,7 @@ class NetworkStatsSpec extends FunSuite {
       PublicChannel(fakeChannelAnnouncement(nodes(3), nodes(4)), randomBytes32, 40 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(40), 40 msat, 40)), None),
       PublicChannel(fakeChannelAnnouncement(nodes(4), nodes(5)), randomBytes32, 50 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(50), 50 msat, 50)), Some(fakeChannelUpdate2(CltvExpiryDelta(55), 55 msat, 55)))
     )
-    val Some(stats) = NetworkStats(channels)
+    val Some(stats) = NetworkStats.computeStats(channels)
     assert(stats.channels === 5)
     assert(stats.nodes === 6)
     assert(stats.capacity === Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat))
@@ -68,7 +68,7 @@ class NetworkStatsSpec extends FunSuite {
       Some(fakeChannelUpdate1(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000))),
       Some(fakeChannelUpdate2(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000)))
     ))
-    val Some(stats) = NetworkStats(channels)
+    val Some(stats) = NetworkStats.computeStats(channels)
     assert(stats.channels === 500)
     assert(stats.nodes <= 100)
     assert(1000.sat <= stats.capacity.median && stats.capacity.median <= 11000.sat)
