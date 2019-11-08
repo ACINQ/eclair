@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Protocol}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, _}
 import org.scalatest.FunSuite
