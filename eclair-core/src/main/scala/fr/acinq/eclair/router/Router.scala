@@ -205,9 +205,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.globalFeatures)
     self ! nodeAnn
 
+    log.info(s"computing network stats...")
+    val stats = NetworkStats.computeStats(initChannels.values)
+
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, None, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, stats, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -409,7 +412,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(TickComputeNetworkStats, d) =>
       if (d.channels.nonEmpty) {
         log.info("re-computing network statistics")
-        stay using d.copy(stats = NetworkStats.computeStats(d.channels.values.toSeq))
+        stay using d.copy(stats = NetworkStats.computeStats(d.channels.values))
       } else {
         log.debug("cannot compute network statistics: no public channels available")
         stay
