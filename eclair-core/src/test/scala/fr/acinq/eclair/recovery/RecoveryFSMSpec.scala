@@ -91,11 +91,6 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods with
     val bobAliceReestablish = bob2alice.expectMsgType[ChannelReestablish]
 
     val nodeParams = TestConstants.Alice.nodeParams
-    val authenticator = TestProbe()
-    val router = TestProbe()
-    val switchboard = TestProbe()
-    val watcher = TestProbe()
-    val relayer = TestProbe()
     val remotePeer = TestProbe()
     val remotePeerId = TestConstants.Bob.nodeParams.nodeId
 
@@ -110,7 +105,7 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods with
       }
     }
 
-    val recoveryFSM = TestFSMRef(new RecoveryFSM(nodeParams, authenticator.ref, router.ref, switchboard.ref, new TestWallet, watcher.ref, relayer.ref, bitcoinRpcClient))
+    val recoveryFSM = TestFSMRef(new RecoveryFSM(nodeParams, new TestWallet, bitcoinRpcClient))
     recoveryFSM.setState(RECOVERY_WAIT_FOR_CONNECTION, DATA_WAIT_FOR_CONNECTION(remotePeerId))
 
     // skip peer connection

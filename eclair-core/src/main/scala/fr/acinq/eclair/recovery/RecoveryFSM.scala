@@ -1,6 +1,5 @@
 package fr.acinq.eclair.recovery
 
-import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSelection, FSM, Props}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ByteVector32, OP_0, OP_2, OP_CHECKMULTISIG, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Script, ScriptWitness, Transaction}
@@ -11,7 +10,6 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBi
 import fr.acinq.eclair.channel.{HasCommitments, Helpers, PleasePublishYourCommitment}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.{ConnectedData, Disconnect}
-import fr.acinq.eclair.io.Switchboard.peerActorName
 import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnected, Switchboard}
 import fr.acinq.eclair.recovery.RecoveryFSM._
 import fr.acinq.eclair.transactions.Transactions
@@ -23,7 +21,7 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.Success
 
-class RecoveryFSM(val nodeParams: NodeParams, authenticator: ActorRef, router: ActorRef, switchboard: ActorRef, val wallet: EclairWallet, blockchain: ActorRef, relayer: ActorRef, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends FSM[State, Data] with Logging {
+class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends FSM[State, Data] with Logging {
 
   implicit val ec = context.system.dispatcher
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
@@ -34,11 +32,14 @@ class RecoveryFSM(val nodeParams: NodeParams, authenticator: ActorRef, router: A
   startWith(RECOVERY_WAIT_FOR_CONNECTION, Nothing)
 
   when(RECOVERY_WAIT_FOR_CONNECTION) {
+    case Event('connected, _) =>
+      stay
+
     case Event(RecoveryConnect(nodeURI: NodeURI), Nothing) =>
       logger.info(s"creating new recovery peer")
-      val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, nodeURI.nodeId, authenticator, blockchain, router, relayer, wallet)))
-      peer ! Peer.Init(previousKnownAddress = None, storedChannels = Set.empty)
-      peer ! Peer.Connect(nodeURI.nodeId, Some(nodeURI.address))
+      val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, nodeURI.nodeId)))
+      peer ! RecoveryPeer.Init(previousKnownAddress = None, storedChannels = Set.empty)
+      peer ! RecoveryPeer.Connect(nodeURI.nodeId, Some(nodeURI.address))
       stay using DATA_WAIT_FOR_CONNECTION(nodeURI.nodeId)
 
     case Event(PeerConnected(peer, nodeId), d: DATA_WAIT_FOR_CONNECTION) if d.remoteNodeId == nodeId =>
@@ -164,8 +165,7 @@ object RecoveryFSM {
 
   val actorName = "recovery-fsm-actor"
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, router: ActorRef, switchboard: ActorRef, wallet: EclairWallet, blockchain: ActorRef, relayer: ActorRef, bitcoinJsonRPCClient: BitcoinJsonRPCClient) =
-    Props(new RecoveryFSM(nodeParams, authenticator, router, switchboard, wallet, blockchain, relayer, bitcoinJsonRPCClient))
+  def props(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCClient: BitcoinJsonRPCClient) = Props(new RecoveryFSM(nodeParams, wallet, bitcoinJsonRPCClient))
 
   // formatter: off
   sealed trait State
@@ -217,41 +217,6 @@ object RecoveryFSM {
     val toRemoteScriptPubkey = Script.write(Script.pay2wpkh(localPaymentKey))
 
     commitTx.txOut.exists(_.publicKeyScript == toRemoteScriptPubkey)
-  }
-
-}
-
-class RecoverySwitchBoard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet) {
-
-  override def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]): ActorRef = {
-    getPeer(remoteNodeId) match {
-      case Some(peer) => peer
-      case None =>
-        log.info(s"creating new recovery peer current=${context.children.size}")
-        val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet)), name = peerActorName(remoteNodeId))
-        peer ! Peer.Init(previousKnownAddress, offlineChannels)
-        peer
-    }
-  }
-
-}
-
-class RecoveryPeer(override val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet) {
-
-  def recoveryFSM: ActorSelection = context.system.actorSelection(context.system / RecoveryFSM.actorName)
-
-  override def whenConnected: StateFunction = {
-    case Event(SendErrorToRemote(error), d: ConnectedData) =>
-      d.transport ! error
-      stay
-
-    case Event(msg: ChannelReestablish, d: ConnectedData) =>
-      d.transport ! TransportHandler.ReadAck(msg)
-      recoveryFSM ! ChannelFound(msg.channelId, msg)
-      // when recovering we don't immediately reply channel_reestablish/error
-      stay
-
-    case event => super.whenConnected(event)
   }
 
 }

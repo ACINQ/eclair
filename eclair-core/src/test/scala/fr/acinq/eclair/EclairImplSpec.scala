@@ -66,7 +66,6 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
       switchboard.ref,
       paymentInitiator.ref,
       server.ref,
-      authenticator.ref,
       new TestWallet()
     )
 

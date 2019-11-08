@@ -213,9 +213,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
   }
 
-  when(CONNECTED)(whenConnected)
-
-  def whenConnected: StateFunction = {
+  when(CONNECTED) {
     case Event(StateTimeout, _: ConnectedData) =>
       // the first ping is sent after the connection has been quiet for a while
       // we don't want to send pings right after connection, because peer will be syncing and may not be able to
@@ -359,8 +357,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
       /**
-        * Send and count in a single iteration
-        */
+       * Send and count in a single iteration
+       */
       def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[ActorRef]]): Int = msgs.foldLeft(0) {
         case (count, (_, origins)) if origins.contains(self) =>
           // the announcement came from this peer, we don't send it back
