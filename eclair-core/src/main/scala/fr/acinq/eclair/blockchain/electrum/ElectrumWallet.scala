@@ -606,7 +606,7 @@ object ElectrumWallet {
 
     val chainHash = blockchain.chainHash
 
-    def keyStore = walletType match {
+    val keyStore = walletType match {
       case P2SH_SEGWIT => new BIP49KeyStore(master, chainHash)
       case BECH32      => new BIP84KeyStore(master, chainHash)
     }
