@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{DecryptedPacket, PacketAndSecrets}
-import fr.acinq.eclair.payment.PaymentLifecycle._
+import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, PerHopPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
