@@ -7,7 +7,6 @@ import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Authenticator.{Authenticated, PendingAuth}
 import fr.acinq.eclair.io._
@@ -29,14 +28,7 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   val authenticator = context.system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
   authenticator ! self // register this actor as the receiver of the authentication handshake
 
-  startWith(INSTANTIATING, RecoveryPeer.Nothing())
-
-  when(INSTANTIATING) {
-    case Event(Init(previousKnownAddress, _), _) =>
-      val channels = Map.empty[FinalChannelId, ActorRef]
-      val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
-      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels, firstNextReconnectionDelay) // when we restart, we will attempt to reconnect right away, but then we'll wait
-  }
+  startWith(DISCONNECTED, DisconnectedData(address_opt = None, channels = Map.empty, nextReconnectionDelay = nodeParams.maxReconnectInterval))
 
   when(DISCONNECTED) {
     case Event(p: PendingAuth, _) =>
@@ -239,17 +231,11 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   }
 
   whenUnhandled {
-    case Event(_: Peer.Connect, _) =>
+    case Event(_: Connect, _) =>
       sender ! "already connected"
       stay
 
-    case Event(_: Peer.OpenChannel, _) =>
-      sender ! Status.Failure(new RuntimeException("not connected"))
-      stay
-
     case Event(_: Rebroadcast, _) => stay // ignored
-
-    case Event(_: DelayedRebroadcast, _) => stay // ignored
 
     case Event(_: RoutingState, _) => stay // ignored
 
@@ -262,20 +248,6 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
-
-    case Event(_: BadMessage, _) => stay // we got disconnected while syncing
-  }
-
-  /**
-    * The transition INSTANTIATING -> DISCONNECTED happens in 2 scenarios
-    *   - Manual connection to a new peer: then when(DISCONNECTED) we expect a Peer.Connect from the switchboard
-    *   - Eclair restart: The switchboard creates the peers and sends Init and then Peer.Reconnect to trigger reconnection attempts
-    *
-    * So when we see this transition we NO-OP because we don't want to start a Reconnect timer but the peer will receive the trigger
-    * (Connect/Reconnect) messages from the switchboard.
-    */
-  onTransition {
-    case INSTANTIATING -> DISCONNECTED => ()
   }
 
   onTransition {
@@ -307,22 +279,19 @@ object RecoveryPeer {
 
   sealed trait Data {
     def address_opt: Option[InetSocketAddress]
-    def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
-  case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
+  case class Nothing() extends Data { override def address_opt = None }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], nextReconnectionDelay: FiniteDuration = 10 seconds) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, expectedPong_opt: Option[ExpectedPong] = None) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
   sealed trait State
-  case object INSTANTIATING extends State
   case object DISCONNECTED extends State
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
   case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
@@ -333,17 +302,6 @@ object RecoveryPeer {
   case class Disconnect(nodeId: PublicKey)
   case object SendPing
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
-
-  case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
-
-  case class DelayedRebroadcast(rebroadcast: Rebroadcast)
-
-  sealed trait BadMessage
-  case class InvalidSignature(r: RoutingMessage) extends BadMessage
-  case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
-  case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
-
-  case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   sealed trait ChannelId { def id: ByteVector32 }
   case class TemporaryChannelId(id: ByteVector32) extends ChannelId

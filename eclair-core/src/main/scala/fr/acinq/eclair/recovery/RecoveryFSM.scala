@@ -38,7 +38,6 @@ class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCCl
     case Event(RecoveryConnect(nodeURI: NodeURI), Nothing) =>
       logger.info(s"creating new recovery peer")
       val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, nodeURI.nodeId)))
-      peer ! RecoveryPeer.Init(previousKnownAddress = None, storedChannels = Set.empty)
       peer ! RecoveryPeer.Connect(nodeURI.nodeId, Some(nodeURI.address))
       stay using DATA_WAIT_FOR_CONNECTION(nodeURI.nodeId)
 
