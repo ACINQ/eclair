@@ -297,20 +297,33 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.features.bitmask === BitVector.empty)
   }
 
-  test("payment request features") {
+  test("supported payment request features") {
+
+    case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
+
     val featureBits = Map(
-      Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, Features.PAYMENT_SECRET_OPTIONAL) -> true,
-      Features(Features.BASIC_MULTI_PART_PAYMENT_MANDATORY, Features.PAYMENT_SECRET_MANDATORY) -> true,
-      Features(Features.BASIC_MULTI_PART_PAYMENT_MANDATORY, Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) -> true,
-      Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, 9, 13) -> true,
-      Features(BitVector.empty) -> false,
-      Features(7) -> false,
-      Features(9, 100) -> false
+      Features(bin"               00000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00001") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00010") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00101") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               01001") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               01010") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               10000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0000100000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      Features(bin"          0000110000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0001100000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
+      Features(bin"          0001000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0100000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"     000010000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"     001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"00000100000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"00010000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false)
     )
 
-    for ((features, allowMultiPart) <- featureBits) {
+    for ((features, res) <- featureBits) {
       val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(features))
-      assert(pr.features.allowMultiPart === allowMultiPart)
+      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported) === res)
       assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
     }
   }

@@ -89,7 +89,7 @@ object PaymentInitiator {
                                paymentHash: ByteVector32,
                                targetNodeId: PublicKey,
                                paymentRequest: Option[PaymentRequest],
-                               storeInDb: Boolean,
+                               storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean)
 
 }

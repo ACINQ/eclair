@@ -53,18 +53,17 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   val id = cfg.id
 
-  startWith(PAYMENT_INIT, PaymentInit(None, None, None))
+  startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
 
-  when(PAYMENT_INIT) {
-    case Event(r: SendMultiPartPayment, d: PaymentInit) =>
-      require(d.request.isEmpty, "multi-part payment lifecycle must receive only one payment request")
+  when(WAIT_FOR_PAYMENT_REQUEST) {
+    case Event(r: SendMultiPartPayment, _) =>
       router ! GetNetworkStats
-      stay using d.copy(sender = Some(sender()), request = Some(r))
+      goto(WAIT_FOR_NETWORK_STATS) using WaitingForNetworkStats(sender, r)
+  }
 
-    case Event(s: GetNetworkStatsResponse, d: PaymentInit) =>
-      require(d.request.nonEmpty && d.sender.nonEmpty, "multi-part payment request must be set")
+  when(WAIT_FOR_NETWORK_STATS) {
+    case Event(s: GetNetworkStatsResponse, d: WaitingForNetworkStats) =>
       log.debug("network stats: {}", s.stats.map(_.capacity))
-      val r = d.request.get
       // If we don't have network stats it's ok, we'll use data about our local channels instead.
       // We tell the router to compute those stats though: in case our payment attempt fails, they will be available for
       // another payment attempt.
@@ -72,13 +71,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         router ! TickComputeNetworkStats
       }
       relayer ! GetOutgoingChannels()
-      goto(PAYMENT_IN_PROGRESS) using PaymentProgress(d.sender.get, r, s.stats, r.totalAmount, r.maxAttempts, Map.empty, Nil)
+      goto(WAIT_FOR_CHANNEL_BALANCES) using PaymentProgress(d.sender, d.request, s.stats, d.request.totalAmount, d.request.maxAttempts, Map.empty, Nil)
   }
 
-  when(PAYMENT_IN_PROGRESS) {
-    case Event(OutgoingChannels(channels), d: PaymentProgress) if d.toSend > 0.msat =>
+  when(WAIT_FOR_CHANNEL_BALANCES) {
+    case Event(OutgoingChannels(channels), d: PaymentProgress) =>
       log.debug("trying to send {} with local channels: {}", d.toSend, channels.map(_.toUsableBalance).mkString(","))
-      val randomize = d.remainingAttempts != d.request.maxAttempts // we randomize channel selection when we retry
+      val randomize = d.failures.nonEmpty // we randomize channel selection when we retry
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, channels, d.networkStats, d.request, randomize)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
@@ -86,25 +85,33 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
         pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
-        stay using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending)
+        goto(PAYMENT_IN_PROGRESS) using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending)
       }
 
-    case Event(pf: PaymentFailed, d: PaymentProgress) =>
-      val paymentTimedOut = pf.failures.exists {
-        case f: RemoteFailure => f.e.failureMessage == PaymentTimeout
-        case _ => false
-      }
-      if (paymentTimedOut) {
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id)
-      } else if (d.remainingAttempts == 0) {
-        val failure = LocalFailure(new RuntimeException("payment attempts exhausted without success"))
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id)
-      } else {
-        // Get updated local channels (will take into account the child payments that are in-flight).
-        if (d.toSend == 0.msat) relayer ! GetOutgoingChannels()
+    case Event(pf: PaymentFailed, d: PaymentProgress) => handleChildFailure(pf, d) match {
+      case Some(paymentAborted) =>
+        goto(PAYMENT_ABORTED) using paymentAborted
+      case None =>
         val failedPayment = d.pending(pf.id)
         stay using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures)
-      }
+    }
+
+    case Event(ps: PaymentSent, d: PaymentProgress) =>
+      require(ps.parts.length == 1, "child payment must contain only one part")
+      // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
+      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.id)
+  }
+
+  when(PAYMENT_IN_PROGRESS) {
+    case Event(pf: PaymentFailed, d: PaymentProgress) => handleChildFailure(pf, d) match {
+      case Some(paymentAborted) =>
+        goto(PAYMENT_ABORTED) using paymentAborted
+      case None =>
+        // Get updated local channels (will take into account the child payments that are in-flight).
+        relayer ! GetOutgoingChannels()
+        val failedPayment = d.pending(pf.id)
+        goto(WAIT_FOR_CHANNEL_BALANCES) using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures)
+    }
 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
@@ -187,8 +194,23 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (cfg.publishEvent) context.system.eventStream.publish(e)
   }
 
+  def handleChildFailure(pf: PaymentFailed, d: PaymentProgress): Option[PaymentAborted] = {
+    val paymentTimedOut = pf.failures.exists {
+      case f: RemoteFailure => f.e.failureMessage == PaymentTimeout
+      case _ => false
+    }
+    if (paymentTimedOut) {
+      Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
+    } else if (d.remainingAttempts == 0) {
+      val failure = LocalFailure(new RuntimeException("payment attempts exhausted without success"))
+      Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
+    } else {
+      None
+    }
+  }
+
   override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(paymentId_opt = Some(id))
+    Logs.mdc(parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id))
   }
 
   initialize()
@@ -212,20 +234,25 @@ object MultiPartPaymentLifecycle {
 
   // @formatter:off
   sealed trait State
-  case object PAYMENT_INIT extends State
+  case object WAIT_FOR_PAYMENT_REQUEST  extends State
+  case object WAIT_FOR_NETWORK_STATS  extends State
+  case object WAIT_FOR_CHANNEL_BALANCES extends State
   case object PAYMENT_IN_PROGRESS extends State
   case object PAYMENT_ABORTED extends State
   case object PAYMENT_SUCCEEDED extends State
 
   sealed trait Data
   /**
-   * During initialization, we collect the data we need to correctly split payments.
+   * During initialization, we wait for a multi-part payment request containing the total amount to send.
+   */
+  case object WaitingForRequest extends Data
+  /**
+   * During initialization, we collect network statistics to help us decide how to best split a big payment.
    *
    * @param sender       the sender of the payment request.
-   * @param networkStats network statistics help us decide how to best split a big payment.
    * @param request      payment request containing the total amount to send.
    */
-  case class PaymentInit(sender: Option[ActorRef], networkStats: Option[NetworkStats], request: Option[SendMultiPartPayment]) extends Data
+  case class WaitingForNetworkStats(sender: ActorRef, request: SendMultiPartPayment) extends Data
   /**
    * While the payment is in progress, we listen to child payment failures. When we receive such failures, we request
    * our up-to-date local channels balances and retry the failed child payments with a potentially different route.
@@ -294,6 +321,7 @@ object MultiPartPaymentLifecycle {
   /** Compute the maximum amount we should send in a single child payment. */
   private def computeThreshold(networkStats: Option[NetworkStats], localChannels: Seq[OutgoingChannel]): MilliSatoshi = {
     import com.google.common.math.Quantiles.median
+
     import scala.collection.JavaConverters.asJavaCollectionConverter
     // We use network statistics with a random factor to decide on the maximum amount for child payments.
     // The current choice of parameters is completely arbitrary and could be made configurable.

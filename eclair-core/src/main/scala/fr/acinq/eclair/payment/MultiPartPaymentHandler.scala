@@ -20,7 +20,9 @@ import akka.actor.{ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, LongToBtcAmount, MilliSatoshi, NodeParams, wire}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, MilliSatoshi, NodeParams, wire}
+
+import scala.collection.immutable.Queue
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -38,22 +40,23 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
 
   setTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry, repeat = false)
 
-  startWith(WAITING_FOR_HTLC, WaitingForHtlc(0 msat, Nil))
+  startWith(WAITING_FOR_HTLC, WaitingForHtlc(Queue.empty))
 
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
-      goto(PAYMENT_FAILED) using PaymentFailed(d.paidAmount, wire.PaymentTimeout, d.parts)
+      goto(PAYMENT_FAILED) using PaymentFailed(wire.PaymentTimeout, d.parts)
 
     case Event(MultiPartHtlc(totalAmount2, htlc), d: WaitingForHtlc) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
-      val pp = PartialPayment(htlc.amountMsat, htlc.channelId)
+      val pp = PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender)
+      val updatedParts = d.parts :+ pp
       if (totalAmount != totalAmount2) {
         log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now $totalAmount2")
-        goto(PAYMENT_FAILED) using PaymentFailed(d.paidAmount, IncorrectOrUnknownPaymentDetails(totalAmount2, nodeParams.currentBlockHeight), PendingPayment(htlc.id, pp, sender) :: d.parts)
-      } else if (htlc.amountMsat + d.paidAmount >= totalAmount) {
-        goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(htlc.amountMsat + d.paidAmount, PendingPayment(htlc.id, pp, sender) :: d.parts)
+        goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(totalAmount2, nodeParams.currentBlockHeight), updatedParts)
+      } else if (d.paidAmount + htlc.amountMsat >= totalAmount) {
+        goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
       } else {
-        stay using d.copy(paidAmount = d.paidAmount + htlc.amountMsat, parts = PendingPayment(htlc.id, pp, sender) :: d.parts)
+        stay using d.copy(parts = updatedParts)
       }
   }
 
@@ -66,37 +69,40 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
       log.info(s"received extraneous htlc for payment hash $paymentHash")
       parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender), None)
       stay
-
-    case Event("ok", _) => stay
   }
 
   when(PAYMENT_FAILED) {
     // If we receive htlcs after the multi-part payment has expired, we must fail them.
     // The LocalPaymentHandler will create a new instance of MultiPartPaymentHandler to handle a new attempt.
-    case Event(MultiPartHtlc(_, htlc), PaymentFailed(_, failure, _)) =>
+    case Event(MultiPartHtlc(_, htlc), PaymentFailed(failure, _)) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
       parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender), Some(failure))
       stay
+  }
 
+  whenUnhandled {
     case Event("ok", _) => stay
   }
 
   onTransition {
+    case WAITING_FOR_HTLC -> WAITING_FOR_HTLC => () // don't do anything if we stay in that state
+    case WAITING_FOR_HTLC -> _ => cancelTimer(PaymentTimeout.toString)
+  }
+
+  onTransition {
     case _ -> PAYMENT_SUCCEEDED =>
-      cancelTimer(PaymentTimeout.toString)
       nextStateData match {
-        case PaymentSucceeded(_, parts) =>
+        case PaymentSucceeded(parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
-          parent ! MultiPartHtlcSucceeded(paymentHash, parts.reverse)
+          parent ! MultiPartHtlcSucceeded(paymentHash, parts)
         case d =>
           log.error(s"unexpected payment success data ${d.getClass.getSimpleName}")
       }
     case _ -> PAYMENT_FAILED =>
-      cancelTimer(PaymentTimeout.toString)
       nextStateData match {
-        case PaymentFailed(_, failure, parts) =>
+        case PaymentFailed(failure, parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
-          parent ! MultiPartHtlcFailed(paymentHash, failure, parts.reverse)
+          parent ! MultiPartHtlcFailed(paymentHash, failure, parts)
         case d =>
           log.error(s"unexpected payment failure data ${d.getClass.getSimpleName}")
       }
@@ -119,9 +125,9 @@ object MultiPartPaymentHandler {
   /** An incoming partial payment. */
   case class MultiPartHtlc(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc)
   /** We successfully received all parts of the payment. */
-  case class MultiPartHtlcSucceeded(paymentHash: ByteVector32, parts: List[PendingPayment])
+  case class MultiPartHtlcSucceeded(paymentHash: ByteVector32, parts: Queue[PendingPayment])
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */
-  case class MultiPartHtlcFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: List[PendingPayment])
+  case class MultiPartHtlcFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: Queue[PendingPayment])
   /** We received an extraneous payment after we reached a final state (succeeded or failed). */
   case class ExtraHtlcReceived(paymentHash: ByteVector32, payment: PendingPayment, failure: Option[FailureMessage])
   // @formatter:on
@@ -134,10 +140,13 @@ object MultiPartPaymentHandler {
   // @formatter:on
 
   // @formatter:off
-  sealed trait Data
-  case class WaitingForHtlc(paidAmount: MilliSatoshi, parts: List[PendingPayment]) extends Data
-  case class PaymentSucceeded(paidAmount: MilliSatoshi, parts: List[PendingPayment]) extends Data
-  case class PaymentFailed(paidAmount: MilliSatoshi, failure: FailureMessage, parts: List[PendingPayment]) extends Data
+  sealed trait Data {
+    def parts: Queue[PendingPayment]
+    lazy val paidAmount = parts.map(_.payment.amount).sum
+  }
+  case class WaitingForHtlc(parts: Queue[PendingPayment]) extends Data
+  case class PaymentSucceeded(parts: Queue[PendingPayment]) extends Data
+  case class PaymentFailed(failure: FailureMessage, parts: Queue[PendingPayment]) extends Data
   // @formatter:on
 
 }

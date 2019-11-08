@@ -20,8 +20,7 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0} %X{nodeId}%X{channelId}%X{paymentId} -
-                %msg%ex{12}%n
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n
             </pattern>
         </encoder>
     </appender>
@@ -32,7 +31,7 @@
             <level>WARN</level>
         </filter>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0} %X{nodeId}%X{channelId}%X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>-->
 
@@ -40,7 +39,7 @@
         <file>eclair.log</file>
         <append>false</append>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0} %X{nodeId}%X{channelId}%X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>-->
 

@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
-import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector}
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -141,9 +141,9 @@ object OnionCodecs {
 
   private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | tu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
 
-  private val outgoingChannelId: Codec[OutgoingChannelId] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[OutgoingChannelId]
+  private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
 
-  private val paymentSecret: Codec[PaymentSecret] = (("length" | constant(hex"20")) :: ("payment_secret" | bytes32)).as[PaymentSecret]
+  private val paymentSecret: Codec[PaymentSecret] = variableSizeBytesLong(varintoverflow, "payment_secret" | bytes32).as[PaymentSecret]
 
   private val onionTlvCodec = discriminated[OnionTlv].by(varint)
     .typecase(UInt64(1), totalAmount)

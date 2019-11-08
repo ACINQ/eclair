@@ -22,7 +22,7 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet, Satoshi, Transaction}
-import fr.acinq.eclair.TestConstants.{TestFeeEstimator, defaultBlockHeight}
+import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Commitments
@@ -93,32 +93,35 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("get network statistics and usable balances before paying") { f =>
     import f._
 
-    assert(payFsm.stateName === PAYMENT_INIT)
+    assert(payFsm.stateName === WAIT_FOR_PAYMENT_REQUEST)
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, b, 1500 * 1000 msat, expiry, 1)
     sender.send(payFsm, payment)
     router.expectMsg(GetNetworkStats)
+    assert(payFsm.stateName === WAIT_FOR_NETWORK_STATS)
     router.send(payFsm, GetNetworkStatsResponse(Some(emptyStats)))
     relayer.expectMsg(GetOutgoingChannels())
-    awaitCond(payFsm.stateName === PAYMENT_IN_PROGRESS)
+    awaitCond(payFsm.stateName === WAIT_FOR_CHANNEL_BALANCES)
     assert(payFsm.stateData.asInstanceOf[PaymentProgress].networkStats === Some(emptyStats))
   }
 
   test("get network statistics not available") { f =>
     import f._
 
-    assert(payFsm.stateName === PAYMENT_INIT)
+    assert(payFsm.stateName === WAIT_FOR_PAYMENT_REQUEST)
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, b, 2500 * 1000 msat, expiry, 1)
     sender.send(payFsm, payment)
     router.expectMsg(GetNetworkStats)
+    assert(payFsm.stateName === WAIT_FOR_NETWORK_STATS)
     router.send(payFsm, GetNetworkStatsResponse(None))
     // If network stats aren't available we'll use local channel balance information instead.
     // We should ask the router to compute statistics (for next payment attempts).
     router.expectMsg(TickComputeNetworkStats)
     relayer.expectMsg(GetOutgoingChannels())
-    awaitCond(payFsm.stateName === PAYMENT_IN_PROGRESS)
+    awaitCond(payFsm.stateName === WAIT_FOR_CHANNEL_BALANCES)
     assert(payFsm.stateData.asInstanceOf[PaymentProgress].networkStats === None)
 
     relayer.send(payFsm, localChannels())
+    awaitCond(payFsm.stateName === PAYMENT_IN_PROGRESS)
     waitUntilAmountSent(f, payment.totalAmount)
     val payments = payFsm.stateData.asInstanceOf[PaymentProgress].pending.values
     assert(payments.size > 1)

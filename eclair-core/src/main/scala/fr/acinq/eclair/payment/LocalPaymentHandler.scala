@@ -70,14 +70,12 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           sender ! cmdFail
         case None =>
           log.info(s"received payment for paymentHash=${p.add.paymentHash} amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
-          pendingPayments.get(p.add.paymentHash) match {
-            case Some((_, handler)) =>
-              handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
-            case None =>
-              val handler = context.actorOf(MultiPartPaymentHandler.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, self))
-              handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
-              context become main(pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler)))
+          val handler = pendingPayments.get(p.add.paymentHash) match {
+            case Some((_, handler)) => handler
+            case None => context.actorOf(MultiPartPaymentHandler.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, self))
           }
+          handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
+          context become main(pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler)))
       }
       case None =>
         sender ! CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)

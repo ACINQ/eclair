@@ -27,6 +27,7 @@ import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, T
 import org.scalatest.FunSuiteLike
 import scodec.bits.ByteVector
 
+import scala.collection.immutable.Queue
 import scala.concurrent.duration._
 
 /**
@@ -59,7 +60,7 @@ class MultiPartPaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunS
     val CurrentState(_, WAITING_FOR_HTLC) = monitor.expectMsgClass(classOf[CurrentState[_]])
     val Transition(_, WAITING_FOR_HTLC, PAYMENT_FAILED) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    f.parent.expectMsg(MultiPartHtlcFailed(paymentHash, wire.PaymentTimeout, Nil))
+    f.parent.expectMsg(MultiPartHtlcFailed(paymentHash, wire.PaymentTimeout, Queue.empty))
     f.eventListener.expectNoMsg(50 millis)
   }
 
