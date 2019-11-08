@@ -23,12 +23,12 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.IncomingPaymentStatus
-import fr.acinq.eclair.payment.LocalPaymentHandler.{GetPendingPayments, PendingPayments}
-import fr.acinq.eclair.payment.MultiPartPaymentHandler.PendingPayment
-import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
+import fr.acinq.eclair.payment.receive.MultiPartHandler.{GetPendingPayments, PendingPayments, ReceivePayment}
+import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.PendingPayment
+import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, randomKey}
 import org.scalatest.{Outcome, fixture}
@@ -41,19 +41,19 @@ import scala.concurrent.duration._
 
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, handler: TestActorRef[LocalPaymentHandler], eventListener: TestProbe, sender: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, handler: TestActorRef[PaymentHandler], eventListener: TestProbe, sender: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(30 seconds) {
       val nodeParams = Alice.nodeParams
-      val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
       val eventListener = TestProbe()
       system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, CltvExpiryDelta(12).toCltvExpiry(nodeParams.currentBlockHeight), handler, eventListener, TestProbe())))
     }
   }
 
-  test("LocalPaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and adds payment in DB") { f =>
+  test("PaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and adds payment in DB") { f =>
     import f._
 
     val amountMsat = 42000 msat
@@ -162,7 +162,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(sender.expectMsgType[PaymentRequest].routingInfo === Nil)
   }
 
-  test("LocalPaymentHandler should reject incoming payments if the payment request is expired") { f =>
+  test("PaymentHandler should reject incoming payments if the payment request is expired") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "some desc", expirySeconds_opt = Some(0)))
@@ -178,7 +178,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(incoming.paymentRequest.isExpired && incoming.status === IncomingPaymentStatus.Expired)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment if the payment request is expired") { f =>
+  test("PaymentHandler should reject incoming multi-part payment if the payment request is expired") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "multi-part expired", expirySeconds_opt = Some(0), allowMultiPart = true))
@@ -194,7 +194,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(incoming.paymentRequest.isExpired && incoming.status === IncomingPaymentStatus.Expired)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment if the payment request does not allow it") { f =>
+  test("PaymentHandler should reject incoming multi-part payment if the payment request does not allow it") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "no multi-part support"))
@@ -207,7 +207,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment with an invalid expiry") { f =>
+  test("PaymentHandler should reject incoming multi-part payment with an invalid expiry") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "multi-part invalid expiry", allowMultiPart = true))
@@ -220,7 +220,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment with an unknown payment hash") { f =>
+  test("PaymentHandler should reject incoming multi-part payment with an unknown payment hash") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "multi-part unknown payment hash", allowMultiPart = true))
@@ -233,7 +233,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment with a total amount too low") { f =>
+  test("PaymentHandler should reject incoming multi-part payment with a total amount too low") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "multi-part total amount too low", allowMultiPart = true))
@@ -246,7 +246,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment with a total amount too high") { f =>
+  test("PaymentHandler should reject incoming multi-part payment with a total amount too high") { f =>
     import f._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "multi-part total amount too low", allowMultiPart = true))
@@ -259,7 +259,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should reject incoming multi-part payment with an invalid payment secret") { f =>
+  test("PaymentHandler should reject incoming multi-part payment with an invalid payment secret") { f =>
     import f._
     import fr.acinq.eclair.wire.Onion.FinalTlvPayload
     import fr.acinq.eclair.wire.OnionTlv._
@@ -280,9 +280,9 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should handle multi-part payment timeout") { f =>
+  test("PaymentHandler should handle multi-part payment timeout") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 200 millis)
-    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
     val (sender1, sender2) = (TestProbe(), TestProbe())
 
     // Partial payment missing additional parts.
@@ -309,7 +309,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     })
 
     // Extraneous HTLCs should be failed.
-    sender1.send(handler, MultiPartPaymentHandler.ExtraHtlcReceived(pr1.paymentHash, PendingPayment(42, PartialPayment(200 msat, ByteVector32.One), sender1.ref), Some(PaymentTimeout)))
+    sender1.send(handler, MultiPartPaymentFSM.ExtraHtlcReceived(pr1.paymentHash, PendingPayment(42, PartialPayment(200 msat, ByteVector32.One), sender1.ref), Some(PaymentTimeout)))
     sender1.expectMsg(CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true))
 
     // The payment should still be pending in DB.
@@ -317,9 +317,9 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     assert(incomingPayment.status === IncomingPaymentStatus.Pending)
   }
 
-  test("LocalPaymentHandler should handle multi-part payment success") { f =>
+  test("PaymentHandler should handle multi-part payment success") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis)
-    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
     val (sender1, sender2) = (TestProbe(), TestProbe())
 
     sender1.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee", allowMultiPart = true))
@@ -351,7 +351,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     })
 
     // Extraneous HTLCs should be fulfilled.
-    sender1.send(handler, MultiPartPaymentHandler.ExtraHtlcReceived(pr.paymentHash, PendingPayment(44, PartialPayment(200 msat, ByteVector32.One, 0), sender1.ref), None))
+    sender1.send(handler, MultiPartPaymentFSM.ExtraHtlcReceived(pr.paymentHash, PendingPayment(44, PartialPayment(200 msat, ByteVector32.One, 0), sender1.ref), None))
     sender1.expectMsg(CMD_FULFILL_HTLC(44, fulfill1.r, commit = true))
     assert(f.eventListener.expectMsgType[PaymentReceived].amount === 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
@@ -361,9 +361,9 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     probe.expectMsgType[PendingPayments].paymentHashes.isEmpty
   }
 
-  test("LocalPaymentHandler should handle multi-part payment timeout then success") { f =>
+  test("PaymentHandler should handle multi-part payment timeout then success") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 250 millis)
-    val handler = TestActorRef[LocalPaymentHandler](LocalPaymentHandler.props(nodeParams))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams))
 
     f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 coffee, no sugar", allowMultiPart = true))
     val pr = f.sender.expectMsgType[PaymentRequest]

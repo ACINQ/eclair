@@ -28,11 +28,12 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.MultiPartPaymentLifecycle._
-import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentConfig
-import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx

@@ -23,10 +23,11 @@ import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.payment.HtlcGenerationSpec._
-import fr.acinq.eclair.payment.MultiPartPaymentLifecycle.SendMultiPartPayment
-import fr.acinq.eclair.payment.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest}
-import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.PaymentInitiator
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest}
+import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.router.RouteParams
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomKey}
@@ -87,7 +88,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmountMsat), paymentHash, randomKey, "Some invoice", features = Some(Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
     val req = SendPaymentRequest(finalAmountMsat + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
-    val id  = sender.expectMsgType[UUID]
+    val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, c, Some(pr), storeInDb = true, publishEvent = true))
     multiPartPayFsm.expectMsg(SendMultiPartPayment(paymentHash, pr.paymentSecret.get, c, finalAmountMsat + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1))
   }

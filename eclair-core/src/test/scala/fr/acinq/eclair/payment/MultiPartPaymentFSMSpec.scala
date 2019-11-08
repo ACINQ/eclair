@@ -20,8 +20,9 @@ import akka.actor.ActorSystem
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.payment.MultiPartPaymentHandler.PendingPayment
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
+import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
+import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.PendingPayment
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, randomBytes32, wire}
 import org.scalatest.FunSuiteLike
@@ -34,19 +35,19 @@ import scala.concurrent.duration._
  * Created by t-bast on 18/07/2019.
  */
 
-class MultiPartPaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
-  import MultiPartPaymentHandler._
-  import MultiPartPaymentHandlerSpec._
+  import MultiPartPaymentFSM._
+  import MultiPartPaymentFSMSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, handler: TestActorRef[MultiPartPaymentHandler], parent: TestProbe, eventListener: TestProbe, sender1: TestProbe, sender2: TestProbe) {
+  case class FixtureParam(nodeParams: NodeParams, handler: TestActorRef[MultiPartPaymentFSM], parent: TestProbe, eventListener: TestProbe, sender1: TestProbe, sender2: TestProbe) {
     def currentBlockHeight: Long = nodeParams.currentBlockHeight
   }
 
   def createFixture(paymentTimeout: FiniteDuration, totalAmount: MilliSatoshi): FixtureParam = {
     val parent = TestProbe()
     val nodeParams = TestConstants.Alice.nodeParams.copy(multiPartPaymentExpiry = paymentTimeout)
-    val handler = TestActorRef[MultiPartPaymentHandler](props(nodeParams, paymentHash, totalAmount, parent.ref))
+    val handler = TestActorRef[MultiPartPaymentFSM](props(nodeParams, paymentHash, totalAmount, parent.ref))
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
     FixtureParam(nodeParams, handler, parent, eventListener, TestProbe(), TestProbe())
@@ -221,9 +222,9 @@ class MultiPartPaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunS
 
 }
 
-object MultiPartPaymentHandlerSpec {
+object MultiPartPaymentFSMSpec {
 
-  import MultiPartPaymentHandler.MultiPartHtlc
+  import MultiPartPaymentFSM.MultiPartHtlc
 
   val paymentHash = randomBytes32
 

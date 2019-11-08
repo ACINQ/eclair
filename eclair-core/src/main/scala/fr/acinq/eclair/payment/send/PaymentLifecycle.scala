@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.send
 
 import java.util.UUID
 
@@ -26,10 +26,11 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
-import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentConfig
-import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion._
 import fr.acinq.eclair.wire._
@@ -225,25 +226,6 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 object PaymentLifecycle {
 
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, cfg, router, register)
-
-  /**
-   * Use this message to create a Bolt 11 invoice to receive a payment.
-   *
-   * @param amount_opt        amount to receive in milli-satoshis.
-   * @param description       payment description.
-   * @param expirySeconds_opt number of seconds before the invoice expires (relative to the invoice creation time).
-   * @param extraHops         routing hints to help the payer.
-   * @param fallbackAddress   fallback Bitcoin address.
-   * @param paymentPreimage   payment preimage.
-   * @param allowMultiPart    allow multi-part payments.
-   */
-  case class ReceivePayment(amount_opt: Option[MilliSatoshi],
-                            description: String,
-                            expirySeconds_opt: Option[Long] = None,
-                            extraHops: List[List[ExtraHop]] = Nil,
-                            fallbackAddress: Option[String] = None,
-                            paymentPreimage: Option[ByteVector32] = None,
-                            allowMultiPart: Boolean = false)
 
   /**
    * Send a payment to a pre-defined route without running the path-finding algorithm.

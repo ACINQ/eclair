@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.receive
 
 import akka.actor.{ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
@@ -34,9 +34,9 @@ import scala.collection.immutable.Queue
  * After a reasonable delay, if not enough partial payments have been received, a MultiPartHtlcFailed message is sent to the parent.
  * This handler assumes that the parent only sends payments for the same payment hash.
  */
-class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, parent: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentHandler.State, MultiPartPaymentHandler.Data] {
+class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, parent: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentFSM.State, MultiPartPaymentFSM.Data] {
 
-  import MultiPartPaymentHandler._
+  import MultiPartPaymentFSM._
 
   setTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry, repeat = false)
 
@@ -112,10 +112,10 @@ class MultiPartPaymentHandler(nodeParams: NodeParams, paymentHash: ByteVector32,
 
 }
 
-object MultiPartPaymentHandler {
+object MultiPartPaymentFSM {
 
   def props(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, parent: ActorRef) =
-    Props(new MultiPartPaymentHandler(nodeParams, paymentHash, totalAmount, parent))
+    Props(new MultiPartPaymentFSM(nodeParams, paymentHash, totalAmount, parent))
 
   case object PaymentTimeout
 

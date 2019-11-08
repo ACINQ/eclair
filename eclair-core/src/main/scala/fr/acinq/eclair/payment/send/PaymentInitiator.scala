@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.send
 
 import java.util.UUID
 
@@ -22,9 +22,10 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.payment.MultiPartPaymentLifecycle.SendMultiPartPayment
-import fr.acinq.eclair.payment.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.RouteParams
 import fr.acinq.eclair.wire.Onion
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
