@@ -28,8 +28,7 @@ object RecoveryTool extends Logging {
       port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
     )
 
-    val recoveryFSM = appKit.system.actorOf(RecoveryFSM.props(appKit.nodeParams, appKit.wallet, bitcoinRpcClient), RecoveryFSM.actorName)
-    recoveryFSM ! RecoveryConnect(nodeUri)
+    appKit.system.actorOf(RecoveryFSM.props(nodeUri, appKit.nodeParams, appKit.wallet, bitcoinRpcClient), RecoveryFSM.actorName)
   }
 
   private def getInput[T](msg: String, parse: String => T): T = {

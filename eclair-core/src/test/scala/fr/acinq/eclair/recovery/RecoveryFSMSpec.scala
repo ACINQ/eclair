@@ -5,11 +5,12 @@ import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.channel.{CMD_SIGN, Channel, DATA_NORMAL, Data, INPUT_DISCONNECTED, INPUT_RECONNECTED, NORMAL, OFFLINE, State}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import RecoveryFSM._
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.io.PeerConnected
+import fr.acinq.eclair.io.{NodeURI, PeerConnected}
 import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Init, RevokeAndAck}
 import org.json4s.JsonAST
 import org.json4s.JsonAST.{JNull, JObject, JString}
@@ -105,7 +106,7 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods with
       }
     }
 
-    val recoveryFSM = TestFSMRef(new RecoveryFSM(nodeParams, new TestWallet, bitcoinRpcClient))
+    val recoveryFSM = TestFSMRef(new RecoveryFSM(NodeURI(remotePeerId, HostAndPort.fromHost("localhost")), nodeParams, new TestWallet, bitcoinRpcClient))
     recoveryFSM.setState(RECOVERY_WAIT_FOR_CONNECTION, DATA_WAIT_FOR_CONNECTION(remotePeerId))
 
     // skip peer connection
@@ -116,7 +117,8 @@ class RecoveryFSMSpec extends TestkitBaseClass with StateTestsHelperMethods with
     probe.send(recoveryFSM, ChannelFound(channelId, bobAliceReestablish))
 
     // the recovery FSM replies with an error asking the remote to publish its commitment
-    remotePeer.expectMsgType[eclair.wire.Error]
+    val sendError = remotePeer.expectMsgType[SendErrorToRemote]
+    assert(sendError.error.toAscii.contains("please publish your local commitment"))
 
     awaitCond(recoveryFSM.stateName == RECOVERY_WAIT_FOR_COMMIT_PUBLISHED)
   }

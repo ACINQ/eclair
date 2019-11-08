@@ -306,7 +306,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
       port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
     )
 
-    val recoveryFSM = appKit.system.actorOf(RecoveryFSM.props(appKit.nodeParams, appKit.wallet, bitcoinRpcClient), RecoveryFSM.actorName)
-    recoveryFSM ! RecoveryConnect(uri)
+    appKit.system.actorOf(RecoveryFSM.props(uri, appKit.nodeParams, appKit.wallet, bitcoinRpcClient), RecoveryFSM.actorName)
   }
 }

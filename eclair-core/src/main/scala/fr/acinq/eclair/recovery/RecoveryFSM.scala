@@ -7,10 +7,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.channel.{HasCommitments, Helpers, PleasePublishYourCommitment}
-import fr.acinq.eclair.crypto.{Generators, KeyManager, TransportHandler}
-import fr.acinq.eclair.io.Peer.{ConnectedData, Disconnect}
-import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnected, Switchboard}
+import fr.acinq.eclair.channel.{Helpers, PleasePublishYourCommitment}
+import fr.acinq.eclair.crypto.{Generators, KeyManager}
+import fr.acinq.eclair.io.Peer.Disconnect
+import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnected}
 import fr.acinq.eclair.recovery.RecoveryFSM._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
@@ -21,7 +21,7 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.Success
 
-class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends FSM[State, Data] with Logging {
+class RecoveryFSM(remoteNodeURI: NodeURI, nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCClient: BitcoinJsonRPCClient) extends FSM[State, Data] with Logging {
 
   implicit val ec = context.system.dispatcher
   val bitcoinClient = new ExtendedBitcoinClient(bitcoinJsonRPCClient)
@@ -31,10 +31,9 @@ class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCCl
 
   startWith(RECOVERY_WAIT_FOR_CONNECTION, Nothing)
 
-  when(RECOVERY_WAIT_FOR_CONNECTION) {
-    case Event('connected, _) =>
-      stay
+  self ! RecoveryConnect(remoteNodeURI)
 
+  when(RECOVERY_WAIT_FOR_CONNECTION) {
     case Event(RecoveryConnect(nodeURI: NodeURI), Nothing) =>
       logger.info(s"creating new recovery peer")
       val peer = context.actorOf(Props(new RecoveryPeer(nodeParams, nodeURI.nodeId)))
@@ -97,7 +96,7 @@ class RecoveryFSM(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCCl
       Await.ready(bitcoinClient.getTransaction(d.claimTx.txid.toHex), 30 seconds).value match {
         case Some(Success(claimTx)) =>
           logger.info(s"claim transaction published txid=${claimTx.txid}")
-          d.peer ! Disconnect
+          d.peer ! Disconnect(remoteNodeURI.nodeId)
           stop()
 
         case _ =>
@@ -164,7 +163,7 @@ object RecoveryFSM {
 
   val actorName = "recovery-fsm-actor"
 
-  def props(nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCClient: BitcoinJsonRPCClient) = Props(new RecoveryFSM(nodeParams, wallet, bitcoinJsonRPCClient))
+  def props(nodeURI: NodeURI, nodeParams: NodeParams, wallet: EclairWallet, bitcoinJsonRPCClient: BitcoinJsonRPCClient) = Props(new RecoveryFSM(nodeURI, nodeParams, wallet, bitcoinJsonRPCClient))
 
   // formatter: off
   sealed trait State

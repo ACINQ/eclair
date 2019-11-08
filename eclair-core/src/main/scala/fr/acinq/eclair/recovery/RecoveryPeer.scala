@@ -67,7 +67,6 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
     case Event(Peer.Disconnect(nodeId), d: InitializingData) if nodeId == remoteNodeId =>
       log.info("disconnecting")
-      sender ! "disconnecting"
       d.transport ! PoisonPill
       stay
 
@@ -121,7 +120,6 @@ class RecoveryPeer(val nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
     case Event(Peer.Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
       log.info(s"disconnecting")
-      sender ! "disconnecting"
       d.transport ! PoisonPill
       stay
 
