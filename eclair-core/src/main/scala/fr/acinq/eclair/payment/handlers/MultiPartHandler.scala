@@ -84,14 +84,12 @@ class MultiPartHandler(nodeParams: NodeParams,
           ctx.sender ! cmdFail
         case None =>
           log.info(s"received payment for paymentHash=${p.add.paymentHash} amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
-          pendingPayments.get(p.add.paymentHash) match {
-            case Some((_, handler)) =>
-              handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
-            case None =>
-              val handler = ctx.actorOf(MultiPartPaymentHandler.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
-              handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
-              pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
+          val handler = pendingPayments.get(p.add.paymentHash) match {
+            case Some((_, handler)) => handler
+            case None => ctx.actorOf(MultiPartPaymentHandler.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
           }
+          handler forward MultiPartPaymentHandler.MultiPartHtlc(p.payload.totalAmount, p.add)
+          pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
       }
       case None =>
         ctx.sender ! CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)

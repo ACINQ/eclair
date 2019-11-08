@@ -53,14 +53,16 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   val id = cfg.id
 
-  startWith(PAYMENT_INIT, PaymentInit(None, None, None))
+  startWith(WAIT_FOR_PAYMENT_REQUEST, PaymentInit(None, None, None))
 
-  when(PAYMENT_INIT) {
+  when(WAIT_FOR_PAYMENT_REQUEST) {
     case Event(r: SendMultiPartPayment, d: PaymentInit) =>
       require(d.request.isEmpty, "multi-part payment lifecycle must receive only one payment request")
       router ! GetNetworkStats
-      stay using d.copy(sender = Some(sender()), request = Some(r))
+      goto(WAIT_FOR_NETWORK_STATS) using d.copy(sender = Some(sender()), request = Some(r))
+  }
 
+  when(WAIT_FOR_NETWORK_STATS) {
     case Event(s: GetNetworkStatsResponse, d: PaymentInit) =>
       require(d.request.nonEmpty && d.sender.nonEmpty, "multi-part payment request must be set")
       log.debug("network stats: {}", s.stats.map(_.capacity))
@@ -78,7 +80,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   when(PAYMENT_IN_PROGRESS) {
     case Event(OutgoingChannels(channels), d: PaymentProgress) if d.toSend > 0.msat =>
       log.debug("trying to send {} with local channels: {}", d.toSend, channels.map(_.toUsableBalance).mkString(","))
-      val randomize = d.remainingAttempts != d.request.maxAttempts // we randomize channel selection when we retry
+      val randomize = d.failures.nonEmpty // we randomize channel selection when we retry
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, channels, d.networkStats, d.request, randomize)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
@@ -212,7 +214,8 @@ object MultiPartPaymentLifecycle {
 
   // @formatter:off
   sealed trait State
-  case object PAYMENT_INIT extends State
+  case object WAIT_FOR_PAYMENT_REQUEST  extends State
+  case object WAIT_FOR_NETWORK_STATS  extends State
   case object PAYMENT_IN_PROGRESS extends State
   case object PAYMENT_ABORTED extends State
   case object PAYMENT_SUCCEEDED extends State
