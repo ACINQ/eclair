@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, ResultSet, Statement}
+import java.sql.{Connection, ResultSet, SQLException, Statement}
 
 import fr.acinq.bitcoin.ByteVector32
 import scodec.Codec
@@ -54,11 +54,15 @@ object SqliteUtils {
    */
   def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
-    // if there was no version for the current db, then insert the current version
-    statement.executeUpdate(s"INSERT OR IGNORE INTO versions VALUES ('$db_name', $currentVersion)")
-    // if there was a previous version installed, this will return a different value from current version
     val res = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
-    res.getInt("version")
+    if (res.next()) {
+      // if there was a previous version installed, this will return a different value from current version
+      res.getInt("version")
+    } else {
+      // if there was no version for the current db, then insert the current version
+      statement.executeUpdate(s"INSERT INTO versions (db_name, version) VALUES ('$db_name', $currentVersion)")
+      currentVersion
+    }
   }
 
   /**
@@ -108,6 +112,24 @@ object SqliteUtils {
   }
 
   case class ExtendedResultSet(rs: ResultSet) {
+
+    def getByteVectorFromHex(columnLabel: String): ByteVector = {
+      val s = rs.getString(columnLabel).stripPrefix("\\x")
+      ByteVector.fromValidHex(s)
+    }
+
+    def getByteVector32FromHex(columnLabel: String): ByteVector32 = {
+      val s = rs.getString(columnLabel).stripPrefix("\\x")
+      ByteVector32(ByteVector.fromValidHex(s))
+    }
+
+    def getByteVector32NullableFromHex(columnLabel: String): Option[ByteVector32] = {
+      val s = rs.getString(columnLabel)
+      if (s != null) {
+        val bytes = s.stripPrefix("\\x")
+        Some(ByteVector32(ByteVector.fromValidHex(bytes)))
+      } else None
+    }
 
     def getBitVectorOpt(columnLabel: String): Option[BitVector] = Option(rs.getBytes(columnLabel)).map(BitVector(_))
 

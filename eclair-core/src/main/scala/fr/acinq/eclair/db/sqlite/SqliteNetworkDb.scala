@@ -40,26 +40,24 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         // channel_update are cheap to retrieve, so let's just wipe them out and they'll get resynced
-        statement.execute("PRAGMA foreign_keys = ON")
         logger.warn("migrating network db version 1->2")
         statement.executeUpdate("ALTER TABLE channels RENAME COLUMN data TO channel_announcement")
-        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_1 BLOB NULL")
-        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_2 BLOB NULL")
+        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_1 BYTEA NULL")
+        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_2 BYTEA NULL")
         statement.executeUpdate("DROP TABLE channel_updates")
-        statement.execute("PRAGMA foreign_keys = OFF")
         setVersion(statement, DB_NAME, CURRENT_VERSION)
         logger.warn("migration complete")
       case 2 => () // nothing to do
       case unknown => throw new IllegalArgumentException(s"unknown version $unknown for network db")
     }
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id VARCHAR NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BYTEA NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
-      statement.setBytes(1, n.nodeId.value.toArray)
+    using(sqlite.prepareStatement("INSERT INTO nodes VALUES (?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      statement.setString(1, n.nodeId.value.toHex)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.executeUpdate()
     }
@@ -68,14 +66,14 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   override def updateNode(n: NodeAnnouncement): Unit = {
     using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
-      statement.setBytes(2, n.nodeId.value.toArray)
+      statement.setString(2, n.nodeId.value.toHex)
       statement.executeUpdate()
     }
   }
 
   override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
     using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
+      statement.setString(1, nodeId.value.toHex)
       val rs = statement.executeQuery()
       codecSequence(rs, nodeAnnouncementCodec).headOption
     }
@@ -83,7 +81,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
+      statement.setString(1, nodeId.value.toHex)
       statement.executeUpdate()
     }
   }
@@ -96,7 +94,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?, ?, NULL, NULL)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO channels VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
       statement.setString(2, txid.toHex)
       statement.setBytes(3, channelAnnouncementCodec.encode(c).require.toByteArray)
@@ -142,7 +140,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO pruned VALUES (?) ON CONFLICT DO NOTHING"), inTransaction = true) { statement =>
       shortChannelIds.foreach(shortChannelId => {
         statement.setLong(1, shortChannelId.toLong)
         statement.addBatch()

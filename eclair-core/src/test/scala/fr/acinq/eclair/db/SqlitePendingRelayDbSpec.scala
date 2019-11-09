@@ -18,12 +18,21 @@ package fr.acinq.eclair.db
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.sqlite.SqlitePendingRelayDb
+import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import fr.acinq.eclair.{TestConstants, randomBytes32}
 import fr.acinq.eclair.wire.FailureMessageCodecs
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
 
-class SqlitePendingRelayDbSpec extends FunSuite {
+class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfter {
+
+  after {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DROP TABLE IF EXISTS pending_relay")
+      statement.executeUpdate("DROP TABLE IF EXISTS versions")
+    }
+  }
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()

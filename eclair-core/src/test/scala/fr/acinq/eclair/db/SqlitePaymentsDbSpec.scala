@@ -27,14 +27,25 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
-import org.scalatest.FunSuite
+import org.postgresql.util.PSQLException
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class SqlitePaymentsDbSpec extends FunSuite {
+class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfter {
 
   import SqlitePaymentsDbSpec._
+
+  after {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DROP TABLE IF EXISTS payments")
+      statement.executeUpdate("DROP TABLE IF EXISTS received_payments")
+      statement.executeUpdate("DROP TABLE IF EXISTS sent_payments")
+      statement.executeUpdate("DROP TABLE IF EXISTS versions")
+    }
+  }
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
@@ -47,7 +58,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     using(connection.createStatement()) { statement =>
       getVersion(statement, "payments", 1)
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash TEXT NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
     }
 
     using(connection.createStatement()) { statement =>
@@ -100,8 +111,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     using(connection.createStatement()) { statement =>
       getVersion(statement, "payments", 2)
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash TEXT NOT NULL, preimage TEXT, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
     }
 
@@ -164,8 +175,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     //  - made expire_at not null
 
     using(connection.prepareStatement("INSERT INTO received_payments (payment_hash, preimage, payment_request, received_msat, created_at, received_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, i1.paymentHash.toArray)
-      statement.setBytes(2, pr1.paymentPreimage.toArray)
+      statement.setString(1, i1.paymentHash.toHex)
+      statement.setString(2, pr1.paymentPreimage.toHex)
       statement.setString(3, PaymentRequest.write(i1))
       statement.setLong(4, pr1.status.asInstanceOf[IncomingPaymentStatus.Received].amount.toLong)
       statement.setLong(5, pr1.createdAt)
@@ -174,8 +185,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     }
 
     using(connection.prepareStatement("INSERT INTO received_payments (payment_hash, preimage, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, i2.paymentHash.toArray)
-      statement.setBytes(2, pr2.paymentPreimage.toArray)
+      statement.setString(1, i2.paymentHash.toHex)
+      statement.setString(2, pr2.paymentPreimage.toHex)
       statement.setString(3, PaymentRequest.write(i2))
       statement.setLong(4, pr2.createdAt)
       statement.setLong(5, (i2.timestamp + i2.expiry.get).seconds.toMillis)
@@ -211,9 +222,9 @@ class SqlitePaymentsDbSpec extends FunSuite {
     postMigrationDb.addOutgoingPayment(ps6.copy(status = OutgoingPaymentStatus.Pending))
     postMigrationDb.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300))
 
-    assert(postMigrationDb.listOutgoingPayments(1, 2000) === Seq(ps1, ps2, ps3, ps4, ps5, ps6))
-    assert(postMigrationDb.listIncomingPayments(1, Platform.currentTime) === Seq(pr1, pr2, pr3))
-    assert(postMigrationDb.listExpiredIncomingPayments(1, 2000) === Seq(pr2))
+    assert(postMigrationDb.listOutgoingPayments(1, 2000).toSet === Seq(ps1, ps2, ps3, ps4, ps5, ps6).toSet)
+    assert(postMigrationDb.listIncomingPayments(1, Platform.currentTime).toSet === Seq(pr1, pr2, pr3).toSet)
+    assert(postMigrationDb.listExpiredIncomingPayments(1, 2000).toSet === Seq(pr2).toSet)
   }
 
   test("add/retrieve/update incoming payments") {
@@ -316,7 +327,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.updateOutgoingPayment(paymentSent)
     assert(db.getOutgoingPayment(s1.id) === Some(ss1))
     assert(db.getOutgoingPayment(s2.id) === Some(ss2))
-    assert(db.listOutgoingPayments(parentId) === Seq(ss1, ss2, ss3, ss4))
+    assert(db.listOutgoingPayments(parentId).toSet === Seq(ss1, ss2, ss3, ss4).toSet)
 
     // can't update again once it's in a final state
     assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentFailed(s1.id, s1.paymentHash, Nil)))

@@ -55,7 +55,8 @@ object TestConstants {
     }
   }
 
-  def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
+//  def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
+  def sqliteInMemory() = DriverManager.getConnection("jdbc:postgresql://localhost:5432/eclair")
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
 

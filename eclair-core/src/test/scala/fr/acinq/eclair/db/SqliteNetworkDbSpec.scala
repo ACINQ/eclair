@@ -25,14 +25,26 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfter, FunSuite}
 import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends FunSuite {
+class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfter {
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+
+  after {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DROP TABLE IF EXISTS nodes")
+      statement.executeUpdate("DROP TABLE IF EXISTS channel_updates")
+      statement.executeUpdate("DROP TABLE IF EXISTS channels")
+      statement.executeUpdate("DROP TABLE IF EXISTS pruned")
+      statement.executeUpdate("DROP TABLE IF EXISTS versions")
+      statement.executeUpdate("DROP TABLE IF EXISTS test")
+    }
+  }
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
@@ -45,10 +57,9 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     using(sqlite.createStatement()) { statement =>
       getVersion(statement, "network", 1) // this will set version to 1
-      statement.execute("PRAGMA foreign_keys = ON")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id VARCHAR NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid VARCHAR NOT NULL, data BYTEA NOT NULL, capacity_sat INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
     }
@@ -176,15 +187,18 @@ class SqliteNetworkDbSpec extends FunSuite {
   test("creating a table that already exists but with different column types is ignored") {
     val sqlite = TestConstants.sqliteInMemory()
     using(sqlite.createStatement(), inTransaction = true) { statement =>
-      statement.execute("CREATE TABLE IF NOT EXISTS test (txid STRING NOT NULL)")
+      statement.execute("CREATE TABLE IF NOT EXISTS test (txid VARCHAR NOT NULL)")
     }
     // column type is STRING
-    assert(sqlite.getMetaData.getColumns(null, null, "test", null).getString("TYPE_NAME") == "STRING")
+    val rs = sqlite.getMetaData.getColumns(null, null, "test", null)
+    assert(rs.next())
+    assert(rs.getString("TYPE_NAME") == "varchar")
+
 
     // insert and read back random values
     val txids = for (i <- 0 until 1000) yield randomBytes32
     txids.foreach { txid =>
-      using(sqlite.prepareStatement("INSERT OR IGNORE INTO test VALUES (?)")) { statement =>
+      using(sqlite.prepareStatement("INSERT INTO test VALUES (?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, txid.toHex)
         statement.executeUpdate()
       }
@@ -199,6 +213,8 @@ class SqliteNetworkDbSpec extends FunSuite {
       }
       q
     }
+    println(txids.toSet.size)
+    println(check.toSet.size)
     assert(txids.toSet == check.toSet)
 
 
@@ -207,7 +223,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     }
 
     // column type has not changed
-    assert(sqlite.getMetaData.getColumns(null, null, "test", null).getString("TYPE_NAME") == "STRING")
+    val rs1 = sqlite.getMetaData.getColumns(null, null, "test", null)
+    assert(rs1.next())
+    assert(rs1.getString("TYPE_NAME") == "varchar")
   }
 
   test("remove many channels") {

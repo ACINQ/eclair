@@ -22,11 +22,21 @@ import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{CltvExpiry, TestConstants}
-import org.scalatest.FunSuite
-import org.sqlite.SQLiteException
+import org.postgresql.util.PSQLException
+import org.scalatest.{BeforeAndAfter, FunSuite}
 import scodec.bits.ByteVector
 
-class SqliteChannelsDbSpec extends FunSuite {
+class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfter {
+
+  after {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DROP TABLE IF EXISTS htlc_infos")
+      statement.executeUpdate("DROP TABLE IF EXISTS local_channels")
+      statement.executeUpdate("DROP TABLE IF EXISTS pending_relay")
+      statement.executeUpdate("DROP TABLE IF EXISTS versions")
+    }
+  }
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
@@ -47,7 +57,7 @@ class SqliteChannelsDbSpec extends FunSuite {
     val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
     val cltvExpiry2 = CltvExpiry(656)
 
-    intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
+    intercept[PSQLException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
     assert(db.listLocalChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
@@ -57,7 +67,7 @@ class SqliteChannelsDbSpec extends FunSuite {
     assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
     db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
     db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash2, cltvExpiry2)
-    assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == List((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+    assert(db.listHtlcInfos(channel.channelId, commitNumber).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
     assert(db.listHtlcInfos(channel.channelId, 43).toList == Nil)
 
     db.removeChannel(channel.channelId)
@@ -71,9 +81,8 @@ class SqliteChannelsDbSpec extends FunSuite {
     // create a v1 channels database
     using(sqlite.createStatement()) { statement =>
       getVersion(statement, "channels", 1)
-      statement.execute("PRAGMA foreign_keys = ON")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id VARCHAR NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id VARCHAR NOT NULL, commitment_number VARCHAR NOT NULL, payment_hash VARCHAR NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
     }
 

@@ -19,14 +19,24 @@ package fr.acinq.eclair.db
 import java.sql.DriverManager
 
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.db.sqlite.SqliteUtils.using
+import fr.acinq.eclair.{TestConstants, randomKey}
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
 
-class SqlitePeersDbSpec extends FunSuite {
+class SqlitePeersDbSpec extends FunSuite with BeforeAndAfter {
 
-  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
+  after {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DROP TABLE IF EXISTS peers")
+      statement.executeUpdate("DROP TABLE IF EXISTS versions")
+    }
+  }
+
+  //  def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
+  def inmem = DriverManager.getConnection("jdbc:postgresql://localhost:5432/eclair")
 
   test("init sqlite 2 times in a row") {
     val sqlite = inmem

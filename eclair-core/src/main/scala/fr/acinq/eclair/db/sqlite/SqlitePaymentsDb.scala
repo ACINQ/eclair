@@ -52,8 +52,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
     def migration12(statement: Statement) = {
       // Version 2 is "backwards compatible" in the sense that it uses separate tables from version 1 (which used a single "payments" table).
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT, received_at BIGINT)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash TEXT NOT NULL, preimage TEXT, amount_msat BIGINT NOT NULL, created_at BIGINT NOT NULL, completed_at BIGINT, status TEXT NOT NULL)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
     }
 
@@ -61,17 +61,17 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       // We add many more columns to the sent_payments table.
       statement.executeUpdate("DROP index payment_hash_idx")
       statement.executeUpdate("ALTER TABLE sent_payments RENAME TO _sent_payments_old")
-      statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
+      statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, target_node_id TEXT NOT NULL, created_at BIGINT NOT NULL, payment_request TEXT, completed_at BIGINT, payment_preimage TEXT, fees_msat BIGINT, payment_route BYTEA, failures BYTEA)")
       // Old rows will be missing a target node id, so we use an easy-to-spot default value.
-      val defaultTargetNodeId = PrivateKey(ByteVector32.One).publicKey
-      statement.executeUpdate(s"INSERT INTO sent_payments (id, parent_id, payment_hash, amount_msat, target_node_id, created_at, completed_at, payment_preimage) SELECT id, id, payment_hash, amount_msat, X'${defaultTargetNodeId.toString}', created_at, completed_at, preimage FROM _sent_payments_old")
+      val defaultTargetNodeId = PrivateKey(ByteVector32.One).publicKey.value.toHex
+      statement.executeUpdate(s"INSERT INTO sent_payments (id, parent_id, payment_hash, amount_msat, target_node_id, created_at, completed_at, payment_preimage) SELECT id, id, payment_hash, amount_msat, '${defaultTargetNodeId.toString}', created_at, completed_at, preimage FROM _sent_payments_old")
       statement.executeUpdate("DROP table _sent_payments_old")
 
       statement.executeUpdate("ALTER TABLE received_payments RENAME TO _received_payments_old")
       // We make payment request expiration not null in the received_payments table.
       // When it was previously set to NULL the default expiry should apply.
       statement.executeUpdate(s"UPDATE _received_payments_old SET expire_at = created_at + ${PaymentRequest.DEFAULT_EXPIRY_SECONDS} WHERE expire_at IS NULL")
-      statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
+      statement.executeUpdate("CREATE TABLE received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
       statement.executeUpdate("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) SELECT payment_hash, preimage, payment_request, received_msat, created_at, expire_at, received_at FROM _received_payments_old")
       statement.executeUpdate("DROP table _received_payments_old")
 
@@ -92,8 +92,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         migration23(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, target_node_id TEXT NOT NULL, created_at BIGINT NOT NULL, payment_request TEXT, completed_at BIGINT, payment_preimage TEXT, fees_msat BIGINT, payment_route BYTEA, failures BYTEA)")
 
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
@@ -110,9 +110,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setString(1, sent.id.toString)
       statement.setString(2, sent.parentId.toString)
       statement.setString(3, sent.externalId.orNull)
-      statement.setBytes(4, sent.paymentHash.toArray)
+      statement.setString(4, sent.paymentHash.toHex)
       statement.setLong(5, sent.amount.toLong)
-      statement.setBytes(6, sent.targetNodeId.value.toArray)
+      statement.setString(6, sent.targetNodeId.value.toHex)
       statement.setLong(7, sent.createdAt)
       statement.setString(8, sent.paymentRequest.map(PaymentRequest.write).orNull)
       statement.executeUpdate()
@@ -145,15 +145,15 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       UUID.fromString(rs.getString("id")),
       UUID.fromString(rs.getString("parent_id")),
       rs.getStringNullable("external_id"),
-      rs.getByteVector32("payment_hash"),
+      rs.getByteVector32FromHex("payment_hash"),
       MilliSatoshi(rs.getLong("amount_msat")),
-      PublicKey(rs.getByteVector("target_node_id")),
+      PublicKey(rs.getByteVectorFromHex("target_node_id")),
       rs.getLong("created_at"),
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
       OutgoingPaymentStatus.Pending
     )
     // If we have a pre-image, the payment succeeded.
-    rs.getByteVector32Nullable("payment_preimage") match {
+    rs.getByteVector32NullableFromHex("payment_preimage") match {
       case Some(paymentPreimage) => result.copy(status = OutgoingPaymentStatus.Succeeded(
         paymentPreimage,
         MilliSatoshi(rs.getLong("fees_msat")),
@@ -202,7 +202,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] =
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
-      statement.setBytes(1, paymentHash.toArray)
+      statement.setString(1, paymentHash.toHex)
       val rs = statement.executeQuery()
       var q: Queue[OutgoingPayment] = Queue()
       while (rs.next()) {
@@ -225,8 +225,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit =
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, pr.paymentHash.toArray)
-      statement.setBytes(2, preimage.toArray)
+      statement.setString(1, pr.paymentHash.toHex)
+      statement.setString(2, preimage.toHex)
       statement.setString(3, PaymentRequest.write(pr))
       statement.setLong(4, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
       statement.setLong(5, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong)).seconds.toMillis)
@@ -237,14 +237,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
       statement.setLong(1, amount.toLong)
       statement.setLong(2, receivedAt)
-      statement.setBytes(3, paymentHash.toArray)
+      statement.setString(3, paymentHash.toHex)
       val res = statement.executeUpdate()
       if (res == 0) throw new IllegalArgumentException("Inserted a received payment without having an invoice")
     }
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = PaymentRequest.read(rs.getString("payment_request"))
-    val paymentPreimage = rs.getByteVector32("payment_preimage")
+    val paymentPreimage = rs.getByteVector32FromHex("payment_preimage")
     val createdAt = rs.getLong("created_at")
     val received = getNullableLong(rs, "received_msat").map(MilliSatoshi(_))
     received match {
@@ -256,7 +256,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] =
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
-      statement.setBytes(1, paymentHash.toArray)
+      statement.setString(1, paymentHash.toHex)
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(parseIncomingPayment(rs))

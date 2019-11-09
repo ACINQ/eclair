@@ -25,26 +25,26 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 
-class SqlitePeersDb(sqlite: Connection) extends PeersDb {
+class SqlitePeersDb(connection: Connection) extends PeersDb {
 
 import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "peers"
   val CURRENT_VERSION = 1
 
-  using(sqlite.createStatement(), inTransaction = true) { statement =>
+  using(connection.createStatement(), inTransaction = true) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id VARCHAR NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
     val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
-    using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
+    using(connection.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
       update.setBytes(1, data)
-      update.setBytes(2, nodeId.value.toArray)
+      update.setString(2, nodeId.value.toHex)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
-          statement.setBytes(1, nodeId.value.toArray)
+        using(connection.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
+          statement.setString(1, nodeId.value.toHex)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -53,18 +53,18 @@ import SqliteUtils.ExtendedResultSet._
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
-    using(sqlite.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
+    using(connection.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
+      statement.setString(1, nodeId.value.toHex)
       statement.executeUpdate()
     }
   }
 
   override def listPeers(): Map[PublicKey, NodeAddress] = {
-    using(sqlite.createStatement()) { statement =>
+    using(connection.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT node_id, data FROM peers")
       var m: Map[PublicKey, NodeAddress] = Map()
       while (rs.next()) {
-        val nodeid = PublicKey(rs.getByteVector("node_id"))
+        val nodeid = PublicKey(rs.getByteVectorFromHex("node_id"))
         val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
         m += (nodeid -> nodeaddress)
       }
@@ -72,5 +72,5 @@ import SqliteUtils.ExtendedResultSet._
     }
   }
 
-  override def close(): Unit = sqlite.close()
+  override def close(): Unit = connection.close()
 }

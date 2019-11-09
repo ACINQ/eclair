@@ -55,6 +55,16 @@ object Databases {
     databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
   }
 
+  def postgresJDBC(dbdir: File, host: String = "localhost", port: Int = 5432) ={
+    dbdir.mkdir()
+    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
+    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
+    SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
+
+    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+  }
+
   def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)

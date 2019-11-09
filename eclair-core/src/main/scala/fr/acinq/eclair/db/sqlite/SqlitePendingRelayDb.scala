@@ -36,12 +36,12 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
   using(sqlite.createStatement(), inTransaction = true) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
     // note: should we use a foreign key to local_channels table here?
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id VARCHAR NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
   }
 
   override def addPendingRelay(channelId: ByteVector32, htlcId: Long, cmd: Command): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_relay VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+    using(sqlite.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      statement.setString(1, channelId.toHex)
       statement.setLong(2, htlcId)
       statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
       statement.executeUpdate()
@@ -50,7 +50,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
 
   override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = {
     using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setString(1, channelId.toHex)
       statement.setLong(2, htlcId)
       statement.executeUpdate()
     }
@@ -58,7 +58,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
 
   override def listPendingRelay(channelId: ByteVector32): Seq[Command] = {
     using(sqlite.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setString(1, channelId.toHex)
       val rs = statement.executeQuery()
       codecSequence(rs, cmdCodec)
     }
@@ -69,7 +69,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
       val rs = statement.executeQuery()
       var q: Queue[(ByteVector32, Long)] = Queue()
       while (rs.next()) {
-        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
+        q = q :+ (rs.getByteVector32FromHex("channel_id"), rs.getLong("htlc_id"))
       }
       q.toSet
     }

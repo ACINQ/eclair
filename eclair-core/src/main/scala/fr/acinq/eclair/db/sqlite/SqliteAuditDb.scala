@@ -42,11 +42,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement) = {
-      statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
+      statement.executeUpdate(s"ALTER TABLE sent ADD id TEXT DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
     }
 
     def migration23(statement: Statement) = {
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp BIGINT NOT NULL)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
     }
 
@@ -61,13 +61,13 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         migration23(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, amount_msat BIGINT NOT NULL, capacity_sat BIGINT NOT NULL, reserve_sat BIGINT NOT NULL, timestamp BIGINT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL, id TEXT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat BIGINT NOT NULL, amount_out_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp BIGINT NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_updated_idx ON balance_updated(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
@@ -108,11 +108,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       e.parts.foreach(p => {
         statement.setLong(1, p.amount.toLong)
         statement.setLong(2, p.feesPaid.toLong)
-        statement.setBytes(3, e.paymentHash.toArray)
-        statement.setBytes(4, e.paymentPreimage.toArray)
-        statement.setBytes(5, p.toChannelId.toArray)
+        statement.setString(3, e.paymentHash.toHex)
+        statement.setString(4, e.paymentPreimage.toHex)
+        statement.setString(5, p.toChannelId.toHex)
         statement.setLong(6, p.timestamp)
-        statement.setBytes(7, p.id.toString.getBytes)
+        statement.setString(7, p.id.toString)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -176,13 +176,13 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       while (rs.next()) {
         q = q :+ PaymentSent(
           UUID.fromString(rs.getString("id")),
-          rs.getByteVector32("payment_hash"),
-          rs.getByteVector32("payment_preimage"),
+          rs.getByteVector32FromHex("payment_hash"),
+          rs.getByteVector32FromHex("payment_preimage"),
           Seq(PaymentSent.PartialPayment(
             UUID.fromString(rs.getString("id")),
             MilliSatoshi(rs.getLong("amount_msat")),
             MilliSatoshi(rs.getLong("fees_msat")),
-            rs.getByteVector32("to_channel_id"),
+            rs.getByteVector32FromHex("to_channel_id"),
             None, // we don't store the route
             rs.getLong("timestamp"))))
       }
@@ -197,10 +197,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       var q: Queue[PaymentReceived] = Queue()
       while (rs.next()) {
         q = q :+ PaymentReceived(
-          rs.getByteVector32("payment_hash"),
+          rs.getByteVector32FromHex("payment_hash"),
           Seq(PaymentReceived.PartialPayment(
             MilliSatoshi(rs.getLong("amount_msat")),
-            rs.getByteVector32("from_channel_id"),
+            rs.getByteVector32FromHex("from_channel_id"),
             rs.getLong("timestamp")
           )))
       }
@@ -217,9 +217,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         q = q :+ PaymentRelayed(
           amountIn = MilliSatoshi(rs.getLong("amount_in_msat")),
           amountOut = MilliSatoshi(rs.getLong("amount_out_msat")),
-          paymentHash = rs.getByteVector32("payment_hash"),
-          fromChannelId = rs.getByteVector32("from_channel_id"),
-          toChannelId = rs.getByteVector32("to_channel_id"),
+          paymentHash = rs.getByteVector32FromHex("payment_hash"),
+          fromChannelId = rs.getByteVector32FromHex("from_channel_id"),
+          toChannelId = rs.getByteVector32FromHex("to_channel_id"),
           timestamp = rs.getLong("timestamp"))
       }
       q
@@ -233,9 +233,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       var q: Queue[NetworkFee] = Queue()
       while (rs.next()) {
         q = q :+ NetworkFee(
-          remoteNodeId = PublicKey(rs.getByteVector("node_id")),
-          channelId = rs.getByteVector32("channel_id"),
-          txId = rs.getByteVector32("tx_id"),
+          remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+          channelId = rs.getByteVector32FromHex("channel_id"),
+          txId = rs.getByteVector32FromHex("tx_id"),
           fee = Satoshi(rs.getLong("fee_sat")),
           txType = rs.getString("tx_type"),
           timestamp = rs.getLong("timestamp"))
@@ -271,13 +271,13 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           |           sum(fee_sat) AS network_fee_sat
           |       FROM network_fees
           |       GROUP BY 1
-          |)
+          |) sub
           |GROUP BY 1
         """.stripMargin)
       var q: Queue[Stats] = Queue()
       while (rs.next()) {
         q = q :+ Stats(
-          channelId = rs.getByteVector32("channel_id"),
+          channelId = rs.getByteVector32FromHex("channel_id"),
           avgPaymentAmount = Satoshi(rs.getLong("avg_payment_amount_sat")),
           paymentCount = rs.getInt("payment_count"),
           relayFee = Satoshi(rs.getLong("relay_fee_sat")),
