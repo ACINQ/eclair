@@ -42,36 +42,33 @@ trait Databases {
 
 object Databases {
 
+  def assemble(sqliteAudit: Connection, sqliteNetwork: Connection, sqliteEclair: Connection, hosted: HostedChannelsDb): Databases =
+    new Databases {
+      override val network = new SqliteNetworkDb(sqliteNetwork)
+      override val audit = new SqliteAuditDb(sqliteAudit)
+      override val channels = new SqliteChannelsDb(sqliteEclair)
+      override val peers = new SqlitePeersDb(sqliteEclair)
+      override val payments = new SqlitePaymentsDb(sqliteEclair)
+      override val pendingRelay = new SqlitePendingRelayDb(sqliteEclair)
+      override val hostedChannels: HostedChannelsDb = hosted
+      override def backup(file: File): Unit = {
+        SqliteUtils.using(sqliteEclair.createStatement()) {
+          _.executeUpdate(s"backup to ${file.getAbsolutePath}")
+        }
+      }
+    }
+
   /**
-    * Given a parent folder it creates or loads all the databases from a JDBC connection
+    * Given a parent folder it creates or loads (channels, network, audit) databases from a JDBC connection
     * @param dbdir
     * @return
     */
-  def sqliteJDBC(dbdir: File): Databases = {
+  def sqliteJDBC(dbdir: File): (Connection, Connection, Connection) = {
     dbdir.mkdir()
     val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
-    val sqliteHostedEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "hosted.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-
-    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair, sqliteHostedEclair)
-  }
-
-  def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, hostedJdbc: Connection) = new Databases {
-    override val network = new SqliteNetworkDb(networkJdbc)
-    override val audit = new SqliteAuditDb(auditJdbc)
-    override val channels = new SqliteChannelsDb(eclairJdbc)
-    override val peers = new SqlitePeersDb(eclairJdbc)
-    override val payments = new SqlitePaymentsDb(eclairJdbc)
-    override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
-    override val hostedChannels = new SqliteHostedChannelsDb(hostedJdbc)
-    override def backup(file: File): Unit = {
-      SqliteUtils.using(eclairJdbc.createStatement()) {
-        statement =>  {
-          statement.executeUpdate(s"backup to ${file.getAbsolutePath}")
-        }
-      }
-    }
+    (sqliteAudit, sqliteNetwork, sqliteEclair)
   }
 }

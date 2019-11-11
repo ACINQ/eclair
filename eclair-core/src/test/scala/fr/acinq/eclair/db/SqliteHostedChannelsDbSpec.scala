@@ -5,7 +5,6 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, HOSTED_DATA_COMMITMENTS}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, UInt64, randomBytes32, randomBytes64, randomKey}
-import fr.acinq.eclair.db.sqlite.SqliteHostedChannelsDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
 import fr.acinq.eclair.wire.{Error, InitHostedChannel, LastCrossSignedState, UpdateAddHtlc}
@@ -69,15 +68,8 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     resolvedOutgoingHtlcLeftoverIds = Set(12,67,79, 119),
     overriddenBalanceProposal = Some(MilliSatoshi(1000000L)))
 
-  test("init sqlite 2 times in a row") {
-    val sqlite = TestConstants.sqliteInMemory()
-    new SqliteHostedChannelsDb(sqlite)
-    new SqliteHostedChannelsDb(sqlite)
-  }
-
   test("get / insert / update a hosted commits") {
-    val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteHostedChannelsDb(sqlite)
+    val db = TestConstants.inMemoryDb().hostedChannels
     assert(db.getChannel(ByteVector32.Zeroes).isEmpty)
     val newShortChannelId = randomHostedChanShortId
     val hdc1 = hdc.copy(channelUpdate = channelUpdate.copy(shortChannelId = newShortChannelId))
@@ -92,8 +84,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
   }
 
   test("list hot channels (with HTLCs in-flight)") {
-    val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteHostedChannelsDb(sqlite)
+    val db = TestConstants.inMemoryDb().hostedChannels
     val newShortChannelId1 = randomHostedChanShortId
     val newShortChannelId2 = randomHostedChanShortId
     val newShortChannelId3 = randomHostedChanShortId
@@ -108,6 +99,6 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     db.addOrUpdateChannel(hdc2)
     db.addOrUpdateChannel(hdc3)
 
-    assert(db.listHotChannels() === Set(hdc1, hdc2))
+    assert(db.listHotChannels().toSet === Set(hdc1, hdc2))
   }
 }

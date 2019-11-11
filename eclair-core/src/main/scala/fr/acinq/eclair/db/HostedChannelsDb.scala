@@ -9,5 +9,5 @@ trait HostedChannelsDb {
 
   def getChannel(channelId: ByteVector32): Option[HOSTED_DATA_COMMITMENTS]
 
-  def listHotChannels(): Set[HOSTED_DATA_COMMITMENTS]
+  def listHotChannels(): Seq[HOSTED_DATA_COMMITMENTS]
 }

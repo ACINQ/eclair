@@ -45,7 +45,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   // we load peers and channels from database
   {
     // Hosted channels with HTLCs in-flight
-    val hotHostedChannels: Set[HOSTED_DATA_COMMITMENTS] = nodeParams.db.hostedChannels.listHotChannels()
+    val hotHostedChannels: Seq[HOSTED_DATA_COMMITMENTS] = nodeParams.db.hostedChannels.listHotChannels()
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
@@ -164,7 +164,7 @@ object Switchboard extends Logging {
    *
    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
    */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], hostedChannels: Set[HOSTED_DATA_COMMITMENTS], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], hostedChannels: Seq[HOSTED_DATA_COMMITMENTS], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when

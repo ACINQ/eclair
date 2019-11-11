@@ -41,6 +41,8 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.{HostedChannelGateway, Register}
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.noop.NoopHostedChannelsDb
+import fr.acinq.eclair.db.postgre.PostgreHostedChannelsDb
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -51,6 +53,7 @@ import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
+import slick.jdbc.PostgresProfile
 
 import scala.concurrent._
 import scala.concurrent.duration._
@@ -89,14 +92,21 @@ class Setup(datadir: File,
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
-  val database = db match {
-    case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
+  val database: Databases = (db, config.getString("hosted-db")) match {
+    case (Some(d), _) => d
+    case (None, "postgre") =>
+      import slick.jdbc.PostgresProfile.api._
+      val postgreTestDb: PostgresProfile.backend.Database = Database.forConfig("postgre", config)
+      val (sqliteAudit, sqliteNetwork, sqliteEclair) = Databases.sqliteJDBC(chaindir)
+      Databases.assemble(sqliteAudit, sqliteNetwork, sqliteEclair, new PostgreHostedChannelsDb(postgreTestDb))
+    case _ =>
+      val (sqliteAudit, sqliteNetwork, sqliteEclair) = Databases.sqliteJDBC(chaindir)
+      Databases.assemble(sqliteAudit, sqliteNetwork, sqliteEclair, new NoopHostedChannelsDb)
   }
 
   /**
    * This counter holds the current blockchain height.
-   * It is mainly used to calculate htlc expiries.
+   * It is mainly used to calculate htlc expires.
    * The value is read by all actors, hence it needs to be thread-safe.
    */
   val blockCount = new AtomicLong(0)
