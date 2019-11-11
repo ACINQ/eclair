@@ -18,7 +18,9 @@ package fr.acinq.eclair.db
 
 import java.io.File
 import java.sql.{Connection, DriverManager}
+import java.util.Properties
 
+import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 
 trait Databases {
@@ -52,20 +54,25 @@ object Databases {
     val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
     SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
 
-    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
   }
 
-  def postgresJDBC(dbdir: File, host: String = "localhost", port: Int = 5432) ={
-    dbdir.mkdir()
-    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
-    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
-    SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
+  def postgresJDBC(database: String = "eclair", host: String = "localhost", port: Int = 5432,
+                   username: Option[String] = None, password: Option[String] = None, ssl: Boolean = false): Databases = {
+    val url = s"jdbc:postgresql://${host}:${port}/${database}"
+    val connectionProperties = new Properties()
+    username.foreach(connectionProperties.setProperty("user", _))
+    password.foreach(connectionProperties.setProperty("password", _))
+    connectionProperties.setProperty("ssl", ssl.toString)
 
-    databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    val psqlEclair = DriverManager.getConnection(url, connectionProperties)
+    val psqlNetwork = DriverManager.getConnection(url, connectionProperties)
+    val psqlAudit = DriverManager.getConnection(url, connectionProperties)
+
+    psqlDatabaseByConnections(psqlAudit, psqlNetwork, psqlEclair)
   }
 
-  def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
+  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
@@ -79,5 +86,15 @@ object Databases {
         }
       }
     }
+  }
+
+  def psqlDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
+    override val network = new PsqlNetworkDb(networkJdbc)
+    override val audit = new PsqlAuditDb(auditJdbc)
+    override val channels = new PsqlChannelsDb(eclairJdbc)
+    override val peers = new PsqlPeersDb(eclairJdbc)
+    override val payments = new PsqlPaymentsDb(eclairJdbc)
+    override val pendingRelay = new PsqlPendingRelayDb(eclairJdbc)
+    override def backup(file: File): Unit = {}
   }
 }

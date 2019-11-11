@@ -91,7 +91,34 @@ class Setup(datadir: File,
 
   val database = db match {
     case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
+    case None =>
+      val dbConfig = config.getConfig("db")
+      dbConfig.getString("driver") match {
+        case "sqlite" => Databases.sqliteJDBC(chaindir)
+        case "psql" =>
+          val dbConfig = config.getConfig("db")
+          dbConfig.getString("driver") match {
+            case "sqlite" => Databases.sqliteJDBC(chaindir)
+            case "psql" =>
+              val database = dbConfig.getString("psql.database")
+              val host = dbConfig.getString("psql.host")
+              val port = dbConfig.getInt("psql.port")
+              val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isBlank)
+                None
+              else
+                Some(dbConfig.getString("psql.username"))
+              val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isBlank)
+                None
+              else
+                Some(dbConfig.getString("psql.password"))
+              val ssl = dbConfig.getBoolean("psql.ssl")
+
+              Databases.postgresJDBC(
+                database = database, host = host, port = port,
+                username = username, password = password, ssl = ssl
+              )
+          }
+      }
   }
 
   /**

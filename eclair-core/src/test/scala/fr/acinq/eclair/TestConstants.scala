@@ -98,7 +98,7 @@ object TestConstants {
     f(TestPsqlDatabases())
   }
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
