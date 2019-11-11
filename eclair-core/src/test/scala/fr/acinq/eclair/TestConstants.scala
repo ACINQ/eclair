@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair
 
-import java.sql.{Connection, DriverManager}
+import java.io.File
+import java.sql.{Connection, DriverManager, Statement}
 import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -25,6 +26,8 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.psql.{PsqlAuditDb, PsqlChannelsDb, PsqlNetworkDb, PsqlPaymentsDb, PsqlPeersDb, PsqlPendingRelayDb, PsqlUtils}
+import fr.acinq.eclair.db.sqlite.{SqliteAuditDb, SqliteChannelsDb, SqliteNetworkDb, SqlitePaymentsDb, SqlitePeersDb, SqlitePendingRelayDb, SqliteUtils}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
@@ -55,10 +58,47 @@ object TestConstants {
     }
   }
 
-//  def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
-  def sqliteInMemory() = DriverManager.getConnection("jdbc:postgresql://localhost:5432/eclair")
+  sealed trait TestDatabases {
+    val connection: Connection
+    def network(): NetworkDb
+    def audit(): AuditDb
+    def channels(): ChannelsDb
+    def peers(): PeersDb
+    def payments(): PaymentsDb
+    def pendingRelay(): PendingRelayDb
+    def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
+  }
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
+  case class TestSqliteDatabases(connection: Connection = sqliteInMemory()) extends TestDatabases {
+    override def network(): NetworkDb = new SqliteNetworkDb(connection)
+    override def audit(): AuditDb = new SqliteAuditDb(connection)
+    override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
+    override def peers(): PeersDb = new SqlitePeersDb(connection)
+    override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
+    override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
+  }
+
+  case class TestPsqlDatabases(connection: Connection = psql()) extends TestDatabases {
+    override def network(): NetworkDb = new PsqlNetworkDb(connection)
+    override def audit(): AuditDb = new PsqlAuditDb(connection)
+    override def channels(): ChannelsDb = new PsqlChannelsDb(connection)
+    override def peers(): PeersDb = new PsqlPeersDb(connection)
+    override def payments(): PaymentsDb = new PsqlPaymentsDb(connection)
+    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb(connection)
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
+  }
+
+  def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
+  def psql(): Connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/eclair")
+
+
+  def forAllDbs(f: TestDatabases => Unit): Unit = {
+    f(TestSqliteDatabases())
+    f(TestPsqlDatabases())
+  }
+
+  def inMemoryDb(connection: Connection = psql()): Databases = Databases.databaseByConnections(connection, connection, connection)
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))

@@ -35,10 +35,17 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   val DB_NAME = "channels"
   val CURRENT_VERSION = 2
 
+  // The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle
+  // of a multi-statement transaction (when SQLite is not in autocommit mode).".
+  // So we need to set foreign keys before we initialize tables / migrations (which is done inside a transaction).
+  using(sqlite.createStatement()) { statement =>
+    statement.execute("PRAGMA foreign_keys = ON")
+  }
+
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement) = {
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT FALSE")
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
     }
 
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
@@ -47,8 +54,8 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
         migration12(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id VARCHAR NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id VARCHAR NOT NULL, commitment_number VARCHAR NOT NULL, payment_hash VARCHAR NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -59,10 +66,10 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     val data = stateDataCodec.encode(state).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
-      update.setString(2, state.channelId.toHex)
+      update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, FALSE)")) { statement =>
-          statement.setString(1, state.channelId.toHex)
+        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement =>
+          statement.setBytes(1, state.channelId.toArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -72,33 +79,33 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   override def removeChannel(channelId: ByteVector32): Unit = {
     using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
-      statement.setString(1, channelId.toHex)
+      statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
 
     using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
-      statement.setString(1, channelId.toHex)
+      statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=TRUE WHERE channel_id=?")) { statement =>
-      statement.setString(1, channelId.toHex)
+    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }
   }
 
   override def listLocalChannels(): Seq[HasCommitments] = {
     using(sqlite.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=FALSE")
+      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
       codecSequence(rs, stateDataCodec)
     }
   }
 
   def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING"), inTransaction = true) { statement =>
-      statement.setString(1, channelId.toHex)
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
-      statement.setString(3, paymentHash.toHex)
+      statement.setBytes(3, paymentHash.toArray)
       statement.setLong(4, cltvExpiry.toLong)
       statement.executeUpdate()
     }
@@ -106,12 +113,12 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
-      statement.setString(1, channelId.toHex)
-      statement.setString(2, commitmentNumber.toString)
+      statement.setBytes(1, channelId.toArray)
+      statement.setLong(2, commitmentNumber)
       val rs = statement.executeQuery
       var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
       while (rs.next()) {
-        q = q :+ (ByteVector32(rs.getByteVector32FromHex("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
+        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
       }
       q
     }

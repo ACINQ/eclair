@@ -1,0 +1,122 @@
+/*
+ * Copyright 2019 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package fr.acinq.eclair.db.jdbc
+
+import java.sql.{Connection, ResultSet, Statement}
+
+import fr.acinq.bitcoin.ByteVector32
+import scodec.Codec
+import scodec.bits.{BitVector, ByteVector}
+
+import scala.collection.immutable.Queue
+
+trait JdbcUtils {
+
+  /**
+   * This helper makes sure statements are correctly closed.
+   *
+   * @param inTransaction if set to true, all updates in the block will be run in a transaction.
+   */
+  def using[T <: Statement, U](statement: T, inTransaction: Boolean = false)(block: T => U): U = {
+    try {
+      if (inTransaction) statement.getConnection.setAutoCommit(false)
+      val res = block(statement)
+      if (inTransaction) statement.getConnection.commit()
+      res
+    } catch {
+      case t: Exception =>
+        if (inTransaction) statement.getConnection.rollback()
+        throw t
+    } finally {
+      if (inTransaction) statement.getConnection.setAutoCommit(true)
+      if (statement != null) statement.close()
+    }
+  }
+
+  /**
+   * This helper assumes that there is a "data" column available, decodable with the provided codec
+   *
+   * TODO: we should use an scala.Iterator instead
+   */
+  def codecSequence[T](rs: ResultSet, codec: Codec[T]): Seq[T] = {
+    var q: Queue[T] = Queue()
+    while (rs.next()) {
+      q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
+    }
+    q
+  }
+
+  /**
+   * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
+   * because `rs.getLong` would return `0` for a null value.
+   * It is used on Android only
+   */
+  def getNullableLong(rs: ResultSet, label: String): Option[Long] = {
+    val result = rs.getLong(label)
+    if (rs.wasNull()) None else Some(result)
+  }
+
+  case class ExtendedResultSet(rs: ResultSet) {
+
+    def getByteVectorFromHex(columnLabel: String): ByteVector = {
+      val s = rs.getString(columnLabel).stripPrefix("\\x")
+      ByteVector.fromValidHex(s)
+    }
+
+    def getByteVector32FromHex(columnLabel: String): ByteVector32 = {
+      val s = rs.getString(columnLabel).stripPrefix("\\x")
+      ByteVector32(ByteVector.fromValidHex(s))
+    }
+
+    def getByteVector32FromHexNullable(columnLabel: String): Option[ByteVector32] = {
+      val s = rs.getString(columnLabel)
+      if (s != null) {
+        val bytes = s.stripPrefix("\\x")
+        Some(ByteVector32(ByteVector.fromValidHex(bytes)))
+      } else None
+    }
+
+    def getBitVectorOpt(columnLabel: String): Option[BitVector] = Option(rs.getBytes(columnLabel)).map(BitVector(_))
+
+    def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
+
+    def getByteVectorNullable(columnLabel: String): ByteVector = {
+      val result = rs.getBytes(columnLabel)
+      if (rs.wasNull()) ByteVector.empty else ByteVector(result)
+    }
+
+    def getByteVector32(columnLabel: String): ByteVector32 = ByteVector32(ByteVector(rs.getBytes(columnLabel)))
+
+    def getByteVector32Nullable(columnLabel: String): Option[ByteVector32] = {
+      val bytes = rs.getBytes(columnLabel)
+      if (rs.wasNull()) None else Some(ByteVector32(ByteVector(bytes)))
+    }
+
+    def getStringNullable(columnLabel: String): Option[String] = {
+      val result = rs.getString(columnLabel)
+      if (rs.wasNull()) None else Some(result)
+    }
+
+  }
+
+  object ExtendedResultSet {
+    implicit def conv(rs: ResultSet): ExtendedResultSet = ExtendedResultSet(rs)
+  }
+
+}
+
+object JdbcUtils extends JdbcUtils

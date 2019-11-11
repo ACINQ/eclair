@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.sqlite
+package fr.acinq.eclair.db.psql
 
 import java.sql.Connection
 
@@ -25,23 +25,23 @@ import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
 import scala.collection.immutable.Queue
 
-class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
+class PsqlPendingRelayDb(psql: Connection) extends PendingRelayDb {
 
-  import SqliteUtils.ExtendedResultSet._
-  import SqliteUtils._
+  import PsqlUtils.ExtendedResultSet._
+  import PsqlUtils._
 
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 1
 
-  using(sqlite.createStatement(), inTransaction = true) { statement =>
+  using(psql.createStatement(), inTransaction = true) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
     // note: should we use a foreign key to local_channels table here?
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
   }
 
   override def addPendingRelay(channelId: ByteVector32, htlcId: Long, cmd: Command): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_relay VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+    using(psql.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      statement.setString(1, channelId.toHex)
       statement.setLong(2, htlcId)
       statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
       statement.executeUpdate()
@@ -49,31 +49,31 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
   }
 
   override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = {
-    using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+    using(psql.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
+      statement.setString(1, channelId.toHex)
       statement.setLong(2, htlcId)
       statement.executeUpdate()
     }
   }
 
   override def listPendingRelay(channelId: ByteVector32): Seq[Command] = {
-    using(sqlite.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+    using(psql.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
+      statement.setString(1, channelId.toHex)
       val rs = statement.executeQuery()
       codecSequence(rs, cmdCodec)
     }
   }
 
   override def listPendingRelay(): Set[(ByteVector32, Long)] = {
-    using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
+    using(psql.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
       val rs = statement.executeQuery()
       var q: Queue[(ByteVector32, Long)] = Queue()
       while (rs.next()) {
-        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
+        q = q :+ (rs.getByteVector32FromHex("channel_id"), rs.getLong("htlc_id"))
       }
       q.toSet
     }
   }
 
-  override def close(): Unit = sqlite.close()
+  override def close(): Unit = psql.close()
 }
