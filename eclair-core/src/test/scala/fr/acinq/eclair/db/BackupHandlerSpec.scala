@@ -31,7 +31,7 @@ import org.scalatest.FunSuiteLike
 class BackupHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("process backups") {
-    val db = TestConstants.inMemoryDb(TestConstants.sqliteInMemory())
+    val db = TestConstants.inMemoryDb()
     val wip = new File(TestUtils.BUILD_DIRECTORY, s"wip-${UUID.randomUUID()}")
     val dest = new File(TestUtils.BUILD_DIRECTORY, s"backup-${UUID.randomUUID()}")
     wip.deleteOnExit()
