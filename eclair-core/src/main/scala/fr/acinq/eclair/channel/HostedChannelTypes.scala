@@ -11,11 +11,10 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Direction, IN
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
-sealed trait HostedCommand
-sealed trait HasHostedChanIdCommand extends HostedCommand {
+sealed trait HasHostedChanIdCommand {
   def channelId: ByteVector32
 }
-case object CMD_HOSTED_REMOVE_IDLE_CHANNELS extends HostedCommand
+case object CMD_HOSTED_REMOVE_IDLE_CHANNELS
 case class CMD_HOSTED_INPUT_DISCONNECTED(channelId: ByteVector32) extends HasHostedChanIdCommand
 case class CMD_HOSTED_INPUT_RECONNECTED(channelId: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef) extends HasHostedChanIdCommand
 case class CMD_HOSTED_INVOKE_CHANNEL(channelId: ByteVector32, remoteNodeId: PublicKey, refundScriptPubKey: ByteVector) extends HasHostedChanIdCommand
@@ -45,7 +44,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
                                    localError: Option[Error],
                                    remoteError: Option[Error],
                                    resolvedOutgoingHtlcLeftoverIds: Set[Long], // CLOSED channel may have in-flight outgoing HTLCs which can later be failed or fulfilled, collect their IDs here
-                                   overriddenBalanceProposal: Option[MilliSatoshi] // CLOSED channel override can be initiated by Host, a new proposed balance should be retained once this happens
+                                   overrideProposal: Option[StateOverride] // CLOSED channel override can be initiated by Host, a new proposed balance should be retained once this happens
                                   ) extends ChannelCommitments with HostedData { me =>
 
   val (nextLocalUpdates, nextRemoteUpdates, nextTotalLocal, nextTotalRemote) =

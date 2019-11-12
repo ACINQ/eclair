@@ -58,8 +58,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
       val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
-      val error = Error(commits1.channelId, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
       if (failedAdds.nonEmpty && commits1.getError.isEmpty) {
+        val error = Error(commits1.channelId, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
         stay using commits1.copy(localError = Some(error)) storing()
       } else if (failedAdds.nonEmpty) {
         stay using commits1 storing()
@@ -284,10 +284,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(CLOSED) {
-    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, _) =>
-      val invoke = InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
-      goto(WAIT_FOR_INIT_INTERNAL) using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending invoke
-
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
       val newLocalBalance = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
       val completeLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
@@ -310,16 +306,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         goto(NORMAL) using commits1 storing() sending completeLocalLCSS.stateUpdate(isTerminal = true)
       }
 
-    case Event(CMD_HOSTED_OVERRIDE(_, newLocalBalance), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
-      val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, newLocalBalance)
-      val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
-        localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
-        localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
-      val commits1 = commits.copy(overriddenBalanceProposal = Some(newLocalBalance))
-      stay using commits1 sending localSO replying "ok"
-
-    case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.overriddenBalanceProposal.isDefined =>
-      val completeOverridingLCSS = makeOverridingLocallySignedLCSS(commits, commits.overriddenBalanceProposal.get).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
+    case Event(CMD_HOSTED_MESSAGE(_, remoteSU: StateUpdate), commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.overrideProposal.isDefined =>
+      val completeOverridingLCSS = makeOverridingLocallySignedLCSS(commits, commits.overrideProposal.get.localBalanceMsat).copy(remoteSigOfLocal = remoteSU.localSigOfRemoteLCSS)
       proceedOrClose(commits.channelId) {
         val isRemoteSigOk = completeOverridingLCSS.verifyRemoteSig(remoteNodeId)
         val isBlockdayAcceptable = math.abs(remoteSU.blockDay - nodeParams.currentBlockDay) <= 1
@@ -365,8 +353,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           commits.getError match {
             case Some(error) =>
-              val resolvedOutgoingHtlcLeftoverIds1 = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id
-              val commits2 = commits1.copy(resolvedOutgoingHtlcLeftoverIds = resolvedOutgoingHtlcLeftoverIds1)
+              val commits2 = commits1.copy(resolvedOutgoingHtlcLeftoverIds = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id)
               stay using commits2 storing() replying s"Relayed hash=${fulfill.paymentHash}, error=${ChannelErrorCodes.toHostedAscii(error)}"
             case None =>
               stay using commits1 storing() replying s"Relayed hash=${fulfill.paymentHash}"
@@ -382,6 +369,14 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         nodeParams.hostedParams.cltvDelta, commits.lastCrossSignedState.initHostedChannel.htlcMinimumMsat, nodeParams.hostedParams.feeBase,
         nodeParams.hostedParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), commits, c)
+
+    case Event(c: CMD_HOSTED_OVERRIDE, commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
+      val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, c.newLocalBalance)
+      val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
+        localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
+        localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
+      log.info(s"saving override proposal for channelId=${commits.channelId}, state=$stateName")
+      stay using commits.copy(overrideProposal = Some(localSO)) storing() sending localSO replying "ok"
 
     case Event(any, _) =>
       log.debug(s"Hosted channel failed to handle $any in state=$stateName, data=$stateData, remoteNodeId=$remoteNodeId")
@@ -400,6 +395,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           forwarder ! commits.channelUpdate
         case commits: HOSTED_DATA_COMMITMENTS if nextState != NORMAL =>
           context.system.eventStream.publish(LocalChannelDown(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId))
+          if (nextState == CLOSED && commits.isHost) commits.overrideProposal.foreach(localSO => forwarder ! localSO)
         case _ =>
       }
   }
@@ -450,7 +446,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, nodeParams.hostedParams.cltvDelta,
       localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.hostedParams.feeBase, nodeParams.hostedParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
     HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
-      channelId, isHost, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overriddenBalanceProposal = None)
+      channelId, isHost, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overrideProposal = None)
   }
 
   def makeStateUpdate(commits: HOSTED_DATA_COMMITMENTS): StateUpdate = {

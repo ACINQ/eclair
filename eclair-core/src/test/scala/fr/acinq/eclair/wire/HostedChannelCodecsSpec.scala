@@ -66,7 +66,7 @@ class HostedChannelCodecsSpec extends FunSuite {
       localError = None,
       remoteError = Some(error),
       resolvedOutgoingHtlcLeftoverIds = Set.empty,
-      overriddenBalanceProposal = None)
+      overrideProposal = None)
 
     val binary = HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec.encode(hdc).require
     val check = HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec.decodeValue(binary).require

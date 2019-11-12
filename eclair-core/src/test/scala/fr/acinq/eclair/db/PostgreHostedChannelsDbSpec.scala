@@ -7,7 +7,7 @@ import fr.acinq.eclair.channel.{Channel, ChannelVersion, HOSTED_DATA_COMMITMENTS
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TestConstants, UInt64, randomBytes32, randomBytes64, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IN, OUT}
-import fr.acinq.eclair.wire.{Error, InitHostedChannel, LastCrossSignedState, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{Error, InitHostedChannel, LastCrossSignedState, StateOverride, UpdateAddHtlc}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 import fr.acinq.eclair._
@@ -16,7 +16,7 @@ import fr.acinq.eclair.payment.Origin
 
 import scala.util.Random
 
-class SqliteHostedChannelsDbSpec extends FunSuite {
+class PostgreHostedChannelsDbSpec extends FunSuite {
 
   def bin(len: Int, fill: Byte): ByteVector = ByteVector.fill(len)(fill)
 
@@ -66,7 +66,7 @@ class SqliteHostedChannelsDbSpec extends FunSuite {
     localError = None,
     remoteError = Some(error),
     resolvedOutgoingHtlcLeftoverIds = Set(12,67,79, 119),
-    overriddenBalanceProposal = Some(MilliSatoshi(1000000L)))
+    overrideProposal = Some(StateOverride(50000L, 500000 msat, 70000, 700000, randomBytes64)))
 
   test("get / insert / update a hosted commits") {
     val db = TestConstants.inMemoryDb().hostedChannels
