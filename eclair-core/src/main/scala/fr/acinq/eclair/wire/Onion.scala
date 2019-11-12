@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
-import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector}
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -42,6 +42,14 @@ object OnionTlv {
 
   /** Id of the channel to use to forward a payment to the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends OnionTlv
+
+  /**
+   * Bolt 11 payment details (only included for the last node).
+   *
+   * @param secret      payment secret specified in the Bolt 11 invoice.
+   * @param totalAmount total amount in multi-part payments. When missing, assumed to be equal to AmountToForward.
+   */
+  case class PaymentData(secret: ByteVector32, totalAmount: MilliSatoshi) extends OnionTlv
 
 }
 
@@ -76,11 +84,16 @@ object Onion {
   sealed trait FinalPayload extends PerHopPayload with PerHopPayloadFormat {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
+    val paymentSecret: Option[ByteVector32]
+    val totalAmount: MilliSatoshi
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends RelayPayload with LegacyFormat
 
-  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat
+  case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat {
+    override val paymentSecret = None
+    override val totalAmount = amount
+  }
 
   case class RelayTlvPayload(records: TlvStream[OnionTlv]) extends RelayPayload with TlvFormat {
     override val amountToForward = records.get[AmountToForward].get.amount
@@ -91,7 +104,15 @@ object Onion {
   case class FinalTlvPayload(records: TlvStream[OnionTlv]) extends FinalPayload with TlvFormat {
     override val amount = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
+    override val paymentSecret = records.get[PaymentData].map(_.secret)
+    override val totalAmount = records.get[PaymentData].map(_.totalAmount match {
+      case MilliSatoshi(0) => amount
+      case totalAmount => totalAmount
+    }).getOrElse(amount)
   }
+
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32): FinalPayload =
+    FinalTlvPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount)))
 
 }
 
@@ -119,16 +140,19 @@ object OnionCodecs {
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
     varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
-  private val amountToForward: Codec[AmountToForward] = ("amount_msat" | tu64overflow).xmap(amountMsat => AmountToForward(MilliSatoshi(amountMsat)), (a: AmountToForward) => a.amount.toLong)
+  private val amountToForward: Codec[AmountToForward] = ("amount_msat" | tmillisatoshi).as[AmountToForward]
 
   private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | tu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
 
-  private val outgoingChannelId: Codec[OutgoingChannelId] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[OutgoingChannelId]
+  private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
+
+  private val paymentData: Codec[PaymentData] = variableSizeBytesLong(varintoverflow, ("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi)).as[PaymentData]
 
   private val onionTlvCodec = discriminated[OnionTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
     .typecase(UInt64(6), outgoingChannelId)
+    .typecase(UInt64(8), paymentData)
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionTlv](onionTlvCodec).complete
 
