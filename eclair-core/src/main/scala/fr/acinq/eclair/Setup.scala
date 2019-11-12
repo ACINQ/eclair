@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.Properties
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
@@ -95,53 +96,32 @@ class Setup(datadir: File,
       val dbConfig = config.getConfig("db")
       dbConfig.getString("driver") match {
         case "sqlite" => Databases.sqliteJDBC(chaindir)
-        case "psql" =>
-          val dbConfig = config.getConfig("db")
-          dbConfig.getString("driver") match {
-            case "sqlite" => Databases.sqliteJDBC(chaindir)
-            case "psql" =>
-              val database = dbConfig.getString("psql.database")
-              val host = dbConfig.getString("psql.host")
-              val port = dbConfig.getInt("psql.port")
-              val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isBlank)
-                None
-              else
-                Some(dbConfig.getString("psql.username"))
-              val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isBlank)
-                None
-              else
-                Some(dbConfig.getString("psql.password"))
-              val ssl = dbConfig.getBoolean("psql.ssl")
-
-              Databases.postgresJDBC(
-                database = database, host = host, port = port,
-                username = username, password = password, ssl = ssl
-              )
-          }
+        case "psql" => setupPsqlDatabases(dbConfig)
       }
   }
 
   /**
-   * This counter holds the current blockchain height.
-   * It is mainly used to calculate htlc expiries.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This counter holds the current blockchain height.
+    * It is mainly used to calculate htlc expiries.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val blockCount = new AtomicLong(0)
 
   /**
-   * This holds the current feerates, in satoshi-per-kilobytes.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kilobytes.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
 
   /**
-   * This holds the current feerates, in satoshi-per-kw.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kw.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
@@ -302,7 +282,7 @@ class Setup(datadir: File,
           nodeParams.db,
           new File(chaindir, "eclair.sqlite.bak"),
           if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-        ),"backuphandler", SupervisorStrategy.Resume))
+        ), "backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
         case "local" => LocalPaymentHandler.props(nodeParams)
@@ -373,12 +353,43 @@ class Setup(datadir: File,
       None
     }
   }
+
+  private def setupPsqlDatabases(dbConfig: Config) = {
+    val database = dbConfig.getString("psql.database")
+    val host = dbConfig.getString("psql.host")
+    val port = dbConfig.getInt("psql.port")
+    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isBlank)
+      None
+    else
+      Some(dbConfig.getString("psql.username"))
+    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isBlank)
+      None
+    else
+      Some(dbConfig.getString("psql.password"))
+    val properties = {
+      val poolConfig = dbConfig.getConfig("psql.pool")
+      Map.empty
+        .updated("max-size", poolConfig.getInt("max-size").toLong)
+        .updated("connection-timeout", poolConfig.getDuration("connection-timeout").toMillis)
+        .updated("idle-timeout", poolConfig.getDuration("idle-timeout").toMillis)
+        .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
+
+    }
+
+    Databases.postgresJDBC(
+      database = database, host = host, port = port,
+      username = username, password = password, poolProperties = properties
+    )
+  }
 }
 
 // @formatter:off
 sealed trait Bitcoin
+
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
+
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,

@@ -59,7 +59,7 @@ class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfter {
 
   test("handle version migration 1->3") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 
@@ -116,7 +116,7 @@ class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfter {
 
   test("handle version migration 2->3") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 

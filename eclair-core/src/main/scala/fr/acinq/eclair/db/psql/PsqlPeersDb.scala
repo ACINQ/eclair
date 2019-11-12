@@ -22,9 +22,10 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.wire._
+import javax.sql.DataSource
 import scodec.bits.BitVector
 
-class PsqlPeersDb(psql: Connection) extends PeersDb {
+class PsqlPeersDb(implicit ds: DataSource) extends PeersDb {
 
   import PsqlUtils.ExtendedResultSet._
   import PsqlUtils._
@@ -32,45 +33,53 @@ class PsqlPeersDb(psql: Connection) extends PeersDb {
   val DB_NAME = "peers"
   val CURRENT_VERSION = 1
 
-  using(psql.createStatement(), inTransaction = true) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+  withConnection { psql =>
+    using(psql.createStatement(), inTransaction = true) { statement =>
+      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+    }
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
-    val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
-    using(psql.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
-      update.setBytes(1, data)
-      update.setString(2, nodeId.value.toHex)
-      if (update.executeUpdate() == 0) {
-        using(psql.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
-          statement.setString(1, nodeId.value.toHex)
-          statement.setBytes(2, data)
-          statement.executeUpdate()
+    withConnection { psql =>
+      val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
+      using(psql.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
+        update.setBytes(1, data)
+        update.setString(2, nodeId.value.toHex)
+        if (update.executeUpdate() == 0) {
+          using(psql.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
+            statement.setString(1, nodeId.value.toHex)
+            statement.setBytes(2, data)
+            statement.executeUpdate()
+          }
         }
       }
     }
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
-    using(psql.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
-      statement.setString(1, nodeId.value.toHex)
-      statement.executeUpdate()
+    withConnection { psql =>
+      using(psql.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.executeUpdate()
+      }
     }
   }
 
   override def listPeers(): Map[PublicKey, NodeAddress] = {
-    using(psql.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT node_id, data FROM peers")
-      var m: Map[PublicKey, NodeAddress] = Map()
-      while (rs.next()) {
-        val nodeid = PublicKey(rs.getByteVectorFromHex("node_id"))
-        val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
-        m += (nodeid -> nodeaddress)
+    withConnection { psql =>
+      using(psql.createStatement()) { statement =>
+        val rs = statement.executeQuery("SELECT node_id, data FROM peers")
+        var m: Map[PublicKey, NodeAddress] = Map()
+        while (rs.next()) {
+          val nodeid = PublicKey(rs.getByteVectorFromHex("node_id"))
+          val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
+          m += (nodeid -> nodeaddress)
+        }
+        m
       }
-      m
     }
   }
 
-  override def close(): Unit = psql.close()
+  override def close(): Unit = ()
 }

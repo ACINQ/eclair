@@ -134,7 +134,7 @@ class SqliteAuditDbSpec extends FunSuite with BeforeAndAfter {
   test("handle migration version 1 -> 3") {
 
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         // simulate existing previous version db
         using(dbs.connection.createStatement()) { statement =>
@@ -208,7 +208,7 @@ class SqliteAuditDbSpec extends FunSuite with BeforeAndAfter {
   test("handle migration version 2 -> 3") {
 
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 

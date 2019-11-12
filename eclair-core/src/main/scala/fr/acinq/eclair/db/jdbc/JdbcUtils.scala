@@ -19,12 +19,22 @@ package fr.acinq.eclair.db.jdbc
 import java.sql.{Connection, ResultSet, Statement}
 
 import fr.acinq.bitcoin.ByteVector32
+import javax.sql.DataSource
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 
 import scala.collection.immutable.Queue
 
 trait JdbcUtils {
+
+  def withConnection[T](f: Connection => T)(implicit dataSource: DataSource): T = {
+    val connection = dataSource.getConnection()
+    try {
+      f(connection)
+    } finally {
+      connection.close()
+    }
+  }
 
   /**
    * This helper makes sure statements are correctly closed.

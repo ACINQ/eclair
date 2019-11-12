@@ -83,7 +83,7 @@ class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfter {
 
   test("migrate channel database v1 -> v2") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
 
         // create a v1 channels database

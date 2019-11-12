@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair
 
-import java.io.File
+import java.io.{File, PrintWriter}
 import java.sql.{Connection, DriverManager, Statement}
 import java.util.concurrent.atomic.AtomicLong
+import java.util.logging.Logger
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
@@ -31,6 +32,7 @@ import fr.acinq.eclair.db.sqlite.{SqliteAuditDb, SqliteChannelsDb, SqliteNetwork
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import javax.sql.DataSource
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
@@ -79,13 +81,23 @@ object TestConstants {
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
   }
 
-  case class TestPsqlDatabases(connection: Connection = psql()) extends TestDatabases {
-    override def network(): NetworkDb = new PsqlNetworkDb(connection)
-    override def audit(): AuditDb = new PsqlAuditDb(connection)
-    override def channels(): ChannelsDb = new PsqlChannelsDb(connection)
-    override def peers(): PeersDb = new PsqlPeersDb(connection)
-    override def payments(): PaymentsDb = new PsqlPaymentsDb(connection)
-    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb(connection)
+  case object TestPsqlDatabases extends TestDatabases {
+    override val connection: Connection = psql()
+
+    import com.zaxxer.hikari.HikariConfig
+    import com.zaxxer.hikari.HikariDataSource
+
+    val config = new HikariConfig
+    config.setJdbcUrl("jdbc:postgresql://localhost:5432/eclair")
+
+    implicit val ds = new HikariDataSource(config)
+
+    override def network(): NetworkDb = new PsqlNetworkDb()
+    override def audit(): AuditDb = new PsqlAuditDb()
+    override def channels(): ChannelsDb = new PsqlChannelsDb()
+    override def peers(): PeersDb = new PsqlPeersDb()
+    override def payments(): PaymentsDb = new PsqlPaymentsDb()
+    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb()
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
   }
 
@@ -95,7 +107,7 @@ object TestConstants {
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {
     f(TestSqliteDatabases())
-    f(TestPsqlDatabases())
+    f(TestPsqlDatabases)
   }
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)

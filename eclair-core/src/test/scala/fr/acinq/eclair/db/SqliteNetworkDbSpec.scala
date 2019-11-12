@@ -56,7 +56,7 @@ class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfter {
 
   test("migration test 1->2") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
 
       using(dbs.connection.createStatement()) { statement =>

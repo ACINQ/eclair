@@ -24,10 +24,11 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
+import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
 
-class PsqlChannelsDb(psql: Connection) extends ChannelsDb with Logging {
+class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
 
   import PsqlUtils.ExtendedResultSet._
   import PsqlUtils._
@@ -35,79 +36,89 @@ class PsqlChannelsDb(psql: Connection) extends ChannelsDb with Logging {
   val DB_NAME = "channels"
   val CURRENT_VERSION = 2
 
-  using(psql.createStatement(), inTransaction = true) { statement =>
-
-    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-      case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-        statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+  withConnection { psql =>
+    using(psql.createStatement(), inTransaction = true) { statement =>
+      getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+        case CURRENT_VERSION =>
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+        case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+      }
     }
-
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
-    val data = stateDataCodec.encode(state).require.toByteArray
-    using(psql.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
-      update.setBytes(1, data)
-      update.setString(2, state.channelId.toHex)
-      if (update.executeUpdate() == 0) {
-        using(psql.prepareStatement("INSERT INTO local_channels VALUES (?, ?, FALSE)")) { statement =>
-          statement.setString(1, state.channelId.toHex)
-          statement.setBytes(2, data)
-          statement.executeUpdate()
+    withConnection { psql =>
+      val data = stateDataCodec.encode(state).require.toByteArray
+      using(psql.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+        update.setBytes(1, data)
+        update.setString(2, state.channelId.toHex)
+        if (update.executeUpdate() == 0) {
+          using(psql.prepareStatement("INSERT INTO local_channels VALUES (?, ?, FALSE)")) { statement =>
+            statement.setString(1, state.channelId.toHex)
+            statement.setBytes(2, data)
+            statement.executeUpdate()
+          }
         }
       }
     }
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = {
-    using(psql.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
-      statement.setString(1, channelId.toHex)
-      statement.executeUpdate()
-    }
+    withConnection { psql =>
+      using(psql.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeUpdate()
+      }
 
-    using(psql.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
-      statement.setString(1, channelId.toHex)
-      statement.executeUpdate()
-    }
+      using(psql.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeUpdate()
+      }
 
-    using(psql.prepareStatement("UPDATE local_channels SET is_closed=TRUE WHERE channel_id=?")) { statement =>
-      statement.setString(1, channelId.toHex)
-      statement.executeUpdate()
+      using(psql.prepareStatement("UPDATE local_channels SET is_closed=TRUE WHERE channel_id=?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeUpdate()
+      }
     }
   }
 
   override def listLocalChannels(): Seq[HasCommitments] = {
-    using(psql.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=FALSE")
-      codecSequence(rs, stateDataCodec)
+    withConnection { psql =>
+      using(psql.createStatement) { statement =>
+        val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=FALSE")
+        codecSequence(rs, stateDataCodec)
+      }
     }
   }
 
   def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
-    using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING"), inTransaction = true) { statement =>
-      statement.setString(1, channelId.toHex)
-      statement.setLong(2, commitmentNumber)
-      statement.setString(3, paymentHash.toHex)
-      statement.setLong(4, cltvExpiry.toLong)
-      statement.executeUpdate()
+    withConnection { psql =>
+      using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING"), inTransaction = true) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.setLong(2, commitmentNumber)
+        statement.setString(3, paymentHash.toHex)
+        statement.setLong(4, cltvExpiry.toLong)
+        statement.executeUpdate()
+      }
     }
   }
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
-    using(psql.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
-      statement.setString(1, channelId.toHex)
-      statement.setString(2, commitmentNumber.toString)
-      val rs = statement.executeQuery
-      var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
-      while (rs.next()) {
-        q = q :+ (ByteVector32(rs.getByteVector32FromHex("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
+    withConnection { psql =>
+      using(psql.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.setString(2, commitmentNumber.toString)
+        val rs = statement.executeQuery
+        var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
+        while (rs.next()) {
+          q = q :+ (ByteVector32(rs.getByteVector32FromHex("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
+        }
+        q
       }
-      q
     }
   }
 
-  override def close(): Unit = psql.close
+  override def close(): Unit = ()
 }

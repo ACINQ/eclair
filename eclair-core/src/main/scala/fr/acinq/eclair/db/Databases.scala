@@ -22,6 +22,7 @@ import java.util.Properties
 
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
+import javax.sql.DataSource
 
 trait Databases {
 
@@ -58,21 +59,28 @@ object Databases {
   }
 
   def postgresJDBC(database: String = "eclair", host: String = "localhost", port: Int = 5432,
-                   username: Option[String] = None, password: Option[String] = None, ssl: Boolean = false): Databases = {
+                   username: Option[String] = None, password: Option[String] = None,
+                   poolProperties: Map[String, Long] = Map()): Databases = {
     val url = s"jdbc:postgresql://${host}:${port}/${database}"
-    val connectionProperties = new Properties()
-    username.foreach(connectionProperties.setProperty("user", _))
-    password.foreach(connectionProperties.setProperty("password", _))
-    connectionProperties.setProperty("ssl", ssl.toString)
 
-    val psqlEclair = DriverManager.getConnection(url, connectionProperties)
-    val psqlNetwork = DriverManager.getConnection(url, connectionProperties)
-    val psqlAudit = DriverManager.getConnection(url, connectionProperties)
+    import com.zaxxer.hikari.HikariConfig
+    import com.zaxxer.hikari.HikariDataSource
 
-    psqlDatabaseByConnections(psqlAudit, psqlNetwork, psqlEclair)
+    val config = new HikariConfig()
+    config.setJdbcUrl(url)
+    username.foreach(config.setUsername)
+    password.foreach(config.setPassword)
+    poolProperties.get("max-size").foreach(x => config.setMaximumPoolSize(x.toInt))
+    poolProperties.get("connection-timeout").foreach(config.setConnectionTimeout)
+    poolProperties.get("idle-timeout").foreach(config.setIdleTimeout)
+    poolProperties.get("max-life-time").foreach(config.setMaxLifetime)
+
+    val ds = new HikariDataSource(config)
+
+    psqlDatabaseByConnections(ds)
   }
 
-  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
+  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
@@ -88,13 +96,13 @@ object Databases {
     }
   }
 
-  def psqlDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
-    override val network = new PsqlNetworkDb(networkJdbc)
-    override val audit = new PsqlAuditDb(auditJdbc)
-    override val channels = new PsqlChannelsDb(eclairJdbc)
-    override val peers = new PsqlPeersDb(eclairJdbc)
-    override val payments = new PsqlPaymentsDb(eclairJdbc)
-    override val pendingRelay = new PsqlPendingRelayDb(eclairJdbc)
-    override def backup(file: File): Unit = {}
+  def psqlDatabaseByConnections(implicit ds: DataSource): Databases = new Databases {
+    override val network = new PsqlNetworkDb()
+    override val audit = new PsqlAuditDb()
+    override val channels = new PsqlChannelsDb()
+    override val peers = new PsqlPeersDb()
+    override val payments = new PsqlPaymentsDb()
+    override val pendingRelay = new PsqlPendingRelayDb()
+    override def backup(file: File): Unit = ()
   }
 }
