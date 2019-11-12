@@ -19,7 +19,7 @@ object PostgreHostedChannelsDbModel {
   val awaitSpan: FiniteDuration = 30.seconds
 }
 
-class PostgreHostedChannelsDbModel(tag: Tag) extends Table[PostgreHostedChannelsDbModel.DbType](tag, "hostedchannels") {
+class PostgreHostedChannelsDbModel(tag: Tag) extends Table[DbType](tag, "hostedchannels") {
   def id: Rep[Long] = column[Long]("id", O.PrimaryKey, O.AutoInc)
   def channelId: Rep[Array[Byte]] = column[Array[Byte]]("channel_id")
   def shortChannelId: Rep[Long] = column[Long]("short_channel_id")

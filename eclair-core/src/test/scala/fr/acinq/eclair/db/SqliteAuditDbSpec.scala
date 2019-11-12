@@ -57,8 +57,8 @@ class SqliteAuditDbSpec extends FunSuite {
     val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, pp6 :: Nil)
     val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), randomKey.publicKey, ChannelCodecsSpec.commitments.commitInput.txOut.amount, ChannelCodecsSpec.commitments.remoteParams.channelReserve, 456123000 msat, ChannelCodecsSpec.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, isFunder = true, isPrivate = false, "mutual")
-    val e9 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
-    val e10 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
+    val e9 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, LocalError(new RuntimeException("oops")), isFatal = true)
+    val e10 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
 
     db.add(e1)
     db.add(e2)
@@ -138,8 +138,8 @@ class SqliteAuditDbSpec extends FunSuite {
     val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 42001 msat, 1001 msat, randomBytes32, None)
     val pp2 = PaymentSent.PartialPayment(UUID.randomUUID(), 42002 msat, 1002 msat, randomBytes32, None)
     val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, pp1 :: pp2 :: Nil)
-    val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
-    val e2 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
+    val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, LocalError(new RuntimeException("oops")), isFatal = true)
+    val e2 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
 
     // add a row (no ID on sent)
     using(connection.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -204,8 +204,8 @@ class SqliteAuditDbSpec extends FunSuite {
       assert(getVersion(statement, "audit", 3) == 2) // version 2 is deployed now
     }
 
-    val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
-    val e2 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
+    val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, LocalError(new RuntimeException("oops")), isFatal = true)
+    val e2 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
 
     val migratedDb = new SqliteAuditDb(connection)
 
