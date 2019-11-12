@@ -261,8 +261,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
 
   test("PaymentHandler should reject incoming multi-part payment with an invalid payment secret") { f =>
     import f._
-    import fr.acinq.eclair.wire.Onion.FinalTlvPayload
-    import fr.acinq.eclair.wire.OnionTlv._
 
     sender.send(handler, ReceivePayment(Some(1000 msat), "multi-part invalid payment secret", allowMultiPart = true))
     val pr = sender.expectMsgType[PaymentRequest]
@@ -271,11 +269,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSu
     // Invalid payment secret.
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
     sender.send(handler, FinalPayload(add, Onion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, pr.paymentSecret.get.reverse)))
-    assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
-    assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
-
-    // Payment secret missing.
-    sender.send(handler, FinalPayload(add, FinalTlvPayload(TlvStream(AmountToForward(add.amountMsat), TotalAmount(1000 msat), OutgoingCltv(add.cltvExpiry)))))
     assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
     assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
   }
