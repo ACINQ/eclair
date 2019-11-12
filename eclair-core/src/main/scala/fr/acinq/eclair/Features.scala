@@ -32,11 +32,17 @@ object Features {
   val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
   val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
+  val VARIABLE_LENGTH_ONION_MANDATORY = 8
+  val VARIABLE_LENGTH_ONION_OPTIONAL = 9
+
   val CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY = 10
   val CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL = 11
 
-  val VARIABLE_LENGTH_ONION_MANDATORY = 8
-  val VARIABLE_LENGTH_ONION_OPTIONAL = 9
+  val PAYMENT_SECRET_MANDATORY = 14
+  val PAYMENT_SECRET_OPTIONAL = 15
+
+  val BASIC_MULTI_PART_PAYMENT_MANDATORY = 16
+  val BASIC_MULTI_PART_PAYMENT_OPTIONAL = 17
 
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
@@ -57,7 +63,13 @@ object Features {
     * we don't understand (even bits).
     */
   def areSupported(features: BitVector): Boolean = {
-    val supportedMandatoryFeatures = Set[Long](OPTION_DATA_LOSS_PROTECT_MANDATORY, VARIABLE_LENGTH_ONION_MANDATORY)
+    val supportedMandatoryFeatures = Set[Long](
+      OPTION_DATA_LOSS_PROTECT_MANDATORY,
+      CHANNEL_RANGE_QUERIES_BIT_MANDATORY,
+      VARIABLE_LENGTH_ONION_MANDATORY,
+      CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY,
+      PAYMENT_SECRET_MANDATORY,
+      BASIC_MULTI_PART_PAYMENT_MANDATORY)
     val reversed = features.reverse
     for (i <- 0L until reversed.length by 2) {
       if (reversed.get(i) && !supportedMandatoryFeatures.contains(i)) return false
