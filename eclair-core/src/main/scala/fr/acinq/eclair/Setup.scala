@@ -43,7 +43,9 @@ import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
-import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
+import fr.acinq.eclair.payment.{Auditor, Relayer}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -56,14 +58,14 @@ import scala.concurrent._
 import scala.concurrent.duration._
 
 /**
-  * Setup eclair from a data directory.
-  *
-  * Created by PM on 25/01/2016.
-  *
-  * @param datadir          directory where eclair-core will write/read its data.
-  * @param overrideDefaults use this parameter to programmatically override the node configuration .
-  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
-  */
+ * Setup eclair from a data directory.
+ *
+ * Created by PM on 25/01/2016.
+ *
+ * @param datadir          directory where eclair-core will write/read its data.
+ * @param overrideDefaults use this parameter to programmatically override the node configuration .
+ * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
@@ -275,18 +277,15 @@ class Setup(datadir: File,
           nodeParams.db,
           new File(chaindir, "eclair.sqlite.bak"),
           if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-        ),"backuphandler", SupervisorStrategy.Resume))
+        ), "backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
-      paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
-        case "local" => LocalPaymentHandler.props(nodeParams)
-        case "noop" => Props[NoopPaymentHandler]
-      }, "payment-handler", SupervisorStrategy.Resume))
+      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams), "payment-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
-      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
-      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, relayer, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       kit = Kit(
