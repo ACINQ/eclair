@@ -26,7 +26,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.Relayer.FinalPayload
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
@@ -63,9 +63,9 @@ class MultiPartHandler(nodeParams: NodeParams,
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = if (allowMultiPart) {
-          Some(PaymentRequest.Features(PaymentRequest.Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, PaymentRequest.Features.PAYMENT_SECRET_OPTIONAL))
+          Some(PaymentRequest.Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, Features.PAYMENT_SECRET_OPTIONAL))
         } else {
-          Some(PaymentRequest.Features(PaymentRequest.Features.PAYMENT_SECRET_OPTIONAL))
+          Some(PaymentRequest.Features(Features.PAYMENT_SECRET_OPTIONAL))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)

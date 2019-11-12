@@ -53,7 +53,11 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << PAYMENT_SECRET_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << BASIC_MULTI_PART_PAYMENT_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
     assert(areSupported(hex"0b"))
+    assert(areSupported(hex"14988")) // INITIAL_ROUTING_SYNC_BIT_OPTIONAL, CHANNEL_RANGE_QUERIES_BIT_OPTIONAL, VARIABLE_LENGTH_ONION_MANDATORY, CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL, PAYMENT_SECRET_MANDATORY, BASIC_MULTI_PART_PAYMENT_MANDATORY
     assert(!areSupported(hex"14"))
     assert(!areSupported(hex"0141"))
   }

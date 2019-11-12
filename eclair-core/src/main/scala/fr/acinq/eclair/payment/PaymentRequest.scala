@@ -114,6 +114,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
 
+  import fr.acinq.eclair.Features.PAYMENT_SECRET_OPTIONAL
+
   val DEFAULT_EXPIRY_SECONDS = 3600
 
   val prefixes = Map(
@@ -124,7 +126,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[Features] = Some(Features(Features.PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
+            features: Option[Features] = Some(Features(PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
 
@@ -320,8 +322,7 @@ object PaymentRequest {
    */
   case class Features(bitmask: BitVector) extends TaggedField {
 
-    import Features._
-    import fr.acinq.eclair.Features.hasFeature
+    import fr.acinq.eclair.Features._
 
     lazy val areSupported: Boolean = !bitmask
       .reverse
@@ -341,14 +342,8 @@ object PaymentRequest {
   }
 
   object Features {
-
-    val BASIC_MULTI_PART_PAYMENT_MANDATORY = 0
-    val BASIC_MULTI_PART_PAYMENT_OPTIONAL = 1
-    val PAYMENT_SECRET_MANDATORY = 2
-    val PAYMENT_SECRET_OPTIONAL = 3
-
     def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0L) {
-      case (current, feature) => current + (1 << feature)
+      case (current, feature) => current + (1L << feature)
     }))
   }
 
