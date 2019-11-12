@@ -370,13 +370,17 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         nodeParams.hostedParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), commits, c)
 
-    case Event(c: CMD_HOSTED_OVERRIDE, commits: HOSTED_DATA_COMMITMENTS) if commits.isHost =>
+    case Event(c: CMD_HOSTED_OVERRIDE, commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.getError.isDefined =>
       val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, c.newLocalBalance)
       val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
         localUpdates = overridingLocallySignedLCSS.localUpdates, remoteUpdates = overridingLocallySignedLCSS.remoteUpdates,
         localSigOfRemoteLCSS = overridingLocallySignedLCSS.localSigOfRemote)
       log.info(s"saving override proposal for channelId=${commits.channelId}, state=$stateName")
       stay using commits.copy(overrideProposal = Some(localSO)) storing() sending localSO replying "ok"
+
+    case Event(CMD_GETINFO, commits: HOSTED_DATA_COMMITMENTS) =>
+      sender ! RES_HOSTED_GETINFO(remoteNodeId, commits.channelId, stateName, commits)
+      stay
 
     case Event(any, _) =>
       log.debug(s"Hosted channel failed to handle $any in state=$stateName, data=$stateData, remoteNodeId=$remoteNodeId")

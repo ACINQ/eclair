@@ -72,9 +72,7 @@ object TestConstants {
 
     override def getFeeratePerKw(target: Int): Long = currentFeerates.feePerBlock(target)
 
-    def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
-      currentFeerates = feeratesPerKw
-    }
+    def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = currentFeerates = feeratesPerKw
   }
 
   def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")

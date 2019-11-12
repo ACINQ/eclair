@@ -6,6 +6,8 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
+import fr.acinq.eclair.channel.Register.Forward
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import fr.acinq.eclair.wire
@@ -33,6 +35,12 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
       Option(inMemoryHostedChannels get cmd.channelId) match {
         case None => restoreOrNotFound(cmd.channelId)(_ forward cmd)
         case Some(channel) => channel forward cmd
+      }
+
+    case Forward(channelId, CMD_GETINFO) =>
+      Option(inMemoryHostedChannels get channelId) match {
+        case None => restoreOrNotFound(channelId)(_ forward CMD_GETINFO)
+        case Some(channel) => channel forward CMD_GETINFO
       }
 
     case cmd: HasHostedChanIdCommand => Option(inMemoryHostedChannels get cmd.channelId).foreach(_ ! cmd)

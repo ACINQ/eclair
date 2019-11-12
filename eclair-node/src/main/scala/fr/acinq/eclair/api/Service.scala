@@ -290,6 +290,11 @@ trait Service extends ExtraDirectives with Logging {
                             complete(eclairApi.fulfillHostedExternal(channelId, htlcId, paymentPreimage))
                           }
                         } ~
+                        path("hostedchannel") {
+                          formFields(channelIdFormParam) { channelId =>
+                            complete(eclairApi.hostedChannelInfo(channelId))
+                          }
+                        } ~
                         path("getnewaddress") {
                           complete(eclairApi.newAddress())
                         }

@@ -31,6 +31,7 @@ case class HOSTED_DATA_CLIENT_WAIT_HOST_STATE_UPDATE(commits: HOSTED_DATA_COMMIT
 case class HOSTED_DATA_HOST_WAIT_CLIENT_STATE_UPDATE(init: InitHostedChannel, refundScriptPubKey: ByteVector) extends HostedData {
   require(Helpers.Closing.isValidFinalScriptPubkey(refundScriptPubKey), "invalid refundScriptPubKey when opening a hosted channel")
 }
+final case class RES_HOSTED_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, commits: HOSTED_DATA_COMMITMENTS)
 
 case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
                                    channelVersion: ChannelVersion,

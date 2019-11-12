@@ -118,6 +118,8 @@ trait Eclair {
   def overrideHostedChannel(channelId: ByteVector32, newLocalBalance: MilliSatoshi)(implicit timeout: Timeout): Future[String]
 
   def fulfillHostedExternal(channelId: ByteVector32, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String]
+
+  def hostedChannelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[AnyRef]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -310,4 +312,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   def fulfillHostedExternal(channelId: ByteVector32, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String] =
     (appKit.hostedChannelGateway ? CMD_HOSTED_EXTERNAL_FULFILL(channelId, htlcId, paymentPreimage)).mapTo[String]
+
+  def hostedChannelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[AnyRef] =
+    (appKit.hostedChannelGateway ? Forward(channelId, CMD_GETINFO)).mapTo[AnyRef]
 }
