@@ -61,6 +61,18 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender)))
   }
 
+  test("reject payment with unknown mandatory feature") { f =>
+    import f._
+    val unknownFeature = 42
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmountMsat), paymentHash, randomKey, "Some invoice", features = Some(Features(unknownFeature)))
+    val req = SendPaymentRequest(finalAmountMsat + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    val fail = sender.expectMsgType[PaymentFailed]
+    assert(fail.id === id)
+    assert(fail.failures.head.isInstanceOf[LocalFailure])
+  }
+
   test("forward payment with pre-defined route") { f =>
     import f._
     sender.send(initiator, SendPaymentRequest(finalAmountMsat, paymentHash, c, 1, predefinedRoute = Seq(a, b, c)))

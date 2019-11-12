@@ -22,10 +22,10 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.payment.{LocalFailure, PaymentFailed, PaymentRequest}
 import fr.acinq.eclair.router.RouteParams
 import fr.acinq.eclair.wire.Onion
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
@@ -43,21 +43,26 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       val paymentId = UUID.randomUUID()
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.targetNodeId, r.paymentRequest, storeInDb = true, publishEvent = true)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
-      r.paymentRequest match {
-        case Some(invoice) if invoice.features.allowMultiPart =>
-          r.predefinedRoute match {
-            case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentHash, invoice.paymentSecret.get, r.targetNodeId, r.amount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
-            case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(r.paymentHash, hops, Onion.createMultiPartPayload(r.amount, invoice.amount.getOrElse(r.amount), finalExpiry, invoice.paymentSecret.get))
-          }
-        case _ =>
-          val payFsm = spawnPaymentFsm(paymentCfg)
-          // NB: we only generate legacy payment onions for now for maximum compatibility.
-          r.predefinedRoute match {
-            case Nil => payFsm forward SendPayment(r.paymentHash, r.targetNodeId, FinalLegacyPayload(r.amount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
-            case hops => payFsm forward SendPaymentToRoute(r.paymentHash, hops, FinalLegacyPayload(r.amount, finalExpiry))
-          }
+      if (r.paymentRequest.exists(!_.features.supported)) {
+        sender ! paymentId
+        sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException(s"can't send payment: unknown invoice features (${r.paymentRequest.get.features})")) :: Nil)
+      } else {
+        r.paymentRequest match {
+          case Some(invoice) if invoice.features.allowMultiPart =>
+            r.predefinedRoute match {
+              case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentHash, invoice.paymentSecret.get, r.targetNodeId, r.amount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
+              case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(r.paymentHash, hops, Onion.createMultiPartPayload(r.amount, invoice.amount.getOrElse(r.amount), finalExpiry, invoice.paymentSecret.get))
+            }
+          case _ =>
+            val payFsm = spawnPaymentFsm(paymentCfg)
+            // NB: we only generate legacy payment onions for now for maximum compatibility.
+            r.predefinedRoute match {
+              case Nil => payFsm forward SendPayment(r.paymentHash, r.targetNodeId, FinalLegacyPayload(r.amount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
+              case hops => payFsm forward SendPaymentToRoute(r.paymentHash, hops, FinalLegacyPayload(r.amount, finalExpiry))
+            }
+        }
+        sender ! paymentId
       }
-      sender ! paymentId
   }
 
   def spawnPaymentFsm(paymentCfg: SendPaymentConfig): ActorRef = context.actorOf(PaymentLifecycle.props(nodeParams, paymentCfg, router, register))

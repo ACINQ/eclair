@@ -63,7 +63,13 @@ object Features {
     * we don't understand (even bits).
     */
   def areSupported(features: BitVector): Boolean = {
-    val supportedMandatoryFeatures = Set[Long](OPTION_DATA_LOSS_PROTECT_MANDATORY, VARIABLE_LENGTH_ONION_MANDATORY, PAYMENT_SECRET_MANDATORY, BASIC_MULTI_PART_PAYMENT_MANDATORY)
+    val supportedMandatoryFeatures = Set[Long](
+      OPTION_DATA_LOSS_PROTECT_MANDATORY,
+      CHANNEL_RANGE_QUERIES_BIT_MANDATORY,
+      VARIABLE_LENGTH_ONION_MANDATORY,
+      CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY,
+      PAYMENT_SECRET_MANDATORY,
+      BASIC_MULTI_PART_PAYMENT_MANDATORY)
     val reversed = features.reverse
     for (i <- 0L until reversed.length by 2) {
       if (reversed.get(i) && !supportedMandatoryFeatures.contains(i)) return false
