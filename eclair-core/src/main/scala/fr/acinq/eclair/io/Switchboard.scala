@@ -25,10 +25,11 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.{Origin, Relayer}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{NodeAddress, TemporaryNodeFailure, UpdateAddHtlc}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -42,45 +43,35 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   authenticator ! self
 
-  // we load peers and channels from database
   {
     // Hosted channels with HTLCs in-flight
+    // we load peers and channels from database
     val hotHostedChannels: Seq[HOSTED_DATA_COMMITMENTS] = nodeParams.db.hostedChannels.listHotChannels()
+    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(c, None).isEmpty)
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
-    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(c, None).isEmpty)
     closedChannels.foreach(c => {
       log.info(s"closing channel ${c.channelId}")
       nodeParams.db.channels.removeChannel(c.channelId)
     })
-    val peers = nodeParams.db.peers.listPeers()
 
-    checkBrokenHtlcsLink(channels, hotHostedChannels, nodeParams.privateKey, nodeParams.globalFeatures) match {
-      case Nil => ()
-      case brokenHtlcs =>
-        val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
-        brokenHtlcKiller ! brokenHtlcs
-    }
+    val peers: Map[PublicKey, NodeAddress] = nodeParams.db.peers.listPeers()
+    val brokenHtlcs: Seq[UpdateAddHtlc] = checkBrokenHtlcsLink(channels, hotHostedChannels, nodeParams.privateKey, nodeParams.globalFeatures)
+    if (brokenHtlcs.nonEmpty) context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper") ! brokenHtlcs
 
-    channels
-      .groupBy(_.commitments.remoteParams.nodeId)
-      .map {
-        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
-      }
-      .foreach {
-        case (remoteNodeId, states, nodeaddress_opt) =>
-          // we might not have an address if we didn't initiate the connection in the first place
-          val address_opt = nodeaddress_opt.map(_.socketAddress)
-          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
-          peer ! Peer.Reconnect
-      }
+    cleanupRelayDb(channels, hotHostedChannels, nodeParams.db.pendingRelay)
+
+    for {
+      (remoteNodeId, states) <- channels.groupBy(_.commitments.remoteParams.nodeId)
+      // we might not have an address if we didn't initiate the connection in the first place
+      peer = createOrGetPeer(remoteNodeId, peers.get(remoteNodeId).map(_.socketAddress), states.toSet)
+    } peer ! Peer.Reconnect
 
     hostedChannelGateway ! HotChannels(hotHostedChannels)
   }
 
   def receive: Receive = {
-
     case Peer.Connect(publicKey, _) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
@@ -92,7 +83,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     case d: Peer.Disconnect =>
       getPeer(d.nodeId) match {
         case Some(peer) => peer forward d
-        case None       => sender ! Status.Failure(new RuntimeException("peer not found"))
+        case None => sender ! Status.Failure(new RuntimeException("peer not found"))
       }
 
     case o: Peer.OpenChannel =>
@@ -101,15 +92,14 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
+    case auth: Authenticator.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(auth.remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
 
     case r: Rebroadcast => context.children.foreach(_ forward r)
 
     case 'peers => sender ! context.children
-
   }
 
   /**
@@ -132,26 +122,24 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
    * @param offlineChannels
    * @return
    */
-  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
-    getPeer(remoteNodeId) match {
-      case Some(peer) => peer
-      case None =>
-        log.info(s"creating new peer current=${context.children.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, hostedChannelGateway, wallet), name = peerActorName(remoteNodeId))
-        peer ! Peer.Init(previousKnownAddress, offlineChannels)
-        peer
+  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]): ActorRef =
+    getPeer(remoteNodeId).getOrElse {
+      log.info(s"creating new peer current=${context.children.size}")
+      val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, hostedChannelGateway, wallet), name = peerActorName(remoteNodeId))
+      peer ! Peer.Init(previousKnownAddress, offlineChannels)
+      peer
     }
-  }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
 
   // we resume failing peers because they may have open channels that we don't want to close abruptly
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
 object Switchboard extends Logging {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, hostedChannelGateway: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, hostedChannelGateway, wallet))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, hostedChannelGateway: ActorRef, wallet: EclairWallet) =
+    Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, hostedChannelGateway, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
@@ -164,7 +152,8 @@ object Switchboard extends Logging {
    *
    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
    */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], hostedChannels: Seq[HOSTED_DATA_COMMITMENTS], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], hostedChannels: Seq[HOSTED_DATA_COMMITMENTS],
+                           privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
@@ -187,7 +176,7 @@ object Switchboard extends Logging {
     // Here we do it differently because we need the origin information.
     val relayed_out = channels.flatMap(_.commitments.originChannels.values).collect { case r: Origin.Relayed => r }.toSet
 
-    val hosted_relayed_out = hostedChannels.flatMap(_.originChannels.values).collect { case r: Origin.Relayed => r }
+    val hosted_relayed_out = hostedChannels.flatMap(_.originChannels.values).collect { case r: Origin.Relayed => r }.toSet
 
     val all_htlcs_in = htlcs_in ++ hosted_htlcs_in
 
@@ -198,6 +187,44 @@ object Switchboard extends Logging {
     logger.info(s"htlcs_in=${all_htlcs_in.size} htlcs_out=${all_relayed_out.size} htlcs_broken=${htlcs_broken.size}")
 
     htlcs_broken
+  }
+
+  /**
+   * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
+   * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
+   * don't want to lose preimages, or to forget to fail incoming htlcs, which
+   * would lead to unwanted channel closings.
+   *
+   * Because of the way our watcher works, in a scenario where a downstream
+   * channel has gone to the blockchain, it may send several times the same
+   * command, and the upstream channel may have disappeared in the meantime.
+   *
+   * That's why we need to periodically clean up the pending relay db.
+   */
+  def cleanupRelayDb(channels: Seq[HasCommitments], hostedChannels: Seq[HOSTED_DATA_COMMITMENTS], relayDb: PendingRelayDb): Unit = {
+
+    // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
+    // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
+    // the command from the pending relay db.
+
+    val channel2Htlc = for {
+      hasCommitments <- channels
+      htlc <- hasCommitments.commitments.remoteCommit.spec.htlcs if htlc.direction == OUT
+    } yield (htlc.add.channelId, htlc.add.id)
+
+    val hostedChannel2Htlc = for {
+      hostedCommits <- hostedChannels
+      htlc <- hostedCommits.localSpec.htlcs if htlc.direction == IN
+    } yield (htlc.add.channelId, htlc.add.id)
+
+    val pendingRelay = for {
+      (channelId, cmd) <- relayDb.listPendingRelay()
+    } yield (channelId, cmd.id)
+
+    for {
+      (channelId, htlcId) <- pendingRelay -- channel2Htlc -- hostedChannel2Htlc
+      _ = logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
+    } yield relayDb.removePendingRelay(channelId, htlcId)
   }
 }
 
