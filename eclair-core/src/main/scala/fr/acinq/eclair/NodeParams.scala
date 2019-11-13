@@ -277,7 +277,7 @@ object NodeParams {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
-      enableTrampolinePayment = config.getBoolean("trampoline-payment-enable")
+      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }
 }
