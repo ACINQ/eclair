@@ -30,9 +30,10 @@ trait ReceiveHandler {
  */
 class PaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  self ! new MultiPartHandler(nodeParams, nodeParams.db.payments)
+  // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
+  private val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments)
 
-  override def receive: Receive = normal(PartialFunction.empty[Any, Unit])
+  override def receive: Receive = normal(defaultHandler.handle(context, log))
 
   def normal(handle: Receive): Receive = handle orElse {
     case handler: ReceiveHandler =>
