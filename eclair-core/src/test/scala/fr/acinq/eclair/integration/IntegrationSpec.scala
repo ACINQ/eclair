@@ -35,7 +35,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
-import fr.acinq.eclair.payment.Relayer.{GetOutgoingChannels, OutgoingChannels}
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}

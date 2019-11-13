@@ -30,6 +30,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload

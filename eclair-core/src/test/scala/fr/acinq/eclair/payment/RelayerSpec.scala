@@ -25,9 +25,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
-import fr.acinq.eclair.payment.Origin._
+import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPacket}
-import fr.acinq.eclair.payment.Relayer._
+import fr.acinq.eclair.payment.relay.{Origin, Relayer}
+import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.{Announcements, ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
@@ -231,7 +232,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd1.message.upstream === Upstream.Relayed(add_ab))
 
-    sender.send(relayer, Status.Failure(Register.ForwardShortIdFailure(fwd1)))
+    register.send(register.lastSender, Status.Failure(Register.ForwardShortIdFailure(fwd1)))
 
     val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd2.channelId === channelId_ab)
