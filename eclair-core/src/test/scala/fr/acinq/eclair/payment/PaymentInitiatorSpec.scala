@@ -152,7 +152,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     assert(trampolinePayload.outgoingCltv.toLong === currentBlockCount + 9 + 1)
     assert(trampolinePayload.outgoingNodeId === c)
     assert(trampolinePayload.paymentSecret === None) // we're not leaking the invoice secret to the trampoline node
-    assert(trampolinePayload.invoiceHints === None)
+    assert(trampolinePayload.invoiceRoutingInfo === None)
     assert(trampolinePayload.invoiceFeatures === None)
 
     // Verify that the recipient can correctly peel the trampoline onion.

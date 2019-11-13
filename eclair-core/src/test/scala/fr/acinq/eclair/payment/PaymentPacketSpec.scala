@@ -28,8 +28,8 @@ import fr.acinq.eclair.payment.IncomingPacket.{ChannelRelayPacket, FinalPacket, 
 import fr.acinq.eclair.payment.OutgoingPacket._
 import fr.acinq.eclair.payment.PaymentRequest.Features
 import fr.acinq.eclair.router.{ChannelHop, NodeHop}
-import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
-import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
+import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, RelayLegacyPayload}
+import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
@@ -43,6 +43,8 @@ import scodec.bits.ByteVector
 class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
 
   import PaymentPacketSpec._
+
+  implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   test("compute fees") {
     val feeBaseMsat = 150000 msat
@@ -147,7 +149,12 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   test("build a trampoline payment") {
-    val (amount_ac, expiry_ac, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, finalAmount * 2, finalExpiry, paymentSecret))
+    // simple trampoline route to e:
+    //             .--.   .--.
+    //            /    \ /    \
+    // a -> b -> c      d      e
+
+    val (amount_ac, expiry_ac, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, finalAmount * 3, finalExpiry, paymentSecret))
     assert(amount_ac === amount_bc)
     assert(expiry_ac === expiry_bc)
 
@@ -158,9 +165,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val add_b = UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet)
     val Right(ChannelRelayPacket(add_b2, payload_b, packet_c)) = decrypt(add_b, priv_b.privateKey, ByteVector.empty)
     assert(add_b2 === add_b)
-    assert(payload_b.outgoingChannelId === channelUpdate_bc.shortChannelId)
-    assert(payload_b.amountToForward === amount_bc)
-    assert(payload_b.outgoingCltv === expiry_bc)
+    assert(payload_b === RelayLegacyPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc))
 
     val add_c = UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c)
     val Right(NodeRelayPacket(add_c2, outer_c, inner_c, packet_d)) = decrypt(add_c, priv_c.privateKey, TestConstants.globalFeatures)
@@ -171,7 +176,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_c.amountToForward === amount_cd)
     assert(inner_c.outgoingCltv === expiry_cd)
     assert(inner_c.outgoingNodeId === d)
-    assert(inner_c.invoiceHints === None)
+    assert(inner_c.invoiceRoutingInfo === None)
     assert(inner_c.invoiceFeatures === None)
     assert(inner_c.paymentSecret === None)
 
@@ -188,7 +193,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_d.amountToForward === amount_de)
     assert(inner_d.outgoingCltv === expiry_de)
     assert(inner_d.outgoingNodeId === e)
-    assert(inner_d.invoiceHints === None)
+    assert(inner_d.invoiceRoutingInfo === None)
     assert(inner_d.invoiceFeatures === None)
     assert(inner_d.paymentSecret === None)
 
@@ -199,10 +204,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val add_e = UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet)
     val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, TestConstants.globalFeatures)
     assert(add_e2 === add_e)
-    assert(payload_e.amount === finalAmount)
-    assert(payload_e.totalAmount === finalAmount * 2)
-    assert(payload_e.expiry === finalExpiry)
-    assert(payload_e.paymentSecret === Some(paymentSecret))
+    assert(payload_e === FinalTlvPayload(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(paymentSecret, finalAmount * 3))))
   }
 
   test("build a trampoline payment with non-trampoline recipient") {
@@ -234,7 +236,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_c.amountToForward === amount_cd)
     assert(inner_c.outgoingCltv === expiry_cd)
     assert(inner_c.outgoingNodeId === d)
-    assert(inner_c.invoiceHints === None)
+    assert(inner_c.invoiceRoutingInfo === None)
     assert(inner_c.invoiceFeatures === None)
     assert(inner_c.paymentSecret === None)
 
@@ -254,7 +256,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_d.totalAmount === finalAmount)
     assert(inner_d.paymentSecret === invoice.paymentSecret)
     assert(inner_d.invoiceFeatures === Some(invoiceFeatures.bitmask.bytes))
-    assert(inner_d.invoiceHints === Some(routingHints))
+    assert(inner_d.invoiceRoutingInfo === Some(routingHints))
   }
 
   test("fail to build a trampoline payment to non-trampoline recipient for 0-value invoice") {

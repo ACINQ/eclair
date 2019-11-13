@@ -173,7 +173,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // We simulate a payment split between multiple trampoline routes.
-    val totalAmount = finalAmount * 2
+    val totalAmount = finalAmount * 3
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: Nil
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
     assert(trampolineAmount === finalAmount)
@@ -317,7 +317,7 @@ class RelayerSpec extends TestkitBaseClass {
   test("fail to relay a trampoline htlc-add when trampoline is disabled") { f =>
     import f._
 
-    val nodeParams = TestConstants.Bob.nodeParams.copy(enableTrampolineRouting = false)
+    val nodeParams = TestConstants.Bob.nodeParams.copy(enableTrampolinePayment = false)
     val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, paymentHandler.ref))
 
     // we use this to build a valid trampoline onion inside a normal onion

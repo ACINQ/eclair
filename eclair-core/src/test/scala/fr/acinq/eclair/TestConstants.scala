@@ -129,7 +129,7 @@ object TestConstants {
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
-      enableTrampolineRouting = true
+      enableTrampolinePayment = true
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -209,7 +209,7 @@ object TestConstants {
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
-      enableTrampolineRouting = true
+      enableTrampolinePayment = true
     )
 
     def channelParams = Peer.makeChannelParams(

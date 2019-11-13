@@ -147,7 +147,7 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val sender = TestProbe()
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolineRouting = false)))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false)))
       sender.send(handler, ReceivePayment(Some(42 msat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
       assert(!pr.features.allowMultiPart)
@@ -155,7 +155,7 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     }
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolineRouting = false)))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false)))
       sender.send(handler, ReceivePayment(Some(42 msat), "1 coffee", allowMultiPart = true))
       val pr = sender.expectMsgType[PaymentRequest]
       assert(pr.features.allowMultiPart)
@@ -163,7 +163,7 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     }
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolineRouting = true)))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true)))
       sender.send(handler, ReceivePayment(Some(42 msat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
       assert(!pr.features.allowMultiPart)
@@ -171,7 +171,7 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     }
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolineRouting = true)))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true)))
       sender.send(handler, ReceivePayment(Some(42 msat), "1 coffee", allowMultiPart = true))
       val pr = sender.expectMsgType[PaymentRequest]
       assert(pr.features.allowMultiPart)

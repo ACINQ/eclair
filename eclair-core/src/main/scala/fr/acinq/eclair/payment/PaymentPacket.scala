@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Upstream}
@@ -25,7 +26,6 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomKey}
-import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -36,7 +36,7 @@ import scodec.{Attempt, Codec, DecodeResult}
 sealed trait IncomingPacket
 
 /** Helpers to handle incoming payment packets. */
-object IncomingPacket extends Logging {
+object IncomingPacket {
 
   // @formatter:off
   /** We are the final recipient. */
@@ -61,14 +61,14 @@ object IncomingPacket extends Logging {
 
   case class DecodedOnionPacket(payload: Onion.PerHopPayload, next: OnionRoutingPacket)
 
-  private def decryptOnion(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket): Either[FailureMessage, DecodedOnionPacket] =
+  private def decryptOnion(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket)(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket] =
     packetType.peel(privateKey, add.paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         getOnionCodec(p, packetType).decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !Features.hasVariableLengthOnion(features) => Left(InvalidRealm)
           case Attempt.Successful(DecodeResult(perHopPayload, remainder)) =>
             if (remainder.nonEmpty) {
-              logger.warn(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
+              log.warning(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
             }
             Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionCodecs.MissingRequiredTlv) => Left(e.failureMessage)
@@ -91,7 +91,7 @@ object IncomingPacket extends Logging {
    * @param features   this node's supported features
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
-  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector): Either[FailureMessage, IncomingPacket] = {
+  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
     decryptOnion(add, privateKey, features)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
@@ -229,7 +229,7 @@ object OutgoingPacket {
       case ((amount, expiry, payloads), hop) =>
         // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
         val payload = if (payloads.length == 1) {
-          Onion.createNodeRelayToLegacyPayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
+          Onion.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
         } else {
           Onion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
         }

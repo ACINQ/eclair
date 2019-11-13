@@ -63,9 +63,9 @@ class MultiPartHandler(nodeParams: NodeParams,
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
           val f1 = Seq(Features.PAYMENT_SECRET_OPTIONAL)
-          val f2 = if (allowMultiPart) Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL +: f1 else f1
-          val f3 = if (nodeParams.enableTrampolineRouting) Features.TRAMPOLINE_PAYMENT_OPTIONAL +: f2 else f2
-          Some(PaymentRequest.Features(f3: _*))
+          val f2 = if (allowMultiPart) Seq(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) else Nil
+          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TRAMPOLINE_PAYMENT_OPTIONAL) else Nil
+          Some(PaymentRequest.Features(f1 ++ f2 ++ f3: _*))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)

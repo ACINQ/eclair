@@ -19,6 +19,7 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
@@ -30,7 +31,6 @@ import fr.acinq.eclair.payment.{IncomingPacket, Origin}
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 /**
@@ -40,6 +40,9 @@ import scodec.bits.ByteVector
 class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
+
+  // we pass these to helpers classes so that they have the logging context
+  implicit def implicitLog: LoggingAdapter = log
 
   authenticator ! self
 
@@ -141,7 +144,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
-object Switchboard extends Logging {
+object Switchboard {
 
   def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet))
 
@@ -156,7 +159,7 @@ object Switchboard extends Logging {
    *
    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
    */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): Seq[UpdateAddHtlc] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
@@ -177,7 +180,7 @@ object Switchboard extends Logging {
 
     val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
 
-    logger.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
+    log.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
 
     htlcs_broken
   }
@@ -194,7 +197,7 @@ object Switchboard extends Logging {
    *
    * That's why we need to periodically clean up the pending relay db.
    */
-  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
+  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb)(implicit log: LoggingAdapter): Int = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
@@ -212,7 +215,7 @@ object Switchboard extends Logging {
 
     toClean.foreach {
       case (channelId, htlcId) =>
-        logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
+        log.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
         relayDb.removePendingRelay(channelId, htlcId)
     }
     toClean.size

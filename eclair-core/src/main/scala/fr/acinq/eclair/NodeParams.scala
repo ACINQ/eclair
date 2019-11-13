@@ -81,7 +81,7 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
-                      enableTrampolineRouting: Boolean) {
+                      enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
   def currentBlockHeight: Long = blockCount.get
@@ -277,7 +277,7 @@ object NodeParams {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
-      enableTrampolineRouting = config.getBoolean("trampoline-routing-enable")
+      enableTrampolinePayment = config.getBoolean("trampoline-payment-enable")
     )
   }
 }
