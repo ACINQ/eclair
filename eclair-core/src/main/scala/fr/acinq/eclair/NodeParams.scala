@@ -80,7 +80,8 @@ case class NodeParams(keyManager: KeyManager,
                       minFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
-                      maxPaymentAttempts: Int) {
+                      maxPaymentAttempts: Int,
+                      enableTrampolineRouting: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
   def currentBlockHeight: Long = blockCount.get
@@ -275,7 +276,8 @@ object NodeParams {
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")
       ),
       socksProxy_opt = socksProxy_opt,
-      maxPaymentAttempts = config.getInt("max-payment-attempts")
+      maxPaymentAttempts = config.getInt("max-payment-attempts"),
+      enableTrampolineRouting = config.getBoolean("trampoline-routing-enable")
     )
   }
 }

@@ -128,7 +128,8 @@ object TestConstants {
         searchRatioChannelCapacity = 0.0
       ),
       socksProxy_opt = None,
-      maxPaymentAttempts = 5
+      maxPaymentAttempts = 5,
+      enableTrampolineRouting = true
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -207,7 +208,8 @@ object TestConstants {
         searchRatioChannelCapacity = 0.0
       ),
       socksProxy_opt = None,
-      maxPaymentAttempts = 5
+      maxPaymentAttempts = 5,
+      enableTrampolineRouting = true
     )
 
     def channelParams = Peer.makeChannelParams(

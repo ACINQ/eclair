@@ -44,6 +44,12 @@ object Features {
   val BASIC_MULTI_PART_PAYMENT_MANDATORY = 16
   val BASIC_MULTI_PART_PAYMENT_OPTIONAL = 17
 
+  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
+  // We're not advertizing these bits yet in our announcements, clients have to assume support.
+  // This is why we haven't added them yet to `areSupported`.
+  val TRAMPOLINE_PAYMENT_MANDATORY = 50
+  val TRAMPOLINE_PAYMENT_OPTIONAL = 51
+
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
 
