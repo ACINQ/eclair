@@ -23,9 +23,8 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.payment.Relayer.FinalPayload
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest}
-import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
+import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
@@ -47,7 +46,7 @@ class MultiPartHandler(nodeParams: NodeParams,
    * Can be overridden for a more fine-grained control of whether or not to handle this payload.
    * If the call returns false, then the pattern matching will fail and the payload will be passed to other handlers.
    */
-  def doHandle(p: FinalPayload): Boolean = true
+  def doHandle(p: IncomingPacket.FinalPacket): Boolean = true
 
   /**
    * Can be overridden to do custom processing on successfully received payments.
@@ -62,10 +61,11 @@ class MultiPartHandler(nodeParams: NodeParams,
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
-        val features = if (allowMultiPart) {
-          Some(PaymentRequest.Features(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL, Features.PAYMENT_SECRET_OPTIONAL))
-        } else {
-          Some(PaymentRequest.Features(Features.PAYMENT_SECRET_OPTIONAL))
+        val features = {
+          val f1 = Seq(Features.PAYMENT_SECRET_OPTIONAL)
+          val f2 = if (allowMultiPart) Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL +: f1 else f1
+          val f3 = if (nodeParams.enableTrampolineRouting) Features.TRAMPOLINE_PAYMENT_OPTIONAL +: f2 else f2
+          Some(PaymentRequest.Features(f3: _*))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
@@ -76,7 +76,7 @@ class MultiPartHandler(nodeParams: NodeParams,
         case Failure(exception) => ctx.sender ! Status.Failure(exception)
       }
 
-    case p: FinalPayload if doHandle(p) => db.getIncomingPayment(p.add.paymentHash) match {
+    case p: IncomingPacket.FinalPacket if doHandle(p) => db.getIncomingPayment(p.add.paymentHash) match {
       case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
         case Some(cmdFail) =>
           ctx.sender ! cmdFail
@@ -156,7 +156,7 @@ object MultiPartHandler {
                             paymentPreimage: Option[ByteVector32] = None,
                             allowMultiPart: Boolean = false)
 
-  private def validatePaymentStatus(payment: FinalPayload, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
       log.warning(s"ignoring incoming payment for paymentHash=${payment.add.paymentHash} which has already been paid")
       false
@@ -168,7 +168,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentAmount(payment: FinalPayload, expectedAmount: MilliSatoshi)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentAmount(payment: IncomingPacket.FinalPacket, expectedAmount: MilliSatoshi)(implicit log: LoggingAdapter): Boolean = {
     // The total amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
     // it must not be greater than two times the requested amount.
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
@@ -183,7 +183,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentCltv(payment: FinalPayload, minExpiry: CltvExpiry)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentCltv(payment: IncomingPacket.FinalPacket, minExpiry: CltvExpiry)(implicit log: LoggingAdapter): Boolean = {
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning(s"received payment with expiry too small for paymentHash=${payment.add.paymentHash} amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
       false
@@ -192,7 +192,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validateInvoiceFeatures(payment: FinalPayload, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
+  private def validateInvoiceFeatures(payment: IncomingPacket.FinalPacket, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
     if (payment.payload.amount < payment.payload.totalAmount && !pr.features.allowMultiPart) {
       log.warning(s"received multi-part payment but invoice doesn't support it for paymentHash=${payment.add.paymentHash} amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
       false
@@ -207,7 +207,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePayment(payment: FinalPayload, record: IncomingPayment, currentBlockHeight: Long)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
+  private def validatePayment(payment: IncomingPacket.FinalPacket, record: IncomingPayment, currentBlockHeight: Long)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, currentBlockHeight)), commit = true)
     val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))

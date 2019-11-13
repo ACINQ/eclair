@@ -22,14 +22,15 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.payment.{LocalFailure, PaymentFailed, PaymentRequest}
-import fr.acinq.eclair.router.RouteParams
-import fr.acinq.eclair.wire.Onion
+import fr.acinq.eclair.payment.{LocalFailure, OutgoingPacket, PaymentFailed, PaymentRequest}
+import fr.acinq.eclair.router.{NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, NodeParams}
+import fr.acinq.eclair.wire.{Onion, OnionTlv}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, randomBytes32}
 
 /**
  * Created by PM on 29/08/2016.
@@ -63,6 +64,29 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
         }
         sender ! paymentId
       }
+
+    case r: SendTrampolinePaymentRequest =>
+      val paymentId = UUID.randomUUID()
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentRequest.paymentHash, r.trampolineNodeId, Some(r.paymentRequest), storeInDb = true, publishEvent = true)
+      val trampolineRoute = Seq(
+        NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
+        NodeHop(r.trampolineNodeId, r.paymentRequest.nodeId, r.trampolineExpiryDelta, r.trampolineFees)
+      )
+      // We generate a random secret for this payment to avoid leaking the invoice secret to the first trampoline node.
+      val trampolineSecret = randomBytes32
+      val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
+        Onion.createMultiPartPayload(r.finalAmount, r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
+      } else {
+        Onion.createSinglePartPayload(r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret)
+      }
+      // We assume that the trampoline node supports multi-part payments (it should).
+      val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
+        OutgoingPacket.buildPacket(Sphinx.TrampolinePacket)(r.paymentRequest.paymentHash, trampolineRoute, finalPayload)
+      } else {
+        OutgoingPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
+      }
+      spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentRequest.paymentHash, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, 1, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionTlv.TrampolineOnion(trampolineOnion.packet)))
+      sender ! paymentId
   }
 
   def spawnPaymentFsm(paymentCfg: SendPaymentConfig): ActorRef = context.actorOf(PaymentLifecycle.props(nodeParams, paymentCfg, router, register))
@@ -74,6 +98,24 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
 object PaymentInitiator {
 
   def props(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef, register: ActorRef) = Props(classOf[PaymentInitiator], nodeParams, router, relayer, register)
+
+  /**
+   * We temporarily let the caller decide to use Trampoline (instead of a normal payment) and set the fees/cltv.
+   * It's the caller's responsibility to retry with a higher fee/cltv on certain failures.
+   * Once we have trampoline fee estimation built into the router, the decision to use Trampoline or not should be done
+   * automatically by the router instead of the caller.
+   * TODO: @t-bast: remove this message once full Trampoline is implemented.
+   */
+  case class SendTrampolinePaymentRequest(finalAmount: MilliSatoshi,
+                                          trampolineFees: MilliSatoshi,
+                                          paymentRequest: PaymentRequest,
+                                          trampolineNodeId: PublicKey,
+                                          finalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
+                                          trampolineExpiryDelta: CltvExpiryDelta,
+                                          routeParams: Option[RouteParams] = None) {
+    // We add one block in order to not have our htlcs fail when a new block has just been found.
+    def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
+  }
 
   case class SendPaymentRequest(amount: MilliSatoshi,
                                 paymentHash: ByteVector32,
