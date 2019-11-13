@@ -19,8 +19,8 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Upstream}
-import fr.acinq.eclair.payment.HtlcGenerationSpec.makeCommitments
-import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayFailure, RelayPayload, RelaySuccess}
+import fr.acinq.eclair.payment.PaymentPacketSpec.makeCommitments
+import fr.acinq.eclair.payment.Relayer.{OutgoingChannel, RelayFailure, RelaySuccess}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.RelayLegacyPayload
 import fr.acinq.eclair.wire._
@@ -41,7 +41,7 @@ class ChannelSelectionSpec extends FunSuite {
 
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
     val onionPayload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
-    val relayPayload = RelayPayload(
+    val relayPayload = IncomingPacket.ChannelRelayPacket(
       add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
       payload = onionPayload,
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
@@ -72,7 +72,7 @@ class ChannelSelectionSpec extends FunSuite {
 
   test("channel selection") {
     val onionPayload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
-    val relayPayload = RelayPayload(
+    val relayPayload = IncomingPacket.ChannelRelayPacket(
       add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
       payload = onionPayload,
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder

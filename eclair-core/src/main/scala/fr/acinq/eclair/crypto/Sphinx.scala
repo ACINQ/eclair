@@ -28,9 +28,9 @@ import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Created by fabrice on 13/01/17.
-  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
-  */
+ * Created by fabrice on 13/01/17.
+ * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
+ */
 object Sphinx extends Logging {
 
   // We use HMAC-SHA256 which returns 32-bytes message authentication codes.
@@ -55,12 +55,12 @@ object Sphinx extends Logging {
   def blind(pub: PublicKey, blindingFactors: Seq[ByteVector32]): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
   /**
-    * Compute the ephemeral public keys and shared secrets for all nodes on the route.
-    *
-    * @param sessionKey this node's session key.
-    * @param publicKeys public keys of each node on the route.
-    * @return a tuple (ephemeral public keys, shared secrets).
-    */
+   * Compute the ephemeral public keys and shared secrets for all nodes on the route.
+   *
+   * @param sessionKey this node's session key.
+   * @param publicKeys public keys of each node on the route.
+   * @return a tuple (ephemeral public keys, shared secrets).
+   */
   def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[ByteVector32]) = {
     val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys.head, sessionKey)
@@ -81,8 +81,8 @@ object Sphinx extends Logging {
   }
 
   /**
-    * Peek at the first bytes of the per-hop payload to extract its length.
-    */
+   * Peek at the first bytes of the per-hop payload to extract its length.
+   */
   def peekPayloadLength(payload: ByteVector): Int = {
     payload.head match {
       case 0 =>
@@ -98,12 +98,12 @@ object Sphinx extends Logging {
   }
 
   /**
-    * Decrypting an onion packet yields a payload for the current node and the encrypted packet for the next node.
-    *
-    * @param payload      decrypted payload for this node.
-    * @param nextPacket   packet for the next node.
-    * @param sharedSecret shared secret for the sending node, which we will need to return failure messages.
-    */
+   * Decrypting an onion packet yields a payload for the current node and the encrypted packet for the next node.
+   *
+   * @param payload      decrypted payload for this node.
+   * @param nextPacket   packet for the next node.
+   * @param sharedSecret shared secret for the sending node, which we will need to return failure messages.
+   */
   case class DecryptedPacket(payload: ByteVector, nextPacket: wire.OnionRoutingPacket, sharedSecret: ByteVector32) {
 
     val isLastPacket: Boolean = nextPacket.hmac == ByteVector32.Zeroes
@@ -111,36 +111,36 @@ object Sphinx extends Logging {
   }
 
   /**
-    * A encrypted onion packet with all the associated shared secrets.
-    *
-    * @param packet        encrypted onion packet.
-    * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
-    *                      packet. Empty if you're just forwarding the packet to the next node.
-    */
+   * A encrypted onion packet with all the associated shared secrets.
+   *
+   * @param packet        encrypted onion packet.
+   * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
+   *                      packet. Empty if you're just forwarding the packet to the next node.
+   */
   case class PacketAndSecrets(packet: wire.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
   sealed trait OnionRoutingPacket {
 
     /**
-      * Supported packet version. Note that since this value is outside of the onion encrypted payload, intermediate
-      * nodes may or may not use this value when forwarding the packet to the next node.
-      */
+     * Supported packet version. Note that since this value is outside of the onion encrypted payload, intermediate
+     * nodes may or may not use this value when forwarding the packet to the next node.
+     */
     def Version = 0
 
     /**
-      * Length of the encrypted onion payload.
-      */
+     * Length of the encrypted onion payload.
+     */
     def PayloadLength: Int
 
     /**
-      * Generate a deterministic filler to prevent intermediate nodes from knowing their position in the route.
-      * See https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#filler-generation
-      *
-      * @param keyType       type of key used (depends on the onion we're building).
-      * @param sharedSecrets shared secrets for all the hops.
-      * @param payloads      payloads for all the hops.
-      * @return filler bytes.
-      */
+     * Generate a deterministic filler to prevent intermediate nodes from knowing their position in the route.
+     * See https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#filler-generation
+     *
+     * @param keyType       type of key used (depends on the onion we're building).
+     * @param sharedSecrets shared secrets for all the hops.
+     * @param payloads      payloads for all the hops.
+     * @return filler bytes.
+     */
     def generateFiller(keyType: String, sharedSecrets: Seq[ByteVector32], payloads: Seq[ByteVector]): ByteVector = {
       require(sharedSecrets.length == payloads.length, "the number of secrets should equal the number of payloads")
 
@@ -156,18 +156,18 @@ object Sphinx extends Logging {
     }
 
     /**
-      * Decrypt the incoming packet, extract the per-hop payload and build the packet for the next node.
-      *
-      * @param privateKey     this node's private key.
-      * @param associatedData associated data.
-      * @param packet         packet received by this node.
-      * @return a DecryptedPacket(payload, packet, shared secret) object where:
-      *         - payload is the per-hop payload for this node.
-      *         - packet is the next packet, to be forwarded using the info that is given in the payload.
-      *         - shared secret is the secret we share with the node that sent the packet. We need it to propagate
-      *         failure messages upstream.
-      *         or a BadOnion error containing the hash of the invalid onion.
-      */
+     * Decrypt the incoming packet, extract the per-hop payload and build the packet for the next node.
+     *
+     * @param privateKey     this node's private key.
+     * @param associatedData associated data.
+     * @param packet         packet received by this node.
+     * @return a DecryptedPacket(payload, packet, shared secret) object where:
+     *         - payload is the per-hop payload for this node.
+     *         - packet is the next packet, to be forwarded using the info that is given in the payload.
+     *         - shared secret is the secret we share with the node that sent the packet. We need it to propagate
+     *         failure messages upstream.
+     *         or a BadOnion error containing the hash of the invalid onion.
+     */
     def peel(privateKey: PrivateKey, associatedData: ByteVector, packet: wire.OnionRoutingPacket): Either[wire.BadOnion, DecryptedPacket] = packet.version match {
       case 0 => Try(PublicKey(packet.publicKey, checkValid = true)) match {
         case Success(packetEphKey) =>
@@ -198,22 +198,22 @@ object Sphinx extends Logging {
     }
 
     /**
-      * Wrap the given packet in an additional layer of onion encryption, adding an encrypted payload for a specific
-      * node.
-      *
-      * Packets are constructed in reverse order:
-      * - you first create the packet for the final recipient
-      * - then you call wrap(...) until you've built the final onion packet that will be sent to the first node in the
-      * route
-      *
-      * @param payload            per-hop payload for the target node.
-      * @param associatedData     associated data.
-      * @param ephemeralPublicKey ephemeral key shared with the target node.
-      * @param sharedSecret       shared secret with this hop.
-      * @param packet             current packet (None if the packet hasn't been initialized).
-      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
-      * @return the next packet.
-      */
+     * Wrap the given packet in an additional layer of onion encryption, adding an encrypted payload for a specific
+     * node.
+     *
+     * Packets are constructed in reverse order:
+     * - you first create the packet for the final recipient
+     * - then you call wrap(...) until you've built the final onion packet that will be sent to the first node in the
+     * route
+     *
+     * @param payload            per-hop payload for the target node.
+     * @param associatedData     associated data.
+     * @param ephemeralPublicKey ephemeral key shared with the target node.
+     * @param sharedSecret       shared secret with this hop.
+     * @param packet             current packet (None if the packet hasn't been initialized).
+     * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
+     * @return the next packet.
+     */
     def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Option[wire.OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): wire.OnionRoutingPacket = {
       require(payload.length <= PayloadLength - MacLength, s"packet payload cannot exceed ${PayloadLength - MacLength} bytes")
 
@@ -235,15 +235,15 @@ object Sphinx extends Logging {
     }
 
     /**
-      * Create an encrypted onion packet that contains payloads for all nodes in the list.
-      *
-      * @param sessionKey     session key.
-      * @param publicKeys     node public keys (one per node).
-      * @param payloads       payloads (one per node).
-      * @param associatedData associated data.
-      * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
-      *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
-      */
+     * Create an encrypted onion packet that contains payloads for all nodes in the list.
+     *
+     * @param sessionKey     session key.
+     * @param publicKeys     node public keys (one per node).
+     * @param payloads       payloads (one per node).
+     * @param associatedData associated data.
+     * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
+     *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
+     */
     def create(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: ByteVector32): PacketAndSecrets = {
       val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
       val filler = generateFiller("rho", sharedsecrets.dropRight(1), payloads.dropRight(1))
@@ -263,28 +263,34 @@ object Sphinx extends Logging {
     }
 
     /**
-      * When an invalid onion is received, its hash should be included in the failure message.
-      */
+     * When an invalid onion is received, its hash should be included in the failure message.
+     */
     def hash(onion: wire.OnionRoutingPacket): ByteVector32 =
       Crypto.sha256(wire.OnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }
 
   /**
-    * A payment onion packet is used when offering an HTLC to a remote node.
-    */
+   * A payment onion packet is used when offering an HTLC to a remote node.
+   */
   object PaymentPacket extends OnionRoutingPacket {
-
     override val PayloadLength = 1300
-
   }
 
   /**
-    * A properly decrypted failure from a node in the route.
-    *
-    * @param originNode     public key of the node that generated the failure.
-    * @param failureMessage friendly failure message.
-    */
+   * A trampoline onion packet is used to defer route construction to trampoline nodes.
+   * It is usually embedded inside a payment onion packet in the final node's payload.
+   */
+  object TrampolinePacket extends OnionRoutingPacket {
+    override val PayloadLength = 400
+  }
+
+  /**
+   * A properly decrypted failure from a node in the route.
+   *
+   * @param originNode     public key of the node that generated the failure.
+   * @param failureMessage friendly failure message.
+   */
   case class DecryptedFailurePacket(originNode: PublicKey, failureMessage: FailureMessage)
 
   object FailurePacket {
@@ -293,15 +299,15 @@ object Sphinx extends Logging {
     val PacketLength = MacLength + MaxPayloadLength + 2 + 2
 
     /**
-      * Create a failure packet that will be returned to the sender.
-      * Each intermediate hop will add a layer of encryption and forward to the previous hop.
-      * Note that malicious intermediate hops may drop the packet or alter it (which breaks the mac).
-      *
-      * @param sharedSecret destination node's shared secret that was computed when the original onion for the HTLC
-      *                     was created or forwarded: see OnionPacket.create() and OnionPacket.wrap().
-      * @param failure      failure message.
-      * @return a failure packet that can be sent to the destination node.
-      */
+     * Create a failure packet that will be returned to the sender.
+     * Each intermediate hop will add a layer of encryption and forward to the previous hop.
+     * Note that malicious intermediate hops may drop the packet or alter it (which breaks the mac).
+     *
+     * @param sharedSecret destination node's shared secret that was computed when the original onion for the HTLC
+     *                     was created or forwarded: see OnionPacket.create() and OnionPacket.wrap().
+     * @param failure      failure message.
+     * @return a failure packet that can be sent to the destination node.
+     */
     def create(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
       val um = generateKey("um", sharedSecret)
       val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
@@ -311,12 +317,12 @@ object Sphinx extends Logging {
     }
 
     /**
-      * Wrap the given packet in an additional layer of onion encryption for the previous hop.
-      *
-      * @param packet       failure packet.
-      * @param sharedSecret destination node's shared secret.
-      * @return an encrypted failure packet that can be sent to the destination node.
-      */
+     * Wrap the given packet in an additional layer of onion encryption for the previous hop.
+     *
+     * @param packet       failure packet.
+     * @param sharedSecret destination node's shared secret.
+     * @return an encrypted failure packet that can be sent to the destination node.
+     */
     def wrap(packet: ByteVector, sharedSecret: ByteVector32): ByteVector = {
       if (packet.length != PacketLength) {
         logger.warn(s"invalid error packet length ${packet.length}, must be $PacketLength (malicious or buggy downstream node)")
@@ -331,15 +337,15 @@ object Sphinx extends Logging {
     }
 
     /**
-      * Decrypt a failure packet. Node shared secrets are applied until the packet's MAC becomes valid, which means that
-      * it was sent by the corresponding node.
-      * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
-      *
-      * @param packet        failure packet.
-      * @param sharedSecrets nodes shared secrets.
-      * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
-      *         decrypted, Failure otherwise.
-      */
+     * Decrypt a failure packet. Node shared secrets are applied until the packet's MAC becomes valid, which means that
+     * it was sent by the corresponding node.
+     * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
+     *
+     * @param packet        failure packet.
+     * @param sharedSecrets nodes shared secrets.
+     * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
+     *         decrypted, Failure otherwise.
+     */
     def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[DecryptedFailurePacket] = Try {
       require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
 
