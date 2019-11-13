@@ -473,6 +473,8 @@ object PaymentRequest {
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
     val recid = bolt11Data.signature.last
     val pub = Crypto.recoverPublicKey(signature, Crypto.sha256(message), recid)
+    // README: since we use pubkey recovery to compute the node id from the message and signature, we don't check the signature.
+    // If instead we read the node id from the `n` field (which nobody uses afaict) then we would have to check the signature.
     val amount_opt = Amount.decode(hrp.drop(prefix.length))
     PaymentRequest(
       prefix = prefix,
