@@ -471,12 +471,12 @@ object PaymentRequest {
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
     val signature = ByteVector64(bolt11Data.signature.take(64))
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
-    val (pub1, pub2) = Crypto.recoverPublicKey(signature, Crypto.sha256(message))
     val recid = bolt11Data.signature.last
-    val pub = if (recid % 2 != 0) pub2 else pub1
+    val pub = Crypto.recoverPublicKey(signature, Crypto.sha256(message), recid)
+    // README: since we use pubkey recovery to compute the node id from the message and signature, we don't check the signature
+    // (it will
+    // If instead we read the node id from the `n` field (which nobody uses afaict) then we would have to check the signature
     val amount_opt = Amount.decode(hrp.drop(prefix.length))
-    val validSig = Crypto.verifySignature(Crypto.sha256(message), signature, pub)
-    require(validSig, "invalid signature")
     PaymentRequest(
       prefix = prefix,
       amount = amount_opt,
