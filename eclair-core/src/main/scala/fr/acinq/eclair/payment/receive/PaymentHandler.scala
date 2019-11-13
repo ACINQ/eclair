@@ -30,13 +30,15 @@ trait ReceiveHandler {
  */
 class PaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  receive(new MultiPartHandler(nodeParams, nodeParams.db.payments))
+  self ! new MultiPartHandler(nodeParams, nodeParams.db.payments)
 
-  override def receive: Receive = {
+  override def receive: Receive = normal(PartialFunction.empty[Any, Unit])
+
+  def normal(handle: Receive): Receive = handle orElse {
     case handler: ReceiveHandler =>
       log.info(s"registering handler of type=${handler.getClass.getSimpleName}")
       // NB: the last handler that was added will be the first called
-      context become (handler.handle(context, log) orElse receive)
+      context become normal(handler.handle(context, log) orElse handle)
   }
 }
 
