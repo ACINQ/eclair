@@ -389,7 +389,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
 object PaymentPacketSpec {
 
   /** Build onion from arbitrary tlv stream (potentially invalid). */
-  def buildTlvOnion(packetType: Sphinx.OnionRoutingPacket)(nodes: Seq[PublicKey], payloads: Seq[TlvStream[OnionTlv]], associatedData: ByteVector32): OnionRoutingPacket = {
+  def buildTlvOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[TlvStream[OnionTlv]], associatedData: ByteVector32): OnionRoutingPacket = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
     val payloadsBin: Seq[ByteVector] = payloads.map(OnionCodecs.tlvPerHopPayloadCodec.encode)

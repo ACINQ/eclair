@@ -182,6 +182,9 @@ object Onion {
    *        /                        \                        \                            /                  \
    * RelayLegacyPayload     ChannelRelayTlvPayload     NodeRelayPayload          FinalLegacyPayload     FinalTlvPayload
    *
+   * We also introduce additional traits to separate payloads based on their encoding (PerHopPayloadFormat) and on the
+   * type of onion packet they can be used with (PacketType).
+   *
    */
 
   sealed trait PerHopPayloadFormat
@@ -194,6 +197,15 @@ object Onion {
     def records: TlvStream[OnionTlv]
   }
 
+  /** Onion packet type (see [[fr.acinq.eclair.crypto.Sphinx.OnionRoutingPacket]]). */
+  sealed trait PacketType
+
+  /** See [[fr.acinq.eclair.crypto.Sphinx.PaymentPacket]]. */
+  sealed trait PaymentPacket extends PacketType
+
+  /** See [[fr.acinq.eclair.crypto.Sphinx.TrampolinePacket]]. */
+  sealed trait TrampolinePacket extends PacketType
+
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
   sealed trait PerHopPayload
 
@@ -205,13 +217,13 @@ object Onion {
     val outgoingCltv: CltvExpiry
   }
 
-  sealed trait ChannelRelayPayload extends RelayPayload {
+  sealed trait ChannelRelayPayload extends RelayPayload with PaymentPacket {
     /** Id of the channel to use to forward a payment to the next node. */
     val outgoingChannelId: ShortChannelId
   }
 
   /** Per-hop payload for a final node. */
-  sealed trait FinalPayload extends PerHopPayload with PerHopPayloadFormat {
+  sealed trait FinalPayload extends PerHopPayload with PerHopPayloadFormat with TrampolinePacket with PaymentPacket {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
     val paymentSecret: Option[ByteVector32]
@@ -231,7 +243,7 @@ object Onion {
     override val outgoingChannelId = records.get[OutgoingChannelId].get.shortChannelId
   }
 
-  case class NodeRelayPayload(records: TlvStream[OnionTlv]) extends RelayPayload with TlvFormat {
+  case class NodeRelayPayload(records: TlvStream[OnionTlv]) extends RelayPayload with TlvFormat with TrampolinePacket {
     val amountToForward = records.get[AmountToForward].get.amount
     val outgoingCltv = records.get[OutgoingCltv].get.cltv
     val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
@@ -391,5 +403,10 @@ object OnionCodecs {
     case legacy: FinalLegacyPayload => Right(legacy)
     case FinalTlvPayload(tlvs) => Left(tlvs)
   })
+
+  def perHopPayloadCodecByPacketType[T <: PacketType](packetType: Sphinx.OnionRoutingPacket[T], isLastPacket: Boolean): Codec[PacketType] = packetType match {
+    case Sphinx.PaymentPacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else channelRelayPerHopPayloadCodec.upcast[PacketType]
+    case Sphinx.TrampolinePacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else nodeRelayPerHopPayloadCodec.upcast[PacketType]
+  }
 
 }

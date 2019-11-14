@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire
-import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, OnionCodecs}
+import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, Onion, OnionCodecs}
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
@@ -119,7 +119,7 @@ object Sphinx extends Logging {
    */
   case class PacketAndSecrets(packet: wire.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
-  sealed trait OnionRoutingPacket {
+  sealed trait OnionRoutingPacket[T <: Onion.PacketType] {
 
     /**
      * Supported packet version. Note that since this value is outside of the onion encrypted payload, intermediate
@@ -273,7 +273,7 @@ object Sphinx extends Logging {
   /**
    * A payment onion packet is used when offering an HTLC to a remote node.
    */
-  object PaymentPacket extends OnionRoutingPacket {
+  object PaymentPacket extends OnionRoutingPacket[Onion.PaymentPacket] {
     override val PayloadLength = 1300
   }
 
@@ -281,7 +281,7 @@ object Sphinx extends Logging {
    * A trampoline onion packet is used to defer route construction to trampoline nodes.
    * It is usually embedded inside a payment onion packet in the final node's payload.
    */
-  object TrampolinePacket extends OnionRoutingPacket {
+  object TrampolinePacket extends OnionRoutingPacket[Onion.TrampolinePacket] {
     override val PayloadLength = 400
   }
 
