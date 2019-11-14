@@ -101,7 +101,7 @@ class SyncLiteSetup(datadir: File,
     val pSyncDone = Promise[Boolean]()
     system.actorOf(Props(new SyncListener(pSyncDone)))
     // connect to the provided node with a sync global feature flag
-    val peer = system.actorOf(Peer.props(nodeParams, syncNodeURI.nodeId, authenticator, watcher, router, relayer, null), "peer")
+    val peer = system.actorOf(Peer.props(nodeParams, syncNodeURI.nodeId, authenticator, watcher, router, relayer, null, null), "peer")
     authenticator ! peer
     peer ! Peer.Init(previousKnownAddress = None, storedChannels = Set.empty)
     peer ! Peer.Connect(syncNodeURI)

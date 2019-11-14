@@ -107,8 +107,8 @@ case class RouteRequest(source: PublicKey,
 
 case class FinalizeRoute(hops: Seq[PublicKey])
 
-case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]) {
-  require(hops.nonEmpty, "route cannot be empty")
+case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+  require(allowEmpty || hops.nonEmpty, "route cannot be empty")
 }
 
 // @formatter:off
@@ -120,6 +120,8 @@ case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
 
 case object GetNetworkStats
+
+case class GetNetworkStatsResponse(stats: Option[NetworkStats])
 
 case object GetRoutingState
 
@@ -185,6 +187,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     // On Android we don't watch the funding tx outputs of public channels
 
+    log.info(s"computing network stats...")
+    val stats = NetworkStats.computeStats(initChannels.values)
+
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
     startWith(NORMAL, Data(Map.empty, initChannels, None, Stash(Map.empty, Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
@@ -242,10 +247,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(SyncProgress(progress), d: Data) =>
       if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
         log.info("initial routing sync done: computing network statistics")
-        stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
-      } else {
-        stay
+        self ! TickComputeNetworkStats
       }
+      stay
 
     case Event(GetRoutingState, d: Data) =>
       stay // ignored on Android
@@ -280,13 +284,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       // On Android we don't rebroadcast announcements
       stay
 
-    case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
-      log.info("re-computing network statistics")
-      stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
-
-    case Event(TickComputeNetworkStats, d) if d.channels.nonEmpty =>
-      log.info("re-computing network statistics")
-      stay using d.copy(stats = NetworkStats(d.channels.values.toSeq))
+    case Event(TickComputeNetworkStats, d) =>
+      stay
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune

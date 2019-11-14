@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment.PaymentLifecycle
+import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._

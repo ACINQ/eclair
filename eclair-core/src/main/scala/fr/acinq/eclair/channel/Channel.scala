@@ -638,7 +638,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! ForwardFulfill(fulfill, origin, htlc)
+          relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
@@ -989,7 +989,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right((commitments1, origin, htlc))) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! ForwardFulfill(fulfill, origin, htlc)
+          relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
@@ -1105,7 +1105,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           cancelTimer(RevocationTimeout.toString)
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
           forwards.foreach {
-            case forwardAdd: ForwardAdd =>
+            case forwardAdd: Relayer.ForwardAdd =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug(s"closing in progress: failing ${forwardAdd.add}")
               self ! CMD_FAIL_HTLC(forwardAdd.add.id, Right(PermanentChannelFailure), commit = true)
@@ -1268,7 +1268,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(fulfill.id) match {
           case Some(origin) =>
             log.info(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
-            relayer ! ForwardFulfill(fulfill, origin, htlc)
+            relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
           case None =>
             // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it

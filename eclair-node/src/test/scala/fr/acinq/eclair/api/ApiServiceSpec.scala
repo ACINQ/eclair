@@ -1,4 +1,3 @@
-// TODO: port API tests to spray
 ///*
 // * Copyright 2019 ACINQ SAS
 // *
@@ -28,11 +27,13 @@
 //import akka.stream.ActorMaterializer
 //import akka.util.Timeout
 //import de.heikoseeberger.akkahttpjson4s.Json4sSupport
-//import fr.acinq.bitcoin.ByteVector32
 //import fr.acinq.bitcoin.Crypto.PublicKey
+//import fr.acinq.bitcoin.{Block, ByteVector32}
 //import fr.acinq.eclair._
+//import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPayment, OutgoingPaymentStatus}
 //import fr.acinq.eclair.io.NodeURI
 //import fr.acinq.eclair.io.Peer.PeerInfo
+//import fr.acinq.eclair.payment.Relayer.UsableBalance
 //import fr.acinq.eclair.payment.{PaymentFailed, _}
 //import fr.acinq.eclair.wire.NodeAddress
 //import org.mockito.scalatest.IdiomaticMockito
@@ -140,12 +141,12 @@
 //      }
 //  }
 //
-//  test("'usablebalances' asks router for current usable balances") {
+//  test("'usablebalances' asks relayer for current usable balances") {
 //    val eclair = mock[Eclair]
 //    val mockService = new MockService(eclair)
 //    eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-//      UsableBalances(canSend = 100000000 msat, canReceive = 20000000 msat, shortChannelId = ShortChannelId(1), remoteNodeId = aliceNodeId, isPublic = true),
-//      UsableBalances(canSend = 400000000 msat, canReceive = 30000000 msat, shortChannelId = ShortChannelId(2), remoteNodeId = aliceNodeId, isPublic = false)
+//      UsableBalance(aliceNodeId, ShortChannelId(1), 100000000 msat, 20000000 msat, isPublic = true),
+//      UsableBalance(aliceNodeId, ShortChannelId(2), 400000000 msat, 30000000 msat, isPublic = false)
 //    ))
 //
 //    Post("/usablebalances") ~>
@@ -293,12 +294,21 @@
 //      }
 //  }
 //
-//  test("'getreceivedinfo' method should respond HTTP 404 with a JSON encoded response if the element is not found") {
+//  test("'getreceivedinfo'") {
+//    val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+//    val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, 42, IncomingPaymentStatus.Pending)
 //    val eclair = mock[Eclair]
-//    eclair.receivedInfo(any[ByteVector32])(any) returns Future.successful(None)
+//    val notFound = randomBytes32
+//    eclair.receivedInfo(notFound)(any) returns Future.successful(None)
+//    val pending = randomBytes32
+//    eclair.receivedInfo(pending)(any) returns Future.successful(Some(defaultPayment))
+//    val expired = randomBytes32
+//    eclair.receivedInfo(expired)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Expired)))
+//    val received = randomBytes32
+//    eclair.receivedInfo(received)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Received(42 msat, 45))))
 //    val mockService = new MockService(eclair)
 //
-//    Post("/getreceivedinfo", FormData("paymentHash" -> ByteVector32.Zeroes.toHex).toEntity) ~>
+//    Post("/getreceivedinfo", FormData("paymentHash" -> notFound.toHex).toEntity) ~>
 //      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
 //      Route.seal(mockService.route) ~>
 //      check {
@@ -306,23 +316,102 @@
 //        assert(status == NotFound)
 //        val resp = entityAs[ErrorResponse](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
 //        assert(resp == ErrorResponse("Not found"))
-//        eclair.receivedInfo(ByteVector32.Zeroes)(any[Timeout]).wasCalled(once)
+//        eclair.receivedInfo(notFound)(any[Timeout]).wasCalled(once)
+//      }
+//
+//    Post("/getreceivedinfo", FormData("paymentHash" -> pending.toHex).toEntity) ~>
+//      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+//      Route.seal(mockService.route) ~>
+//      check {
+//        assert(handled)
+//        assert(status == OK)
+//        val response = entityAs[String]
+//        matchTestJson("received-pending", response)
+//        eclair.receivedInfo(pending)(any[Timeout]).wasCalled(once)
+//      }
+//
+//    Post("/getreceivedinfo", FormData("paymentHash" -> expired.toHex).toEntity) ~>
+//      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+//      Route.seal(mockService.route) ~>
+//      check {
+//        assert(handled)
+//        assert(status == OK)
+//        val response = entityAs[String]
+//        matchTestJson("received-expired", response)
+//        eclair.receivedInfo(expired)(any[Timeout]).wasCalled(once)
+//      }
+//
+//    Post("/getreceivedinfo", FormData("paymentHash" -> received.toHex).toEntity) ~>
+//      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+//      Route.seal(mockService.route) ~>
+//      check {
+//        assert(handled)
+//        assert(status == OK)
+//        val response = entityAs[String]
+//        matchTestJson("received-success", response)
+//        eclair.receivedInfo(received)(any[Timeout]).wasCalled(once)
 //      }
 //  }
 //
-//  test("'sendtoroute' method should accept a both a json-encoded AND comma separaterd list of pubkeys") {
+//  test("'getsentinfo'") {
+//    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, 42 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
+//    val eclair = mock[Eclair]
+//    val pending = UUID.randomUUID()
+//    eclair.sentInfo(Left(pending))(any) returns Future.successful(Seq(defaultPayment))
+//    val failed = UUID.randomUUID()
+//    eclair.sentInfo(Left(failed))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Failed(Nil, 2))))
+//    val sent = UUID.randomUUID()
+//    eclair.sentInfo(Left(sent))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Succeeded(ByteVector32.One, 5 msat, Nil, 3))))
+//    val mockService = new MockService(eclair)
+//
+//    Post("/getsentinfo", FormData("id" -> pending.toString).toEntity) ~>
+//      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+//      Route.seal(mockService.route) ~>
+//      check {
+//        assert(handled)
+//        assert(status == OK)
+//        val response = entityAs[String]
+//        matchTestJson("sent-pending", response)
+//        eclair.sentInfo(Left(pending))(any[Timeout]).wasCalled(once)
+//      }
+//
+//    Post("/getsentinfo", FormData("id" -> failed.toString).toEntity) ~>
+//      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+//      Route.seal(mockService.route) ~>
+//      check {
+//        assert(handled)
+//        assert(status == OK)
+//        val response = entityAs[String]
+//        matchTestJson("sent-failed", response)
+//        eclair.sentInfo(Left(failed))(any[Timeout]).wasCalled(once)
+//      }
+//
+//    Post("/getsentinfo", FormData("id" -> sent.toString).toEntity) ~>
+//      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+//      Route.seal(mockService.route) ~>
+//      check {
+//        assert(handled)
+//        assert(status == OK)
+//        val response = entityAs[String]
+//        matchTestJson("sent-success", response)
+//        eclair.sentInfo(Left(sent))(any[Timeout]).wasCalled(once)
+//      }
+//  }
+//
+//  test("'sendtoroute' method should accept a both a json-encoded AND comma separated list of pubkeys") {
 //    val rawUUID = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
 //    val paymentUUID = UUID.fromString(rawUUID)
 //    val externalId = UUID.randomUUID().toString
+//    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey, "Some invoice")
 //    val expectedRoute = List(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"))
 //    val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
 //    val jsonNodes = serialization.write(expectedRoute)
 //
 //    val eclair = mock[Eclair]
-//    eclair.sendToRoute(any[Option[String]], any[List[PublicKey]], any[MilliSatoshi], any[ByteVector32], any[CltvExpiryDelta])(any[Timeout]) returns Future.successful(paymentUUID)
+//    eclair.sendToRoute(any[Option[String]], any[List[PublicKey]], any[MilliSatoshi], any[ByteVector32], any[CltvExpiryDelta], any[Option[PaymentRequest]])(any[Timeout]) returns Future.successful(paymentUUID)
 //    val mockService = new MockService(eclair)
 //
-//    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.Zeroes.toHex, "finalCltvExpiry" -> "190", "externalId" -> externalId.toString).toEntity) ~>
+//    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.Zeroes.toHex, "finalCltvExpiry" -> "190", "externalId" -> externalId.toString, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
 //      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
 //      addHeader("Content-Type", "application/json") ~>
 //      Route.seal(mockService.route) ~>
@@ -330,7 +419,7 @@
 //        assert(handled)
 //        assert(status == OK)
 //        assert(entityAs[String] == "\"" + rawUUID + "\"")
-//        eclair.sendToRoute(Some(externalId), expectedRoute, 1234 msat, ByteVector32.Zeroes, CltvExpiryDelta(190))(any[Timeout]).wasCalled(once)
+//        eclair.sendToRoute(Some(externalId), expectedRoute, 1234 msat, ByteVector32.Zeroes, CltvExpiryDelta(190), Some(pr))(any[Timeout]).wasCalled(once)
 //      }
 //
 //    // this test uses CSV encoded route
@@ -342,52 +431,49 @@
 //        assert(handled)
 //        assert(status == OK)
 //        assert(entityAs[String] == "\"" + rawUUID + "\"")
-//        eclair.sendToRoute(None, expectedRoute, 1234 msat, ByteVector32.One, CltvExpiryDelta(190))(any[Timeout]).wasCalled(once)
+//        eclair.sendToRoute(None, expectedRoute, 1234 msat, ByteVector32.One, CltvExpiryDelta(190), None)(any[Timeout]).wasCalled(once)
 //      }
 //  }
 //
 //  test("the websocket should return typed objects") {
 //    val mockService = new MockService(mock[Eclair])
 //    val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
-//
 //    val wsClient = WSProbe()
 //
 //    WS("/ws", wsClient.flow) ~>
 //      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
 //      mockService.route ~>
 //      check {
-//
 //        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, timestamp = 1553784963659L)
 //        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"timestamp":1553784963659}"""
-//        serialization.write(pf)(mockService.formatsWithTypeHint) === expectedSerializedPf
+//        assert(serialization.write(pf) === expectedSerializedPf)
 //        system.eventStream.publish(pf)
 //        wsClient.expectMessage(expectedSerializedPf)
 //
 //        val ps = PaymentSent(fixedUUID, ByteVector32.Zeroes, ByteVector32.One, Seq(PaymentSent.PartialPayment(fixedUUID, 21 msat, 1 msat, ByteVector32.Zeroes, None, 1553784337711L)))
 //        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}]}"""
-//        serialization.write(ps)(mockService.formatsWithTypeHint) === expectedSerializedPs
+//        assert(serialization.write(ps) === expectedSerializedPs)
 //        system.eventStream.publish(ps)
 //        wsClient.expectMessage(expectedSerializedPs)
 //
 //        val prel = PaymentRelayed(amountIn = 21 msat, amountOut = 20 msat, paymentHash = ByteVector32.Zeroes, fromChannelId = ByteVector32.Zeroes, ByteVector32.One, timestamp = 1553784963659L)
 //        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}"""
-//        serialization.write(prel)(mockService.formatsWithTypeHint) === expectedSerializedPrel
+//        assert(serialization.write(prel) === expectedSerializedPrel)
 //        system.eventStream.publish(prel)
 //        wsClient.expectMessage(expectedSerializedPrel)
 //
 //        val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentReceived.PartialPayment(21 msat, ByteVector32.Zeroes, 1553784963659L)))
 //        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"amount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}]}"""
-//        serialization.write(precv)(mockService.formatsWithTypeHint) === expectedSerializedPrecv
+//        assert(serialization.write(precv) === expectedSerializedPrecv)
 //        system.eventStream.publish(precv)
 //        wsClient.expectMessage(expectedSerializedPrecv)
 //
 //        val pset = PaymentSettlingOnChain(fixedUUID, amount = 21 msat, paymentHash = ByteVector32.One, timestamp = 1553785442676L)
 //        val expectedSerializedPset = """{"type":"payment-settling-onchain","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
-//        serialization.write(pset)(mockService.formatsWithTypeHint) === expectedSerializedPset
+//        assert(serialization.write(pset) === expectedSerializedPset)
 //        system.eventStream.publish(pset)
 //        wsClient.expectMessage(expectedSerializedPset)
 //      }
-//
 //  }
 //
 //  private def matchTestJson(apiName: String, response: String) = {
