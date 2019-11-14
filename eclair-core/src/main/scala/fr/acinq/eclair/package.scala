@@ -109,7 +109,7 @@ package object eclair {
 
   val blocksPerDay: Int = 144
 
-  val maxHostedBlockHeight: Int = 100000
+  val maxHostedBlockHeight: Int = 500000
 
   /**
    * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
