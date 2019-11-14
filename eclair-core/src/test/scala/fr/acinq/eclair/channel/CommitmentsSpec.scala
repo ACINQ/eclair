@@ -20,7 +20,7 @@ import java.util.UUID
 
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.payment.Origin.Local
+import fr.acinq.eclair.payment.relay.Origin.Local
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{TestkitBaseClass, _}
 import org.scalatest.Outcome

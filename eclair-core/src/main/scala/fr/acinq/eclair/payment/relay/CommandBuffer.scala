@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.relay
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin.ByteVector32

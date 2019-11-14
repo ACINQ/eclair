@@ -27,7 +27,8 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.{IncomingPacket, Origin}
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
+import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
@@ -187,7 +188,7 @@ object Switchboard {
 
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
-   * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
+   * in a database (see [[fr.acinq.eclair.payment.relay.CommandBuffer]]) because we
    * don't want to lose preimages, or to forget to fail incoming htlcs, which
    * would lead to unwanted channel closings.
    *
