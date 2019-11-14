@@ -24,7 +24,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.FunSuite
@@ -328,8 +328,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 object SqlitePaymentsDbSpec {
   val (alicePriv, bobPriv, carolPriv, davePriv) = (randomKey, randomKey, randomKey, randomKey)
   val (alice, bob, carol, dave) = (alicePriv.publicKey, bobPriv.publicKey, carolPriv.publicKey, davePriv.publicKey)
-  val hop_ab = Hop(alice, bob, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(42), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
-  val hop_bc = Hop(bob, carol, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(43), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
+  val hop_ab = ChannelHop(alice, bob, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(42), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
+  val hop_bc = ChannelHop(bob, carol, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(43), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
   val (preimage1, preimage2, preimage3, preimage4) = (randomBytes32, randomBytes32, randomBytes32, randomBytes32)
   val (paymentHash1, paymentHash2, paymentHash3, paymentHash4) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3), Crypto.sha256(preimage4))
 }
