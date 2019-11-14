@@ -16,14 +16,12 @@
 
 package fr.acinq.eclair.payment.send
 
-import java.util.UUID
-
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register, Upstream}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -34,8 +32,6 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion._
 import fr.acinq.eclair.wire._
-import scodec.Attempt
-import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.util.{Failure, Success}
@@ -80,7 +76,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       val hops = c.routePrefix ++ routeHops
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
       val firstHop = hops.head
-      val (cmd, sharedSecrets) = buildCommand(id, c.paymentHash, hops, c.finalPayload)
+      val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(id, c.paymentHash, hops, c.finalPayload)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
@@ -254,7 +250,7 @@ object PaymentLifecycle {
                          maxAttempts: Int,
                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                          routeParams: Option[RouteParams] = None,
-                         routePrefix: Seq[Hop] = Nil) {
+                         routePrefix: Seq[ChannelHop] = Nil) {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
 
     /** Returns the node from which the path-finding algorithm should start. */
@@ -268,7 +264,7 @@ object PaymentLifecycle {
   sealed trait Data
   case object WaitingForRequest extends Data
   case class WaitingForRoute(sender: ActorRef, c: SendPayment, failures: Seq[PaymentFailure]) extends Data
-  case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(ByteVector32, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[Hop]) extends Data
+  case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(ByteVector32, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[ChannelHop]) extends Data
 
   sealed trait State
   case object WAITING_FOR_REQUEST extends State
@@ -276,55 +272,12 @@ object PaymentLifecycle {
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
   // @formatter:on
 
-  def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
-    require(nodes.size == payloads.size)
-    val sessionKey = randomKey
-    val payloadsBin: Seq[ByteVector] = payloads
-      .map {
-        case p: FinalPayload => OnionCodecs.finalPerHopPayloadCodec.encode(p)
-        case p: RelayPayload => OnionCodecs.relayPerHopPayloadCodec.encode(p)
-      }
-      .map {
-        case Attempt.Successful(bitVector) => bitVector.toByteVector
-        case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
-      }
-    Sphinx.PaymentPacket.create(sessionKey, nodes, payloadsBin, associatedData)
-  }
-
-  /**
-   * Build the onion payloads for each hop.
-   *
-   * @param hops         the hops as computed by the router + extra routes from payment request
-   * @param finalPayload payload data for the final node (amount, expiry, additional tlv records, etc)
-   * @return a (firstAmount, firstExpiry, payloads) tuple where:
-   *         - firstAmount is the amount for the first htlc in the route
-   *         - firstExpiry is the cltv expiry for the first htlc in the route
-   *         - a sequence of payloads that will be used to build the onion
-   */
-  def buildPayloads(hops: Seq[Hop], finalPayload: FinalPayload): (MilliSatoshi, CltvExpiry, Seq[PerHopPayload]) = {
-    hops.reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PerHopPayload](finalPayload))) {
-      case ((amount, expiry, payloads), hop) =>
-        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, amount)
-        // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
-        val payload = RelayLegacyPayload(hop.lastUpdate.shortChannelId, amount, expiry)
-        (amount + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, payload +: payloads)
-    }
-  }
-
-  def buildCommand(id: UUID, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
-    val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
-    val nodes = hops.map(_.nextNodeId)
-    // BOLT 2 requires that associatedData == paymentHash
-    val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, Upstream.Local(id), commit = true) -> onion.sharedSecrets
-  }
-
   /**
    * This method retrieves the channel update that we used when we built a route.
    * It just iterates over the hops, but there are at most 20 of them.
    *
    * @return the channel update if found
    */
-  def getChannelUpdateForNode(nodeId: PublicKey, hops: Seq[Hop]): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
+  def getChannelUpdateForNode(nodeId: PublicKey, hops: Seq[ChannelHop]): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
 
 }

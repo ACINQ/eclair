@@ -21,7 +21,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
@@ -175,7 +175,7 @@ case class HopSummary(nodeId: PublicKey, nextNodeId: PublicKey, shortChannelId: 
 }
 
 object HopSummary {
-  def apply(h: Hop): HopSummary = HopSummary(h.nodeId, h.nextNodeId, Some(h.lastUpdate.shortChannelId))
+  def apply(h: ChannelHop): HopSummary = HopSummary(h.nodeId, h.nextNodeId, Some(h.lastUpdate.shortChannelId))
 }
 
 /** A minimal representation of a payment failure (suitable to store in a database). */

@@ -327,6 +327,7 @@ object PaymentRequest {
     lazy val supported: Boolean = areSupported(bitmask)
     lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
     lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
+    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
 
     override def toString: String = s"Features(${bitmask.toBin})"
   }

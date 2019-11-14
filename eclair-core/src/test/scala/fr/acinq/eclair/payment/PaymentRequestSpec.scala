@@ -20,7 +20,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
-import fr.acinq.eclair.Features.PAYMENT_SECRET_OPTIONAL
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
 import org.scalatest.FunSuite
@@ -231,6 +231,7 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.features.bitmask === bin"1000000010")
     assert(!pr.features.allowMultiPart)
     assert(!pr.features.requirePaymentSecret)
+    assert(!pr.features.allowTrampoline)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -248,6 +249,7 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.features.bitmask === bin"000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010")
     assert(!pr.features.allowMultiPart)
     assert(!pr.features.requirePaymentSecret)
+    assert(!pr.features.allowTrampoline)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -345,6 +347,22 @@ class PaymentRequestSpec extends FunSuite {
     val pr2 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
     assert(!pr2.features.requirePaymentSecret)
     assert(pr2.paymentSecret === None)
+  }
+
+  test("trampoline") {
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    assert(!pr.features.allowTrampoline)
+
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_OPTIONAL)))
+    assert(!pr1.features.allowMultiPart)
+    assert(pr1.features.allowTrampoline)
+
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    assert(pr2.features.allowMultiPart)
+    assert(pr2.features.allowTrampoline)
+
+    val pr3 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr3.features.allowTrampoline)
   }
 
   test("nonreg") {
