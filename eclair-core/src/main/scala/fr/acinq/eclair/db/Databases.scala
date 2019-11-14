@@ -17,12 +17,16 @@
 package fr.acinq.eclair.db
 
 import java.io.File
+import java.nio.file.{Files, StandardCopyOption}
 import java.sql.{Connection, DriverManager}
 import java.util.Properties
 
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 import javax.sql.DataSource
+
+import scala.sys.process.Process
+import scala.util.{Failure, Success, Try}
 
 trait Databases {
 
@@ -38,7 +42,9 @@ trait Databases {
 
   val pendingRelay: PendingRelayDb
 
-  def backup(file: File) : Unit
+  def backup(file: File): Unit
+
+  val isBackupSupported: Boolean
 }
 
 object Databases {
@@ -87,13 +93,20 @@ object Databases {
     override val peers = new SqlitePeersDb(eclairJdbc)
     override val payments = new SqlitePaymentsDb(eclairJdbc)
     override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
-    override def backup(file: File): Unit = {
+    override def backup(backupFile: File): Unit = {
+      val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
+
       SqliteUtils.using(eclairJdbc.createStatement()) {
         statement =>  {
-          statement.executeUpdate(s"backup to ${file.getAbsolutePath}")
+          statement.executeUpdate(s"backup to ${tmpFile.getAbsolutePath}")
         }
       }
+
+      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
+      // as the temporary file
+      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
+    override val isBackupSupported: Boolean = true
   }
 
   def psqlDatabaseByConnections(implicit ds: DataSource): Databases = new Databases {
@@ -103,6 +116,7 @@ object Databases {
     override val peers = new PsqlPeersDb()
     override val payments = new PsqlPaymentsDb()
     override val pendingRelay = new PsqlPendingRelayDb()
-    override def backup(file: File): Unit = ()
+    override def backup(file: File): Unit = throw new RuntimeException("psql driver does not support channels backup")
+    override val isBackupSupported: Boolean = false
   }
 }
