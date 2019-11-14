@@ -295,6 +295,11 @@ trait Service extends ExtraDirectives with Logging {
                             complete(eclairApi.hostedChannelInfo(channelId))
                           }
                         } ~
+                        path("decodehostedstate") {
+                          formFields("state".as[ByteVector]) { state =>
+                            complete(eclairApi.decodeHostedState(state))
+                          }
+                        } ~
                         path("getnewaddress") {
                           complete(eclairApi.newAddress())
                         }

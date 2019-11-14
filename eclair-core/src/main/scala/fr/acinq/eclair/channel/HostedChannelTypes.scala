@@ -219,6 +219,8 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   }
 }
 
+case class HostedState(channelId: ByteVector32, nextLocalUpdates: List[UpdateMessage], nextRemoteUpdates: List[UpdateMessage], lastCrossSignedState: LastCrossSignedState)
+
 case class HostedParams(feeBase: MilliSatoshi, feeProportionalMillionth: Int, cltvDelta: CltvExpiryDelta, onChainRefundThreshold: Satoshi,
                         liabilityDeadlineBlockdays: Int, defaultCapacity: MilliSatoshi, defaultClientBalance: MilliSatoshi,
                         maxHtlcValueInFlightMsat: UInt64, htlcMinimum: MilliSatoshi, maxAcceptedHtlcs: Int)

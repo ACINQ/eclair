@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, HostedChannelCodecs, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -120,6 +120,8 @@ trait Eclair {
   def fulfillHostedExternal(channelId: ByteVector32, htlcId: Long, paymentPreimage: ByteVector32)(implicit timeout: Timeout): Future[String]
 
   def hostedChannelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[AnyRef]
+
+  def decodeHostedState(state: ByteVector)(implicit timeout: Timeout): Future[HostedState]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -315,4 +317,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   def hostedChannelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[AnyRef] =
     (appKit.hostedChannelGateway ? Forward(channelId, CMD_GETINFO)).mapTo[AnyRef]
+
+  def decodeHostedState(state: ByteVector)(implicit timeout: Timeout): Future[HostedState] =
+    Future(HostedChannelCodecs.hostedStateCodec.decodeValue(state.toBitVector).require)
 }

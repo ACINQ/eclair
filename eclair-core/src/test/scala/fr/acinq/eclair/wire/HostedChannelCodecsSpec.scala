@@ -5,7 +5,7 @@ import java.util.UUID
 import fr.acinq.eclair._
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomBytes64, randomKey}
-import fr.acinq.eclair.channel.{Channel, ChannelVersion, HOSTED_DATA_COMMITMENTS}
+import fr.acinq.eclair.channel.{Channel, ChannelVersion, HOSTED_DATA_COMMITMENTS, HostedState}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.router.Announcements
@@ -68,9 +68,19 @@ class HostedChannelCodecsSpec extends FunSuite {
       resolvedOutgoingHtlcLeftoverIds = Set.empty,
       overrideProposal = None)
 
-    val binary = HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec.encode(hdc).require
-    val check = HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec.decodeValue(binary).require
-    assert(hdc.localSpec === check.localSpec)
-    assert(hdc === check)
+    {
+      val binary = HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec.encode(hdc).require
+      val check = HostedChannelCodecs.HOSTED_DATA_COMMITMENTS_Codec.decodeValue(binary).require
+      assert(hdc.localSpec === check.localSpec)
+      assert(hdc === check)
+    }
+
+    val state = HostedState(ByteVector32.Zeroes, List(add1, add2), List.empty, lcss1)
+
+    {
+      val binary = HostedChannelCodecs.hostedStateCodec.encode(state).require
+      val check = HostedChannelCodecs.hostedStateCodec.decodeValue(binary).require
+      assert(state === check)
+    }
   }
 }
