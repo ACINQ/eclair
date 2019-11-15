@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.{AddHtlcFailed, Channel, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.payment.Origin.Local
+import fr.acinq.eclair.payment.relay.Origin.Local
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest}
@@ -118,13 +118,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(Hop(a, b, channelUpdate_ab), Hop(b, c, channelUpdate_bc)))
+    val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(ChannelHop(a, b, channelUpdate_ab), ChannelHop(b, c, channelUpdate_bc)))
     sender.send(paymentFSM, request)
     routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
-    routerForwarder.send(paymentFSM, RouteResponse(Seq(Hop(c, d, channelUpdate_cd)), Set.empty, Set.empty))
+    routerForwarder.send(paymentFSM, RouteResponse(Seq(ChannelHop(c, d, channelUpdate_cd)), Set.empty, Set.empty))
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
   }
 
@@ -132,7 +132,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val request = SendPayment(defaultPaymentHash, c, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(Hop(a, b, channelUpdate_ab), Hop(b, c, channelUpdate_bc)))
+    val request = SendPayment(defaultPaymentHash, c, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(ChannelHop(a, b, channelUpdate_ab), ChannelHop(b, c, channelUpdate_bc)))
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMsg(50 millis) // we don't need the router when we already have the whole route
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -144,13 +144,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(Hop(a, b, channelUpdate_ab), Hop(b, c, channelUpdate_bc)))
+    val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(ChannelHop(a, b, channelUpdate_ab), ChannelHop(b, c, channelUpdate_bc)))
     sender.send(paymentFSM, request)
     routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
-    routerForwarder.send(paymentFSM, RouteResponse(Seq(Hop(c, d, channelUpdate_cd)), Set.empty, Set.empty))
+    routerForwarder.send(paymentFSM, RouteResponse(Seq(ChannelHop(c, d, channelUpdate_cd)), Set.empty, Set.empty))
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     sender.send(paymentFSM, UpdateFailMalformedHtlc(randomBytes32, 0, randomBytes32, 0))
@@ -499,9 +499,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("filter errors properly") { _ =>
-    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
+    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(ChannelHop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
     val filtered = PaymentFailure.transformForUser(failures)
-    assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable(ByteVector32.Zeroes)) :: Nil)
+    assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(ChannelHop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable(ByteVector32.Zeroes)) :: Nil)
   }
 
   test("disable database and events") { routerFixture =>

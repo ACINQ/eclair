@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
@@ -57,8 +57,8 @@ object JsonSerializers {
   implicit val remoteCommitsReadWriter: ReadWriter[RemoteCommit] = macroRW
   implicit val commitSgReadWriter: ReadWriter[CommitSig] = macroRW
   implicit val waitingForRevocationReadWriter: ReadWriter[WaitingForRevocation] = macroRW
-  implicit val localOriginReadWriter: ReadWriter[fr.acinq.eclair.payment.Origin.Local] = macroRW
-  implicit val relayedOriginReadWriter: ReadWriter[fr.acinq.eclair.payment.Origin.Relayed] = macroRW
+  implicit val localOriginReadWriter: ReadWriter[Origin.Local] = macroRW
+  implicit val relayedOriginReadWriter: ReadWriter[Origin.Relayed] = macroRW
   implicit val paymentOriginReadWriter: ReadWriter[Origin] = ReadWriter.merge(localOriginReadWriter, relayedOriginReadWriter)
   implicit val remoteChangesReadWriter: ReadWriter[RemoteChanges] = macroRW
 

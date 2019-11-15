@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
-import fr.acinq.eclair.payment.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
@@ -37,8 +37,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.Onion.createMultiPartPayload
-import fr.acinq.eclair.wire.{ChannelUpdate, PaymentTimeout}
+import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag, fixture}
 import scodec.bits.ByteVector
 
@@ -136,8 +135,8 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
 
     // The payment should be split in two, using direct channels with b.
     childPayFsm.expectMsgAllOf(
-      SendPayment(paymentHash, b, createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(Hop(nodeParams.nodeId, b, channelUpdate_ab_1))),
-      SendPayment(paymentHash, b, createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(Hop(nodeParams.nodeId, b, channelUpdate_ab_2)))
+      SendPayment(paymentHash, b, Onion.createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_1))),
+      SendPayment(paymentHash, b, Onion.createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_2)))
     )
     childPayFsm.expectNoMsg(50 millis)
     val childIds = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.toSeq
@@ -157,7 +156,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, b, 1000 * 1000 msat, expiry, 1)
     // Network statistics should be ignored when sending to peer (otherwise we should have split into multiple payments).
     initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(100), d => Satoshi(d.toLong))), localChannels(0))
-    childPayFsm.expectMsg(SendPayment(paymentHash, b, createMultiPartPayload(payment.totalAmount, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(Hop(nodeParams.nodeId, b, channelUpdate_ab_1))))
+    childPayFsm.expectMsg(SendPayment(paymentHash, b, Onion.createMultiPartPayload(payment.totalAmount, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_1))))
     childPayFsm.expectNoMsg(50 millis)
   }
 
@@ -253,6 +252,19 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.parts === partialPayments)
     assert(result.amount === (3500 * 1000).msat)
     assert(result.feesPaid === partialPayments.map(_.feesPaid).sum)
+  }
+
+  test("send to remote trampoline node") { f =>
+    import f._
+    val trampolineTlv = OnionTlv.TrampolineOnion(OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(400)(0), randomBytes32))
+    val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 3, additionalTlvs = Seq(trampolineTlv))
+    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    waitUntilAmountSent(f, payment.totalAmount)
+
+    val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
+    pending.foreach {
+      case (_, p) => assert(p.finalPayload.asInstanceOf[Onion.FinalTlvPayload].records.get[OnionTlv.TrampolineOnion] === Some(trampolineTlv))
+    }
   }
 
   test("split fees between child payments") { f =>
@@ -500,9 +512,9 @@ object MultiPartPaymentLifecycleSpec {
     OutgoingChannel(c, channelUpdate_ac_3, makeCommitments(1500 * 1000 msat, feeRatePerKw)),
     OutgoingChannel(d, channelUpdate_ad_1, makeCommitments(1000 * 1000 msat, feeRatePerKw))))
 
-  val hop_ab_1 = Hop(a, b, channelUpdate_ab_1)
-  val hop_ab_2 = Hop(a, b, channelUpdate_ab_2)
-  val hop_ac_1 = Hop(a, c, channelUpdate_ac_1)
+  val hop_ab_1 = ChannelHop(a, b, channelUpdate_ab_1)
+  val hop_ab_2 = ChannelHop(a, b, channelUpdate_ab_2)
+  val hop_ac_1 = ChannelHop(a, c, channelUpdate_ac_1)
 
   val emptyStats = NetworkStats(0, 0, Stats(Seq(0), d => Satoshi(d.toLong)), Stats(Seq(0), d => CltvExpiryDelta(d.toInt)), Stats(Seq(0), d => MilliSatoshi(d.toLong)), Stats(Seq(0), d => d.toLong))
 

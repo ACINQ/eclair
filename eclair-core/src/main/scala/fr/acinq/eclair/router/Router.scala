@@ -93,7 +93,50 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
 
 case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
 
-case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
+trait Hop {
+  /** @return the id of the start node. */
+  def nodeId: PublicKey
+
+  /** @return the id of the end node. */
+  def nextNodeId: PublicKey
+
+  /**
+   * @param amount amount to be forwarded.
+   * @return total fee required by the current hop.
+   */
+  def fee(amount: MilliSatoshi): MilliSatoshi
+
+  /** @return cltv delta required by the current hop. */
+  def cltvExpiryDelta: CltvExpiryDelta
+}
+
+/**
+ * A directed hop between two connected nodes using a specific channel.
+ *
+ * @param nodeId     id of the start node.
+ * @param nextNodeId id of the end node.
+ * @param lastUpdate last update of the channel used for the hop.
+ */
+case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
+  override lazy val cltvExpiryDelta = lastUpdate.cltvExpiryDelta
+
+  override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
+}
+
+/**
+ * A directed hop between two trampoline nodes.
+ * These nodes need not be connected and we don't need to know a route between them.
+ * The start node will compute the route to the end node itself when it receives our payment.
+ * TODO: @t-bast: once the NodeUpdate message is implemented, we should use that instead of inline cltv and fee.
+ *
+ * @param nodeId          id of the start node.
+ * @param nextNodeId      id of the end node.
+ * @param cltvExpiryDelta cltv expiry delta.
+ * @param fee             total fee for that hop.
+ */
+case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends Hop {
+  override def fee(amount: MilliSatoshi): MilliSatoshi = fee
+}
 
 case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
 
@@ -107,7 +150,7 @@ case class RouteRequest(source: PublicKey,
 
 case class FinalizeRoute(hops: Seq[PublicKey])
 
-case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
   require(allowEmpty || hops.nonEmpty, "route cannot be empty")
 }
 
@@ -346,7 +389,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2) }.toList match {
         case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
           val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
-          val hops = selectedEdges.map(d => Hop(d.desc.a, d.desc.b, d.update))
+          val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
           sender ! RouteResponse(hops, Set.empty, Set.empty)
         case _ => // some nodes in the supplied route aren't connected in our graph
           sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
@@ -1016,7 +1059,7 @@ object Router {
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
-                currentBlockHeight: Long): Try[Seq[Hop]] = Try {
+                currentBlockHeight: Long): Try[Seq[ChannelHop]] = Try {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 

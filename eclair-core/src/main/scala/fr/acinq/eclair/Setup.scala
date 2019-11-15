@@ -42,7 +42,8 @@ import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
-import fr.acinq.eclair.payment.{Auditor, Relayer}
+import fr.acinq.eclair.payment.Auditor
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
