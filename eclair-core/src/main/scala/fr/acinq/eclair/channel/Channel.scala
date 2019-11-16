@@ -1715,7 +1715,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     origin_opt.foreach(_ ! m)
   }
 
-  def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments) = {
+  def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments): NormalFSMState = {
     val networkFeeratePerKw = c.feeratesPerKw.feePerBlock(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     d.commitments.localParams.isFunder match {
@@ -1735,7 +1735,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    * @param d the channel commtiments
    * @return
    */
-  def handleOfflineFeerate(c: CurrentFeerates, d: HasCommitments) = {
+  def handleOfflineFeerate(c: CurrentFeerates, d: HasCommitments): NormalFSMState = {
     val networkFeeratePerKw = c.feeratesPerKw.feePerBlock(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the fees are too high we risk to not be able to confirm our current commitment
@@ -1752,11 +1752,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleCommandSuccess(sender: ActorRef, newData: Data) = {
-    stay using newData replying "ok"
-  }
+  def handleCommandSuccess(sender: ActorRef, newData: Data): NormalFSMState = stay using newData replying "ok"
 
-  def handleCommandError(cause: Throwable, cmd: Command) = {
+  def handleCommandError(cause: Throwable, cmd: Command): NormalFSMState = {
     log.warning(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
     cause match {
       case _: ChannelException => ()
@@ -1781,7 +1779,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleGetFundingTx(getTxResponse: GetTxWithMetaResponse, waitingSince: Long, fundingTx_opt: Option[Transaction]) = {
+  def handleGetFundingTx(getTxResponse: GetTxWithMetaResponse, waitingSince: Long, fundingTx_opt: Option[Transaction]): NormalFSMState = {
     import getTxResponse._
     tx_opt match {
       case Some(_) => () // the funding tx exists, nothing to do
@@ -1809,7 +1807,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     stay
   }
 
-  def handleFundingPublishFailed(d: HasCommitments) = {
+  def handleFundingPublishFailed(d: HasCommitments): NormalFSMState = {
     log.error(s"failed to publish funding tx")
     val exc = ChannelFundingError(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
@@ -1819,7 +1817,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSED) sending error
   }
 
-  def handleFundingTimeout(d: HasCommitments) = {
+  def handleFundingTimeout(d: HasCommitments): NormalFSMState = {
     log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
@@ -1827,7 +1825,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSED) sending error
   }
 
-  def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: HasCommitments) = {
+  def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: HasCommitments): NormalFSMState = {
     d.commitments.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if revocationTimeout.remoteCommitNumber + 1 == waitingForRevocation.nextRemoteCommit.index =>
         log.warning(s"waited for too long for a revocation to remoteCommitNumber=${revocationTimeout.remoteCommitNumber}, disconnecting")
@@ -1837,7 +1835,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     stay
   }
 
-  def handleAddDisconnected(c: CMD_ADD_HTLC, d: DATA_NORMAL) = {
+  def handleAddDisconnected(c: CMD_ADD_HTLC, d: DATA_NORMAL): NormalFSMState = {
     log.info(s"rejecting htlc request in state=$stateName")
     // in order to reduce gossip spam, we don't disable the channel right away when disconnected
     // we will only emit a new channel_update with the disable flag set if someone tries to use that channel
@@ -1855,7 +1853,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleNewBlock(c: CurrentBlockCount, d: HasCommitments) = {
+  def handleNewBlock(c: CurrentBlockCount, d: HasCommitments): NormalFSMState = {
     val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockCount)
     val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeoutBlocks)
     if (timedOutOutgoing.nonEmpty) {
@@ -1883,7 +1881,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]) = {
+  def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]): NormalFSMState = {
     cause match {
       case _: ForcedLocalCommit => log.warning(s"force-closing channel at user request")
       case _ => log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
@@ -1906,7 +1904,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleRemoteError(e: Error, d: Data): State = {
+  def handleRemoteError(e: Error, d: Data): NormalFSMState = {
     // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
     log.error(s"peer sent error: ascii='${ChannelErrorCodes.toAscii(e.data)}' bin=${e.data.toHex}")
     context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, RemoteError(e), isFatal = true))
@@ -1921,7 +1919,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]): FSM.State[channel.State, Data] = {
+  def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]): NormalFSMState = {
     log.info(s"closing tx published: closingTxId=${closingTx.txid}")
 
     val nextData = d match {
@@ -1937,7 +1935,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     blockchain ! WatchConfirmed(self, closingTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
   }
 
-  def spendLocalCurrent(d: HasCommitments) = {
+  def spendLocalCurrent(d: HasCommitments): NormalFSMState = {
 
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
@@ -2011,7 +2009,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments) = {
+  def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments): NormalFSMState = {
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
@@ -2027,7 +2025,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
   }
 
-  def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
+  def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT): NormalFSMState = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
     // if we are in this state, then this field is defined
     val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint.get
@@ -2037,7 +2035,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
   }
 
-  def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {
+  def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments): NormalFSMState = {
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(d.commitments.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
     val remoteCommit = d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
@@ -2072,7 +2070,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
+  def handleRemoteSpentOther(tx: Transaction, d: HasCommitments): NormalFSMState = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
@@ -2112,7 +2110,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleInformationLeak(tx: Transaction, d: HasCommitments) = {
+  def handleInformationLeak(tx: Transaction, d: HasCommitments): NormalFSMState = {
     // this is never supposed to happen !!
     log.error(s"our funding tx ${d.commitments.commitInput.outPoint.txid} was spent by txid=${tx.txid} !!")
     val exc = FundingTxSpent(d.channelId, tx)
@@ -2227,9 +2225,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
   }
 
-  implicit class MyState(state: FSM.State[fr.acinq.eclair.channel.State, Data]) {
+  type NormalFSMState = FSM.State[fr.acinq.eclair.channel.State, Data]
 
-    def storing(): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+  implicit class MyState(state: NormalFSMState) {
+
+    def storing(): NormalFSMState = {
       state.stateData match {
         case d: HasCommitments =>
           log.debug(s"updating database record for channelId={}", d.channelId)
@@ -2242,12 +2242,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
     }
 
-    def sending(msgs: Seq[LightningMessage]): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def sending(msgs: Seq[LightningMessage]): NormalFSMState = {
       msgs.foreach(sending)
       state
     }
 
-    def sending(msg: LightningMessage): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def sending(msg: LightningMessage): NormalFSMState = {
       forwarder ! msg
       state
     }
@@ -2256,7 +2256,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
      * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
      * particularly useful to publish transactions only after we are sure that the state has been persisted.
      */
-    def calling(f: => Unit): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def calling(f: => Unit): NormalFSMState = {
       f
       state
     }
