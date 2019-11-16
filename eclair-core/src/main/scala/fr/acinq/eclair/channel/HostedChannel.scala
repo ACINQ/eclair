@@ -284,6 +284,11 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(CLOSED) {
+    case Event(cmd: CMD_HOSTED_INVOKE_CHANNEL, HostedNothing) =>
+      // Client may try to invoke a fresh channel once again with different params
+      val invoke = InvokeHostedChannel(nodeParams.chainHash, cmd.refundScriptPubKey)
+      goto(WAIT_FOR_INIT_INTERNAL) using HOSTED_DATA_CLIENT_WAIT_HOST_INIT(cmd.refundScriptPubKey) sending invoke
+
     case Event(CMD_HOSTED_MESSAGE(_, remoteSO: StateOverride), commits: HOSTED_DATA_COMMITMENTS) if !commits.isHost =>
       val newLocalBalance = commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat - remoteSO.localBalanceMsat
       val completeLocalLCSS = commits.lastCrossSignedState.copy(incomingHtlcs = Nil, outgoingHtlcs = Nil, localBalanceMsat = newLocalBalance,
@@ -397,7 +402,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           context.system.eventStream.publish(LocalChannelUpdate(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId, None, commits.channelUpdate, commits))
           context.system.eventStream.publish(HostedChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, commits))
           forwarder ! commits.channelUpdate
-        case (NORMAL, _, commits: HOSTED_DATA_COMMITMENTS) if nextState != NORMAL =>
+        case (NORMAL | SYNCING, _, commits: HOSTED_DATA_COMMITMENTS) if nextState != NORMAL =>
           context.system.eventStream.publish(LocalChannelDown(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId))
           if (nextState == CLOSED && commits.isHost) commits.overrideProposal.foreach(localSO => forwarder ! localSO)
         case _ =>
