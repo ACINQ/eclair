@@ -389,15 +389,15 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   onTransition {
     case state -> nextState =>
-      nextStateData match {
-        case commits: HOSTED_DATA_COMMITMENTS if state != NORMAL && nextState == NORMAL =>
+      (state, nextState, nextStateData) match {
+        case (_, NORMAL, commits: HOSTED_DATA_COMMITMENTS) if state != NORMAL =>
           context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, commits.isHost, commits.channelId, commits))
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, ByteVector32.Zeroes, commits.channelId))
           context.system.eventStream.publish(ShortChannelIdAssigned(self, commits.channelId, commits.channelUpdate.shortChannelId))
           context.system.eventStream.publish(LocalChannelUpdate(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId, None, commits.channelUpdate, commits))
           context.system.eventStream.publish(HostedChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, commits))
           forwarder ! commits.channelUpdate
-        case commits: HOSTED_DATA_COMMITMENTS if nextState != NORMAL =>
+        case (NORMAL, _, commits: HOSTED_DATA_COMMITMENTS) if nextState != NORMAL =>
           context.system.eventStream.publish(LocalChannelDown(self, commits.channelId, commits.channelUpdate.shortChannelId, remoteNodeId))
           if (nextState == CLOSED && commits.isHost) commits.overrideProposal.foreach(localSO => forwarder ! localSO)
         case _ =>
