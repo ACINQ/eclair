@@ -27,9 +27,12 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.send.PaymentLifecycle
+import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
@@ -40,8 +43,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
@@ -52,8 +55,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler(Alice.nodeParams)))
-    val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler(Bob.nodeParams)))
+    val paymentHandlerA = system.actorOf(Props(new PaymentHandler(Alice.nodeParams)))
+    val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams)))
     val registerA = TestProbe()
     val registerB = TestProbe()
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandlerA))
@@ -96,7 +99,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(blockHeight = 400000)
-      PaymentLifecycle.buildCommand(UUID.randomUUID(), paymentHash, Hop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
+      OutgoingPacket.buildCommand(UUID.randomUUID(), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =

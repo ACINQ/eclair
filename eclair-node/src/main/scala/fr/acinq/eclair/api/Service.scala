@@ -225,9 +225,9 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("sendtoroute") {
-                          formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?) {
-                            (amountMsat, paymentHash, finalCltvExpiry, route, externalId_opt) =>
-                              complete(eclairApi.sendToRoute(externalId_opt, route, amountMsat, paymentHash, CltvExpiryDelta(finalCltvExpiry)))
+                          formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?, invoiceFormParam.?) {
+                            (amountMsat, paymentHash, finalCltvExpiry, route, externalId_opt, invoice_opt) =>
+                              complete(eclairApi.sendToRoute(externalId_opt, route, amountMsat, paymentHash, CltvExpiryDelta(finalCltvExpiry), invoice_opt))
                           }
                         } ~
                         path("getsentinfo") {
@@ -238,8 +238,8 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("createinvoice") {
-                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
-                            complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
+                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?, "allowMultiPart".as[Boolean].?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt) =>
+                            complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt.getOrElse(false)))
                           }
                         } ~
                         path("getinvoice") {
@@ -279,6 +279,9 @@ trait Service extends ExtraDirectives with Logging {
                         } ~
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
+                        } ~
+                        path("getnewaddress"){
+                          complete(eclairApi.newAddress())
                         }
                     } ~ get {
                       path("ws") {
