@@ -49,6 +49,7 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
+import kamon.Kamon
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}

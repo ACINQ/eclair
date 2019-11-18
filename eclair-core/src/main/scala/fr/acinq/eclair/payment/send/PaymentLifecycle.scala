@@ -32,6 +32,8 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion._
 import fr.acinq.eclair.wire._
+import kamon.Kamon
+import kamon.trace.Span
 
 import scala.compat.Platform
 import scala.util.{Failure, Success}
@@ -45,10 +47,26 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   val id = cfg.id
   val paymentsDb = nodeParams.db.payments
 
+  private val span = Kamon.runWithContextEntry(MultiPartPaymentLifecycle.parentPaymentIdKey, cfg.parentId) {
+    val spanBuilder = if (Kamon.currentSpan().isEmpty) {
+      Kamon.spanBuilder("single-payment")
+    } else {
+      Kamon.spanBuilder("payment-part").asChildOf(Kamon.currentSpan())
+    }
+    spanBuilder
+      .tag("paymentId", cfg.id.toString)
+      .tag("paymentHash", cfg.paymentHash.toHex)
+      .tag("targetNodeId", cfg.targetNodeId.toString())
+      .start()
+  }
+
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
+      span.tag("amount", c.finalPayload.amount.toLong)
+      span.tag("totalAmount", c.finalPayload.totalAmount.toLong)
+      span.tag("expiry", c.finalPayload.expiry.toLong)
       log.debug("sending {} to route {}", c.finalPayload.amount, c.hops.mkString("->"))
       val send = SendPayment(c.paymentHash, c.hops.last, c.finalPayload, maxAttempts = 1)
       router ! FinalizeRoute(c.hops)
@@ -58,6 +76,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
+      span.tag("amount", c.finalPayload.amount.toLong)
+      span.tag("totalAmount", c.finalPayload.totalAmount.toLong)
+      span.tag("expiry", c.finalPayload.expiry.toLong)
       log.debug("sending {} to {}{}", c.finalPayload.amount, c.targetNodeId, c.routePrefix.mkString(" with route prefix ", "->", ""))
       if (c.routePrefix.lastOption.exists(_.nextNodeId == c.targetNodeId)) {
         // If the sender already provided a route to the target, no need to involve the router.
@@ -82,7 +103,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
-      stop(FSM.Normal)
+      myStop()
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
@@ -91,7 +112,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
       val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.channelId, Some(route))
       onSuccess(s, PaymentSent(id, c.paymentHash, fulfill.paymentPreimage, p :: Nil))
-      stop(FSM.Normal)
+      myStop()
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
@@ -99,7 +120,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ RemoteFailure(hops, e)))
-          stop(FSM.Normal)
+          myStop()
         case res if failures.size + 1 >= c.maxAttempts =>
           // otherwise we never try more than maxAttempts, no matter the kind of error returned
           val failure = res match {
@@ -112,7 +133,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           }
           log.warning(s"too many failed attempts, failing the payment")
           onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ failure))
-          stop(FSM.Normal)
+          myStop()
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
           // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
@@ -186,18 +207,41 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
         onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
-        stop(FSM.Normal)
+        myStop()
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
         val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
         router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.routeParams)
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
       }
+  }
 
+  private var stateSpan: Option[Span] = None
+
+  onTransition {
+    case _ -> state2 =>
+      // whenever there is a transition we stop the current span and start a new one, this way we can track each state
+      val stateSpanBuilder = Kamon.spanBuilder(state2.toString).asChildOf(span)
+      nextStateData match {
+        case d: WaitingForRoute =>
+          // this means that previous state was WAITING_FOR_COMPLETE
+          d.failures.lastOption.foreach(failure => stateSpan.foreach(span => KamonExt.failSpan(span, failure)))
+        case d: WaitingForComplete =>
+          stateSpanBuilder.tag("route", s"${d.hops.map(_.nextNodeId).mkString("->")}")
+        case _ => ()
+      }
+      stateSpan.foreach(_.finish())
+      stateSpan = Some(stateSpanBuilder.start())
   }
 
   whenUnhandled {
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
+  }
+
+  def myStop(): State = {
+    stateSpan.foreach(_.finish())
+    span.finish()
+    stop(FSM.Normal)
   }
 
   def onSuccess(sender: ActorRef, result: PaymentSent): Unit = {
@@ -207,6 +251,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   def onFailure(sender: ActorRef, result: PaymentFailed): Unit = {
+    span.fail("payment failed")
     if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
     sender ! result
     if (cfg.publishEvent) context.system.eventStream.publish(result)
