@@ -59,11 +59,13 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(c: SendPayment, WaitingForRequest) =>
       log.debug("sending {} to {}{}", c.finalPayload.amount, c.targetNodeId, c.routePrefix.mkString(" with route prefix ", "->", ""))
+      // We don't want the router to try cycling back to nodes that are at the beginning of the route.
+      val ignoredNodes = c.routePrefix.map(_.nodeId).toSet
       if (c.routePrefix.lastOption.exists(_.nextNodeId == c.targetNodeId)) {
         // If the sender already provided a route to the target, no need to involve the router.
-        self ! RouteResponse(Nil, Set.empty, Set.empty, allowEmpty = true)
+        self ! RouteResponse(Nil, ignoredNodes, Set.empty, allowEmpty = true)
       } else {
-        router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams)
+        router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams, ignoreNodes = ignoredNodes)
       }
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, c.finalPayload.amount, cfg.targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
