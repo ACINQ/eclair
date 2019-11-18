@@ -14,22 +14,15 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.receive
 
-import akka.actor.{Actor, ActorLogging, ActorRef}
+import akka.actor.Actor.Receive
+import akka.actor.{ActorContext, ActorRef}
+import akka.event.LoggingAdapter
 
 /**
-  * Created by PM on 16/06/2016.
-  */
-class NoopPaymentHandler extends Actor with ActorLogging {
-
-  override def receive: Receive = forward(context.system.deadLetters)
-
-  def forward(handler: ActorRef): Receive = {
-    case newHandler: ActorRef =>
-      log.info(s"registering actor $handler as payment handler")
-      context become forward(newHandler)
-    case msg => handler forward msg
-  }
-
+ * Simple handler that forwards all messages to an actor
+ */
+class ForwardHandler(actor: ActorRef) extends ReceiveHandler {
+  override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = { case msg => actor forward msg}
 }

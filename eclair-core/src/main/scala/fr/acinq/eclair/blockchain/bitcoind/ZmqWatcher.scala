@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
@@ -55,16 +56,18 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
-      tx.txIn
-        .map(_.outPoint)
-        .flatMap(watchedUtxos.get)
-        .flatten // List[Watch] -> Watch
-        .collect {
-        case w: WatchSpentBasic =>
-          self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-        case w: WatchSpent =>
-          self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+      KamonExt.time("watcher.newtx.checkwatch.time") {
+        log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+        tx.txIn
+          .map(_.outPoint)
+          .flatMap(watchedUtxos.get)
+          .flatten // List[Watch] -> Watch
+          .collect {
+            case w: WatchSpentBasic =>
+              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+            case w: WatchSpent =>
+              self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+          }
       }
 
     case NewBlock(block) =>
@@ -84,7 +87,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
-      watches.collect { case w: WatchConfirmed => checkConfirmed(w) }
+      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+        Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
+      }
       context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>

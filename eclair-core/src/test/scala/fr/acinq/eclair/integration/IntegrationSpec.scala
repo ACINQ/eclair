@@ -32,21 +32,25 @@ import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
-import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
-import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, PublicChannel, RouteParams}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestConstants, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.DefaultFormats
+import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
@@ -66,8 +70,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   // we override the default because these test were designed to use cost-optimized routes
   val integrationTestRouteParams = Some(RouteParams(
     randomize = false,
-    maxFeeBase = MilliSatoshi(Long.MaxValue),
-    maxFeePct = Double.MaxValue,
+    maxFeeBase = 21000 msat,
+    maxFeePct = 0.03,
     routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
     routeMaxLength = ROUTE_MAX_LENGTH,
     ratios = Some(WeightRatios(
@@ -88,7 +92,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.router.broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false,
-    "eclair.to-remote-delay-blocks" -> 144))
+    "eclair.to-remote-delay-blocks" -> 144,
+    "eclair.multi-part-payment-expiry" -> "20 seconds"))
 
   implicit val formats = DefaultFormats
 
@@ -118,12 +123,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 150, timeout = 30 seconds)
   }
 
-  def instantiateEclairNode(name: String, config: Config) = {
+  def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
     new PrintWriter(new File(datadir, "eclair.conf")) {
       write(config.root().render())
-      close
+      close()
     }
     implicit val system = ActorSystem(s"system-$name")
     val setup = new Setup(datadir)
@@ -141,18 +146,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     import collection.JavaConversions._
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082)).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083)).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
-    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.payment-handler" -> "noop")).withFallback(commonConfig)) // NB: eclair.payment-handler = noop allows us to manually fulfill htlcs
-    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
+    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085)).withFallback(commonConfig))
+    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086)).withFallback(commonConfig))
+    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087)).withFallback(commonConfig))
+    instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088)).withFallback(commonConfig))
+    instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089)).withFallback(commonConfig))
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
-    val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams))
     nodes("C").paymentHandler ! paymentHandlerC
   }
 
@@ -223,7 +228,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int) = {
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
     val sender = TestProbe()
     subset.foreach {
       case (_, setup) =>
@@ -433,6 +438,117 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 30 seconds, interval = 10 seconds)
   }
 
+  test("send a multi-part payment B->D") {
+    val sender = TestProbe()
+    val amount = 1000000000L.msat
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill", allowMultiPart = true))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+
+    sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 5, paymentRequest = Some(pr)))
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId)
+    assert(paymentSent.paymentHash === pr.paymentHash)
+    assert(paymentSent.parts.length > 1)
+    assert(paymentSent.amount === amount)
+    assert(paymentSent.feesPaid > 0.msat)
+    assert(paymentSent.parts.forall(p => p.id != paymentSent.id))
+    assert(paymentSent.parts.forall(p => p.route.isDefined))
+
+    val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(paymentParts.length == paymentSent.parts.length)
+    assert(paymentParts.map(_.amount).sum === amount)
+    assert(paymentParts.forall(p => p.parentId == paymentId))
+    assert(paymentParts.forall(p => p.parentId != p.id))
+    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat))
+
+    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(receivedAmount === amount)
+  }
+
+  // NB: this test may take 20 seconds to complete (multi-part payment timeout).
+  test("send a multi-part payment B->D greater than balance C->D (temporary remote failure)") {
+    val sender = TestProbe()
+    // There is enough channel capacity to route this payment, but D doesn't have enough incoming capacity to receive it
+    // (the link C->D has too much capacity on D's side).
+    val amount = 2000000000L.msat
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "well that's an expensive restaurant bill", allowMultiPart = true))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+
+    sender.send(nodes("B").relayer, GetOutgoingChannels())
+    val canSend = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    assert(canSend > amount)
+
+    sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 1, paymentRequest = Some(pr)))
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentFailed = sender.expectMsgType[PaymentFailed](45 seconds)
+    assert(paymentFailed.id === paymentId)
+    assert(paymentFailed.paymentHash === pr.paymentHash)
+    assert(paymentFailed.failures.length > 1)
+
+    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
+
+    sender.send(nodes("B").relayer, GetOutgoingChannels())
+    val canSend2 = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    // Fee updates may impact balances, but it shouldn't have changed much.
+    assert(math.abs((canSend - canSend2).toLong) < 50000000)
+  }
+
+  test("send a multi-part payment D->C (local channels only)") {
+    val sender = TestProbe()
+    // This amount is greater than any channel capacity between D and C, so it should be split.
+    val amount = 5100000000L.msat
+    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow some money", allowMultiPart = true))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+
+    sender.send(nodes("D").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("C").nodeParams.nodeId, 3, paymentRequest = Some(pr)))
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId)
+    assert(paymentSent.paymentHash === pr.paymentHash)
+    assert(paymentSent.parts.length > 1)
+    assert(paymentSent.amount === amount)
+    assert(paymentSent.feesPaid === 0.msat) // no fees when using direct channels
+
+    val paymentParts = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(paymentParts.map(_.amount).sum === amount)
+    assert(paymentParts.forall(p => p.parentId == paymentId))
+    assert(paymentParts.forall(p => p.parentId != p.id))
+    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid == 0.msat))
+
+    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(receivedAmount === amount)
+  }
+
+  test("send a multi-part payment D->C greater than balance D->C (temporary local failure)") {
+    val sender = TestProbe()
+    // This amount is greater than the current capacity between D and C.
+    val amount = 10000000000L.msat
+    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow more money", allowMultiPart = true))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+
+    sender.send(nodes("D").relayer, GetOutgoingChannels())
+    val canSend = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    assert(canSend < amount)
+
+    sender.send(nodes("D").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("C").nodeParams.nodeId, 1, paymentRequest = Some(pr)))
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentFailed = sender.expectMsgType[PaymentFailed](30 seconds)
+    assert(paymentFailed.id === paymentId)
+    assert(paymentFailed.paymentHash === pr.paymentHash)
+
+    assert(nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
+
+    sender.send(nodes("D").relayer, GetOutgoingChannels())
+    val canSend2 = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    // Fee updates may impact balances, but it shouldn't have changed much.
+    assert(math.abs((canSend - canSend2).toLong) < 50000000)
+  }
+
   /**
    * We currently use p2pkh script Helpers.getFinalScriptPubKey
    */
@@ -454,19 +570,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F1").paymentHandler ! htlcReceiver.ref
+    nodes("F1").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
+    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F1").nodeParams.nodeId, maxAttempts = 3, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     paymentSender.expectMsgType[UUID](30 seconds)
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -537,20 +652,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F2").paymentHandler ! htlcReceiver.ref
+    nodes("F2").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
+    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F2").nodeParams.nodeId, maxAttempts = 3, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     paymentSender.expectMsgType[UUID](30 seconds)
 
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -612,19 +726,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F3").paymentHandler ! htlcReceiver.ref
+    nodes("F3").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage: ByteVector = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
+    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F3").nodeParams.nodeId, maxAttempts = 3, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -645,7 +758,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
     assert(failed.id == paymentId)
     assert(failed.paymentHash === paymentHash)
-    assert(failed.failures.size === 1)
+    assert(failed.failures.size > 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(bitcoincli, 150, Some(address))
@@ -671,20 +784,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
-    // we register this probe as the final payment handler
-    nodes("F4").paymentHandler ! htlcReceiver.ref
+    nodes("F4").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage: ByteVector = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 1, routeParams = integrationTestRouteParams)
+    val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F4").nodeParams.nodeId, maxAttempts = 3, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID](30 seconds)
 
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[UpdateAddHtlc]
+    val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -708,7 +820,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
     assert(failed.id == paymentId)
     assert(failed.paymentHash === paymentHash)
-    assert(failed.failures.size === 1)
+    assert(failed.failures.size > 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(bitcoincli, 145, Some(address))
@@ -734,14 +846,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // we use this to get commitments
     val sigListener = TestProbe()
     nodes("F5").system.eventStream.subscribe(sigListener.ref, classOf[ChannelSignatureReceived])
-    // we use this to control when to fulfill htlcs, setup is as follow : noop-handler ---> forward-handler ---> payment-handler
+    // we use this to control when to fulfill htlcs
     val forwardHandlerC = TestProbe()
-    nodes("C").paymentHandler ! forwardHandlerC.ref
+    nodes("C").paymentHandler ! new ForwardHandler(forwardHandlerC.ref)
     val forwardHandlerF = TestProbe()
-    nodes("F5").paymentHandler ! forwardHandlerF.ref
+    nodes("F5").paymentHandler ! new ForwardHandler(forwardHandlerF.ref)
     // this is the actual payment handler that we will forward requests to
-    val paymentHandlerC = nodes("C").system.actorOf(LocalPaymentHandler.props(nodes("C").nodeParams))
-    val paymentHandlerF = nodes("F5").system.actorOf(LocalPaymentHandler.props(nodes("F5").nodeParams))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams))
+    val paymentHandlerF = nodes("F5").system.actorOf(PaymentHandler.props(nodes("F5").nodeParams))
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
@@ -749,11 +861,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val amountMsat = 300000000.msat
     sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    val sendReq = SendPaymentRequest(300000000 msat, pr.paymentHash, pr.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 1)
+    val sendReq = SendPaymentRequest(300000000 msat, pr.paymentHash, pr.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 3)
     sender.send(nodes("A").paymentInitiator, sendReq)
     val paymentId = sender.expectMsgType[UUID]
     // we forward the htlc to the payment handler
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerF.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sigListener.expectMsgType[ChannelSignatureReceived]
@@ -770,19 +882,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
-    forwardHandlerF.expectMsgType[UpdateAddHtlc]
+    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(120000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F5").paymentInitiator)
-    forwardHandlerC.expectMsgType[UpdateAddHtlc]
+    forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
@@ -794,19 +906,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimagse
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage1 = sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[UpdateAddHtlc]
+    buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent].paymentPreimage

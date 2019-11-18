@@ -16,23 +16,23 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{MilliSatoshi, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
 /**
-  * Created by t-bast on 20/06/2019.
-  */
+ * Created by t-bast on 20/06/2019.
+ */
 
 object TlvCodecs {
 
   private def variableSizeUInt64(size: Int, min: UInt64): Codec[UInt64] = minimalvalue(bytes(size).xmap(UInt64(_), _.toByteVector.takeRight(size)), min)
 
   /**
-    * Length-prefixed truncated uint64 (1 to 9 bytes unsigned integer).
-    */
+   * Length-prefixed truncated uint64 (1 to 9 bytes unsigned integer).
+   */
   val tu64: Codec[UInt64] = discriminated[UInt64].by(uint8)
     .\(0x00) { case i if i < 0x01 => i }(variableSizeUInt64(0, 0x00))
     .\(0x01) { case i if i < 0x0100 => i }(variableSizeUInt64(1, 0x01))
@@ -45,24 +45,30 @@ object TlvCodecs {
     .\(0x08) { case i if i <= UInt64.MaxValue => i }(variableSizeUInt64(8, 0x0100000000000000L))
 
   /**
-    * Length-prefixed truncated long (1 to 9 bytes unsigned integer).
-    * This codec can be safely used for values < `2^63` and will fail otherwise.
-    */
+   * Length-prefixed truncated long (1 to 9 bytes unsigned integer).
+   * This codec can be safely used for values < `2^63` and will fail otherwise.
+   */
   val tu64overflow: Codec[Long] = tu64.exmap(
     u => if (u <= Long.MaxValue) Attempt.Successful(u.toBigInt.toLong) else Attempt.Failure(Err(s"overflow for value $u")),
     l => if (l >= 0) Attempt.Successful(UInt64(l)) else Attempt.Failure(Err(s"uint64 must be positive (actual=$l)")))
 
   /**
-    * Length-prefixed truncated uint32 (1 to 5 bytes unsigned integer).
-    */
+   * Length-prefixed truncated millisatoshi (1 to 9 bytes unsigned integer).
+   * This codec can be safely used for values < `2^63` and will fail otherwise.
+   */
+  val tmillisatoshi: Codec[MilliSatoshi] = tu64overflow.xmap(l => MilliSatoshi(l), m => m.toLong)
+
+  /**
+   * Length-prefixed truncated uint32 (1 to 5 bytes unsigned integer).
+   */
   val tu32: Codec[Long] = tu64.exmap({
     case i if i > 0xffffffffL => Attempt.Failure(Err("tu32 overflow"))
     case i => Attempt.Successful(i.toBigInt.toLong)
   }, l => Attempt.Successful(l))
 
   /**
-    * Length-prefixed truncated uint16 (1 to 3 bytes unsigned integer).
-    */
+   * Length-prefixed truncated uint16 (1 to 3 bytes unsigned integer).
+   */
   val tu16: Codec[Int] = tu32.exmap({
     case i if i > 0xffff => Attempt.Failure(Err("tu16 overflow"))
     case i => Attempt.Successful(i.toInt)
@@ -98,12 +104,12 @@ object TlvCodecs {
   }
 
   /**
-    * A tlv stream codec relies on an underlying tlv codec.
-    * This allows tlv streams to have different namespaces, increasing the total number of tlv types available.
-    *
-    * @param codec codec used for the tlv records contained in the stream.
-    * @tparam T stream namespace.
-    */
+   * A tlv stream codec relies on an underlying tlv codec.
+   * This allows tlv streams to have different namespaces, increasing the total number of tlv types available.
+   *
+   * @param codec codec used for the tlv records contained in the stream.
+   * @tparam T stream namespace.
+   */
   def tlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = list(discriminatorFallback(genericTlv, codec)).exmap(
     records => validateStream(codec, records),
     (stream: TlvStream[T]) => {
@@ -118,12 +124,12 @@ object TlvCodecs {
   )
 
   /**
-    * When used inside a message, most of the time a tlv stream needs to specify its length.
-    * Note that some messages will have an independent length field and won't need this codec.
-    *
-    * @param codec codec used for the tlv records contained in the stream.
-    * @tparam T stream namespace.
-    */
+   * When used inside a message, most of the time a tlv stream needs to specify its length.
+   * Note that some messages will have an independent length field and won't need this codec.
+   *
+   * @param codec codec used for the tlv records contained in the stream.
+   * @tparam T stream namespace.
+   */
   def lengthPrefixedTlvStream[T <: Tlv](codec: DiscriminatorCodec[T, UInt64]): Codec[TlvStream[T]] = variableSizeBytesLong(CommonCodecs.varintoverflow, tlvStream(codec))
 
 }
