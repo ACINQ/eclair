@@ -21,7 +21,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.router.ChannelHop
 
 import scala.compat.Platform
 
@@ -41,9 +41,11 @@ case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: Byt
   val timestamp: Long = parts.map(_.timestamp).min // we use min here because we receive the proof of payment as soon as the first partial payment is fulfilled
 }
 
+// TODO: @t-bast: the route fields should be a Seq[Hop], not Seq[ChannelHop]
+
 object PaymentSent {
 
-  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: Long = Platform.currentTime) {
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[ChannelHop]], timestamp: Long = Platform.currentTime) {
     require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
   }
 
@@ -73,10 +75,10 @@ sealed trait PaymentFailure
 case class LocalFailure(t: Throwable) extends PaymentFailure
 
 /** A remote node failed the payment and we were able to decrypt the onion failure packet. */
-case class RemoteFailure(route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
+case class RemoteFailure(route: Seq[ChannelHop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
+case class UnreadableRemoteFailure(route: Seq[ChannelHop]) extends PaymentFailure
 
 object PaymentFailure {
 

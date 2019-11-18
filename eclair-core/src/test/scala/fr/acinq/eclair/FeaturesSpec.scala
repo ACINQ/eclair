@@ -67,11 +67,40 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(ByteVector.fromLong(1L << INITIAL_ROUTING_SYNC_BIT_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY)))
     assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_BIT_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)))
     assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_MANDATORY)))
-    assert(areSupported(hex"0b"))
-    assert(!areSupported(hex"14"))
-    assert(!areSupported(hex"0141"))
+    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << PAYMENT_SECRET_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << PAYMENT_SECRET_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << BASIC_MULTI_PART_PAYMENT_MANDATORY)))
+    assert(areSupported(ByteVector.fromLong(1L << BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+
+    val testCases = Map(
+      bin"            00000000000000001011" -> true,
+      bin"            00010000100001000000" -> true,
+      bin"            00100000100000100000" -> true,
+      bin"            00010100000000001000" -> true,
+      bin"            00011000001000000000" -> true,
+      bin"            00101000000000000000" -> true,
+      bin"            00000000010001000000" -> true,
+      // unknown optional feature bits
+      bin"            10000000000000000000" -> true,
+      bin"        001000000000000000000000" -> true,
+      // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
+      bin"        000001000000000000000000" -> false,
+      bin"        000100000000000000000000" -> false,
+      bin"        010000000000000000000000" -> false,
+      bin"    0001000000000000000000000000" -> false,
+      bin"    0100000000000000000000000000" -> false,
+      bin"00010000000000000000000000000000" -> false,
+      bin"01000000000000000000000000000000" -> false
+    )
+    for ((testCase, expected) <- testCases) {
+      assert(areSupported(testCase) === expected, testCase)
+    }
   }
 
 }

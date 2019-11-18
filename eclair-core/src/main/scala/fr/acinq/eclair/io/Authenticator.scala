@@ -49,7 +49,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
         KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
         remoteNodeId_opt.map(_.value),
         connection = connection,
-        codec = LightningMessageCodecs.lightningMessageCodec))
+        codec = LightningMessageCodecs.meteredLightningMessageCodec))
       context watch transport
       context become ready(switchboard, authenticating + (transport -> pending))
 

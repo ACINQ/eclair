@@ -24,6 +24,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
@@ -530,7 +531,7 @@ object Commitments {
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): (Commitments, Seq[ForwardMessage]) = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): (Commitments, Seq[Relayer.ForwardMessage]) = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
@@ -540,17 +541,17 @@ object Commitments {
         val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
-          case add: UpdateAddHtlc => ForwardAdd(add)
+          case add: UpdateAddHtlc => Relayer.ForwardAdd(add)
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
-            ForwardFail(fail, origin, add)
+            Relayer.ForwardFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
-            ForwardFailMalformed(fail, origin, add)
+            Relayer.ForwardFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
