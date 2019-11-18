@@ -20,7 +20,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
-import fr.acinq.eclair.Features.PAYMENT_SECRET_OPTIONAL
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
 import org.scalatest.FunSuite
@@ -217,8 +217,8 @@ class PaymentRequestSpec extends FunSuite {
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 1 and 9, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
-    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qzsz2qe6f3twmzz8kya4zappxfn6scsxeg0xdr2974e8k0vu8p4uq9vkspwfqeazn7ktknjlc07g2mcsya3chcht9na99lyrtq984af3k3gprmwyrf"
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 15 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqqq4u9s93jtgysm3mrwll70zr697y3mf902hvxwej0v7c62rsltw83ng0pu8w3j230sluc5gxkdmm9dvpy9y6ggtjd2w544mzdrcs42t7sqdkcy8h"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
     assert(pr.amount === Some(2500000000L msat))
@@ -228,14 +228,16 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.features.bitmask === bin"1000000010")
+    assert(pr.features.bitmask === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000")
     assert(!pr.features.allowMultiPart)
     assert(!pr.features.requirePaymentSecret)
+    assert(!pr.features.allowTrampoline)
+    assert(pr.features.supported)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 1, 9 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
-    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4pqqqqqqqqqqqqqqqqqqsz32r9yqxlx2rwz7kjeyjrwmx4px6jgqp6csvv4z5skpeq4gspqk79fufsd2kz8ltdkjun4wfrgud3czw26lfvgsds4s5cpevn046cg4cpn5mump"
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 15, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqpqqqqu7fz6pjqczdm3jp3qps7xntj2w2mm70e0ckhw3c5xk9p36pvk3sewn7ncaex6uzfq0vtqzy28se6pcwn790vxex7xystzumhg55p6qq9wq7td"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
     assert(pr.amount === Some(2500000000L msat))
@@ -245,9 +247,11 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.features.bitmask === bin"000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010")
+    assert(pr.features.bitmask === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000")
     assert(!pr.features.allowMultiPart)
     assert(!pr.features.requirePaymentSecret)
+    assert(!pr.features.allowTrampoline)
+    assert(!pr.features.supported)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -347,6 +351,22 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr2.paymentSecret === None)
   }
 
+  test("trampoline") {
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    assert(!pr.features.allowTrampoline)
+
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_OPTIONAL)))
+    assert(!pr1.features.allowMultiPart)
+    assert(pr1.features.allowTrampoline)
+
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    assert(pr2.features.allowMultiPart)
+    assert(pr2.features.allowTrampoline)
+
+    val pr3 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr3.features.allowTrampoline)
+  }
+
   test("nonreg") {
     val requests = List(
       "lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl",
@@ -406,8 +426,8 @@ class PaymentRequestSpec extends FunSuite {
       "lnbc50n1pdl052epp57549dnjwf2wqfz5hg8khu0wlkca8ggv72f9q7x76p0a7azkn3ljsdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcnvvscqzysxqyd9uqa2z48kchpmnyafgq2qlt4pruwyjh93emh8cd5wczwy47pkx6qzarmvl28hrnqf98m2rnfa0gx4lnw2jvhlg9l4265240av6t9vdqpzsqntwwyx",
       "lnbc100n1pd7cwrypp57m4rft00sh6za2x0jwe7cqknj568k9xajtpnspql8dd38xmd7musdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcngvscqzysxqyd9uqsxfmfv96q0d7r3qjymwsem02t5jhtq58a30q8lu5dy3jft7wahdq2f5vc5qqymgrrdyshff26ak7m7n0vqyf7t694vam4dcqkvnr65qp6wdch9",
       "lnbc100n1pw9qjdgpp5lmycszp7pzce0rl29s40fhkg02v7vgrxaznr6ys5cawg437h80nsdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdejcqzysxqrrss47kl34flydtmu2wnszuddrd0nwa6rnu4d339jfzje6hzk6an0uax3kteee2lgx5r0629wehjeseksz0uuakzwy47lmvy2g7hja7mnpsqjmdct9",
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qzsz2qe6f3twmzz8kya4zappxfn6scsxeg0xdr2974e8k0vu8p4uq9vkspwfqeazn7ktknjlc07g2mcsya3chcht9na99lyrtq984af3k3gprmwyrf",
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4pqqqqqqqqqqqqqqqqqqsz32r9yqxlx2rwz7kjeyjrwmx4px6jgqp6csvv4z5skpeq4gspqk79fufsd2kz8ltdkjun4wfrgud3czw26lfvgsds4s5cpevn046cg4cpn5mump"
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqqq4u9s93jtgysm3mrwll70zr697y3mf902hvxwej0v7c62rsltw83ng0pu8w3j230sluc5gxkdmm9dvpy9y6ggtjd2w544mzdrcs42t7sqdkcy8h",
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqpqqqqu7fz6pjqczdm3jp3qps7xntj2w2mm70e0ckhw3c5xk9p36pvk3sewn7ncaex6uzfq0vtqzy28se6pcwn790vxex7xystzumhg55p6qq9wq7td"
     )
 
     for (req <- requests) {
