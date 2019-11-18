@@ -195,7 +195,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def newAddress(): Future[String] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.getFinalAddress
+      case w: BitcoinCoreWallet => w.getReceiveAddress
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

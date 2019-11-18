@@ -522,7 +522,7 @@ object MultiPartPaymentLifecycleSpec {
     import fr.acinq.eclair.channel._
     import fr.acinq.eclair.crypto.ShaChain
     // We are only interested in availableBalanceForSend so we can put dummy values in most places.
-    val localParams = LocalParams(randomKey.publicKey, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64(50000000), 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, ByteVector.empty, ByteVector.empty)
+    val localParams = LocalParams(randomKey.publicKey, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64(50000000), 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, None, ByteVector.empty, ByteVector.empty)
     val remoteParams = RemoteParams(randomKey.publicKey, 0 sat, UInt64(5000000), 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, ByteVector.empty, ByteVector.empty)
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32, 0, canSend.truncateToSatoshi, randomKey.publicKey, remoteParams.fundingPubKey)
     Commitments(
