@@ -19,28 +19,31 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.{HasCommitments, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.Relayer.RelayPayload
-import fr.acinq.eclair.payment.{Origin, Relayer}
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
+import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
+
+  // we pass these to helpers classes so that they have the logging context
+  implicit def implicitLog: LoggingAdapter = log
 
   authenticator ! self
 
@@ -130,7 +133,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${context.children.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = peerActorName(remoteNodeId))
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, paymentHandler, wallet), name = peerActorName(remoteNodeId))
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
         peer
     }
@@ -142,9 +145,9 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
-object Switchboard extends Logging {
+object Switchboard {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
@@ -157,8 +160,7 @@ object Switchboard extends Logging {
    *
    * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
    */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector): Seq[UpdateAddHtlc] = {
-
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): Seq[UpdateAddHtlc] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
@@ -166,8 +168,10 @@ object Switchboard extends Logging {
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .filter(_.direction == OUT)
       .map(_.add)
-      .map(Relayer.decryptPacket(_, privateKey, features))
-      .collect { case Right(RelayPayload(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
+      .map(IncomingPacket.decrypt(_, privateKey, features))
+      .collect { case Right(IncomingPacket.ChannelRelayPacket(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
+
+    // TODO: @t-bast: will need to update this to take into account trampoline-relayed (and thoroughly test).
 
     // Here we do it differently because we need the origin information.
     val relayed_out = channels
@@ -177,14 +181,14 @@ object Switchboard extends Logging {
 
     val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
 
-    logger.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
+    log.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
 
     htlcs_broken
   }
 
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
-   * in a database (see [[fr.acinq.eclair.payment.CommandBuffer]]) because we
+   * in a database (see [[fr.acinq.eclair.payment.relay.CommandBuffer]]) because we
    * don't want to lose preimages, or to forget to fail incoming htlcs, which
    * would lead to unwanted channel closings.
    *
@@ -194,7 +198,7 @@ object Switchboard extends Logging {
    *
    * That's why we need to periodically clean up the pending relay db.
    */
-  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb): Int = {
+  def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb)(implicit log: LoggingAdapter): Int = {
 
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
@@ -212,7 +216,7 @@ object Switchboard extends Logging {
 
     toClean.foreach {
       case (channelId, htlcId) =>
-        logger.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
+        log.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")
         relayDb.removePendingRelay(channelId, htlcId)
     }
     toClean.size

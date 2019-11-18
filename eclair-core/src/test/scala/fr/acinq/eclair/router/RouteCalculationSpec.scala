@@ -414,7 +414,7 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
     val hops = Router.findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).get
 
-    assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
+    assert(hops === ChannelHop(a, b, uab) :: ChannelHop(b, c, ubc) :: ChannelHop(c, d, ucd) :: ChannelHop(d, e, ude) :: Nil)
   }
 
   test("convert extra hops to assisted channels") {
@@ -964,12 +964,12 @@ object RouteCalculationSpec {
 
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates.toSeq)
 
-  def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
+  def hops2Ids(route: Seq[ChannelHop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 
-  def hops2Edges(route: Seq[Hop]) = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate))
+  def hops2Edges(route: Seq[ChannelHop]) = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate))
 
-  def hops2ShortChannelIds(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toString).toList
+  def hops2ShortChannelIds(route: Seq[ChannelHop]) = route.map(hop => hop.lastUpdate.shortChannelId.toString).toList
 
-  def hops2Nodes(route: Seq[Hop]) = route.map(hop => (hop.nodeId, hop.nextNodeId))
+  def hops2Nodes(route: Seq[ChannelHop]) = route.map(hop => (hop.nodeId, hop.nextNodeId))
 
 }

@@ -201,6 +201,19 @@ class SphinxSpec extends FunSuite {
     assert(nextPacket.hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
+  test("create trampoline packet") {
+    val PacketAndSecrets(onion, sharedSecrets) = TrampolinePacket.create(sessionKey, publicKeys, trampolinePayloads, associatedData)
+    assert(serializeTrampolineOnion(onion) == hex"0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619cff34152f3a36e52ca94e74927203a560392b9cc7ce3c45809c6be52166c24a595716880f95f178bf5b30ca63141f74db6e92795c6130877cfdac3d4bd3087ee73c65d627ddd709112a848cc99e303f3706509aa43ba7c8a88cba175fccf9a8f5016ef06d3b935dbb15196d7ce16dc1a7157845566901d7b2197e52cab4ce487014b14816e5805f9fcacb4f8f88b8ff176f1b94f6ce6b00bc43221130c17d20ef629db7c5f7eafaa166578c720619561dd14b3277db557ec7dcdb793771aef0f2f667cfdbeae3ac8d331c5994779dffb31e5fc0dbdedc0c592ca6d21c18e47fe3528d6975c19517d7e2ea8c5391cf17d0fe30c80913ed887234ccb48808f7ef9425bcd815c3b586210979e3bb286ef2851bf9ce04e28c40a203df98fd648d2f1936fd2f1def0e77eecb277229b4b682322371c0a1dbfcd723a991993df8cc1f2696b84b055b40a1792a29f710295a18fbd351b0f3ff34cd13941131b8278ba79303c89117120eea691738a9954908195143b039dbeed98f26a92585f3d15cf742c953799d3272e0545e9b744be9d3b4cd2975656379d61ecccb8665fa26b63609c751bf3bfbacde4fff3508215f8dfd5")
+
+    val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = TrampolinePacket.peel(privKeys(0), associatedData, onion)
+    val Right(DecryptedPacket(payload1, nextPacket1, sharedSecret1)) = TrampolinePacket.peel(privKeys(1), associatedData, nextPacket0)
+    val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = TrampolinePacket.peel(privKeys(2), associatedData, nextPacket1)
+    val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = TrampolinePacket.peel(privKeys(3), associatedData, nextPacket2)
+    val Right(DecryptedPacket(payload4, _, sharedSecret4)) = TrampolinePacket.peel(privKeys(4), associatedData, nextPacket3)
+    assert(Seq(payload0, payload1, payload2, payload3, payload4) == trampolinePayloads)
+    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
+  }
+
   test("create packet with invalid payload") {
     // In this test vector, the payload length (encoded as a varint in the first bytes) isn't equal to the actual
     // payload length.
@@ -257,23 +270,27 @@ class SphinxSpec extends FunSuite {
   }
 
   test("last node replies with a failure message (reference test vector)") {
-    for (payloads <- Seq(referenceFixedSizePayloads, referenceVariableSizePayloads, variableSizePayloadsFull)) {
+    for ((payloads, packetType) <- Seq(
+      (referenceFixedSizePayloads, PaymentPacket),
+      (referenceVariableSizePayloads, PaymentPacket),
+      (variableSizePayloadsFull, PaymentPacket),
+      (trampolinePayloads, TrampolinePacket))) {
       // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
 
       // origin build the onion packet
-      val PacketAndSecrets(packet, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, payloads, associatedData)
+      val PacketAndSecrets(packet, sharedSecrets) = packetType.create(sessionKey, publicKeys, payloads, associatedData)
 
       // each node parses and forwards the packet
       // node #0
-      val Right(DecryptedPacket(_, packet1, sharedSecret0)) = PaymentPacket.peel(privKeys(0), associatedData, packet)
+      val Right(DecryptedPacket(_, packet1, sharedSecret0)) = packetType.peel(privKeys(0), associatedData, packet)
       // node #1
-      val Right(DecryptedPacket(_, packet2, sharedSecret1)) = PaymentPacket.peel(privKeys(1), associatedData, packet1)
+      val Right(DecryptedPacket(_, packet2, sharedSecret1)) = packetType.peel(privKeys(1), associatedData, packet1)
       // node #2
-      val Right(DecryptedPacket(_, packet3, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, packet2)
+      val Right(DecryptedPacket(_, packet3, sharedSecret2)) = packetType.peel(privKeys(2), associatedData, packet2)
       // node #3
-      val Right(DecryptedPacket(_, packet4, sharedSecret3)) = PaymentPacket.peel(privKeys(3), associatedData, packet3)
+      val Right(DecryptedPacket(_, packet4, sharedSecret3)) = packetType.peel(privKeys(3), associatedData, packet3)
       // node #4
-      val Right(lastPacket@DecryptedPacket(_, _, sharedSecret4)) = PaymentPacket.peel(privKeys(4), associatedData, packet4)
+      val Right(lastPacket@DecryptedPacket(_, _, sharedSecret4)) = packetType.peel(privKeys(4), associatedData, packet4)
       assert(lastPacket.isLastPacket)
 
       // node #4 want to reply with an error message
@@ -314,19 +331,23 @@ class SphinxSpec extends FunSuite {
   }
 
   test("intermediate node replies with a failure message (reference test vector)") {
-    for (payloads <- Seq(referenceFixedSizePayloads, referenceVariableSizePayloads, variableSizePayloadsFull)) {
+    for ((payloads, packetType) <- Seq(
+      (referenceFixedSizePayloads, PaymentPacket),
+      (referenceVariableSizePayloads, PaymentPacket),
+      (variableSizePayloadsFull, PaymentPacket),
+      (trampolinePayloads, TrampolinePacket))) {
       // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
 
       // origin build the onion packet
-      val PacketAndSecrets(packet, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, payloads, associatedData)
+      val PacketAndSecrets(packet, sharedSecrets) = packetType.create(sessionKey, publicKeys, payloads, associatedData)
 
       // each node parses and forwards the packet
       // node #0
-      val Right(DecryptedPacket(_, packet1, sharedSecret0)) = PaymentPacket.peel(privKeys(0), associatedData, packet)
+      val Right(DecryptedPacket(_, packet1, sharedSecret0)) = packetType.peel(privKeys(0), associatedData, packet)
       // node #1
-      val Right(DecryptedPacket(_, packet2, sharedSecret1)) = PaymentPacket.peel(privKeys(1), associatedData, packet1)
+      val Right(DecryptedPacket(_, packet2, sharedSecret1)) = packetType.peel(privKeys(1), associatedData, packet1)
       // node #2
-      val Right(DecryptedPacket(_, _, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, packet2)
+      val Right(DecryptedPacket(_, _, sharedSecret2)) = packetType.peel(privKeys(2), associatedData, packet2)
 
       // node #2 want to reply with an error message
       val error = FailurePacket.create(sharedSecret2, InvalidRealm)
@@ -347,6 +368,9 @@ object SphinxSpec {
 
   def serializePaymentOnion(onion: OnionRoutingPacket): ByteVector =
     OnionCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
+
+  def serializeTrampolineOnion(onion: OnionRoutingPacket): ByteVector =
+    OnionCodecs.trampolineOnionPacketCodec.encode(onion).require.toByteVector
 
   val privKeys = Seq(
     PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141"),
@@ -400,6 +424,15 @@ object SphinxSpec {
   // origin -> recipient
   val variableSizeOneHopPayload = Seq(
     hex"fd04f16500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  )
+
+  // This test vector uses trampoline variable-size payloads.
+  val trampolinePayloads = Seq(
+    hex"2a 02020231 040190 f8210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c",
+    hex"35 fa 33 010000000000000000000000040000000000000000000000000ff0000000000000000000000000000000000000000000000000",
+    hex"23 f8 21 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+    hex"00 0303030303030303 0000000000000003 00000003 000000000000000000000000",
+    hex"23 f8 21 02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"
   )
 
   val associatedData = ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242")
