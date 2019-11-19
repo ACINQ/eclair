@@ -31,7 +31,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
@@ -59,8 +58,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams)))
     val registerA = TestProbe()
     val registerB = TestProbe()
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandlerA))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, paymentHandlerB))
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, TestProbe().ref, registerA.ref, paymentHandlerA))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, TestProbe().ref, registerB.ref, paymentHandlerB))
     val router = TestProbe()
     val wallet = new TestWallet
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA))
@@ -99,7 +98,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(blockHeight = 400000)
-      OutgoingPacket.buildCommand(UUID.randomUUID(), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
+      OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =
