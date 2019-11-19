@@ -233,11 +233,13 @@ class Setup(datadir: File,
       case nonEmptyBlockHeightList => nonEmptyBlockHeightList.min
     }
 
-    // import addresses/scripts
-    channelsWithInfo.map { case (_, commitInput) =>
-      logger.info(s"importing address for funding_txid=${commitInput.outPoint.txid}")
-      bitcoinClient.importAddress(commitInput.txOut.publicKeyScript.toHex)
+    val channelScripts = channelsWithInfo.map { case (_, commitInput) =>
+      commitInput.txOut.publicKeyScript
     }
+
+    // import addresses/scripts
+    logger.info(s"importing ${channelScripts.size} addresses")
+    bitcoinClient.importMulti(channelScripts)
 
     // rescan from earliest channel point
     logger.info(s"rescanning from height $earliestScanHeight")

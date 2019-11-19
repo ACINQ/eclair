@@ -34,6 +34,8 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 
@@ -126,5 +128,39 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     assert(validationResult.fundingTx.isLeft)
   }
 
+  test("importmulti should import several watch addresses at once") {
+    val sender = TestProbe()
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    val (externalTx2, _) = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
+
+    val earliestBlockHeight = ShortChannelId.coordinates(earliestShortId).blockHeight
+
+    // when not imported transactions can't be looked up
+    client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    val importAndScan = for {
+      _ <- client.importMulti(Seq(externalTx1.txOut.head.publicKeyScript, externalTx2.txOut.head.publicKeyScript))
+      _ <- client.rescanBlockChain(earliestBlockHeight)
+    } yield Unit
+
+    Await.ready(importAndScan, 30 seconds)
+
+    client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsg(externalTx1)
+
+    client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsg(externalTx2)
+  }
 
 }
