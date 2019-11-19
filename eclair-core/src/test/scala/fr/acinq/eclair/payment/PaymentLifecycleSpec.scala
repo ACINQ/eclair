@@ -120,7 +120,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(ChannelHop(a, b, channelUpdate_ab), ChannelHop(b, c, channelUpdate_bc)))
     sender.send(paymentFSM, request)
-    routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat))
+    routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat, ignoreNodes = Set(a, b)))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
@@ -146,15 +146,15 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val request = SendPayment(defaultPaymentHash, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 3, routePrefix = Seq(ChannelHop(a, b, channelUpdate_ab), ChannelHop(b, c, channelUpdate_bc)))
     sender.send(paymentFSM, request)
-    routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat))
+    routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat, ignoreNodes = Set(a, b)))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
 
-    routerForwarder.send(paymentFSM, RouteResponse(Seq(ChannelHop(c, d, channelUpdate_cd)), Set.empty, Set.empty))
+    routerForwarder.send(paymentFSM, RouteResponse(Seq(ChannelHop(c, d, channelUpdate_cd)), Set(a, b), Set.empty))
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     sender.send(paymentFSM, UpdateFailMalformedHtlc(randomBytes32, 0, randomBytes32, 0))
-    routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat, ignoreChannels = Set(ChannelDesc(channelUpdate_ab.shortChannelId, a, b))))
+    routerForwarder.expectMsg(RouteRequest(c, d, defaultAmountMsat, ignoreNodes = Set(a, b), ignoreChannels = Set(ChannelDesc(channelUpdate_ab.shortChannelId, a, b))))
     val Transition(_, WAITING_FOR_PAYMENT_COMPLETE, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     assert(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
   }

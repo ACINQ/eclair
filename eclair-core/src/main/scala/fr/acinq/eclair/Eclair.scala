@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
-import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
+import fr.acinq.eclair.router.{Announcements, ChannelDesc, PublicChannel, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
 
@@ -185,7 +185,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = nodeId_opt match {
     case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
-    case Some(pk) => (appKit.router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values)
+    case Some(pk) => (appKit.router ? 'channelsMap).mapTo[Map[ShortChannelId, PublicChannel]].map { channels =>
+      channels.map(_._2).flatMap {
+        case PublicChannel(ann, _, _, Some(u1), _) if ann.nodeId1 == pk && u1.isNode1 => List(u1)
+        case PublicChannel(ann, _, _, _, Some(u2)) if ann.nodeId2 == pk && !u2.isNode1 => List(u2)
+        case PublicChannel(_, _, _, _, _) => List.empty
+      }
+    }
   }
 
   override def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], allowMultiPart: Boolean)(implicit timeout: Timeout): Future[PaymentRequest] = {
