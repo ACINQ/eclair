@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Deterministi
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
-import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
@@ -46,8 +46,8 @@ import scala.io.Source
 import scala.util.Random
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class ChannelCodecsSpec extends FunSuite {
 
@@ -558,4 +558,5 @@ object ChannelCodecsSpec {
       new ChannelVersionSerializer +
       new InputInfoSerializer
   }
+
 }

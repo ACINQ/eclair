@@ -23,13 +23,12 @@ import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.payment.CommandBuffer
-import fr.acinq.eclair.payment.CommandBuffer.CommandSend
+import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
@@ -71,7 +70,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -152,7 +151,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -400,7 +399,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     channelUpdateListener.expectNoMsg(300 millis)
 
     // we attempt to send a payment
-    sender.send(alice, CMD_ADD_HTLC(4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, upstream = Left(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     val failure = sender.expectMsgType[Status.Failure]
     val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
 
@@ -431,7 +430,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // We simulate a pending fulfill on that HTLC but not relayed.
     // When it is close to expiring upstream, we should close the channel.
-    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
+    sender.send(commandBuffer, CommandBuffer.CommandSend(htlc.channelId, htlc.id, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
@@ -465,7 +464,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // We simulate a pending failure on that HTLC.
     // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
-    sender.send(commandBuffer, CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0)))))
+    sender.send(commandBuffer, CommandBuffer.CommandSend(htlc.channelId, htlc.id, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0)))))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     bob2blockchain.expectNoMsg(250 millis)

@@ -20,8 +20,9 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, _}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
 import org.scalatest.FunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -194,6 +195,8 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.tags.size == 3)
+    assert(pr.features.bitmask.isEmpty)
+    assert(!pr.features.allowMultiPart)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
@@ -209,34 +212,46 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(12)))
     assert(pr.tags.size == 4)
+    assert(pr.features.bitmask.isEmpty)
+    assert(!pr.features.allowMultiPart)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 1 and 9") {
-    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9qzsze992adudgku8p05pstl6zh7av6rx2f297pv89gu5q93a0hf3g7lynl3xq56t23dpvah6u7y9qey9lccrdml3gaqwc6nxsl5ktzm464sq73t7cl"
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 15 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqqq4u9s93jtgysm3mrwll70zr697y3mf902hvxwej0v7c62rsltw83ng0pu8w3j230sluc5gxkdmm9dvpy9y6ggtjd2w544mzdrcs42t7sqdkcy8h"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
-    assert(pr.amount === Some(MilliSatoshi(2500000000L)))
+    assert(pr.amount === Some(2500000000L msat))
     assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.paymentSecret === Some(ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")))
     assert(pr.timestamp === 1496314658L)
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.features.bitmask === bin"1000000010")
+    assert(pr.features.bitmask === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000")
+    assert(!pr.features.allowMultiPart)
+    assert(!pr.features.requirePaymentSecret)
+    assert(!pr.features.allowTrampoline)
+    assert(pr.features.supported)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 1, 9 and 100") {
-    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9q4pqqqqqqqqqqqqqqqqqqszk3ed62snp73037h4py4gry05eltlp0uezm2w9ajnerhmxzhzhsu40g9mgyx5v3ad4aqwkmvyftzk4k9zenz90mhjcy9hcevc7r3lx2sphzfxz7"
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 15, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqpqqqqu7fz6pjqczdm3jp3qps7xntj2w2mm70e0ckhw3c5xk9p36pvk3sewn7ncaex6uzfq0vtqzy28se6pcwn790vxex7xystzumhg55p6qq9wq7td"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
-    assert(pr.amount === Some(MilliSatoshi(2500000000L)))
+    assert(pr.amount === Some(2500000000L msat))
     assert(pr.paymentHash.bytes === hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.paymentSecret === Some(ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")))
     assert(pr.timestamp === 1496314658L)
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.features.bitmask === bin"000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010")
+    assert(pr.features.bitmask === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000")
+    assert(!pr.features.allowMultiPart)
+    assert(!pr.features.requirePaymentSecret)
+    assert(!pr.features.allowTrampoline)
+    assert(!pr.features.supported)
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -289,6 +304,67 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.amount === Some(100000000000L msat))
     assert(pr.features.bitmask === BitVector.empty)
+  }
+
+  test("supported payment request features") {
+
+    case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
+
+    val featureBits = Map(
+      Features(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00010000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00100000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00010100000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00011000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00101000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      Features(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0000110000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
+      Features(bin"          0000100000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"00000010000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"00001000000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false)
+    )
+
+    for ((features, res) <- featureBits) {
+      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(features))
+      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.supported) === res)
+      assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
+    }
+  }
+
+  test("payment secret") {
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    assert(pr.paymentSecret.isDefined)
+    assert(pr.features === Features(PAYMENT_SECRET_OPTIONAL))
+    assert(!pr.features.requirePaymentSecret)
+
+    val pr1 = PaymentRequest.read(PaymentRequest.write(pr))
+    assert(pr1.paymentSecret === pr.paymentSecret)
+
+    val pr2 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr2.features.requirePaymentSecret)
+    assert(pr2.paymentSecret === None)
+  }
+
+  test("trampoline") {
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    assert(!pr.features.allowTrampoline)
+
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_OPTIONAL)))
+    assert(!pr1.features.allowMultiPart)
+    assert(pr1.features.allowTrampoline)
+
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    assert(pr2.features.allowMultiPart)
+    assert(pr2.features.allowTrampoline)
+
+    val pr3 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
+    assert(!pr3.features.allowTrampoline)
   }
 
   test("nonreg") {
@@ -350,8 +426,8 @@ class PaymentRequestSpec extends FunSuite {
       "lnbc50n1pdl052epp57549dnjwf2wqfz5hg8khu0wlkca8ggv72f9q7x76p0a7azkn3ljsdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcnvvscqzysxqyd9uqa2z48kchpmnyafgq2qlt4pruwyjh93emh8cd5wczwy47pkx6qzarmvl28hrnqf98m2rnfa0gx4lnw2jvhlg9l4265240av6t9vdqpzsqntwwyx",
       "lnbc100n1pd7cwrypp57m4rft00sh6za2x0jwe7cqknj568k9xajtpnspql8dd38xmd7musdp0tfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqcngvscqzysxqyd9uqsxfmfv96q0d7r3qjymwsem02t5jhtq58a30q8lu5dy3jft7wahdq2f5vc5qqymgrrdyshff26ak7m7n0vqyf7t694vam4dcqkvnr65qp6wdch9",
       "lnbc100n1pw9qjdgpp5lmycszp7pzce0rl29s40fhkg02v7vgrxaznr6ys5cawg437h80nsdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdejcqzysxqrrss47kl34flydtmu2wnszuddrd0nwa6rnu4d339jfzje6hzk6an0uax3kteee2lgx5r0629wehjeseksz0uuakzwy47lmvy2g7hja7mnpsqjmdct9",
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9qzsze992adudgku8p05pstl6zh7av6rx2f297pv89gu5q93a0hf3g7lynl3xq56t23dpvah6u7y9qey9lccrdml3gaqwc6nxsl5ktzm464sq73t7cl",
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdees9q4pqqqqqqqqqqqqqqqqqqszk3ed62snp73037h4py4gry05eltlp0uezm2w9ajnerhmxzhzhsu40g9mgyx5v3ad4aqwkmvyftzk4k9zenz90mhjcy9hcevc7r3lx2sphzfxz7"
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqqq4u9s93jtgysm3mrwll70zr697y3mf902hvxwej0v7c62rsltw83ng0pu8w3j230sluc5gxkdmm9dvpy9y6ggtjd2w544mzdrcs42t7sqdkcy8h",
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqpqqqqu7fz6pjqczdm3jp3qps7xntj2w2mm70e0ckhw3c5xk9p36pvk3sewn7ncaex6uzfq0vtqzy28se6pcwn790vxex7xystzumhg55p6qq9wq7td"
     )
 
     for (req <- requests) {

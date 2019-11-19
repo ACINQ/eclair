@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.send
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
 import fr.acinq.eclair.router.{Announcements, Data, PublicChannel}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams, randomBytes32, secureRandom}
@@ -54,7 +54,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
         case Some(targetNodeId) =>
           val paymentHash = randomBytes32 // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
-          paymentInitiator ! SendPaymentRequest(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
+          paymentInitiator ! PaymentInitiator.SendPaymentRequest(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()
@@ -71,7 +71,6 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
   }
 
   def scheduleProbe() = context.system.scheduler.scheduleOnce(PROBING_INTERVAL, self, TickProbe)
-
 
 }
 
