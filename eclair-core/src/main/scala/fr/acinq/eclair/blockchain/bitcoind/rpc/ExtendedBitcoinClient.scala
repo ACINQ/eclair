@@ -23,9 +23,9 @@ import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateRe
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
 import org.json4s.JsonAST.{JValue, _}
+import scodec.bits.ByteVector
 
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.concurrent.{Await, ExecutionContext, Future}
 
 /**
   * Created by PM on 26/04/2016.
@@ -36,6 +36,16 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
     rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
+  }
+
+  def importMulti(scripts: Seq[ByteVector], rescan: Boolean = false)(implicit ec: ExecutionContext): Future[Unit] = {
+    val options = JObject(("rescan", JBool(rescan)))
+    val requests = JArray(scripts.map(el => JObject(
+      ("scriptPubKey", JString(el.toHex)),
+      ("timestamp", JString("now")),
+      ("watchonly", JBool(true))
+    )).toList)
+    rpcClient.invoke("importmulti", requests, options).map(_ => Unit)
   }
 
   def rescanBlockChain(rescanSinceHeight: Int)(implicit ec: ExecutionContext): Future[Unit] = {

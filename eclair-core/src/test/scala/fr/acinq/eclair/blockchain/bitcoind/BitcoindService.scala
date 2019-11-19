@@ -140,22 +140,22 @@ trait BitcoindService extends Logging {
     // master key used to simulate non wallet transactions
     val nonWalletMasterKey = DeterministicWallet.generate(randomBytes32)
 
-    val receiveKey = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, 0)
-    val sendKey = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, 1)
+    def receiveKey(index: Long = 0) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
+    def sendKey(index: Long = 1) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
 
 
-    def spendNonWalletTx(tx: Transaction)(implicit system: ActorSystem) = {
+    def spendNonWalletTx(tx: Transaction, receivingKeyIndex: Long = 0)(implicit system: ActorSystem) = {
       val probe = TestProbe()
 
       val spendTx = Transaction(
         version = 2L,
         txIn = TxIn(OutPoint(tx, 0), ByteVector.empty,  TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(tx.txOut(0).amount - 200.sat, Script.write(Script.pay2pkh(receiveKey.publicKey))) :: Nil, // amount - fee
+        txOut = TxOut(tx.txOut(0).amount - 200.sat, Script.write(Script.pay2pkh(receiveKey(receivingKeyIndex).publicKey))) :: Nil, // amount - fee
         lockTime = 0
       )
 
-      val sig = Transaction.signInput(spendTx, 0, tx.txOut(0).publicKeyScript, SIGHASH_ALL, tx.txOut(0).amount - 200.sat, SigVersion.SIGVERSION_BASE, sendKey.privateKey)
-      val tx1 = spendTx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(sendKey.publicKey) :: Nil)
+      val sig = Transaction.signInput(spendTx, 0, tx.txOut(0).publicKeyScript, SIGHASH_ALL, tx.txOut(0).amount - 200.sat, SigVersion.SIGVERSION_BASE, sendKey().privateKey)
+      val tx1 = spendTx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(sendKey().publicKey) :: Nil)
       Transaction.correctlySpends(tx1, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
@@ -179,7 +179,7 @@ trait BitcoindService extends Logging {
     def nonWalletTransaction(implicit system: ActorSystem): (Transaction, ShortChannelId) = {
       val amountToReceive = Btc(0.1)
       val probe = TestProbe()
-      val externalWalletAddress = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, Crypto.hash160(receiveKey.publicKey.value))
+      val externalWalletAddress = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, Crypto.hash160(receiveKey().publicKey.value))
 
       // send bitcoins from our wallet to an external wallet
       bitcoinrpcclient.invoke("sendtoaddress", externalWalletAddress, amountToReceive.toBigDecimal.toString()).pipeTo(probe.ref)
@@ -188,7 +188,7 @@ trait BitcoindService extends Logging {
       bitcoinrpcclient.invoke("getrawtransaction", spendingToExternalTxId).pipeTo(probe.ref)
       val JString(rawTx) = probe.expectMsgType[JValue]
       val incomingTx = Transaction.read(rawTx)
-      val outIndex = incomingTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2pkh(receiveKey.publicKey)))
+      val outIndex = incomingTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2pkh(receiveKey().publicKey)))
 
       assert(outIndex >= 0)
 
@@ -198,12 +198,12 @@ trait BitcoindService extends Logging {
       val tx = Transaction(
         version = 2L,
         txIn = TxIn(OutPoint(incomingTx, outIndex), ByteVector.empty,  TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(amountToReceive.toSatoshi - 200.sat, Script.write(Script.pay2pkh(sendKey.publicKey))) :: Nil, // amount - fee
+        txOut = TxOut(amountToReceive.toSatoshi - 200.sat, Script.write(Script.pay2pkh(sendKey().publicKey))) :: Nil, // amount - fee
         lockTime = 0
       )
 
-      val sig = Transaction.signInput(tx, 0, Script.pay2pkh(receiveKey.publicKey), SIGHASH_ALL, 2500 sat, SigVersion.SIGVERSION_BASE, receiveKey.privateKey)
-      val tx1 = tx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(receiveKey.publicKey.value) :: Nil)
+      val sig = Transaction.signInput(tx, 0, Script.pay2pkh(receiveKey().publicKey), SIGHASH_ALL, 2500 sat, SigVersion.SIGVERSION_BASE, receiveKey().privateKey)
+      val tx1 = tx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(receiveKey().publicKey.value) :: Nil)
       Transaction.correctlySpends(tx1, Seq(incomingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
