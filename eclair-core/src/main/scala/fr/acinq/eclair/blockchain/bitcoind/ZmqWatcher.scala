@@ -136,7 +136,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
         case w: WatchConfirmed =>
           for {
-            _ <- client.watchScript(w.publicKeyScript.toHex, w.rescanHeight.getOrElse(MAX_PRUNE_HEIGHT))
+            _ <- client.importAddress(w.publicKeyScript.toHex)
+            _ <- if(w.rescanHeight.isDefined) client.rescanBlockChain(w.rescanHeight.get) else Future.successful(Unit)
           } yield checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
 
         case _: WatchLost => () // TODO: not implemented

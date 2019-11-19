@@ -34,11 +34,13 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
-  def watchScript(script: String, rescanSinceHeight: Int)(implicit ec: ExecutionContext): Future[Unit] =
-    for {
-      _ <- rpcClient.invoke("importaddress", script, "", false)
-      _ <- rpcClient.invoke("rescanblockchain", rescanSinceHeight)
-    } yield Unit
+  def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
+    rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
+  }
+
+  def rescanBlockChain(rescanSinceHeight: Int)(implicit ec: ExecutionContext): Future[Unit] = {
+    rpcClient.invoke("rescanblockchain", rescanSinceHeight).map(_ => Unit)
+  }
 
   /**
     * Assumes the transaction is indexed by a previous call to 'importaddress'
