@@ -80,7 +80,7 @@ class RecoveryFSM(remoteNodeURI: NodeURI, nodeParams: NodeParams, wallet: Eclair
           val claimTx = Transactions.makeClaimP2WPKHOutputTx(commitTx, nodeParams.dustLimit, localPaymentKey, finalScriptPubkey, nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(6))
           val sig = nodeParams.keyManager.sign(claimTx, paymentBasePoint, remotePerCommitmentSecret)
           val claimSigned = Transactions.addSigs(claimTx, localPaymentKey, sig)
-          logger.info(s"publishing claim-main-output transaction address=${scriptPubKeyToAddress(finalScriptPubkey)} txid=${claimSigned.tx.txid}")
+          logger.info(s"publishing claim-main-output transaction: address=${scriptPubKeyToAddress(finalScriptPubkey)} txid=${claimSigned.tx.txid}")
           bitcoinClient.publishTransaction(claimSigned.tx)
           context.system.scheduler.scheduleOnce(CHECK_POLL_INTERVAL)(self ! CheckClaimPublished)
           goto(RECOVERY_WAIT_FOR_CLAIM_PUBLISHED) using DATA_WAIT_FOR_CLAIM_TX(d.peer, claimSigned.tx)
@@ -142,7 +142,7 @@ class RecoveryFSM(remoteNodeURI: NodeURI, nodeParams: NodeParams, wallet: Eclair
     */
   def lookForCommitTx(fundingTxId: ByteVector32, fundingOutIndex: Int): Future[Transaction] = {
     bitcoinClient.getMempool().map { mempoolTxs =>
-      mempoolTxs.find(_.txIn.exists(_.outPoint == OutPoint(fundingTxId, fundingOutIndex))).get
+      mempoolTxs.find(_.txIn.exists(_.outPoint == OutPoint(fundingTxId.reverse, fundingOutIndex))).get
     }.recoverWith { case _ =>
       bitcoinClient.lookForSpendingTx(None, fundingTxId.toHex, fundingOutIndex)
     }
