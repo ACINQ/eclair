@@ -95,8 +95,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.to-remote-delay-blocks" -> 144,
     "eclair.multi-part-payment-expiry" -> "20 seconds"))
 
-  implicit val formats = DefaultFormats
-
   override def beforeAll(): Unit = {
     startBitcoind()
   }
