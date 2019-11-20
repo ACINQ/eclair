@@ -49,7 +49,8 @@ You will find detailed guides and frequently asked questions there.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
-You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
+You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes. If you want to run 
+eclair on constrained devices check out the [pruned](#Pruned) section below.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -226,6 +227,21 @@ rpcpassword=<your-testnet-rpc-password-here>
 zmqpubrawblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
 ```
+
+## Pruned
+Eclair has experimental support for running alongside a pruned, non indexing bitcoind but there are known limitations:
+- Eclair won't be able to validate *all* the gossip messages, this can lead to problems when sending payments.
+- The bitcoind wallet data should be backed up with eclair's database backup, if a user loses his bitcoind data it must follow the reimport procedure.
+- Pruning target size must be at least 25GB.
+
+### Pruned mode reimport procedure
+This procedure rebuilds the necessary indexes in bitcoind to let eclair operate normally, it's necessary to run it
+when you are transitioning from an indexing bitcoind to a non indexing (and optionally pruned) instance. The procedure itself
+triggers a chain rescan and it can take up to several minutes to complete, check the bitcoind logs for progress status. To run the reimport 
+start eclair with the flag `-Declair.reimport-watches` for example:
+```shell
+java -Declair.datadir=/tmp/node1 -Declair.reimport-watches -jar eclair-node-gui-<version>-<commit_id>.jar
+``` 
 
 ## Resources
 
