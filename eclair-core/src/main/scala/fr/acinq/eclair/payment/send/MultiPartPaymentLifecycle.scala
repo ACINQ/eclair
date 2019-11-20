@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.{Onion, OnionRoutingPacket, OnionTlv, PaymentTimeout, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, LongToBtcAmount, MilliSatoshi, NodeParams, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, ToMilliSatoshiConversion}
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -72,21 +72,22 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         router ! TickComputeNetworkStats
       }
       relayer ! GetOutgoingChannels()
-      goto(WAIT_FOR_CHANNEL_BALANCES) using PaymentProgress(d.sender, d.request, s.stats, d.request.totalAmount, d.request.maxAttempts, Map.empty, Nil)
+      goto(WAIT_FOR_CHANNEL_BALANCES) using PaymentProgress(d.sender, d.request, s.stats, None, d.request.totalAmount, d.request.maxAttempts, Map.empty, Set.empty, Nil)
   }
 
   when(WAIT_FOR_CHANNEL_BALANCES) {
     case Event(OutgoingChannels(channels), d: PaymentProgress) =>
       log.debug("trying to send {} with local channels: {}", d.toSend, channels.map(_.toUsableBalance).mkString(","))
       val randomize = d.failures.nonEmpty // we randomize channel selection when we retry
-      val (remaining, payments) = splitPayment(nodeParams, d.toSend, channels, d.networkStats, d.request, randomize)
+      val filteredChannels = channels.filter(c => !d.ignoreChannels.contains(c.channelUpdate.shortChannelId))
+      val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(new RuntimeException("balance is too low")), d.pending.keySet)
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
         pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
-        goto(PAYMENT_IN_PROGRESS) using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending)
+        goto(PAYMENT_IN_PROGRESS) using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending, channelsCount = Some(channels.length))
       }
 
     case Event(pf: PaymentFailed, d: PaymentProgress) => handleChildFailure(pf, d) match {
@@ -94,7 +95,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         goto(PAYMENT_ABORTED) using paymentAborted
       case None =>
         val failedPayment = d.pending(pf.id)
-        stay using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures)
+        val ignoreChannels = if (shouldBlacklistChannel(pf)) d.ignoreChannels + getFirstHopShortChannelId(failedPayment) else d.ignoreChannels
+        stay using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures, ignoreChannels = ignoreChannels)
     }
 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
@@ -110,8 +112,30 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       case None =>
         // Get updated local channels (will take into account the child payments that are in-flight).
         relayer ! GetOutgoingChannels()
-        val failedPayment = d.pending(pf.id)
-        goto(WAIT_FOR_CHANNEL_BALANCES) using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures)
+        val newState = {
+          val failedPayment = d.pending(pf.id)
+          val d1 = d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures)
+          if (shouldBlacklistChannel(pf)) {
+            val d2 = d1.copy(ignoreChannels = d1.ignoreChannels + getFirstHopShortChannelId(failedPayment))
+            // When we have a lot of channels, many of them may end up being a bad route prefix for the destination we're
+            // trying to reach. This is a cheap error that is detected quickly (RouteNotFound), so we don't want to count
+            // it in our payment attempts to avoid failing too fast.
+            // However we don't want to test all of our channels either which would be expensive, so we only probabilistically
+            // count the failure in our payment attempts.
+            // With the log-scale used, here are the probabilities:
+            //  * 10 channels -> refund 13% of failures
+            //  * 20 channels -> refund 32% of failures
+            //  * 50 channels -> refund 50% of failures
+            //  * 100 channels -> refund 56% of failures
+            //  * 1000 channels -> refund 70% of failures
+            // NB: this hack won't be necessary once multi-part is directly handled by the router.
+            val refundRetry = Random.nextDouble() * math.log(d.channelsCount.get) > 2.0
+            if (refundRetry) d2.copy(remainingAttempts = d2.remainingAttempts + 1) else d2
+          } else {
+            d1
+          }
+        }
+        goto(WAIT_FOR_CHANNEL_BALANCES) using newState
     }
 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
@@ -203,7 +227,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (paymentTimedOut) {
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
-      val failure = LocalFailure(new RuntimeException("payment attempts exhausted without success"))
+      val failure = LocalFailure(RetryExhausted)
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
     } else {
       None
@@ -235,6 +259,11 @@ object MultiPartPaymentLifecycle {
   }
 
   // @formatter:off
+  object BalanceTooLow extends RuntimeException("outbound capacity is too low")
+  object RetryExhausted extends RuntimeException("payment attempts exhausted without success")
+  // @formatter:on
+
+  // @formatter:off
   sealed trait State
   case object WAIT_FOR_PAYMENT_REQUEST  extends State
   case object WAIT_FOR_NETWORK_STATS  extends State
@@ -262,12 +291,14 @@ object MultiPartPaymentLifecycle {
    * @param sender            the sender of the payment request.
    * @param request           payment request containing the total amount to send.
    * @param networkStats      network statistics help us decide how to best split a big payment.
+   * @param channelsCount     number of local channels.
    * @param toSend            remaining amount that should be split and sent.
    * @param remainingAttempts remaining attempts (after child payments fail).
    * @param pending           pending child payments (payment sent, we are waiting for a fulfill or a failure).
+   * @param ignoreChannels    channels that should be ignored (previously returned a permanent error).
    * @param failures          previous child payment failures.
    */
-  case class PaymentProgress(sender: ActorRef, request: SendMultiPartPayment, networkStats: Option[NetworkStats], toSend: MilliSatoshi, remainingAttempts: Int, pending: Map[UUID, SendPayment], failures: Seq[PaymentFailure]) extends Data
+  case class PaymentProgress(sender: ActorRef, request: SendMultiPartPayment, networkStats: Option[NetworkStats], channelsCount: Option[Int], toSend: MilliSatoshi, remainingAttempts: Int, pending: Map[UUID, SendPayment], ignoreChannels: Set[ShortChannelId], failures: Seq[PaymentFailure]) extends Data
   /**
    * When we exhaust our retry attempts without success, we abort the payment.
    * Once we're in that state, we wait for all the pending child payments to settle.
@@ -291,6 +322,17 @@ object MultiPartPaymentLifecycle {
    */
   case class PaymentSucceeded(sender: ActorRef, request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID]) extends Data
   // @formatter:on
+
+  /** If the payment failed immediately with a RouteNotFound, the channel we selected should be ignored in retries. */
+  private def shouldBlacklistChannel(pf: PaymentFailed): Boolean = pf.failures match {
+    case LocalFailure(RouteNotFound) :: Nil => true
+    case _ => false
+  }
+
+  def getFirstHopShortChannelId(payment: SendPayment): ShortChannelId = {
+    require(payment.routePrefix.nonEmpty, "multi-part payment must have a route prefix")
+    payment.routePrefix.head.lastUpdate.shortChannelId
+  }
 
   /**
    * If fee limits are provided, we need to divide them between all child payments. Otherwise we could end up paying
@@ -415,14 +457,17 @@ object MultiPartPaymentLifecycle {
     // If we have direct channels to the target, we use them without splitting the payment inside each channel.
     val channelsToTarget = localChannels.filter(p => p.nextNodeId == request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
     val directPayments = split(toSend, Seq.empty, channelsToTarget, (remaining: MilliSatoshi, channel: OutgoingChannel) => {
-      createChildPayment(nodeParams, request, remaining.min(channel.commitments.availableBalanceForSend), channel) :: Nil
+      // When using direct channels to the destination, it doesn't make sense to use retries so we set maxAttempts to 1.
+      createChildPayment(nodeParams, request.copy(maxAttempts = 1), remaining.min(channel.commitments.availableBalanceForSend), channel) :: Nil
     })
 
     // Otherwise we need to split the amount based on network statistics and pessimistic fees estimates.
+    // We filter out unannounced channels: they are very likely leading to a non-routing node.
+    // Note that this will be handled more gracefully once this logic is migrated inside the router.
     val channels = if (randomize) {
-      Random.shuffle(localChannels.filter(p => p.nextNodeId != request.targetNodeId))
+      Random.shuffle(localChannels.filter(p => p.commitments.announceChannel && p.nextNodeId != request.targetNodeId))
     } else {
-      localChannels.filter(p => p.nextNodeId != request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
+      localChannels.filter(p => p.commitments.announceChannel && p.nextNodeId != request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
     }
     val remotePayments = split(toSend - directPayments.map(_.finalPayload.amount).sum, Seq.empty, channels, (remaining: MilliSatoshi, channel: OutgoingChannel) => {
       // We re-generate a split threshold for each channel to randomize the amounts.
