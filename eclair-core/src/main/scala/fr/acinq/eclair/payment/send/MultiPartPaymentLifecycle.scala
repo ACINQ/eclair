@@ -108,12 +108,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           // it in our payment attempts to avoid failing too fast.
           // However we don't want to test all of our channels either which would be expensive, so we only probabilistically
           // count the failure in our payment attempts.
-          // With the log-scale used, here are the probabilities:
-          //  * 10 channels -> refund 13% of failures
-          //  * 20 channels -> refund 32% of failures
-          //  * 50 channels -> refund 50% of failures
-          //  * 100 channels -> refund 56% of failures
-          //  * 1000 channels -> refund 70% of failures
+          // With the log-scale used, here are the probabilities and the corresponding number of retries:
+          //  *   10 channels -> refund 13% of failures -> with 5 initial retries we will actually try 5/(1-0.13) = ~6 times
+          //  *   20 channels -> refund 32% of failures -> with 5 initial retries we will actually try 5/(1-0.32) = ~7 times
+          //  *   50 channels -> refund 50% of failures -> with 5 initial retries we will actually try 5/(1-0.50) = ~10 times
+          //  *  100 channels -> refund 56% of failures -> with 5 initial retries we will actually try 5/(1-0.56) = ~11 times
+          //  * 1000 channels -> refund 70% of failures -> with 5 initial retries we will actually try 5/(1-0.70) = ~17 times
           // NB: this hack won't be necessary once multi-part is directly handled by the router.
           d.remainingAttempts + 1
         } else {
