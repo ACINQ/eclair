@@ -186,7 +186,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       stay
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
-      if (failures.size + 1 >= c.maxAttempts) {
+      // If the first hop was selected by the sender (in routePrefix) and it failed, it doesn't make sense to retry (we
+      // will end up retrying over that same faulty channel).
+      if (failures.size + 1 >= c.maxAttempts || c.routePrefix.nonEmpty) {
         onFailure(s, PaymentFailed(id, c.paymentHash, failures :+ LocalFailure(t)))
         stop(FSM.Normal)
       } else {
