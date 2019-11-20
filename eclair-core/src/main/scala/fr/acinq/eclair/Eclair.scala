@@ -312,4 +312,3 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
     (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
 }
-
