@@ -159,10 +159,10 @@ class Setup(datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-        pruneHeight = (json \ "pruneheight").extractOpt[Long]
-      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, pruneHeight)
+        pruneTargetSize = (json \ "prune_target_size").extractOpt[Long]
+      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, pruneTargetSize)
       // blocking sanity checks
-      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, pruneHeight) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, pruneTargetSize) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
       assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
@@ -171,7 +171,7 @@ class Setup(datadir: File,
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
-      assert(pruneHeight.forall(_ <= ZmqWatcher.MAX_PRUNE_HEIGHT)) // pruneHeight is the lowest-height complete block stored
+      assert(pruneTargetSize.forall(_ >= ZmqWatcher.MIN_PRUNE_TARGET_SIZE), s"bitcoind prune target size must be at least ${ZmqWatcher.MIN_PRUNE_TARGET_SIZE} (~25GB)") // pruneHeight is the lowest-height complete block stored
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
@@ -234,7 +234,7 @@ class Setup(datadir: File,
     }
 
     val earliestScanHeight = channelsWithInfo.flatMap(_._1).map(ShortChannelId.coordinates(_).blockHeight) match {
-      case Nil                     => ZmqWatcher.MAX_PRUNE_HEIGHT
+      case Nil                     => ZmqWatcher.EARLIEST_SEGWIT_BLOCKHEIGHT
       case nonEmptyBlockHeightList => nonEmptyBlockHeightList.min
     }
 
