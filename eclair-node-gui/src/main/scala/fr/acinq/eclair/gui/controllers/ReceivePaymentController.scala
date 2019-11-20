@@ -16,6 +16,10 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import fr.acinq.eclair.gui.utils._
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.{CoinUtils, LongToBtcAmount, MilliSatoshi}
+import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
@@ -24,19 +28,12 @@ import javafx.scene.image.{ImageView, WritableImage}
 import javafx.scene.layout.GridPane
 import javafx.stage.Stage
 
-import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.CoinUtils
-import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.gui.utils._
-import fr.acinq.eclair.payment.PaymentRequest
-import grizzled.slf4j.Logging
-
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Created by DPA on 23/09/2016.
-  */
+ * Created by DPA on 23/09/2016.
+ */
 class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends Logging {
 
   @FXML var amount: TextField = _
@@ -60,18 +57,18 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML def handleCopyInvoice(event: ActionEvent) = ContextMenuUtils.copyToClipboard(paymentRequestTextArea.getText)
 
   /**
-    * Generates a payment request from the amount/unit set in form. Displays an error if the generation fails.
-    * Amount field content must obviously be numeric. It is also validated against minimal/maximal HTLC values.
-    *
-    * @param event
-    */
+   * Generates a payment request from the amount/unit set in form. Displays an error if the generation fails.
+   * Amount field content must obviously be numeric. It is also validated against minimal/maximal HTLC values.
+   *
+   * @param event
+   */
   @FXML def handleGenerate(event: ActionEvent) = {
     clearError()
     amount.getText match {
       case "" => createPaymentRequest(None)
       case GUIValidators.amountDecRegex(_*) =>
         Try(CoinUtils.convertStringAmountToMsat(amount.getText, unit.getValue)) match {
-          case Success(amountMsat) if amountMsat.amount < 0 =>
+          case Success(amountMsat) if amountMsat < 0.msat =>
             handleError("Amount must be greater than 0")
           case Failure(_) =>
             handleError("Amount is incorrect")
@@ -82,10 +79,10 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   }
 
   /**
-    * Display error message
-    *
-    * @param message
-    */
+   * Display error message
+   *
+   * @param message
+   */
   private def handleError(message: String): Unit = {
     paymentRequestTextArea.setText("")
     amountError.setText(message)
@@ -99,11 +96,11 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   }
 
   /**
-    * Ask eclair-core to create a Payment Request. If successful a QR code is generated and displayed, otherwise
-    * an error message is shown.
-    *
-    * @param amount_opt optional amount of the payment request, in millisatoshi
-    */
+   * Ask eclair-core to create a Payment Request. If successful a QR code is generated and displayed, otherwise
+   * an error message is shown.
+   *
+   * @param amount_opt optional amount of the payment request, in millisatoshi
+   */
   private def createPaymentRequest(amount_opt: Option[MilliSatoshi]) = {
     logger.debug(s"generate payment request for amount_opt=${amount_opt.getOrElse("N/A")} description=${description.getText()}")
     handlers.receive(amount_opt, description.getText) onComplete {
@@ -122,11 +119,11 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   }
 
   /**
-    * Displays a QR Code from a QR code image.
-    *
-    * @param pr    payment request described by the QR code
-    * @param image QR code source image
-    */
+   * Displays a QR Code from a QR code image.
+   *
+   * @param pr    payment request described by the QR code
+   * @param image QR code source image
+   */
   private def displayPaymentRequestQR(pr: String, image: Option[WritableImage]) = Platform.runLater(new Runnable {
     def run = {
       paymentRequestTextArea.setText(pr)

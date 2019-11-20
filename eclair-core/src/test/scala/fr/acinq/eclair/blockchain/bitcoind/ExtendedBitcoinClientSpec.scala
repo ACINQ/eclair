@@ -24,8 +24,8 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST._
-import org.json4s.{DefaultFormats, JString}
+import org.json4s.JsonAST.{JString, _}
+import org.json4s.{DefaultFormats}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.collection.JavaConversions._
@@ -38,8 +38,8 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     "eclair.chain" -> "regtest",
     "eclair.spv" -> false,
     "eclair.server.public-ips.1" -> "localhost",
-    "eclair.bitcoind.port" -> 28333,
-    "eclair.bitcoind.rpcport" -> 28332,
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false))
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
@@ -88,7 +88,9 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     client.publishTransaction(tx).pipeTo(sender.ref)
     sender.expectMsg(txid)
     // let's confirm the tx
-    bitcoinClient.invoke("generate", 1).pipeTo(sender.ref)
+    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(generatingAddress) = sender.expectMsgType[JValue]
+    bitcoinClient.invoke("generatetoaddress", 1, generatingAddress).pipeTo(sender.ref)
     sender.expectMsgType[JValue]
     // and publish the tx a third time to test idempotence
     client.publishTransaction(tx).pipeTo(sender.ref)
@@ -110,7 +112,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     client.publishTransaction(tx).pipeTo(sender.ref)
     sender.expectMsg(txid)
     // let's confirm the tx
-    bitcoinClient.invoke("generate", 1).pipeTo(sender.ref)
+    bitcoinClient.invoke("generatetoaddress", 1, generatingAddress).pipeTo(sender.ref)
     sender.expectMsgType[JValue]
     // and publish the tx a fifth time to test idempotence
     client.publishTransaction(tx).pipeTo(sender.ref)

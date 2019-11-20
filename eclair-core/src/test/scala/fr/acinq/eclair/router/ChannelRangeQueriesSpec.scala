@@ -16,63 +16,115 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.wire.ReplyChannelRange
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
+import fr.acinq.eclair.{LongToBtcAmount, randomKey}
 import org.scalatest.FunSuite
+import scodec.bits.ByteVector
 
-import scala.collection.{SortedSet, immutable}
+import scala.collection.immutable.SortedMap
+import scala.compat.Platform
 
 
 class ChannelRangeQueriesSpec extends FunSuite {
-  import ChannelRangeQueriesSpec._
 
-  test("create `reply_channel_range` messages (uncompressed format)") {
-    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, shortChannelIds, ChannelRangeQueries.UNCOMPRESSED_FORMAT)
-    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-    var decoded = Set.empty[ShortChannelId]
-    replies.foreach(reply => decoded = decoded ++ ChannelRangeQueries.decodeShortChannelIds(reply.data)._2)
-    assert(decoded == shortChannelIds)
+  test("ask for update test") {
+    // they don't provide anything => we always ask for the update
+    assert(Router.shouldRequestUpdate(0, 0, None, None))
+    assert(Router.shouldRequestUpdate(Int.MaxValue, 12345, None, None))
+
+    // their update is older => don't ask
+    val now = Platform.currentTime / 1000
+    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), None))
+    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), Some(12345)))
+    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), None))
+    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), Some(12345)))
+
+    // their update is newer but stale => don't ask
+    val old = now - 4 * 2016 * 24 * 3600
+    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), None))
+    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), Some(12345)))
+    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), None))
+    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), Some(12345)))
+
+    // their update is newer but with the same checksum, and ours is stale or about to be => ask (we want to renew our update)
+    assert(Router.shouldRequestUpdate(old, 12345, Some(now), Some(12345)))
+
+    // their update is newer but with the same checksum => don't ask
+    assert(!Router.shouldRequestUpdate(now - 1, 12345, Some(now), Some(12345)))
+
+    // their update is newer with a different checksum => always ask
+    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), None))
+    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), Some(12345)))
+    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), None))
+    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), Some(12345)))
+
+    // they just provided a 0 checksum => don't ask
+    assert(!Router.shouldRequestUpdate(0, 0, None, Some(0)))
+    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(0)))
+
+    // they just provided a checksum that is the same as us => don't ask
+    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(1234)))
+
+    // they just provided a different checksum that is the same as us => ask
+    assert(Router.shouldRequestUpdate(now, 1234, None, Some(1235)))
   }
 
-  test("create `reply_channel_range` messages (ZLIB format)") {
-    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, shortChannelIds, ChannelRangeQueries.ZLIB_FORMAT, useGzip = false)
-    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-    var decoded = Set.empty[ShortChannelId]
-    replies.foreach(reply => decoded = decoded ++ {
-      val (ChannelRangeQueries.ZLIB_FORMAT, ids, false) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
-      ids
-    })
-    assert(decoded == shortChannelIds)
+  test("compute checksums") {
+    assert(Router.crc32c(ByteVector.fromValidHex("00" * 32)) == 0x8a9136aaL)
+    assert(Router.crc32c(ByteVector.fromValidHex("FF" * 32)) == 0x62a8ab43L)
+    assert(Router.crc32c(ByteVector((0 to 31).map(_.toByte))) == 0x46dd794eL)
+    assert(Router.crc32c(ByteVector((31 to 0 by -1).map(_.toByte))) == 0x113fdb5cL)
   }
 
-  test("create `reply_channel_range` messages (GZIP format)") {
-    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, shortChannelIds, ChannelRangeQueries.ZLIB_FORMAT, useGzip = true)
-    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-    var decoded = Set.empty[ShortChannelId]
-    replies.foreach(reply => decoded = decoded ++ {
-      val (ChannelRangeQueries.ZLIB_FORMAT, ids, true) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
-      ids
-    })
-    assert(decoded == shortChannelIds)
-  }
+  test("compute flag tests") {
 
-  test("create empty `reply_channel_range` message") {
-    val blocks = ChannelRangeQueries.encodeShortChannelIds(400000, 20000, SortedSet.empty[ShortChannelId], ChannelRangeQueries.ZLIB_FORMAT, useGzip = false)
-    val replies = blocks.map(block  => ReplyChannelRange(Block.RegtestGenesisBlock.blockId, block.firstBlock, block.numBlocks, 1, block.shortChannelIds))
-    var decoded = Set.empty[ShortChannelId]
-    replies.foreach(reply => decoded = decoded ++ {
-      val (format, ids, false) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
-      ids
-    })
-    assert(decoded.isEmpty)
-  }
-}
+    val now = Platform.currentTime / 1000
 
-object ChannelRangeQueriesSpec {
-  lazy val shortChannelIds: immutable.SortedSet[ShortChannelId] = (for {
-    block <- 400000 to 420000
-    txindex <- 0 to 5
-    outputIndex <- 0 to 1
-  } yield ShortChannelId(block, txindex, outputIndex)).foldLeft(SortedSet.empty[ShortChannelId])(_ + _)
+    val a = randomKey.publicKey
+    val b = randomKey.publicKey
+    val ab = RouteCalculationSpec.makeChannel(123466L, a, b)
+    val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, 0 msat, 0, timestamp = now)
+    val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, 0 msat, 0, timestamp = now)
+
+    val c = randomKey.publicKey
+    val d = randomKey.publicKey
+    val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
+    val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, 0 msat, 0, timestamp = now)
+    val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, 0 msat, 0, timestamp = now)
+
+    val e = randomKey.publicKey
+    val f = randomKey.publicKey
+    val ef = RouteCalculationSpec.makeChannel(167514L, e, f)
+
+    val channels = SortedMap(
+      ab.shortChannelId -> PublicChannel(ab, ByteVector32.Zeroes, 0 sat, Some(uab1), Some(uab2)),
+      cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, Some(ucd1), None)
+    )
+
+    import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
+
+    assert(Router.getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(1697591108L, 3692323747L)))
+
+    // no extended info but we know the channel: we ask for the updates
+    assert(Router.computeFlag(channels)(ab.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(Router.computeFlag(channels)(ab.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    // same checksums, newer timestamps: we don't ask anything
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 3692323747L)), true) === 0)
+    // different checksums, newer timestamps: we ask for the updates
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3692323747L)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    // different checksums, older timestamps: we don't ask anything
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3692323747L)), true) === 0)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), true) === 0)
+    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), true) === 0)
+
+    // missing channel update: we ask for it
+    assert(Router.computeFlag(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+
+    // unknown channel: we ask everything
+    assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+  }
 }

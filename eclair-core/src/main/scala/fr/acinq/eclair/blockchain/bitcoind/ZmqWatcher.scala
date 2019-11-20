@@ -17,11 +17,12 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
@@ -39,7 +40,7 @@ import scala.util.Try
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   import ZmqWatcher._
 
@@ -55,16 +56,18 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
   def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
-      tx.txIn
-        .map(_.outPoint)
-        .flatMap(watchedUtxos.get)
-        .flatten // List[Watch] -> Watch
-        .collect {
-        case w: WatchSpentBasic =>
-          self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-        case w: WatchSpent =>
-          self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+      KamonExt.time("watcher.newtx.checkwatch.time") {
+        log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+        tx.txIn
+          .map(_.outPoint)
+          .flatMap(watchedUtxos.get)
+          .flatten // List[Watch] -> Watch
+          .collect {
+            case w: WatchSpentBasic =>
+              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+            case w: WatchSpent =>
+              self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+          }
       }
 
     case NewBlock(block) =>
@@ -80,11 +83,13 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       client.getBlockCount.map {
         case count =>
           log.debug(s"setting blockCount=$count")
-          Globals.blockCount.set(count)
+          blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
-      watches.collect { case w: WatchConfirmed => checkConfirmed(w) }
+      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+        Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
+      }
       context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
@@ -151,7 +156,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
 
     case PublishAsap(tx) =>
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
@@ -168,7 +173,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
       if (absTimeout > blockCount) {
@@ -226,7 +231,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
 object ZmqWatcher {
 
-  def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(client)(ec))
+  def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
   case object TickNewBlock
 

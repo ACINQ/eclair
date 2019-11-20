@@ -18,16 +18,18 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, Statement}
 import java.util.UUID
+
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccured, NetworkFeePaid}
-import fr.acinq.eclair.db.{AuditDb, ChannelLifecycleEvent, NetworkFee, Stats}
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccurred, NetworkFeePaid}
+import fr.acinq.eclair.db._
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.ChannelCodecs
 import grizzled.slf4j.Logging
+
 import scala.collection.immutable.Queue
 import scala.compat.Platform
-import concurrent.duration._
 
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
@@ -37,14 +39,14 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   val DB_NAME = "audit"
   val CURRENT_VERSION = 3
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement) = {
       statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
     }
 
     def migration23(statement: Statement) = {
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name STRING NOT NULL, error_message STRING NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
     }
 
@@ -64,8 +66,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (amount_in_msat INTEGER NOT NULL, amount_out_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event STRING NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name STRING NOT NULL, error_message STRING NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS balance_updated_idx ON balance_updated(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
@@ -74,7 +76,6 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
-
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
   }
@@ -83,9 +84,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     using(sqlite.prepareStatement("INSERT INTO balance_updated VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.commitments.remoteParams.nodeId.value.toArray)
-      statement.setLong(3, e.localBalanceMsat)
+      statement.setLong(3, e.localBalance.toLong)
       statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
-      statement.setLong(5, e.commitments.remoteParams.channelReserveSatoshis) // remote decides what our reserve should be
+      statement.setLong(5, e.commitments.remoteParams.channelReserve.toLong) // remote decides what our reserve should be
       statement.setLong(6, Platform.currentTime)
       statement.executeUpdate()
     }
@@ -94,7 +95,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
-      statement.setLong(3, e.capacitySat)
+      statement.setLong(3, e.capacity.toLong)
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event)
@@ -104,24 +105,29 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: PaymentSent): Unit =
     using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, e.amount.toLong)
-      statement.setLong(2, e.feesPaid.toLong)
-      statement.setBytes(3, e.paymentHash.toArray)
-      statement.setBytes(4, e.paymentPreimage.toArray)
-      statement.setBytes(5, e.toChannelId.toArray)
-      statement.setLong(6, e.timestamp)
-      statement.setBytes(7, e.id.toString.getBytes)
-
-      statement.executeUpdate()
+      e.parts.foreach(p => {
+        statement.setLong(1, p.amount.toLong)
+        statement.setLong(2, p.feesPaid.toLong)
+        statement.setBytes(3, e.paymentHash.toArray)
+        statement.setBytes(4, e.paymentPreimage.toArray)
+        statement.setBytes(5, p.toChannelId.toArray)
+        statement.setLong(6, p.timestamp)
+        statement.setBytes(7, p.id.toString.getBytes)
+        statement.addBatch()
+      })
+      statement.executeBatch()
     }
 
   override def add(e: PaymentReceived): Unit =
     using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, e.amount.toLong)
-      statement.setBytes(2, e.paymentHash.toArray)
-      statement.setBytes(3, e.fromChannelId.toArray)
-      statement.setLong(4, e.timestamp)
-      statement.executeUpdate()
+      e.parts.foreach(p => {
+        statement.setLong(1, p.amount.toLong)
+        statement.setBytes(2, e.paymentHash.toArray)
+        statement.setBytes(3, p.fromChannelId.toArray)
+        statement.setLong(4, p.timestamp)
+        statement.addBatch()
+      })
+      statement.executeBatch()
     }
 
   override def add(e: PaymentRelayed): Unit =
@@ -146,7 +152,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate()
     }
 
-  override def add(e: ChannelErrorOccured): Unit =
+  override def add(e: ChannelErrorOccurred): Unit =
     using(sqlite.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       val (errorName, errorMessage) = e.error match {
         case Channel.LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
@@ -162,44 +168,49 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
-    using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[PaymentSent] = Queue()
       while (rs.next()) {
         q = q :+ PaymentSent(
-          id = UUID.fromString(rs.getString("id")),
-          amount = MilliSatoshi(rs.getLong("amount_msat")),
-          feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
-          paymentHash = rs.getByteVector32("payment_hash"),
-          paymentPreimage = rs.getByteVector32("payment_preimage"),
-          toChannelId = rs.getByteVector32("to_channel_id"),
-          timestamp = rs.getLong("timestamp"))
+          UUID.fromString(rs.getString("id")),
+          rs.getByteVector32("payment_hash"),
+          rs.getByteVector32("payment_preimage"),
+          Seq(PaymentSent.PartialPayment(
+            UUID.fromString(rs.getString("id")),
+            MilliSatoshi(rs.getLong("amount_msat")),
+            MilliSatoshi(rs.getLong("fees_msat")),
+            rs.getByteVector32("to_channel_id"),
+            None, // we don't store the route
+            rs.getLong("timestamp"))))
       }
       q
     }
 
   override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
-    using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[PaymentReceived] = Queue()
       while (rs.next()) {
         q = q :+ PaymentReceived(
-          amount = MilliSatoshi(rs.getLong("amount_msat")),
-          paymentHash = rs.getByteVector32("payment_hash"),
-          fromChannelId = rs.getByteVector32("from_channel_id"),
-          timestamp = rs.getLong("timestamp"))
+          rs.getByteVector32("payment_hash"),
+          Seq(PaymentReceived.PartialPayment(
+            MilliSatoshi(rs.getLong("amount_msat")),
+            rs.getByteVector32("from_channel_id"),
+            rs.getLong("timestamp")
+          )))
       }
       q
     }
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
-    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[PaymentRelayed] = Queue()
       while (rs.next()) {
@@ -215,9 +226,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
-    using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.seconds.toMillis)
-      statement.setLong(2, to.seconds.toMillis)
+    using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      statement.setLong(1, from)
+      statement.setLong(2, to)
       val rs = statement.executeQuery()
       var q: Queue[NetworkFee] = Queue()
       while (rs.next()) {
@@ -225,7 +236,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           remoteNodeId = PublicKey(rs.getByteVector("node_id")),
           channelId = rs.getByteVector32("channel_id"),
           txId = rs.getByteVector32("tx_id"),
-          feeSat = rs.getLong("fee_sat"),
+          fee = Satoshi(rs.getLong("fee_sat")),
           txType = rs.getString("tx_type"),
           timestamp = rs.getLong("timestamp"))
       }
@@ -267,10 +278,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       while (rs.next()) {
         q = q :+ Stats(
           channelId = rs.getByteVector32("channel_id"),
-          avgPaymentAmountSatoshi = rs.getLong("avg_payment_amount_sat"),
+          avgPaymentAmount = Satoshi(rs.getLong("avg_payment_amount_sat")),
           paymentCount = rs.getInt("payment_count"),
-          relayFeeSatoshi = rs.getLong("relay_fee_sat"),
-          networkFeeSatoshi = rs.getLong("network_fee_sat"))
+          relayFee = Satoshi(rs.getLong("relay_fee_sat")),
+          networkFee = Satoshi(rs.getLong("network_fee_sat")))
       }
       q
     }

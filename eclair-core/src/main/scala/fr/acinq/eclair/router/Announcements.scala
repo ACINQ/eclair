@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Features, ShortChannelId, serializationResult}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, serializationResult}
 import scodec.bits.{BitVector, ByteVector}
 import shapeless.HNil
 
@@ -27,8 +27,8 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 03/02/2017.
-  */
+ * Created by PM on 03/02/2017.
+ */
 object Announcements {
 
   def channelAnnouncementWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: ByteVector, unknownFields: ByteVector): ByteVector =
@@ -37,7 +37,7 @@ object Announcements {
   def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, features: ByteVector, addresses: List[NodeAddress], unknownFields: ByteVector): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: unknownFields :: HNil))))
 
-  def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte, channelFlags: Byte, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Option[Long], unknownFields: ByteVector): ByteVector =
+  def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: Long, messageFlags: Byte, channelFlags: Byte, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: Option[MilliSatoshi], unknownFields: ByteVector): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: unknownFields :: HNil))))
 
   def signChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64) = {
@@ -73,9 +73,8 @@ object Announcements {
     )
   }
 
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], timestamp: Long = Platform.currentTime.milliseconds.toSeconds): NodeAnnouncement = {
+  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: ByteVector, timestamp: Long = Platform.currentTime.milliseconds.toSeconds): NodeAnnouncement = {
     require(alias.length <= 32)
-    val features = BitVector.fromLong(1 << Features.VARIABLE_LENGTH_ONION_OPTIONAL).bytes
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features, nodeAddresses, unknownFields = ByteVector.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
@@ -90,37 +89,37 @@ object Announcements {
   }
 
   /**
-    * BOLT 7:
-    * The creating node MUST set node-id-1 and node-id-2 to the public keys of the
-    * two nodes who are operating the channel, such that node-id-1 is the numerically-lesser
-    * of the two DER encoded keys sorted in ascending numerical order,
-    *
-    * @return true if localNodeId is node1
-    */
+   * BOLT 7:
+   * The creating node MUST set node-id-1 and node-id-2 to the public keys of the
+   * two nodes who are operating the channel, such that node-id-1 is the numerically-lesser
+   * of the two DER encoded keys sorted in ascending numerical order,
+   *
+   * @return true if localNodeId is node1
+   */
   def isNode1(localNodeId: PublicKey, remoteNodeId: PublicKey) = LexicographicalOrdering.isLessThan(localNodeId.value, remoteNodeId.value)
 
   /**
-    * BOLT 7:
-    * The creating node [...] MUST set the direction bit of flags to 0 if
-    * the creating node is node-id-1 in that message, otherwise 1.
-    *
-    * @return true if the node who sent these flags is node1
-    */
+   * BOLT 7:
+   * The creating node [...] MUST set the direction bit of flags to 0 if
+   * the creating node is node-id-1 in that message, otherwise 1.
+   *
+   * @return true if the node who sent these flags is node1
+   */
   def isNode1(channelFlags: Byte): Boolean = (channelFlags & 1) == 0
 
   /**
-    * A node MAY create and send a channel_update with the disable bit set to
-    * signal the temporary unavailability of a channel
-    *
-    * @return
-    */
+   * A node MAY create and send a channel_update with the disable bit set to
+   * signal the temporary unavailability of a channel
+   *
+   * @return
+   */
   def isEnabled(channelFlags: Byte): Boolean = (channelFlags & 2) == 0
 
   /**
-    * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
-    *
-    * @return true if channel updates are "equal"
-    */
+   * This method compares channel updates, ignoring fields that don't matter, like signature or timestamp
+   *
+   * @return true if channel updates are "equal"
+   */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.copy(signature = ByteVector64.Zeroes, timestamp = 0) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0)
 
@@ -128,7 +127,7 @@ object Announcements {
 
   def makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(8).toByte()
 
-  def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, htlcMaximumMsat: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime.milliseconds.toSeconds): ChannelUpdate = {
+  def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, enable: Boolean = true, timestamp: Long = Platform.currentTime.milliseconds.toSeconds): ChannelUpdate = {
     val messageFlags = makeMessageFlags(hasOptionChannelHtlcMax = true) // NB: we always support option_channel_htlc_max
     val channelFlags = makeChannelFlags(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), enable = enable)
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)

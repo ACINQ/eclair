@@ -19,6 +19,7 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.{Connection, Statement}
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
@@ -34,29 +35,36 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   val DB_NAME = "channels"
   val CURRENT_VERSION = 2
 
-  private def migration12(statement: Statement) = {
-    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+  // The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle
+  // of a multi-statement transaction (when SQLite is not in autocommit mode).".
+  // So we need to set foreign keys before we initialize tables / migrations (which is done inside a transaction).
+  using(sqlite.createStatement()) { statement =>
+    statement.execute("PRAGMA foreign_keys = ON")
   }
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
+
+    def migration12(statement: Statement) = {
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
+    }
+
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
         migration12(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.execute("PRAGMA foreign_keys = ON")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
+
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
     val data = stateDataCodec.encode(state).require.toByteArray
-    using (sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
       update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
@@ -93,24 +101,24 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: Long): Unit = {
+  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       statement.setBytes(3, paymentHash.toArray)
-      statement.setLong(4, cltvExpiry)
+      statement.setLong(4, cltvExpiry.toLong)
       statement.executeUpdate()
     }
   }
 
-  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, Long)] = {
+  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       val rs = statement.executeQuery
-      var q: Queue[(ByteVector32, Long)] = Queue()
+      var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
       while (rs.next()) {
-        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), rs.getLong("cltv_expiry"))
+        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
       }
       q
     }
