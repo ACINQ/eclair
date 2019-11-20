@@ -96,31 +96,30 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       case None =>
         // Get updated local channels (will take into account the child payments that are in-flight).
         relayer ! GetOutgoingChannels()
-        val newState = {
-          val failedPayment = d.pending(pf.id)
-          val d1 = d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures)
-          if (shouldBlacklistChannel(pf)) {
-            log.debug(s"ignoring channel ${getFirstHopShortChannelId(failedPayment)} to ${failedPayment.routePrefix.head.nextNodeId}")
-            val d2 = d1.copy(ignoreChannels = d1.ignoreChannels + getFirstHopShortChannelId(failedPayment))
-            // When we have a lot of channels, many of them may end up being a bad route prefix for the destination we're
-            // trying to reach. This is a cheap error that is detected quickly (RouteNotFound), so we don't want to count
-            // it in our payment attempts to avoid failing too fast.
-            // However we don't want to test all of our channels either which would be expensive, so we only probabilistically
-            // count the failure in our payment attempts.
-            // With the log-scale used, here are the probabilities:
-            //  * 10 channels -> refund 13% of failures
-            //  * 20 channels -> refund 32% of failures
-            //  * 50 channels -> refund 50% of failures
-            //  * 100 channels -> refund 56% of failures
-            //  * 1000 channels -> refund 70% of failures
-            // NB: this hack won't be necessary once multi-part is directly handled by the router.
-            val refundRetry = Random.nextDouble() * math.log(d.channelsCount) > 2.0
-            if (refundRetry) d2.copy(remainingAttempts = d2.remainingAttempts + 1) else d2
-          } else {
-            d1
-          }
+        val failedPayment = d.pending(pf.id)
+        val shouldBlacklist = shouldBlacklistChannel(pf)
+        if (shouldBlacklist) {
+          log.debug(s"ignoring channel ${getFirstHopShortChannelId(failedPayment)} to ${failedPayment.routePrefix.head.nextNodeId}")
         }
-        goto(RETRY_WITH_UPDATED_BALANCES) using newState
+        val ignoreChannels = if (shouldBlacklist) d.ignoreChannels + getFirstHopShortChannelId(failedPayment) else d.ignoreChannels
+        val remainingAttempts = if (shouldBlacklist && Random.nextDouble() * math.log(d.channelsCount) > 2.0) {
+          // When we have a lot of channels, many of them may end up being a bad route prefix for the destination we're
+          // trying to reach. This is a cheap error that is detected quickly (RouteNotFound), so we don't want to count
+          // it in our payment attempts to avoid failing too fast.
+          // However we don't want to test all of our channels either which would be expensive, so we only probabilistically
+          // count the failure in our payment attempts.
+          // With the log-scale used, here are the probabilities:
+          //  * 10 channels -> refund 13% of failures
+          //  * 20 channels -> refund 32% of failures
+          //  * 50 channels -> refund 50% of failures
+          //  * 100 channels -> refund 56% of failures
+          //  * 1000 channels -> refund 70% of failures
+          // NB: this hack won't be necessary once multi-part is directly handled by the router.
+          d.remainingAttempts + 1
+        } else {
+          d.remainingAttempts
+        }
+        goto(RETRY_WITH_UPDATED_BALANCES) using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures, ignoreChannels = ignoreChannels, remainingAttempts = remainingAttempts)
     }
 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
