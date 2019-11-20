@@ -24,7 +24,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Transaction}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
@@ -162,5 +162,32 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
     sender.expectMsg(externalTx2)
   }
+
+  test("swapping wallet should make bitcoind forget the imported watch_only addresses") {
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+
+    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
+    ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent by tx1
+
+    val addressToImport = TestUtils.scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
+    Await.ready(bitcoinClient.importAddress(addressToImport), 10 seconds)
+
+    Await.ready(bitcoinClient.rescanBlockChain(10), 30 seconds)
+
+    val receivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
+    assert(receivedByAddress.contains(addressToImport)) // assert the address was correctly imported
+
+    val fetched = Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds)
+    assert(fetched.txid == tx.txid) // assert we can fetch the transaction related to the address
+
+    // wipes out all the previously imported addresses
+    ExternalWalletHelper.swapWallet()
+
+    val emptyWalletReceivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
+    assert(!emptyWalletReceivedByAddress.contains(addressToImport)) // assert the new wallet doesn't have the address imported
+
+    assertThrows[JsonRPCError](Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds))
+  }
+
 
 }

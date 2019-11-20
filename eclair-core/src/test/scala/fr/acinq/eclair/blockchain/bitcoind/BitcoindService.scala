@@ -37,6 +37,7 @@ import org.json4s.{DefaultFormats, Formats}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.io.Source
+import scala.util.Random
 
 trait BitcoindService extends Logging {
   self: TestKitBase =>
@@ -222,6 +223,20 @@ trait BitcoindService extends Logging {
       val height = (probe.expectMsgType[JValue] \ "blocks").extract[Int]
 
       (tx1, ShortChannelId(height, txIndex, 0))
+    }
+
+    def swapWallet()(implicit system: ActorSystem) = {
+      val probe = TestProbe()
+      val newWalletName = "temp-" + Random.nextInt()
+
+      // creates a new bitcoind wallet
+      bitcoinrpcclient.invoke("createwallet", newWalletName).pipeTo(probe.ref)
+      probe.expectMsgType[JValue]
+
+      // unload the default wallet (named ""), automatically makes the new one default
+      bitcoinrpcclient.invoke("unloadwallet", "").pipeTo(probe.ref)
+      probe.expectMsgType[JValue]
+      newWalletName
     }
 
   }

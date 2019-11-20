@@ -47,7 +47,7 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
@@ -547,19 +547,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
   }
 
-  /**
-   * We currently use p2pkh script Helpers.getFinalScriptPubKey
-   */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
-    case _ => ???
-  }
-
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
     val sender = TestProbe()
     // we subscribe to C's channel state transitions
@@ -582,9 +569,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressF = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressF = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
@@ -665,9 +652,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressF = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressF = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
@@ -738,7 +725,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
@@ -797,7 +784,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
@@ -924,7 +911,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val channelId = commitmentsF.channelId
     // we also retrieve C's default final address
     sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = TestUtils.scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
     // and we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)

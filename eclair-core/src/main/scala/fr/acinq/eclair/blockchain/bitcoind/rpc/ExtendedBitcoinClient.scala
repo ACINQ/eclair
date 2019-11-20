@@ -34,6 +34,13 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
+  def listReceivedByAddress()(implicit ec: ExecutionContext): Future[List[String]] = {
+    // parameters: minconf = 1, include_empty = true, include_watchonly = true
+    rpcClient.invoke("listreceivedbyaddress", 1, true, true).collect {
+      case JArray(elems) => elems.map { json => (json \ "address").extract[String] }
+    }
+  }
+
   def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
     rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
   }
