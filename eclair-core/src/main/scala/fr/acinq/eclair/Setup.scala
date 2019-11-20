@@ -171,7 +171,7 @@ class Setup(datadir: File,
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
-      assert(pruneTargetSize.forall(_ >= ZmqWatcher.MIN_PRUNE_TARGET_SIZE), s"bitcoind prune target size must be at least ${ZmqWatcher.MIN_PRUNE_TARGET_SIZE} (~25GB)") // pruneHeight is the lowest-height complete block stored
+      assert(pruneTargetSize.forall(_ >= ZmqWatcher.MIN_PRUNE_TARGET_SIZE), s"bitcoind prune target size must be at least ${ZmqWatcher.MIN_PRUNE_TARGET_SIZE} (~25GB)")
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
