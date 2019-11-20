@@ -100,8 +100,8 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(payFsm.stateName === WAIT_FOR_NETWORK_STATS)
     router.send(payFsm, GetNetworkStatsResponse(Some(emptyStats)))
     relayer.expectMsg(GetOutgoingChannels())
-    awaitCond(payFsm.stateName === RETRY_WITH_UPDATED_BALANCES)
-    assert(payFsm.stateData.asInstanceOf[PaymentProgress].networkStats === Some(emptyStats))
+    awaitCond(payFsm.stateName === WAIT_FOR_CHANNEL_BALANCES)
+    assert(payFsm.stateData.asInstanceOf[WaitingForChannelBalances].networkStats === Some(emptyStats))
   }
 
   test("get network statistics not available") { f =>
@@ -117,8 +117,8 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     // We should ask the router to compute statistics (for next payment attempts).
     router.expectMsg(TickComputeNetworkStats)
     relayer.expectMsg(GetOutgoingChannels())
-    awaitCond(payFsm.stateName === RETRY_WITH_UPDATED_BALANCES)
-    assert(payFsm.stateData.asInstanceOf[PaymentProgress].networkStats === None)
+    awaitCond(payFsm.stateName === WAIT_FOR_CHANNEL_BALANCES)
+    assert(payFsm.stateData.asInstanceOf[WaitingForChannelBalances].networkStats === None)
 
     relayer.send(payFsm, localChannels())
     awaitCond(payFsm.stateName === PAYMENT_IN_PROGRESS)
