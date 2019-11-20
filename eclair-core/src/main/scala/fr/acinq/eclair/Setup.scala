@@ -203,7 +203,7 @@ class Setup(datadir: File,
     reimportWatches()
   }
 
-  def reimportWatches() = {
+  def reimportWatches(): Unit = {
     logger.info(s"rebuilding bitcoind index for local channels")
 
     val bitcoinClient = bitcoin match {
@@ -226,6 +226,11 @@ class Setup(datadir: File,
         (None, commitments.commitInput)
       case DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments, _) =>
         (None, commitments.commitInput)
+    }
+
+    if(channelsWithInfo.isEmpty) {
+      logger.info(s"no local channels need to be reimported")
+      return
     }
 
     val earliestScanHeight = channelsWithInfo.flatMap(_._1).map(ShortChannelId.coordinates(_).blockHeight) match {
