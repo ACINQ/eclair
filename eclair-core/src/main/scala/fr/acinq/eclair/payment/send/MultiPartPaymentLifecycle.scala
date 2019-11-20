@@ -26,12 +26,12 @@ import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire.{Onion, OnionRoutingPacket, OnionTlv, PaymentTimeout, UpdateAddHtlc}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, ToMilliSatoshiConversion}
 import scodec.bits.ByteVector
 
@@ -72,37 +72,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         router ! TickComputeNetworkStats
       }
       relayer ! GetOutgoingChannels()
-      goto(WAIT_FOR_CHANNEL_BALANCES) using PaymentProgress(d.sender, d.request, s.stats, None, d.request.totalAmount, d.request.maxAttempts, Map.empty, Set.empty, Nil)
-  }
-
-  when(WAIT_FOR_CHANNEL_BALANCES) {
-    case Event(OutgoingChannels(channels), d: PaymentProgress) =>
-      log.debug("trying to send {} with local channels: {}", d.toSend, channels.map(_.toUsableBalance).mkString(","))
-      val randomize = d.failures.nonEmpty // we randomize channel selection when we retry
-      val filteredChannels = channels.filter(c => !d.ignoreChannels.contains(c.channelUpdate.shortChannelId))
-      val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize)
-      if (remaining > 0.msat) {
-        log.warning(s"cannot send ${d.toSend} with our current balance")
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(BalanceTooLow), d.pending.keySet)
-      } else {
-        val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
-        pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
-        goto(PAYMENT_IN_PROGRESS) using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending, channelsCount = Some(channels.length))
-      }
-
-    case Event(pf: PaymentFailed, d: PaymentProgress) => handleChildFailure(pf, d) match {
-      case Some(paymentAborted) =>
-        goto(PAYMENT_ABORTED) using paymentAborted
-      case None =>
-        val failedPayment = d.pending(pf.id)
-        val ignoreChannels = if (shouldBlacklistChannel(pf)) d.ignoreChannels + getFirstHopShortChannelId(failedPayment) else d.ignoreChannels
-        stay using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures, ignoreChannels = ignoreChannels)
-    }
-
-    case Event(ps: PaymentSent, d: PaymentProgress) =>
-      require(ps.parts.length == 1, "child payment must contain only one part")
-      // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.id)
+      goto(RETRY_WITH_UPDATED_BALANCES) using PaymentProgress(d.sender, d.request, s.stats, None, d.request.totalAmount, d.request.maxAttempts, Map.empty, Set.empty, Nil)
   }
 
   when(PAYMENT_IN_PROGRESS) {
@@ -135,7 +105,37 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
             d1
           }
         }
-        goto(WAIT_FOR_CHANNEL_BALANCES) using newState
+        goto(RETRY_WITH_UPDATED_BALANCES) using newState
+    }
+
+    case Event(ps: PaymentSent, d: PaymentProgress) =>
+      require(ps.parts.length == 1, "child payment must contain only one part")
+      // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
+      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.id)
+  }
+
+  when(RETRY_WITH_UPDATED_BALANCES) {
+    case Event(OutgoingChannels(channels), d: PaymentProgress) =>
+      log.debug("trying to send {} with local channels: {}", d.toSend, channels.map(_.toUsableBalance).mkString(","))
+      val randomize = d.failures.nonEmpty // we randomize channel selection when we retry
+      val filteredChannels = channels.filter(c => !d.ignoreChannels.contains(c.channelUpdate.shortChannelId))
+      val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize)
+      if (remaining > 0.msat) {
+        log.warning(s"cannot send ${d.toSend} with our current balance")
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(BalanceTooLow), d.pending.keySet)
+      } else {
+        val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
+        pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
+        goto(PAYMENT_IN_PROGRESS) using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending, channelsCount = Some(channels.length))
+      }
+
+    case Event(pf: PaymentFailed, d: PaymentProgress) => handleChildFailure(pf, d) match {
+      case Some(paymentAborted) =>
+        goto(PAYMENT_ABORTED) using paymentAborted
+      case None =>
+        val failedPayment = d.pending(pf.id)
+        val ignoreChannels = if (shouldBlacklistChannel(pf)) d.ignoreChannels + getFirstHopShortChannelId(failedPayment) else d.ignoreChannels
+        stay using d.copy(toSend = d.toSend + failedPayment.finalPayload.amount, pending = d.pending - pf.id, failures = d.failures ++ pf.failures, ignoreChannels = ignoreChannels)
     }
 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
@@ -267,8 +267,8 @@ object MultiPartPaymentLifecycle {
   sealed trait State
   case object WAIT_FOR_PAYMENT_REQUEST  extends State
   case object WAIT_FOR_NETWORK_STATS  extends State
-  case object WAIT_FOR_CHANNEL_BALANCES extends State
   case object PAYMENT_IN_PROGRESS extends State
+  case object RETRY_WITH_UPDATED_BALANCES extends State
   case object PAYMENT_ABORTED extends State
   case object PAYMENT_SUCCEEDED extends State
 
