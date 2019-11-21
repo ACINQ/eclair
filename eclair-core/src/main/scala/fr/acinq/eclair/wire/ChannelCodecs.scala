@@ -22,6 +22,7 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.ChannelVersion._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
@@ -213,7 +214,8 @@ object ChannelCodecs extends Logging {
   )
 
   val commitmentsCodec: Codec[Commitments] = (
-    ("channelVersion" | channelVersionCodec) ::
+    ("channelVersion" | channelVersionCodec) >>:~ { version =>
+      ("createdAtHeight" | withDefaultValue(conditional(version.isSet(STORE_CREATION_TIME_BIT), int64), 0L)) ::
       ("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
       ("channelFlags" | byte) ::
@@ -227,7 +229,8 @@ object ChannelCodecs extends Logging {
       ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
+      ("channelId" | bytes32)
+    }).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::
