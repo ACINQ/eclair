@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Deterministi
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
-import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed}
+import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed, TrampolineRelayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
@@ -174,18 +174,23 @@ class ChannelCodecsSpec extends FunSuite {
   test("encode/decode origin") {
     val id = UUID.randomUUID()
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
-    // TODO: add backward compatibility check
+    assert(originCodec.decodeValue(hex"0001 0123456789abcdef0123456789abcdef".bits).require === Local(UNKNOWN_UUID, None))
     val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
+    val trampolineRelayed = TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayed).require).require === trampolineRelayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
       1L -> Local(UUID.randomUUID(), None),
       42L -> Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat),
+      43L -> TrampolineRelayed((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil, None),
       130L -> Relayed(randomBytes32, -45, 13000000 msat, 12000000 msat),
+      140L -> TrampolineRelayed((randomBytes32, 0L) :: Nil, None),
       1000L -> Relayed(randomBytes32, 10, 14000000 msat, 13000000 msat),
       -32L -> Relayed(randomBytes32, 54, 15000000 msat, 14000000 msat),
+      -54L -> TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None),
       -4L -> Local(UUID.randomUUID(), None))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
