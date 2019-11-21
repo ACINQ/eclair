@@ -330,6 +330,13 @@ object PaymentRequest {
     lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
 
     override def toString: String = s"Features(${bitmask.toBin})"
+
+    // When converting from BitVector to ByteVector, scodec pads right instead of left so we have to do this ourselves.
+    // We also want to enforce a minimal encoding of the feature bytes.
+    def toByteVector: ByteVector = {
+      val pad = if (bitmask.length % 8 == 0) 0 else 8 - bitmask.length % 8
+      bitmask.padLeft(bitmask.length + pad).bytes.dropWhile(_ == 0)
+    }
   }
 
   object Features {

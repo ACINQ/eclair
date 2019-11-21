@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.{Channel, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
@@ -43,7 +43,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
     case r: SendPaymentRequest =>
       val paymentId = UUID.randomUUID()
       sender ! paymentId
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.targetNodeId, r.paymentRequest, storeInDb = true, publishEvent = true)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.targetNodeId, Upstream.Local(paymentId), r.paymentRequest, storeInDb = true, publishEvent = true)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
@@ -64,7 +64,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
 
     case r: SendTrampolinePaymentRequest =>
       val paymentId = UUID.randomUUID()
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentRequest.paymentHash, r.trampolineNodeId, Some(r.paymentRequest), storeInDb = true, publishEvent = true)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentRequest.paymentHash, r.trampolineNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = true)
       val trampolineRoute = Seq(
         NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
         NodeHop(r.trampolineNodeId, r.paymentRequest.nodeId, r.trampolineExpiryDelta, r.trampolineFees) // for now we only use a single trampoline hop
@@ -82,8 +82,8 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       } else {
         OutgoingPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
       }
-      spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentRequest.paymentHash, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, 1, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionTlv.TrampolineOnion(trampolineOnion.packet)))
       sender ! paymentId
+      spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentRequest.paymentHash, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, 1, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionTlv.TrampolineOnion(trampolineOnion.packet)))
   }
 
   def spawnPaymentFsm(paymentCfg: SendPaymentConfig): ActorRef = context.actorOf(PaymentLifecycle.props(nodeParams, paymentCfg, router, register))
@@ -104,6 +104,7 @@ object PaymentInitiator {
    * TODO: @t-bast: remove this message once full Trampoline is implemented.
    */
   case class SendTrampolinePaymentRequest(finalAmount: MilliSatoshi,
+                                          // TODO: @t-bast: those fees should appear in the DB when the payment succeeds
                                           trampolineFees: MilliSatoshi,
                                           paymentRequest: PaymentRequest,
                                           trampolineNodeId: PublicKey,
@@ -133,6 +134,7 @@ object PaymentInitiator {
                                externalId: Option[String],
                                paymentHash: ByteVector32,
                                targetNodeId: PublicKey,
+                               upstream: Upstream,
                                paymentRequest: Option[PaymentRequest],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean)
