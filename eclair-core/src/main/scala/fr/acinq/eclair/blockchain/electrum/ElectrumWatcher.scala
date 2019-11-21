@@ -94,7 +94,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       context.watch(watch.channel)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
-    case watch@WatchConfirmed(_, txid, publicKeyScript, _, _) =>
+    case watch@WatchConfirmed(_, txid, publicKeyScript, _, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-confirmed on txid=$txid scriptHash=$scriptHash")
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
@@ -135,7 +135,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       }).flatten
       // this is for WatchConfirmed
       watches.collect {
-        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
+        case WatchConfirmed(_, txid, _, minDepth, _, _) if txid == tx.txid =>
           val txheight = item.height
           val confirmations = height - txheight + 1
           log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
@@ -149,7 +149,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction)) =>
       val confirmations = height - txheight + 1
       val triggered = watches.collect {
-        case w@WatchConfirmed(channel, txid, _, minDepth, event) if txid == tx_hash && confirmations >= minDepth =>
+        case w@WatchConfirmed(channel, txid, _, minDepth, event, _) if txid == tx_hash && confirmations >= minDepth =>
           log.info(s"txid=$txid had confirmations=$confirmations in block=$txheight pos=$pos")
           channel ! WatchEventConfirmed(event, txheight.toInt, pos, tx)
           w
