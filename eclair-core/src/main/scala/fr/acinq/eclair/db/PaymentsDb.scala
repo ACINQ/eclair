@@ -21,34 +21,14 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
 
-trait PaymentsDb {
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb
 
-  /** Create a record for a non yet finalized outgoing payment. */
-  def addOutgoingPayment(outgoingPayment: OutgoingPayment): Unit
-
-  /** Update the status of the payment in case of success. */
-  def updateOutgoingPayment(paymentResult: PaymentSent): Unit
-
-  /** Update the status of the payment in case of failure. */
-  def updateOutgoingPayment(paymentResult: PaymentFailed): Unit
-
-  /** Get an outgoing payment attempt. */
-  def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
-
-  /** List all the outgoing payment attempts that are children of the given id. */
-  def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment]
-
-  /** List all the outgoing payment attempts that tried to pay the given payment hash. */
-  def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
-
-  /** List all the outgoing payment attempts in the given time range (milli-seconds). */
-  def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment]
-
+trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
   def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit
 
@@ -72,6 +52,30 @@ trait PaymentsDb {
 
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+}
+
+trait OutgoingPaymentsDb {
+
+  /** Create a record for a non yet finalized outgoing payment. */
+  def addOutgoingPayment(outgoingPayment: OutgoingPayment): Unit
+
+  /** Update the status of the payment in case of success. */
+  def updateOutgoingPayment(paymentResult: PaymentSent): Unit
+
+  /** Update the status of the payment in case of failure. */
+  def updateOutgoingPayment(paymentResult: PaymentFailed): Unit
+
+  /** Get an outgoing payment attempt. */
+  def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
+
+  /** List all the outgoing payment attempts that are children of the given id. */
+  def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment]
+
+  /** List all the outgoing payment attempts that tried to pay the given payment hash. */
+  def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
+
+  /** List all the outgoing payment attempts in the given time range (milli-seconds). */
+  def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment]
 
 }
 
@@ -171,7 +175,7 @@ case class HopSummary(nodeId: PublicKey, nextNodeId: PublicKey, shortChannelId: 
 }
 
 object HopSummary {
-  def apply(h: Hop): HopSummary = HopSummary(h.nodeId, h.nextNodeId, Some(h.lastUpdate.shortChannelId))
+  def apply(h: ChannelHop): HopSummary = HopSummary(h.nodeId, h.nextNodeId, Some(h.lastUpdate.shortChannelId))
 }
 
 /** A minimal representation of a payment failure (suitable to store in a database). */

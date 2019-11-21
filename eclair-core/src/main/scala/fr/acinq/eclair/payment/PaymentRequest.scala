@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
@@ -36,19 +36,25 @@ import scala.util.Try
  * @param amount    amount to pay (empty string means no amount is specified)
  * @param timestamp request timestamp (UNIX format)
  * @param nodeId    id of the node emitting the payment request
- * @param tags      payment tags; must include a single PaymentHash tag
+ * @param tags      payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
  * @param signature request signature that will be checked against node id
  */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
+  require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size <= 1, "there must be at most one payment secret tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
 
   /**
    * @return the payment hash
    */
-  lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHash => p }.get.hash
+  lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHash => p.hash }.get
+
+  /**
+   * @return the payment secret
+   */
+  lazy val paymentSecret = tags.collectFirst { case p: PaymentRequest.PaymentSecret => p.secret }
 
   /**
    * @return the description of the payment, or its hash
@@ -108,6 +114,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
 
+  import fr.acinq.eclair.Features.PAYMENT_SECRET_OPTIONAL
+
   val DEFAULT_EXPIRY_SECONDS = 3600
 
   lazy val prefixes = Map(
@@ -118,7 +126,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[Features] = None): PaymentRequest = {
+            features: Option[Features] = Some(Features(PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
 
@@ -129,6 +137,7 @@ object PaymentRequest {
       nodeId = privateKey.publicKey,
       tags = List(
         Some(PaymentHash(paymentHash)),
+        Some(PaymentSecret(randomBytes32)),
         Some(Description(description)),
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
@@ -156,7 +165,6 @@ object PaymentRequest {
   case class UnknownTag12(data: BitVector) extends UnknownTaggedField
   case class UnknownTag14(data: BitVector) extends UnknownTaggedField
   case class UnknownTag15(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag16(data: BitVector) extends UnknownTaggedField
   case class UnknownTag17(data: BitVector) extends UnknownTaggedField
   case class UnknownTag18(data: BitVector) extends UnknownTaggedField
   case class UnknownTag19(data: BitVector) extends UnknownTaggedField
@@ -178,6 +186,13 @@ object PaymentRequest {
    * @param hash payment hash
    */
   case class PaymentHash(hash: ByteVector32) extends TaggedField
+
+  /**
+   * Payment secret. This is currently random bytes used to protect against probing from the next-to-last node.
+   *
+   * @param secret payment secret
+   */
+  case class PaymentSecret(secret: ByteVector32) extends TaggedField
 
   /**
    * Description
@@ -305,11 +320,21 @@ object PaymentRequest {
   /**
    * Features supported or required for receiving this payment.
    */
-  case class Features(bitmask: BitVector) extends TaggedField
+  case class Features(bitmask: BitVector) extends TaggedField {
+
+    import fr.acinq.eclair.Features._
+
+    lazy val supported: Boolean = areSupported(bitmask)
+    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
+    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
+    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
+
+    override def toString: String = s"Features(${bitmask.toBin})"
+  }
 
   object Features {
-    def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0) {
-      case (current, feature) => current + (1 << feature)
+    def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0L) {
+      case (current, feature) => current + (1L << feature)
     }))
   }
 
@@ -359,7 +384,7 @@ object PaymentRequest {
       .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
       .typecase(14, dataCodec(bits).as[UnknownTag14])
       .typecase(15, dataCodec(bits).as[UnknownTag15])
-      .typecase(16, dataCodec(bits).as[UnknownTag16])
+      .typecase(16, dataCodec(bytes32).as[PaymentSecret])
       .typecase(17, dataCodec(bits).as[UnknownTag17])
       .typecase(18, dataCodec(bits).as[UnknownTag18])
       .typecase(19, dataCodec(bits).as[UnknownTag19])
@@ -451,8 +476,6 @@ object PaymentRequest {
     val recid = bolt11Data.signature.last
     val pub = if (recid % 2 != 0) pub2 else pub1
     val amount_opt = Amount.decode(hrp.drop(prefix.length))
-    val validSig = Crypto.verifySignature(Crypto.sha256(message), signature, pub)
-    require(validSig, "invalid signature")
     PaymentRequest(
       prefix = prefix,
       amount = amount_opt,

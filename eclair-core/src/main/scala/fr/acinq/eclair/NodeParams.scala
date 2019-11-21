@@ -76,10 +76,12 @@ case class NodeParams(keyManager: KeyManager,
                       channelFlags: Byte,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
+                      multiPartPaymentExpiry: FiniteDuration,
                       minFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
-                      maxPaymentAttempts: Int) {
+                      maxPaymentAttempts: Int,
+                      enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
   def currentBlockHeight: Long = blockCount.get
@@ -254,6 +256,7 @@ object NodeParams {
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
+      multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
@@ -274,7 +277,8 @@ object NodeParams {
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")
       ),
       socksProxy_opt = socksProxy_opt,
-      maxPaymentAttempts = config.getInt("max-payment-attempts")
+      maxPaymentAttempts = config.getInt("max-payment-attempts"),
+      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }
 }

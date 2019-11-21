@@ -20,12 +20,12 @@ import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
-import fr.acinq.eclair.{MilliSatoshi, _}
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.payment.PaymentInitiator.SendPaymentRequest
-import fr.acinq.eclair.payment.PaymentLifecycle.ReceivePayment
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.{MilliSatoshi, _}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.duration._
@@ -117,10 +117,10 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
   }
 
   /**
-    * Retrieves on-chain fees for a funding transaction, using the funding block target set in the config file.
-    *
-    * @return Future containing a Long in satoshi per kilobyte
-    */
+   * Retrieves on-chain fees for a funding transaction, using the funding block target set in the config file.
+   *
+   * @return Future containing a Long in satoshi per kilobyte
+   */
   def getFundingFeeRatePerKb(): Future[Long] = {
     for {
       kit <- fKit

@@ -21,7 +21,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24} %X{nodeId}%X{channelId} - %msg%ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 

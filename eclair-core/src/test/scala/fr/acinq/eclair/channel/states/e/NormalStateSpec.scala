@@ -32,7 +32,8 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.Relayer._
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.transactions.{IN, OUT, Transactions}
@@ -241,7 +242,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, add)
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
-    bob2alice.expectNoMsg(200 millis)
+    bob2alice.expectNoMessage(200 millis)
   }
 
   test("recv CMD_ADD_HTLC (over max inflight htlc value with duplicate amounts)") { f =>

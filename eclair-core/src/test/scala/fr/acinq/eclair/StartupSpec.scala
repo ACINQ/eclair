@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite
 
-import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.util.Try
 
 class StartupSpec extends FunSuite {
@@ -34,7 +34,7 @@ class StartupSpec extends FunSuite {
     val conf = ConfigFactory.load().getConfig("eclair")
     assert(Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)).isSuccess)
 
-    val conf1 = conf.withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42)))
+    val conf1 = conf.withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42).asJava))
     intercept[RuntimeException] {
       NodeParams.makeNodeParams(conf1, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)
     }

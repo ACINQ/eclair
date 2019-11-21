@@ -18,7 +18,8 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.Codec
+import scodec.bits.BitVector
+import scodec.{Attempt, Codec}
 import scodec.codecs._
 
 /**
