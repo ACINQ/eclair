@@ -39,7 +39,7 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
-import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.{DATA_CLOSING, DATA_NEGOTIATING, DATA_NORMAL, DATA_SHUTDOWN, DATA_WAIT_FOR_FUNDING_CONFIRMED, DATA_WAIT_FOR_FUNDING_LOCKED, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, Register}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
@@ -159,14 +159,10 @@ class Setup(datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-        _ <- chain match {
-          case "mainnet" => bitcoinClient.invoke("getrawtransaction", "2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
-          case "testnet" => bitcoinClient.invoke("getrawtransaction", "8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
-          case "regtest" => Future.successful(())
-        }
-      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
+        pruneTargetSize = (json \ "prune_target_size").extractOpt[Long]
+      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, pruneTargetSize)
       // blocking sanity checks
-      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, pruneTargetSize) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
       assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
@@ -175,6 +171,7 @@ class Setup(datadir: File,
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
+      assert(pruneTargetSize.forall(_ >= ZmqWatcher.MIN_PRUNE_TARGET_SIZE), s"bitcoind prune target size must be at least ${ZmqWatcher.MIN_PRUNE_TARGET_SIZE} (~25GB)")
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {
@@ -200,6 +197,64 @@ class Setup(datadir: File,
       }
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
+  }
+
+  if(config.hasPath("reimport-watches")) {
+    reimportWatches()
+  }
+
+  def reimportWatches(): Unit = {
+    logger.info(s"rebuilding bitcoind index for local channels")
+
+    val bitcoinClient = bitcoin match {
+      case Bitcoind(rpcClient) => new ExtendedBitcoinClient(rpcClient)
+      case _ => throw new IllegalArgumentException("can't perform this action if not running with bitcoind")
+    }
+
+    val channelsWithInfo = database.channels.listLocalChannels().map {
+      case DATA_NORMAL(commitments, shortChannelId, _, _, _, _, _) =>
+        (Some(shortChannelId), commitments.commitInput)
+      case DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, _) =>
+        (Some(shortChannelId), commitments.commitInput)
+      case DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, _, _) =>
+        (None, commitments.commitInput)
+      case DATA_SHUTDOWN(commitments, _, _) =>
+        (None, commitments.commitInput)
+      case DATA_NEGOTIATING(commitments, _, _, _, _) =>
+        (None, commitments.commitInput)
+      case DATA_CLOSING(commitments, _, _, _, _, _, _, _, _, _) =>
+        (None, commitments.commitInput)
+      case DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments, _) =>
+        (None, commitments.commitInput)
+    }
+
+    if(channelsWithInfo.isEmpty) {
+      logger.info(s"no local channels need to be reimported")
+      return
+    }
+
+    val earliestScanHeight = channelsWithInfo.flatMap(_._1).map(ShortChannelId.coordinates(_).blockHeight) match {
+      case Nil                     => ZmqWatcher.EARLIEST_SEGWIT_BLOCKHEIGHT
+      case nonEmptyBlockHeightList => nonEmptyBlockHeightList.min
+    }
+
+    val channelScripts = channelsWithInfo.map { case (_, commitInput) =>
+      commitInput.txOut.publicKeyScript
+    }
+
+    // import addresses/scripts
+    logger.info(s"importing ${channelScripts.size} addresses")
+    bitcoinClient.importMulti(channelScripts)
+
+    // rescan from earliest channel point
+    logger.info(s"rescanning from height $earliestScanHeight")
+    val rescanF = bitcoinClient.rescanBlockChain(earliestScanHeight).recover {
+      case thr =>
+        logger.error(s"rescanning failed, exiting ", thr)
+        System.exit(1)
+    }
+    Await.ready(rescanF, 5 minute)
+    logger.info("rescan done")
   }
 
   def bootstrap: Future[Kit] = {

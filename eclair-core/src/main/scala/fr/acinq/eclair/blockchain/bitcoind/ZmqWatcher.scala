@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -48,8 +49,6 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   // this is to initialize block count
   self ! TickNewBlock
-
-  case class TriggerEvent(w: Watch, e: WatchEvent)
 
   def receive: Receive = watching(Set(), Map(), SortedMap(), None)
 
@@ -121,30 +120,30 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           }
 
         case WatchSpent(_, txid, outputIndex, _, _) =>
-          // first let's see if the parent tx was published or not
-          client.getTxConfirmations(txid.toString()).collect {
-            case Some(_) =>
-              // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
-                case false =>
-                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
-                  client.getMempool().map { mempoolTxs =>
-                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-                      case Nil =>
-                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
-                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
-                          self ! NewTransaction(tx)
-                        }
-                      case txs =>
-                        log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                        txs.foreach(tx => self ! NewTransaction(tx))
+          client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
+            case false =>
+              log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
+              client.getMempool().map { mempoolTxs =>
+                mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+                  case Nil =>
+                    log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
+                    client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
+                      log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
+                      self ! NewTransaction(tx)
                     }
-                  }
+                  case txs =>
+                    log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                    txs.foreach(tx => self ! NewTransaction(tx))
+                }
               }
           }
 
-        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+        case w: WatchConfirmed =>
+          for {
+            importedAddresses <- client.listReceivedByAddress()
+            watchAddress = eclair.scriptPubKeyToAddress(w.publicKeyScript)
+            _ <- if(!importedAddresses.contains(watchAddress)) client.importAddress(watchAddress) else Future.successful(Unit)
+          } yield checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
 
         case _: WatchLost => () // TODO: not implemented
 
@@ -214,8 +213,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
-    // matter because this only happens once, when the watched transaction has reached min_depth
+    // NB: this assumes that the tx addresses have been imported and the rescan has been done
     client.getTxConfirmations(w.txId.toString).map {
       case Some(confirmations) if confirmations >= w.minDepth =>
         client.getTransaction(w.txId.toString).map {
@@ -231,8 +229,12 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
 object ZmqWatcher {
 
+  val EARLIEST_SEGWIT_BLOCKHEIGHT = 500000 // roughly around when segwit was activated
+  val MIN_PRUNE_TARGET_SIZE = 25000000000L // minimum save prune target size is ~25gb
+
   def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
+  case class TriggerEvent(w: Watch, e: WatchEvent)
   case object TickNewBlock
 
   def utxo(w: Watch): Option[OutPoint] =

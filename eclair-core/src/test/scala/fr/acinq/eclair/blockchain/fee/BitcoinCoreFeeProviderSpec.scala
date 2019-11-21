@@ -50,7 +50,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats.withBigDecimal
+  override implicit val formats = DefaultFormats.withBigDecimal
 
   override def beforeAll(): Unit = {
     startBitcoind()
