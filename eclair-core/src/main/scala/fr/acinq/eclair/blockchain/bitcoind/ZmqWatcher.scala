@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -48,8 +49,6 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   // this is to initialize block count
   self ! TickNewBlock
-
-  case class TriggerEvent(w: Watch, e: WatchEvent)
 
   def receive: Receive = watching(Set(), Map(), SortedMap(), None)
 
@@ -141,8 +140,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
         case w: WatchConfirmed =>
           for {
-            _ <- client.importAddress(w.publicKeyScript.toHex)
-            _ <- if(w.rescanHeight.isDefined) client.rescanBlockChain(w.rescanHeight.get) else Future.successful(Unit)
+            importedAddresses <- client.listReceivedByAddress()
+            watchAddress = eclair.scriptPubKeyToAddress(w.publicKeyScript)
+            _ <- if(!importedAddresses.contains(watchAddress)) client.importAddress(watchAddress) else Future.successful(Unit)
           } yield checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
 
         case _: WatchLost => () // TODO: not implemented
@@ -213,8 +213,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
-    // matter because this only happens once, when the watched transaction has reached min_depth
+    // NB: this assumes that the tx addresses have been imported and the rescan has been done
     client.getTxConfirmations(w.txId.toString).map {
       case Some(confirmations) if confirmations >= w.minDepth =>
         client.getTransaction(w.txId.toString).map {
@@ -235,6 +234,7 @@ object ZmqWatcher {
 
   def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
+  case class TriggerEvent(w: Watch, e: WatchEvent)
   case object TickNewBlock
 
   def utxo(w: Watch): Option[OutPoint] =

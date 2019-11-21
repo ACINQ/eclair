@@ -169,7 +169,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
     ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent by tx1
 
-    val addressToImport = TestUtils.scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
+    val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
     Await.ready(bitcoinClient.importAddress(addressToImport), 10 seconds)
 
     Await.ready(bitcoinClient.rescanBlockChain(10), 30 seconds)

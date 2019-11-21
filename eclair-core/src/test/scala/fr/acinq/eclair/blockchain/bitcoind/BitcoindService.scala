@@ -144,7 +144,6 @@ trait BitcoindService extends Logging {
     def receiveKey(index: Long = 0) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
     def sendKey(index: Long = 1) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
 
-
     def spendNonWalletTx(tx: Transaction, receivingKeyIndex: Long = 0)(implicit system: ActorSystem) = {
       val probe = TestProbe()
 

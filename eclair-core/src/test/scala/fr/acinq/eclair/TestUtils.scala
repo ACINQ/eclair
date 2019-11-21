@@ -19,9 +19,6 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.ServerSocket
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
-import scodec.bits.ByteVector
-
 object TestUtils {
 
   /**
@@ -43,19 +40,5 @@ object TestUtils {
       }
     }
   }
-
-  /**
-    * We currently use p2pkh script Helpers.getFinalScriptPubKey
-    */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
-    case _ => ???
-  }
-
 
 }
