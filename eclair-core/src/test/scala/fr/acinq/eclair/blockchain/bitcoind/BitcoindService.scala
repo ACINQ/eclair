@@ -123,7 +123,7 @@ trait BitcoindService extends Logging {
     }, max = 3 minutes, interval = 2 second)
   }
 
-  def generateBlocks(bitcoinCli: ActorRef, blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
+  def generateBlocks(bitcoinCli: ActorRef, blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): List[String] = {
     val sender = TestProbe()
     val addressToUse = address match {
       case Some(addr) => addr
@@ -135,6 +135,7 @@ trait BitcoindService extends Logging {
     sender.send(bitcoinCli, BitcoinReq("generatetoaddress", blockCount, addressToUse))
     val JArray(blocks) = sender.expectMsgType[JValue](timeout)
     assert(blocks.size == blockCount)
+    blocks.collect { case JString(blockId) => blockId }
   }
 
   object ExternalWalletHelper {
@@ -144,7 +145,7 @@ trait BitcoindService extends Logging {
     def receiveKey(index: Long = 0) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
     def sendKey(index: Long = 1) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
 
-    def spendNonWalletTx(tx: Transaction, receivingKeyIndex: Long = 0)(implicit system: ActorSystem) = {
+    def spendNonWalletTx(tx: Transaction, receivingKeyIndex: Long = 0)(implicit system: ActorSystem): Transaction = {
       val probe = TestProbe()
 
       val spendTx = Transaction(
@@ -160,20 +161,8 @@ trait BitcoindService extends Logging {
 
       bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
       val txId = probe.expectMsgType[JString].s
-      generateBlocks(bitcoincli, 1) // bury it in a block
-
-      bitcoinrpcclient.invoke("getbestblockhash").pipeTo(probe.ref)
-      val blockHash = probe.expectMsgType[JString].s
-
-      bitcoinrpcclient.invoke("getblock", blockHash, 0).pipeTo(probe.ref)
-      val JString(rawBlock) = probe.expectMsgType[JString]
-      val block = Block.read(rawBlock)
-      val txIndex = block.tx.indexWhere(_.txid.toHex == txId)
-
-      bitcoinrpcclient.invoke("getblockchaininfo").pipeTo(probe.ref)
-      val height = (probe.expectMsgType[JValue] \ "blocks").extract[Int]
-
-      (tx1, ShortChannelId(height, txIndex, 0))
+      assert(txId == tx1.txid.toHex)
+      tx1
     }
 
     def nonWalletTransaction(implicit system: ActorSystem): (Transaction, ShortChannelId) = {

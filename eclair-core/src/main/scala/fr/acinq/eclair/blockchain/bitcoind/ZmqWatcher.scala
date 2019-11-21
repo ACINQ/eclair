@@ -79,12 +79,20 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       context become watching(watches, watchedUtxos, block2tx, Some(task))
 
     case TickNewBlock =>
-      client.getBlockCount.map {
-        case count =>
+      val blockHeigthF = client.getBlockCount.map { count =>
           log.debug(s"setting blockCount=$count")
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
+          count
       }
+
+      // if there are pending WatchConfirmed(s) we trigger a rescan to be able to check if any of them was confirmed
+      // this operation is blocking but we only rescan from the last -1 block which should be quick
+      for {
+        blockHeigth <- blockHeigthF
+        _ <- if(watches.exists(w => w.isInstanceOf[WatchConfirmed])) client.rescanBlockChain(blockHeigth - 1) else Future.successful(Unit)
+      } yield ()
+
       // TODO: beware of the herd effect
       KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
         Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
@@ -143,7 +151,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
             importedAddresses <- client.listReceivedByAddress()
             watchAddress = eclair.scriptPubKeyToAddress(w.publicKeyScript)
             _ <- if(!importedAddresses.contains(watchAddress)) client.importAddress(watchAddress) else Future.successful(Unit)
-          } yield checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
+          } yield Unit
 
         case _: WatchLost => () // TODO: not implemented
 

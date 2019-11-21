@@ -55,7 +55,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     rpcClient.invoke("importmulti", requests, options).map(_ => Unit)
   }
 
-  def rescanBlockChain(rescanSinceHeight: Int)(implicit ec: ExecutionContext): Future[Unit] = {
+  def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {
     rpcClient.invoke("rescanblockchain", rescanSinceHeight).map(_ => Unit)
   }
 

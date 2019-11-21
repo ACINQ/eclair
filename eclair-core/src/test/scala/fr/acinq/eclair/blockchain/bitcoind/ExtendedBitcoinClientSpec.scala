@@ -138,7 +138,8 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
 
     val client = new ExtendedBitcoinClient(bitcoinClient)
     val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
-    val (externalTx2, _) = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
+    val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
+    generateBlocks(bitcoincli, 1) // bury the tx in a block
 
     val earliestBlockHeight = ShortChannelId.coordinates(earliestShortId).blockHeight
 
@@ -167,7 +168,8 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
 
     val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
-    ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent by tx1
+    ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent
+    generateBlocks(bitcoincli, 1)
 
     val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
     Await.ready(bitcoinClient.importAddress(addressToImport), 10 seconds)

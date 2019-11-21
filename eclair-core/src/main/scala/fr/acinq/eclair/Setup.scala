@@ -39,7 +39,7 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
-import fr.acinq.eclair.channel.{DATA_CLOSING, DATA_NEGOTIATING, DATA_NORMAL, DATA_SHUTDOWN, DATA_WAIT_FOR_FUNDING_CONFIRMED, DATA_WAIT_FOR_FUNDING_LOCKED, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, Register}
+import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
@@ -197,64 +197,6 @@ class Setup(datadir: File,
       }
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
-  }
-
-  if(config.hasPath("reimport-watches")) {
-    reimportWatches()
-  }
-
-  def reimportWatches(): Unit = {
-    logger.info(s"rebuilding bitcoind index for local channels")
-
-    val bitcoinClient = bitcoin match {
-      case Bitcoind(rpcClient) => new ExtendedBitcoinClient(rpcClient)
-      case _ => throw new IllegalArgumentException("can't perform this action if not running with bitcoind")
-    }
-
-    val channelsWithInfo = database.channels.listLocalChannels().map {
-      case DATA_NORMAL(commitments, shortChannelId, _, _, _, _, _) =>
-        (Some(shortChannelId), commitments.commitInput)
-      case DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, _) =>
-        (Some(shortChannelId), commitments.commitInput)
-      case DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, _, _) =>
-        (None, commitments.commitInput)
-      case DATA_SHUTDOWN(commitments, _, _) =>
-        (None, commitments.commitInput)
-      case DATA_NEGOTIATING(commitments, _, _, _, _) =>
-        (None, commitments.commitInput)
-      case DATA_CLOSING(commitments, _, _, _, _, _, _, _, _, _) =>
-        (None, commitments.commitInput)
-      case DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments, _) =>
-        (None, commitments.commitInput)
-    }
-
-    if(channelsWithInfo.isEmpty) {
-      logger.info(s"no local channels need to be reimported")
-      return
-    }
-
-    val earliestScanHeight = channelsWithInfo.flatMap(_._1).map(ShortChannelId.coordinates(_).blockHeight) match {
-      case Nil                     => ZmqWatcher.EARLIEST_SEGWIT_BLOCKHEIGHT
-      case nonEmptyBlockHeightList => nonEmptyBlockHeightList.min
-    }
-
-    val channelScripts = channelsWithInfo.map { case (_, commitInput) =>
-      commitInput.txOut.publicKeyScript
-    }
-
-    // import addresses/scripts
-    logger.info(s"importing ${channelScripts.size} addresses")
-    bitcoinClient.importMulti(channelScripts)
-
-    // rescan from earliest channel point
-    logger.info(s"rescanning from height $earliestScanHeight")
-    val rescanF = bitcoinClient.rescanBlockChain(earliestScanHeight).recover {
-      case thr =>
-        logger.error(s"rescanning failed, exiting ", thr)
-        System.exit(1)
-    }
-    Await.ready(rescanF, 5 minute)
-    logger.info("rescan done")
   }
 
   def bootstrap: Future[Kit] = {
