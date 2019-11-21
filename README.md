@@ -231,17 +231,10 @@ zmqpubrawtx=tcp://127.0.0.1:29001
 ## Pruned
 Eclair has experimental support for running alongside a pruned, non indexing bitcoind but there are known limitations:
 - Eclair won't be able to validate *all* the gossip messages, this can lead to problems when sending payments.
-- The bitcoind wallet data should be backed up with eclair's database backup, if a user loses his bitcoind data it must follow the reimport procedure.
 - Pruning target size must be at least 25GB.
+- Eclair must not be offline for a period that exceeds the non pruned blockchain window, if your bitcoind keeps 1 month of blocks you should not
+  stop eclair for more than that.
 
-### Pruned mode reimport procedure
-This procedure rebuilds the necessary indexes in bitcoind to let eclair operate normally, it's necessary to run it
-when you are transitioning from an indexing bitcoind to a non indexing (and optionally pruned) instance. The procedure itself
-triggers a chain rescan and it can take up to several minutes to complete, check the bitcoind logs for progress status. To run the reimport 
-start eclair with the flag `-Declair.reimport-watches` for example:
-```shell
-java -Declair.datadir=/tmp/node1 -Declair.reimport-watches -jar eclair-node-gui-<version>-<commit_id>.jar
-``` 
 
 ## Resources
 
