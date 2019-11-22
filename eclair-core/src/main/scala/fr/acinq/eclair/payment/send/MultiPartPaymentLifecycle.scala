@@ -33,6 +33,8 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, ToMilliSatoshiConversion}
+import kamon.Kamon
+import kamon.context.Context
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -53,6 +55,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   require(cfg.id == cfg.parentId, "multi-part payment cannot have a parent payment")
 
   val id = cfg.id
+
+  private val span = Kamon.spanBuilder("multi-part-payment")
+    .tag("parentPaymentId", cfg.parentId.toString)
+    .tag("paymentHash", cfg.paymentHash.toHex)
+    .tag("targetNodeId", cfg.targetNodeId.toString())
+    .start()
 
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
 
@@ -84,7 +92,11 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(BalanceTooLow) :: Nil, Set.empty)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size)
-        pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
+        Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
+          Kamon.runWithSpan(span, finishSpan = true) {
+            pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
+          }
+        }
         goto(PAYMENT_IN_PROGRESS) using PaymentProgress(d.sender, d.request, d.networkStats, channels.length, 0 msat, d.request.maxAttempts - 1, pending, Set.empty, Nil)
       }
   }
@@ -162,9 +174,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val failures = d.failures ++ pf.failures
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        log.warning("multi-part payment failed")
-        reply(d.sender, PaymentFailed(id, d.request.paymentHash, failures))
-        stop(FSM.Normal)
+        myStop(d.sender, Left(PaymentFailed(id, d.request.paymentHash, failures)))
       } else {
         stay using d.copy(failures = failures, pending = pending)
       }
@@ -183,9 +193,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.id
       if (pending.isEmpty) {
-        log.info("multi-part payment succeeded")
-        reply(d.sender, PaymentSent(id, d.request.paymentHash, d.preimage, parts))
-        stop(FSM.Normal)
+        myStop(d.sender, Right(PaymentSent(id, d.request.paymentHash, d.preimage, parts)))
       } else {
         stay using d.copy(parts = parts, pending = pending)
       }
@@ -196,9 +204,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        log.info("multi-part payment succeeded")
-        reply(d.sender, PaymentSent(id, d.request.paymentHash, d.preimage, d.parts))
-        stop(FSM.Normal)
+        myStop(d.sender, Right(PaymentSent(id, d.request.paymentHash, d.preimage, d.parts)))
       } else {
         stay using d.copy(pending = pending)
       }
@@ -207,17 +213,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   onTransition {
     case _ -> PAYMENT_ABORTED => nextStateData match {
       case d: PaymentAborted if d.pending.isEmpty =>
-        log.warning("multi-part payment failed")
-        reply(d.sender, PaymentFailed(id, d.request.paymentHash, d.failures))
-        stop(FSM.Normal)
+        myStop(d.sender, Left(PaymentFailed(id, d.request.paymentHash, d.failures)))
       case _ =>
     }
 
     case _ -> PAYMENT_SUCCEEDED => nextStateData match {
       case d: PaymentSucceeded if d.pending.isEmpty =>
-        log.info("multi-part payment succeeded")
-        reply(d.sender, PaymentSent(id, d.request.paymentHash, d.preimage, d.parts))
-        stop(FSM.Normal)
+        myStop(d.sender, Right(PaymentSent(id, d.request.paymentHash, d.preimage, d.parts)))
       case _ =>
     }
   }
@@ -225,6 +227,20 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   def spawnChildPaymentFsm(childId: UUID): ActorRef = {
     val childCfg = cfg.copy(id = childId, publishEvent = false)
     context.actorOf(PaymentLifecycle.props(nodeParams, childCfg, router, register))
+  }
+
+  def myStop(origin: ActorRef, event: Either[PaymentFailed, PaymentSent]): State = {
+    event match {
+      case Left(paymentFailed) =>
+        log.warning("multi-part payment failed")
+        reply(origin, paymentFailed)
+        span.fail("payment failed")
+      case Right(paymentSent) =>
+        log.info("multi-part payment succeeded")
+        reply(origin, paymentSent)
+    }
+    span.finish()
+    stop(FSM.Normal)
   }
 
   def reply(to: ActorRef, e: PaymentEvent): Unit = {
@@ -256,6 +272,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 }
 
 object MultiPartPaymentLifecycle {
+
+  val parentPaymentIdKey = Context.key[UUID]("parentPaymentId", UUID.fromString("00000000-0000-0000-0000-000000000000"))
 
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, relayer: ActorRef, router: ActorRef, register: ActorRef) = Props(new MultiPartPaymentLifecycle(nodeParams, cfg, relayer, router, register))
 
