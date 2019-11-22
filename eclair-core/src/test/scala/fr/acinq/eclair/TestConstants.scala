@@ -56,7 +56,7 @@ object TestConstants {
                                            |      properties = {
                                            |        serverName = "localhost"
                                            |        portNumber = "5432"
-                                           |        databaseName = "eclairtest"
+                                           |        databaseName = "sonicbet"
                                            |        user = "postgres"
                                            |        password = "postgres"
                                            |      }
