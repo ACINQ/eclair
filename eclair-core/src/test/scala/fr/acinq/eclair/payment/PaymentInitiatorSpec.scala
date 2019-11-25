@@ -100,7 +100,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward multi-part payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL, PAYMENT_SECRET_OPTIONAL)))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -110,7 +110,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward multi-part payment with pre-defined route") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL, PAYMENT_SECRET_OPTIONAL)))
     val req = SendPaymentRequest(finalAmount / 2, paymentHash, c, 1, paymentRequest = Some(pr), predefinedRoute = Seq(a, b, c))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
