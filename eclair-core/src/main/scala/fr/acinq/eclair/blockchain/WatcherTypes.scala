@@ -35,12 +35,12 @@ sealed trait Watch {
   def channel: ActorRef
   def event: BitcoinEvent
 }
-// we need a public key script to use electrum apis
-final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent) extends Watch
+// we need a public key script to use electrum apis, rescanHeight is the earliest block height at which we need to scan to index the watched transaction
+final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent, rescanHeight: Long) extends Watch
 object WatchConfirmed {
   // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
   // we support both p2pkh and p2wpkh scripts
-  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(ByteVector.empty), minDepth, event)
+  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent, rescanHeight: Long): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(ByteVector.empty), minDepth, event, rescanHeight)
 
   def extractPublicKeyScript(witness: ScriptWitness): ByteVector = Try(PublicKey(witness.stack.last)) match {
     case Success(pubKey) =>
