@@ -21,14 +21,21 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Transaction
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Transaction}
+import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
+import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
+import fr.acinq.eclair.wire.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, _}
-import org.json4s.{DefaultFormats}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 
@@ -43,8 +50,6 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     "eclair.router-broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false))
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
-
-  implicit val formats = DefaultFormats
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -78,48 +83,118 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
     val tx = Transaction.read(signedTx)
     val txid = tx.txid.toString()
-
-    // test starts here
-    val client = new ExtendedBitcoinClient(bitcoinClient)
-    // we publish it a first time
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-    // we publish the tx a second time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-    // let's confirm the tx
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(generatingAddress) = sender.expectMsgType[JValue]
-    bitcoinClient.invoke("generatetoaddress", 1, generatingAddress).pipeTo(sender.ref)
-    sender.expectMsgType[JValue]
-    // and publish the tx a third time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-
-    // now let's spent the output of the tx
-    val spendingTx = {
-      val pos = if (changePos == 0) 1 else 0
-      bitcoinClient.invoke("createrawtransaction", Array(Map("txid" -> txid, "vout" -> pos)), Map(address -> 5.99999)).pipeTo(sender.ref)
-      val JString(unsignedtx) = sender.expectMsgType[JValue]
-      bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx).pipeTo(sender.ref)
-      val JString(signedTx) = sender.expectMsgType[JValue] \ "hex"
-      signedTx
-    }
-    bitcoinClient.invoke("sendrawtransaction", spendingTx).pipeTo(sender.ref)
-    val JString(spendingTxid) = sender.expectMsgType[JValue]
-
-    // and publish the tx a fourth time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-    // let's confirm the tx
-    bitcoinClient.invoke("generatetoaddress", 1, generatingAddress).pipeTo(sender.ref)
-    sender.expectMsgType[JValue]
-    // and publish the tx a fifth time to test idempotence
-    client.publishTransaction(tx).pipeTo(sender.ref)
-    sender.expectMsg(txid)
-
-    // this one should be rejected
-    client.publishTransaction(Transaction.read("02000000000101b9e2a3f518fd74e696d258fed3c78c43f84504e76c99212e01cf225083619acf00000000000d0199800136b34b00000000001600145464ce1e5967773922506e285780339d72423244040047304402206795df1fd93c285d9028c384aacf28b43679f1c3f40215fd7bd1abbfb816ee5a022047a25b8c128e692d4717b6dd7b805aa24ecbbd20cfd664ab37a5096577d4a15d014730440220770f44121ed0e71ec4b482dded976f2febd7500dfd084108e07f3ce1e85ec7f5022025b32dc0d551c47136ce41bfb80f5a10de95c0babb22a3ae2d38e6688b32fcb20147522102c2662ab3e4fa18a141d3be3317c6ee134aff10e6cd0a91282a25bf75c0481ebc2102e952dd98d79aa796289fa438e4fdeb06ed8589ff2a0f032b0cfcb4d7b564bc3252aea58d1120")).pipeTo(sender.ref)
-    sender.expectMsgType[Failure]
   }
+
+  test("validate short channel Ids") {
+    val sender = TestProbe()
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val (channelTransaction, channelShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+
+    // we won't be able to get the raw transaction if it's non-wallet
+    client.getRawTransaction(channelTransaction.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    // likewise we can't get the channel short id from the txId
+    client.getTransactionShortId(channelTransaction.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    val mockChannelAnnouncement = ChannelAnnouncement(
+      nodeSignature1 = ByteVector64.Zeroes,
+      nodeSignature2 = ByteVector64.Zeroes,
+      bitcoinSignature1 = ByteVector64.Zeroes,
+      bitcoinSignature2 = ByteVector64.Zeroes,
+      features = ByteVector.empty,
+      chainHash = ByteVector32.Zeroes,
+      shortChannelId = channelShortId,
+      nodeId1 = PrivateKey(randomBytes32).publicKey,
+      nodeId2 = PrivateKey(randomBytes32).publicKey,
+      bitcoinKey1 = PrivateKey(randomBytes32).publicKey,
+      bitcoinKey2 = PrivateKey(randomBytes32).publicKey
+    )
+
+    // but we can validate if a short channel id is unspent
+    client.validate(mockChannelAnnouncement).pipeTo(sender.ref)
+    sender.expectMsg(ValidateResult(mockChannelAnnouncement, Right(channelTransaction, UtxoStatus.Unspent)))
+
+    // if the output does not exist, validation fails
+    client.validate(mockChannelAnnouncement.copy(shortChannelId = ShortChannelId(10, 10, 10))).pipeTo(sender.ref)
+    val validationResult = sender.expectMsgType[ValidateResult]
+    assert(validationResult.fundingTx.isLeft)
+  }
+
+  test("importmulti should import several watch addresses at once") {
+    val sender = TestProbe()
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
+    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(externalTx2).toHex).pipeTo(sender.ref)
+    sender.expectMsgType[JString]
+    generateBlocks(bitcoincli, 1) // bury the tx in a block
+
+    val earliestBlockHeight = ShortChannelId.coordinates(earliestShortId).blockHeight
+
+    // when not imported transactions can't be looked up
+    client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+
+    val importAndScan = for {
+      _ <- client.importMulti(Seq(externalTx1.txOut.head.publicKeyScript, externalTx2.txOut.head.publicKeyScript))
+      _ <- client.rescanBlockChain(earliestBlockHeight)
+    } yield Unit
+
+    Await.ready(importAndScan, 30 seconds)
+
+    client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsg(externalTx1)
+
+    client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsg(externalTx2)
+  }
+
+  test("swapping wallet should make bitcoind forget the imported watch_only addresses") {
+    val probe = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+
+    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
+    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent
+    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
+    probe.expectMsgType[JString]
+    generateBlocks(bitcoincli, 1)
+
+    val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
+    Await.ready(bitcoinClient.importAddress(addressToImport), 10 seconds)
+
+    Await.ready(bitcoinClient.rescanBlockChain(10), 30 seconds)
+
+    val receivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
+    assert(receivedByAddress.contains(addressToImport)) // assert the address was correctly imported
+
+    val fetched = Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds)
+    assert(fetched.txid == tx.txid) // assert we can fetch the transaction related to the address
+
+    // wipes out all the previously imported addresses
+    ExternalWalletHelper.swapWallet()
+
+    val emptyWalletReceivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
+    assert(!emptyWalletReceivedByAddress.contains(addressToImport)) // assert the new wallet doesn't have the address imported
+
+    assertThrows[JsonRPCError](Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds))
+  }
+
+
 }
