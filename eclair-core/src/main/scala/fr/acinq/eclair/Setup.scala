@@ -92,7 +92,8 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val isElectrumBech32 = config.getString("watcher-type").contains("electrum") && config.hasPath("electrum-wallet-type") && config.getString("electrum-wallet-type").contains("bech32")
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain), isElectrumBech32)
 
   val database = db match {
     case Some(d) => d
@@ -275,8 +276,8 @@ class Setup(datadir: File,
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
-      _ = wallet.getFinalAddress.map {
-        case address => logger.info(s"initial wallet address=$address")
+      _ = wallet.getFinalAddress.map { address =>
+        logger.info(s"initial wallet address=$address")
       }
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 

@@ -36,9 +36,10 @@ object LocalKeyManager {
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
-  def nodeKeyBasePath(chainHash: ByteVector32) = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
-    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
+  // NB: electrum bech32 needs a special path for compatibility reason
+  def nodeKeyBasePath(chainHash: ByteVector32, isElectrumBech32: Boolean) = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: (if(isElectrumBech32) DeterministicWallet.hardened(1) :: Nil else Nil)
+    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: (if(isElectrumBech32) DeterministicWallet.hardened(1) :: Nil else Nil)
   }
 }
 
@@ -48,10 +49,10 @@ object LocalKeyManager {
   *
   * @param seed seed from which keys will be derived
   */
-class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyManager {
+class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32, isElectrumBech32: Boolean) extends KeyManager {
   private val master = DeterministicWallet.generate(seed)
 
-  override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash))
+  override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash, isElectrumBech32))
   override val nodeId = nodeKey.publicKey
 
   private val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()
