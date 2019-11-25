@@ -50,6 +50,7 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
 case class Commitments(channelVersion: ChannelVersion,
+                       createdAtHeight: Long,
                        localParams: LocalParams, remoteParams: RemoteParams,
                        channelFlags: Byte,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
