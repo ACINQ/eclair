@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
@@ -163,10 +163,12 @@ object Helpers {
    * @param currentUpdateTimestamp
    * @return the delay until the next update
    */
-  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: LoggingAdapter): FiniteDuration = {
+  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
     val age = Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
-    log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+    Logs.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+      log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+    }
     delay
   }
 

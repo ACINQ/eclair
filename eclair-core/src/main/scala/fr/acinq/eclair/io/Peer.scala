@@ -23,10 +23,12 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, Satoshi}
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -36,7 +38,7 @@ import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Failure, Random, Success, Try}
 
 /**
  * Created by PM on 26/08/2016.
@@ -186,7 +188,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
 
     case Event(Terminated(actor), d: InitializingData) if actor == d.transport =>
-      log.warning(s"lost connection to $remoteNodeId")
+      Logs.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+        log.warning(s"lost connection to $remoteNodeId")
+      }(diagLog)
       goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels)
 
     case Event(Terminated(actor), d: InitializingData) if d.channels.exists(_._2 == actor) =>
@@ -577,7 +581,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
   initialize()
 
-  override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+  override def mdc(currentMessage: Any): MDC = {
+    Logs.mdc(LogCategory(currentMessage), remoteNodeId_opt = Some(remoteNodeId))
+  }
 }
 
 object Peer {
