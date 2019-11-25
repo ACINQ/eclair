@@ -2296,9 +2296,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     * @param time: timestamp expressed in seconds, must be before now
     * @return: the block height corresponding to the @param time
     */
-  def timestampToBlockHeight(time: Long) = {
+  def timestampToBlockHeight(time: Long, currentTime: Long = now) = {
     // 1 block ~= 600 seconds
-    val blockDelta = (now - time) / 600
+    val blockDelta = (currentTime - time) / 600
     nodeParams.currentBlockHeight - blockDelta
   }
 
