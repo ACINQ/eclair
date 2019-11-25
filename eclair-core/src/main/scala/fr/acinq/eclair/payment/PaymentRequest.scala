@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.Codec
@@ -43,8 +44,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
-  require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size <= 1, "there must be at most one payment secret tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
+  require(!features.allowMultiPart || features.allowPaymentSecret, "there must be a payment secret when using multi-part")
+  if (features.allowPaymentSecret) {
+    require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
+  }
 
   /**
    * @return the payment hash
@@ -114,8 +118,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
 
-  import fr.acinq.eclair.Features.PAYMENT_SECRET_OPTIONAL
-
   val DEFAULT_EXPIRY_SECONDS = 3600
 
   val prefixes = Map(
@@ -129,20 +131,24 @@ object PaymentRequest {
             features: Option[Features] = Some(Features(PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
+    val tags = {
+      val defaultTags = List(
+        Some(PaymentHash(paymentHash)),
+        Some(Description(description)),
+        fallbackAddress.map(FallbackAddress(_)),
+        expirySeconds.map(Expiry(_)),
+        features).flatten
+      val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32) :: Nil else Nil
+      val routingInfoTags = extraHops.map(RoutingInfo)
+      defaultTags ++ paymentSecretTag ++ routingInfoTags
+    }
 
     PaymentRequest(
       prefix = prefix,
       amount = amount,
       timestamp = timestamp,
       nodeId = privateKey.publicKey,
-      tags = List(
-        Some(PaymentHash(paymentHash)),
-        Some(PaymentSecret(randomBytes32)),
-        Some(Description(description)),
-        fallbackAddress.map(FallbackAddress(_)),
-        expirySeconds.map(Expiry(_)),
-        features
-      ).flatten ++ extraHops.map(RoutingInfo),
+      tags = tags,
       signature = ByteVector.empty)
       .sign(privateKey)
   }
@@ -321,11 +327,9 @@ object PaymentRequest {
    * Features supported or required for receiving this payment.
    */
   case class Features(bitmask: BitVector) extends TaggedField {
-
-    import fr.acinq.eclair.Features._
-
     lazy val supported: Boolean = areSupported(bitmask)
     lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
+    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY) || hasFeature(bitmask, PAYMENT_SECRET_OPTIONAL)
     lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
     lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
 

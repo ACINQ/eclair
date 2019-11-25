@@ -47,12 +47,14 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
-          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException(s"can't send payment: unknown invoice features (${r.paymentRequest.get.features})")) :: Nil)
-        case Some(invoice) if invoice.features.allowMultiPart =>
-          r.predefinedRoute match {
-            case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentHash, invoice.paymentSecret.get, r.targetNodeId, r.amount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
-            case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(r.paymentHash, hops, Onion.createMultiPartPayload(r.amount, invoice.amount.getOrElse(r.amount), finalExpiry, invoice.paymentSecret.get))
+          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException(s"can't send payment: unknown invoice features (${invoice.features})")) :: Nil)
+        case Some(invoice) if invoice.features.allowMultiPart => invoice.paymentSecret match {
+          case Some(paymentSecret) => r.predefinedRoute match {
+            case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentHash, paymentSecret, r.targetNodeId, r.amount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
+            case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(r.paymentHash, hops, Onion.createMultiPartPayload(r.amount, invoice.amount.getOrElse(r.amount), finalExpiry, paymentSecret))
           }
+          case None => sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException(s"can't send payment: multi-part invoice is missing a payment secret")) :: Nil)
+        }
         case _ =>
           val payFsm = spawnPaymentFsm(paymentCfg)
           // NB: we only generate legacy payment onions for now for maximum compatibility.
@@ -65,23 +67,23 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
     case r: SendTrampolinePaymentRequest =>
       val paymentId = UUID.randomUUID()
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentRequest.paymentHash, r.trampolineNodeId, Some(r.paymentRequest), storeInDb = true, publishEvent = true)
-      val trampolineRoute = Seq(
-        NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
-        NodeHop(r.trampolineNodeId, r.paymentRequest.nodeId, r.trampolineExpiryDelta, r.trampolineFees) // for now we only use a single trampoline hop
-      )
-      // We generate a random secret for this payment to avoid leaking the invoice secret to the first trampoline node.
-      val trampolineSecret = randomBytes32
       val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
         Onion.createMultiPartPayload(r.finalAmount, r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
       } else {
         Onion.createSinglePartPayload(r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret)
       }
+      val trampolineRoute = Seq(
+        NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
+        NodeHop(r.trampolineNodeId, r.paymentRequest.nodeId, r.trampolineExpiryDelta, r.trampolineFees) // for now we only use a single trampoline hop
+      )
       // We assume that the trampoline node supports multi-part payments (it should).
       val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
         OutgoingPacket.buildPacket(Sphinx.TrampolinePacket)(r.paymentRequest.paymentHash, trampolineRoute, finalPayload)
       } else {
         OutgoingPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
       }
+      // We generate a random secret for this payment to avoid leaking the invoice secret to the first trampoline node.
+      val trampolineSecret = randomBytes32
       spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentRequest.paymentHash, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, 1, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionTlv.TrampolineOnion(trampolineOnion.packet)))
       sender ! paymentId
   }
