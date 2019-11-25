@@ -28,7 +28,15 @@ import scodec.bits.BitVector
 import scala.util.Random
 
 class SqliteWalletDbSpec extends FunSuite {
-  val random = new Random()
+  // does not return zeroes to avoid creating empty random data
+  val random = new Random() {
+    override def nextInt(n: Int): Int = {
+      super.nextInt(n) match {
+        case 0 => 1
+        case x => x
+      }
+    }
+  }
 
   def makeChildHeader(header: BlockHeader): BlockHeader = header.copy(hashPreviousBlock = header.hash, nonce = random.nextLong() & 0xffffffffL)
 
