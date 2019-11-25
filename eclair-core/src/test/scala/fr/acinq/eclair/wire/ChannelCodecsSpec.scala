@@ -344,7 +344,7 @@ class ChannelCodecsSpec extends FunSuite {
 }
 
 object ChannelCodecsSpec {
-  val keyManager = new LocalKeyManager(ByteVector32(ByteVector.fill(32)(1)), Block.RegtestGenesisBlock.hash)
+  val keyManager = new LocalKeyManager(ByteVector32(ByteVector.fill(32)(1)), Block.RegtestGenesisBlock.hash, isElectrumBech32 = false)
   val localParams = LocalParams(
     keyManager.nodeId,
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),

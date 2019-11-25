@@ -30,7 +30,7 @@ class StartupSpec extends FunSuite {
 
   test("check configuration") {
     val blockCount = new AtomicLong(0)
-    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
     val conf = ConfigFactory.load().getConfig("eclair")
     assert(Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)).isSuccess)
 
@@ -56,7 +56,7 @@ class StartupSpec extends FunSuite {
 
     val illegalAliasConf = ConfigFactory.parseString(s"node-alias = $goUkraineGo")
     val conf = illegalAliasConf.withFallback(ConfigFactory.parseResources("reference.conf").getConfig("eclair"))
-    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
 
     val blockCount = new AtomicLong(0)
 

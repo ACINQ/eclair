@@ -20,18 +20,23 @@ import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxI
 import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
-import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.version
-import fr.acinq.eclair.wire.ChannelCodecs.txCodec
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT, PersistentData, WalletType}
 import org.scalatest.FunSuite
 import scodec.Codec
 import scodec.bits.BitVector
-import scodec.codecs.{constant, listOfN, provide, uint16}
 
 import scala.util.Random
 
 class SqliteWalletDbSpec extends FunSuite {
-  val random = new Random()
+  // does not return zeroes to avoid creating empty random data
+  val random = new Random() {
+    override def nextInt(n: Int): Int = {
+      super.nextInt(n) match {
+        case 0 => 1
+        case x => x
+      }
+    }
+  }
 
   def makeChildHeader(header: BlockHeader): BlockHeader = header.copy(hashPreviousBlock = header.hash, nonce = random.nextLong() & 0xffffffffL)
 
@@ -53,10 +58,11 @@ class SqliteWalletDbSpec extends FunSuite {
 
   def randomProof = GetMerkleResponse(randomBytes32, ((0 until 10).map(_ => randomBytes32)).toList, random.nextInt(100000), 0, None)
 
-  def randomPersistentData = {
+  def randomPersistentData(walletType: WalletType) = {
     val transactions = for (i <- 0 until random.nextInt(100)) yield randomTransaction
 
     PersistentData(
+      walletType = walletType,
       accountKeysCount = 10,
       changeKeysCount = 10,
       status = (for (i <- 0 until random.nextInt(100)) yield randomBytes32 -> random.nextInt(100000).toHexString).toMap,
@@ -92,12 +98,12 @@ class SqliteWalletDbSpec extends FunSuite {
     })
   }
 
-  test("serialize persistent data") {
+  test("serialize and deserialize persistent data (p2sh-segwit AND bech32)") {
     val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
     assert(db.readPersistentData() == None)
 
     for (i <- 0 until 50) {
-      val data = randomPersistentData
+      val data = randomPersistentData(if (i % 2 == 0) BECH32 else P2SH_SEGWIT)
       db.persist(data)
       val Some(check) = db.readPersistentData()
       assert(check === data.copy(locks = Set.empty[Transaction]))
@@ -109,8 +115,11 @@ class SqliteWalletDbSpec extends FunSuite {
     import SqliteWalletDb._
     import fr.acinq.eclair.wire.ChannelCodecs._
 
+    val legacyVersion = 0x0000
+
     val oldPersistentDataCodec: Codec[PersistentData] = (
-      ("version" | constant(BitVector.fromInt(version))) ::
+      ("version" | constant(BitVector.fromInt(legacyVersion))) ::
+        ("walletType" | provide(P2SH_SEGWIT.asInstanceOf[WalletType])) :: // old codecs did not have this but their wallet type was hardcoded to P2SH_SEGWIT
         ("accountKeysCount" | int32) ::
         ("changeKeysCount" | int32) ::
         ("status" | statusCodec) ::
@@ -121,11 +130,53 @@ class SqliteWalletDbSpec extends FunSuite {
         ("pendingTransactions" | listOfN(uint16, txCodec)) ::
         ("locks" |  setCodec(txCodec))).as[PersistentData]
 
-    for (i <- 0 until 50) {
-      val data = randomPersistentData
+    for (_ <- 0 until 50) {
+      val data = randomPersistentData(P2SH_SEGWIT)
       val encoded = oldPersistentDataCodec.encode(data).require
       val decoded = persistentDataCodec.decode(encoded).require.value
+      assert(data.walletType == decoded.walletType && decoded.walletType == P2SH_SEGWIT)
       assert(decoded === data.copy(locks = Set.empty[Transaction]))
+      val check = persistentDataCodec.encode(decoded).require // encode using the new codec
+      val redecoded = persistentDataCodec.decode(check).require.value
+      assert(redecoded == data.copy(locks = Set.empty[Transaction]))
     }
+  }
+
+  test("clear wallet cache") {
+    val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
+
+    val p2shData = randomPersistentData(P2SH_SEGWIT)
+    assert(p2shData.history.nonEmpty)
+    assert(p2shData.proofs.nonEmpty)
+    assert(p2shData.transactions.nonEmpty)
+    assert(p2shData.pendingTransactions.nonEmpty)
+    assert(p2shData.heights.nonEmpty)
+
+    db.persist(p2shData)
+    db.clearCache(p2shData)
+
+    val Some(clearP2shData) = db.readPersistentData()
+    assert(clearP2shData.history.isEmpty)
+    assert(clearP2shData.proofs.isEmpty)
+    assert(clearP2shData.transactions.isEmpty)
+    assert(clearP2shData.pendingTransactions.isEmpty)
+    assert(clearP2shData.heights.isEmpty)
+
+    val bech32Data = randomPersistentData(BECH32)
+    assert(bech32Data.history.nonEmpty)
+    assert(bech32Data.proofs.nonEmpty)
+    assert(bech32Data.transactions.nonEmpty)
+    assert(bech32Data.pendingTransactions.nonEmpty)
+    assert(bech32Data.heights.nonEmpty)
+
+    db.persist(bech32Data)
+    db.clearCache(bech32Data)
+
+    val Some(clearBech32Data) = db.readPersistentData()
+    assert(clearBech32Data.history.isEmpty)
+    assert(clearBech32Data.proofs.isEmpty)
+    assert(clearBech32Data.transactions.isEmpty)
+    assert(clearBech32Data.pendingTransactions.isEmpty)
+    assert(clearBech32Data.heights.isEmpty)
   }
 }
