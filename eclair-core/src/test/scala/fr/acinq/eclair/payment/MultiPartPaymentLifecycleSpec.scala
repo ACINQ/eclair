@@ -527,7 +527,6 @@ object MultiPartPaymentLifecycleSpec {
     val commitmentInput = Funding.makeFundingInputInfo(randomBytes32, 0, canSend.truncateToSatoshi, randomKey.publicKey, remoteParams.fundingPubKey)
     Commitments(
       ChannelVersion.STANDARD,
-      12345L,
       localParams,
       remoteParams,
       channelFlags = 0x01.toByte,

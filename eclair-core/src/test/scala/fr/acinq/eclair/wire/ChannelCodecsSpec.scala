@@ -76,10 +76,10 @@ class ChannelCodecsSpec extends FunSuite {
 
     assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
     assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
-    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.USE_PUBKEY_KEYPATH, current02.drop(5).bits)))
-    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.USE_PUBKEY_KEYPATH, current03.drop(5).bits)))
+    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
 
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000003".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
   }
 
   test("encode/decode localparams") {
@@ -205,7 +205,6 @@ class ChannelCodecsSpec extends FunSuite {
     val bin = ChannelCodecs.DATA_NORMAL_Codec.encode(data).require
     val check = ChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
-    assert(data.commitments.createdAtHeight === check.commitments.createdAtHeight)
     assert(data === check)
   }
 
@@ -326,7 +325,6 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
-        .replace(""""createdAtHeight":0,""", "")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -338,7 +336,6 @@ class ChannelCodecsSpec extends FunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
-        .replace(""""createdAtHeight":0,""", "")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -400,7 +397,7 @@ object ChannelCodecsSpec {
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
-  val commitments = Commitments(ChannelVersion.STANDARD, Random.nextLong(), localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+  val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 32L,
     remoteNextHtlcId = 4L,
     originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)),

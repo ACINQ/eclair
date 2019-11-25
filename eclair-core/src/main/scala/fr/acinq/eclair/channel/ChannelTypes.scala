@@ -145,7 +145,6 @@ case object Nothing extends Data
 sealed trait HasCommitments extends Data {
   def commitments: Commitments
   def channelId = commitments.channelId
-  def createdAt: Long = commitments.createdAtHeight
 }
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
@@ -244,13 +243,11 @@ object ChannelVersion {
   val LENGTH_BITS = 4 * 8
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
-  val STORE_CREATION_TIME_BIT = 1
 
   def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
   val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
-  val USE_CREATION_TIME = fromBit(STORE_CREATION_TIME_BIT)
 
-  val STANDARD = ZEROES | USE_PUBKEY_KEYPATH | USE_CREATION_TIME
+  val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
 }
 // @formatter:on
