@@ -22,7 +22,7 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
@@ -36,12 +36,13 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
-import fr.acinq.eclair.transactions.{IN, OUT, Transactions}
+import fr.acinq.eclair.transactions.{IN, OUT, Scripts, Transactions}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, _}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 /**
@@ -55,7 +56,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val testWallet = if(test.tags.contains("static_remotekey")){
+      val randomKey = PrivateKey(randomBytes32).publicKey
+      new TestWallet{
+        override def getReceivePubkey: Future[Crypto.PublicKey] = Future.successful(randomKey)
+        override def getReceiveAddress: Future[String] = Future.successful({
+          val scriptPubKey = Script.write(Script.pay2wpkh(randomKey))
+          Bech32.encodeWitnessAddress("bcrt", 0, scriptPubKey)
+        })
+      }
+    } else {
+      new TestWallet
+    }
+    val setup = init(wallet = testWallet)
     import setup._
     within(30 seconds) {
       reachNormal(setup, test.tags)
@@ -1041,6 +1054,43 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val forward = relayerA.expectMsgType[ForwardFailMalformed]
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
+  }
+
+  test("recv RevokeAndAck (one htlc sent, static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.globalFeatures == hex"2000")
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.globalFeatures == hex"2000")
+
+    def aliceToRemoteScript() = {
+      val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toRemote
+      val Some(toRemoteOut) = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.amount == toRemoteAmount.truncateToSatoshi)
+      toRemoteOut.publicKeyScript
+    }
+
+    val initialToRemoteScript = aliceToRemoteScript()
+
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+
+    awaitCond(alice.stateName == NORMAL)
+    // in alice's view bob toRemote script stays the same across commitments
+    assert(initialToRemoteScript == aliceToRemoteScript())
   }
 
   test("recv RevocationTimeout") { f =>
