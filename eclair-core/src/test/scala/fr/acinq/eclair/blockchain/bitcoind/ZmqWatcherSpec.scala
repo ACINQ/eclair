@@ -28,9 +28,9 @@ import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{NewBlock, Watch, WatchConfirmed, WatchEventConfirmed, WatchEventSpent, WatchSpent, WatchSpentBasic}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_TX_CONFIRMED, BitcoinEvent}
-import fr.acinq.eclair.randomBytes32
+import fr.acinq.eclair.{ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JString
+import org.json4s.JsonAST.{JLong, JString}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
 
@@ -98,7 +98,7 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val w2 = WatchSpent(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT)
     val w3 = WatchSpentBasic(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT)
     val w4 = WatchSpentBasic(null, randomBytes32, 5, randomBytes32, BITCOIN_FUNDING_SPENT)
-    val w5 = WatchConfirmed(null, txid, randomBytes32, 3, BITCOIN_FUNDING_SPENT)
+    val w5 = WatchConfirmed(null, txid, randomBytes32, 3, BITCOIN_FUNDING_SPENT, 0L)
 
     // we test as if the collection was immutable
     val m1 = addWatchedUtxos(m0, w1)
@@ -128,7 +128,7 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     implicit val ec = system.dispatcher
 
     // tx is an unspent and confirmed non wallet transaction
-    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system)
+    val (tx, shortId) = ExternalWalletHelper.nonWalletTransaction(system)
     val watchAddress = eclair.scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
 
     var addressImported = false
@@ -144,7 +144,7 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     Await.ready(bitcoinClient.importAddress(watchAddress), 30 seconds) // import the address manually
     addressImported = false // resetting the flag to perform the check later
 
-    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 6, BITCOIN_FUNDING_DEPTHOK)
+    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 6, BITCOIN_FUNDING_DEPTHOK, ShortChannelId.coordinates(shortId).blockHeight)
 
     generateBlocks(bitcoincli, 5)
 
@@ -165,9 +165,12 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val tx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx)
     val tx1 = ExternalWalletHelper.spendNonWalletTx(nonWalletTx1, receivingKeyIndex = 21) // changing receiving key tweaks the address
 
+    bitcoinClient.getBlockCount.pipeTo(probe.ref)
+    val blockHeight = probe.expectMsgType[Long]
+
     // add the watcher for a non confirmed non wallet transaction "tx"
-    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 1, BITCOIN_FUNDING_DEPTHOK)
-    watcher ! WatchConfirmed(probe.ref, tx1, minDepth = 1, BITCOIN_FUNDING_DEPTHOK)
+    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 1, BITCOIN_FUNDING_DEPTHOK, blockHeight)
+    watcher ! WatchConfirmed(probe.ref, tx1, minDepth = 1, BITCOIN_FUNDING_DEPTHOK, blockHeight)
 
     // generate a new block, this will contain the transactions
     val List(blockId) = generateBlocks(bitcoincli, 1)
@@ -196,8 +199,11 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val tx2 = ExternalWalletHelper.spendNonWalletTx(nonWalletTx2, receivingKeyIndex = 22)
     val tx3 = ExternalWalletHelper.spendNonWalletTx(nonWalletTx3, receivingKeyIndex = 23)
 
-    watcher ! WatchConfirmed(probe.ref, tx2, minDepth = 1, BITCOIN_FUNDING_DEPTHOK)
-    watcher ! WatchConfirmed(probe.ref, tx3, minDepth = 2, BITCOIN_FUNDING_DEPTHOK) // we want to be notified of tx3 after 2 confirms!
+    bitcoinClient.getBlockCount.pipeTo(probe.ref)
+    val blockHeight1 = probe.expectMsgType[Long]
+
+    watcher ! WatchConfirmed(probe.ref, tx2, minDepth = 1, BITCOIN_FUNDING_DEPTHOK, blockHeight1)
+    watcher ! WatchConfirmed(probe.ref, tx3, minDepth = 2, BITCOIN_FUNDING_DEPTHOK, blockHeight1) // we want to be notified of tx3 after 2 confirms!
 
     // mine a block and forward it to the watcher
     val List(blockId1) = generateBlocks(bitcoincli, 1)

@@ -72,7 +72,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     val tx = Transaction.read(hex)
 
     val listener = TestProbe()
-    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
+    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK, 0L)) // when using the electrum watcher 'rescanHeight' can be 0
     generateBlocks(bitcoincli, 5)
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid.toHex === txid)

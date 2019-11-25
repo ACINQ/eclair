@@ -32,7 +32,7 @@ import scodec.bits.ByteVector
 
 import scala.collection.{Set, SortedMap}
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.Try
 
 /**
@@ -79,23 +79,22 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       context become watching(watches, watchedUtxos, block2tx, Some(task))
 
     case TickNewBlock =>
-      val blockHeigthF = client.getBlockCount.map { count =>
+      client.getBlockCount.map {
+        case count =>
           log.debug(s"setting blockCount=$count")
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
-          count
       }
 
       // if there are pending WatchConfirmed(s) we trigger a rescan to be able to check if any of them was confirmed
-      // this operation is blocking but we only rescan from the last -1 block which should be quick
-      for {
-        blockHeigth <- blockHeigthF
-        _ <- if(watches.exists(w => w.isInstanceOf[WatchConfirmed])) client.rescanBlockChain(blockHeigth - 1) else Future.successful(Unit)
-      } yield ()
+      if(watches.exists(w => w.isInstanceOf[WatchConfirmed])){
+        val rescanHeigth = watches.collect { case w: WatchConfirmed => w.rescanHeight }.min
+        Await.ready(client.rescanBlockChain(rescanHeigth), 3 minutes)
 
-      // TODO: beware of the herd effect
-      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
-        Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
+        // TODO: beware of the herd effect
+        KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+          Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
+        }
       }
       context become watching(watches, watchedUtxos, block2tx, None)
 
@@ -171,7 +170,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         val parentTxid = tx.txIn(0).outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
-        self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx), blockCount)
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
