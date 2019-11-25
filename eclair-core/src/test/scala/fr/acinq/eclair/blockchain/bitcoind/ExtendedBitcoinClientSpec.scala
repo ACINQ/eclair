@@ -139,6 +139,8 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val client = new ExtendedBitcoinClient(bitcoinClient)
     val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
     val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
+    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(externalTx2).toHex).pipeTo(sender.ref)
+    sender.expectMsgType[JString]
     generateBlocks(bitcoincli, 1) // bury the tx in a block
 
     val earliestBlockHeight = ShortChannelId.coordinates(earliestShortId).blockHeight
@@ -165,10 +167,13 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
   }
 
   test("swapping wallet should make bitcoind forget the imported watch_only addresses") {
+    val probe = TestProbe()
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
 
     val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
-    ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent
+    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent
+    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
+    probe.expectMsgType[JString]
     generateBlocks(bitcoincli, 1)
 
     val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)

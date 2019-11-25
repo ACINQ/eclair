@@ -145,9 +145,8 @@ trait BitcoindService extends Logging {
     def receiveKey(index: Long = 0) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
     def sendKey(index: Long = 1) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
 
+    // create a signed tx that spends the transaction created with 'nonWalletTransaction' does not broadcast it
     def spendNonWalletTx(tx: Transaction, receivingKeyIndex: Long = 0)(implicit system: ActorSystem): Transaction = {
-      val probe = TestProbe()
-
       val spendTx = Transaction(
         version = 2L,
         txIn = TxIn(OutPoint(tx, 0), ByteVector.empty,  TxIn.SEQUENCE_FINAL) :: Nil,
@@ -159,12 +158,10 @@ trait BitcoindService extends Logging {
       val tx1 = spendTx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(sendKey().publicKey) :: Nil)
       Transaction.correctlySpends(tx1, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-      bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-      val txId = probe.expectMsgType[JString].s
-      assert(txId == tx1.txid.toHex)
       tx1
     }
 
+    // sends money from out bitcoind wallet to an external one
     def nonWalletTransaction(implicit system: ActorSystem): (Transaction, ShortChannelId) = {
       val amountToReceive = Btc(0.1)
       val probe = TestProbe()
