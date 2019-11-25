@@ -87,7 +87,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       }
 
       // if there are pending WatchConfirmed(s) we trigger a rescan to be able to check if any of them was confirmed
-      if(watches.exists(w => w.isInstanceOf[WatchConfirmed])){
+      if(watches.exists(_.isInstanceOf[WatchConfirmed])){
+        // we use the earliest rescan height, '.min' is guaranteed to run on a non-empty list
         val rescanHeigth = watches.collect { case w: WatchConfirmed => w.rescanHeight }.min
         Await.ready(client.rescanBlockChain(rescanHeigth), 3 minutes)
 
@@ -146,10 +147,11 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           }
 
         case w: WatchConfirmed =>
+          val watchAddress = eclair.scriptPubKeyToAddress(w.publicKeyScript)
           for {
-            importedAddresses <- client.listReceivedByAddress()
-            watchAddress = eclair.scriptPubKeyToAddress(w.publicKeyScript)
-            _ <- if(!importedAddresses.contains(watchAddress)) client.importAddress(watchAddress) else Future.successful(Unit)
+            isImported <- client.isAddressImported(watchAddress)
+            if !isImported
+            _ <- client.importAddress(watchAddress)
           } yield Unit
 
         case _: WatchLost => () // TODO: not implemented
