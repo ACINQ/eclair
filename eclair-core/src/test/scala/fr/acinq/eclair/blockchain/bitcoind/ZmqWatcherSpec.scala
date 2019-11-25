@@ -248,11 +248,13 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val probe = TestProbe()
     implicit val ec = system.dispatcher
     implicit val timeout = Timeout(10 seconds)
+    var numRescans = 0
     var rescannedAt: Option[Long] = None
 
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient) {
       override def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {
         rescannedAt = Some(rescanSinceHeight)
+        numRescans += 1
         super.rescanBlockChain(rescanSinceHeight)
       }
     }
@@ -307,6 +309,7 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
 
     // assert the rescan used the earliest block height of all the watchers
     assert(rescannedAt.contains(Math.min(blockHeightTx, blockHeightTx1)))
+    assert(numRescans == 1)
   }
 
 }
