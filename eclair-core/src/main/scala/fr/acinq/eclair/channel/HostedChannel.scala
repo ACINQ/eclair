@@ -323,7 +323,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           commits.getError match {
             case Some(error) =>
-              val commits2 = commits1.copy(resolvedOutgoingHtlcLeftoverIds = commits1.resolvedOutgoingHtlcLeftoverIds + htlc.id)
+              val commits2 = commits1.copy(fulfilledOutgoingHtlcLeftoverIds = commits1.fulfilledOutgoingHtlcLeftoverIds + htlc.id)
               stay using commits2 storing() replying s"Relayed hash=${fulfill.paymentHash}, error=${ChannelErrorCodes.toHostedAscii(error)}"
             case None =>
               stay using commits1 storing() replying s"Relayed hash=${fulfill.paymentHash}"
@@ -442,8 +442,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
     val localCommitmentSpec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 0L, localLCSS.localBalanceMsat, localLCSS.remoteBalanceMsat)
     val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, randomHostedChanShortId, nodeParams.hostedParams.cltvDelta,
       localLCSS.initHostedChannel.htlcMinimumMsat, nodeParams.hostedParams.feeBase, nodeParams.hostedParams.feeProportionalMillionth, localLCSS.initHostedChannel.channelCapacityMsat)
-    HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
-      channelId, isHost, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overrideProposal = None)
+    HOSTED_DATA_COMMITMENTS(remoteNodeId, ChannelVersion.STANDARD, localLCSS, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty, channelId, isHost, channelUpdate,
+      localError = None, remoteError = None, failedOutgoingHtlcLeftoverIds = Set.empty, fulfilledOutgoingHtlcLeftoverIds = Set.empty, overrideProposal = None)
   }
 
   def makeStateUpdate(commits: HOSTED_DATA_COMMITMENTS): StateUpdate = {
@@ -491,9 +491,9 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   def failTimedoutOutgoing(blockHeight: Long, commits: HOSTED_DATA_COMMITMENTS): (HOSTED_DATA_COMMITMENTS, Set[UpdateAddHtlc]) = {
-    val timedoutOutgoingHtlcs = commits.timedOutOutgoingHtlcs(blockHeight) // Find timedout outgoing HTLCs which have not been failed or fulfilled by remote peer already
+    val timedoutOutgoingHtlcs: Set[UpdateAddHtlc] = commits.timedOutOutgoingHtlcs(blockHeight) // Find timedout outgoing HTLCs which have not been failed or fulfilled by remote peer already
     Channel.failPending(timedoutOutgoingHtlcs, (origin, add) => AddHtlcFailed(commits.channelId, add.paymentHash, HtlcTimedout(commits.channelId, Set(add)), origin, None, None), relayer, commits, log)
-    (commits.copy(resolvedOutgoingHtlcLeftoverIds = timedoutOutgoingHtlcs.map(_.id) ++ commits.resolvedOutgoingHtlcLeftoverIds), timedoutOutgoingHtlcs)
+    (commits.copy(failedOutgoingHtlcLeftoverIds = timedoutOutgoingHtlcs.map(_.id) ++ commits.failedOutgoingHtlcLeftoverIds), timedoutOutgoingHtlcs)
   }
 
   initialize()

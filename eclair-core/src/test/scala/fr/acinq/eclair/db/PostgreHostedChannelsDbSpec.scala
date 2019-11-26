@@ -65,7 +65,8 @@ class PostgreHostedChannelsDbSpec extends FunSuite {
     channelUpdate = channelUpdate,
     localError = None,
     remoteError = Some(error),
-    resolvedOutgoingHtlcLeftoverIds = Set(12,67,79, 119),
+    failedOutgoingHtlcLeftoverIds = Set(12, 67, 79, 119),
+    fulfilledOutgoingHtlcLeftoverIds = Set(1, 2, 3),
     overrideProposal = Some(StateOverride(50000L, 500000 msat, 70000, 700000, randomBytes64)))
 
   test("get / insert / update a hosted commits") {

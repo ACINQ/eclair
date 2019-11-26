@@ -21,7 +21,8 @@ object HostedChannelCodecs {
       ("channelUpdateOpt" | variableSizeBytes(uint16, channelUpdateCodec)) ::
       ("localError" | optional(bool, errorCodec)) ::
       ("remoteError" | optional(bool, errorCodec)) ::
-      ("resolvedOutgoingHtlcLeftoverIds" | setCodec(uint64overflow)) ::
+      ("failedOutgoingHtlcLeftoverIds" | setCodec(uint64overflow)) ::
+      ("fulfilledOutgoingHtlcLeftoverIds" | setCodec(uint64overflow)) ::
       ("overriddenBalanceProposal" | optional(bool, stateOverrideCodec))
   }.as[HOSTED_DATA_COMMITMENTS]
 

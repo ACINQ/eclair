@@ -74,7 +74,7 @@ class HostedChannelTypesSpec extends FunSuite {
   }
 
   val hdc = HOSTED_DATA_COMMITMENTS(randomKey.publicKey, ChannelVersion.STANDARD, lcss1, futureUpdates = Nil, localCommitmentSpec, originChannels = Map.empty,
-    channelId = randomBytes32, isHost = true, channelUpdate, localError = None, remoteError = None, resolvedOutgoingHtlcLeftoverIds = Set.empty, overrideProposal = None)
+    channelId = randomBytes32, isHost = true, channelUpdate, localError = None, remoteError = None, failedOutgoingHtlcLeftoverIds = Set.empty, fulfilledOutgoingHtlcLeftoverIds = Set.empty, overrideProposal = None)
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
     val payment_preimage: ByteVector32 = randomBytes32

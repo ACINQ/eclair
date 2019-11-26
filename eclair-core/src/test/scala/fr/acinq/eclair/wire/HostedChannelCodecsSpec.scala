@@ -65,7 +65,8 @@ class HostedChannelCodecsSpec extends FunSuite {
       channelUpdate = channelUpdate,
       localError = None,
       remoteError = Some(error),
-      resolvedOutgoingHtlcLeftoverIds = Set.empty,
+      failedOutgoingHtlcLeftoverIds = Set.empty,
+      fulfilledOutgoingHtlcLeftoverIds = Set(1, 2, 10000),
       overrideProposal = None)
 
     {

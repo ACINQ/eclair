@@ -503,12 +503,14 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     assert(relayerA.expectMsgType[ForwardFulfill].htlc.paymentHash === cmdAdd2.paymentHash)
     bob2alice.forward(alice, CMD_HOSTED_MESSAGE(channelId, bobFulfill1)) // Bob tries to fulfill a timedout HTLC, but it's too late
     relayerA.expectNoMsg(100 millis)
-    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].resolvedOutgoingHtlcLeftoverIds === Set(aliceUpdateAdd1.id, aliceUpdateAdd2.id)) // 1st HTLC is failed, 3nd one is fulfilled
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].failedOutgoingHtlcLeftoverIds === Set(1))
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].fulfilledOutgoingHtlcLeftoverIds === Set(2))
     alice ! CurrentBlockCount(400155) // Nothing happens to already failed/fulfilled HTLCs
     relayerA.expectNoMsg(100 millis)
     alice ! CurrentBlockCount(400165)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === cmdAdd3.paymentHash)
-    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].resolvedOutgoingHtlcLeftoverIds === Set(aliceUpdateAdd1.id, aliceUpdateAdd2.id, aliceUpdateAdd3.id))
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].failedOutgoingHtlcLeftoverIds === Set(1, 3))
+    assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].fulfilledOutgoingHtlcLeftoverIds === Set(2))
     assert(alice.stateData.asInstanceOf[HOSTED_DATA_COMMITMENTS].nextRemoteUpdates.exists(_.asInstanceOf[UpdateFulfillHtlc].id === aliceUpdateAdd2.id))
     relayerA.expectNoMsg(100 millis)
   }

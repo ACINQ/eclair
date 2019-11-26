@@ -44,7 +44,8 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
                                    channelUpdate: ChannelUpdate,
                                    localError: Option[Error],
                                    remoteError: Option[Error],
-                                   resolvedOutgoingHtlcLeftoverIds: Set[Long], // CLOSED channel may have in-flight outgoing HTLCs which can later be failed or fulfilled, collect their IDs here
+                                   failedOutgoingHtlcLeftoverIds: Set[Long], // CLOSED channel may have in-flight outgoing HTLCs which can later be failed, collect their IDs here
+                                   fulfilledOutgoingHtlcLeftoverIds: Set[Long], // CLOSED channel may have in-flight outgoing HTLCs which can later be fulfilled, collect their IDs here
                                    overrideProposal: Option[StateOverride] // CLOSED channel override can be initiated by Host, a new proposed balance should be retained once this happens
                                   ) extends ChannelCommitments with HostedData { me =>
 
@@ -70,9 +71,10 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
 
   def getHtlcCrossSigned(directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = localSpec.findHtlcById(htlcId, directionRelativeToLocal).map(_.add)
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = currentAndNextInFlightHtlcs.collect {
-    case htlc if htlc.direction == OUT && blockheight > htlc.add.cltvExpiry.toLong && !resolvedOutgoingHtlcLeftoverIds.contains(htlc.add.id) => htlc.add
-  }
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = for {
+    htlc <- currentAndNextInFlightHtlcs if htlc.direction == OUT && blockheight > htlc.add.cltvExpiry.toLong
+    if !failedOutgoingHtlcLeftoverIds.contains(htlc.add.id) && !fulfilledOutgoingHtlcLeftoverIds.contains(htlc.add.id)
+  } yield htlc.add
 
   def nextLocalUnsignedLCSS(blockDay: Long): LastCrossSignedState = {
     val (incomingHtlcs, outgoingHtlcs) = nextLocalSpec.htlcs.toList.partition(_.direction == IN)
@@ -168,7 +170,7 @@ case class HOSTED_DATA_COMMITMENTS(remoteNodeId: PublicKey,
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[HOSTED_DATA_COMMITMENTS, (HOSTED_DATA_COMMITMENTS, Origin, UpdateAddHtlc)] =
     // Technically peer may send a preimage any moment, even if new LCSS has not been reached yet so do our best and always resolve on getting it
     nextLocalSpec.findHtlcById(fulfill.id, OUT) match {
-      case _ if resolvedOutgoingHtlcLeftoverIds.contains(fulfill.id) => throw UnknownHtlcId(channelId, fulfill.id)
+      case _ if failedOutgoingHtlcLeftoverIds.contains(fulfill.id) || fulfilledOutgoingHtlcLeftoverIds.contains(fulfill.id) => throw UnknownHtlcId(channelId, fulfill.id)
       case Some(htlc) if htlc.add.paymentHash == fulfill.paymentHash => Right((addProposal(Right(fulfill)), originChannels(fulfill.id), htlc.add))
       case Some(_) => throw InvalidHtlcPreimage(channelId, fulfill.id)
       case None => throw UnknownHtlcId(channelId, fulfill.id)
