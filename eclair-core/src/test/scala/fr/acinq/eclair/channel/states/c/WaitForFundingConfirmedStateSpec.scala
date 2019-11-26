@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
-import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelReestablish, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestkitBaseClass, randomKey}
 import org.scalatest.Outcome
 
@@ -59,6 +59,36 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain)))
     }
+  }
+
+  test("recv INPUT_RECONNECTED") { f =>
+    import f._
+
+    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+
+    // simulate channel disconnection
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+
+    // simulate channel reconnection
+    alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    awaitCond(alice.stateName == SYNCING)
+
+    alice2bob.expectMsgType[ChannelReestablish]
+    alice ! ChannelReestablish(aliceData.commitments.channelId, 1L, 2L) // simulate bob --- channel_reestablish ---> alice
+
+    val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+    assert(watch.rescanHeight == alice.underlyingActor.timestampToBlockHeight(aliceData.waitingSince))
+
+    // UNIT TEST for 'timestampToBlockHeight'
+    // waitingSince is 2 days old, so we expect 144 * 2 block delta
+    val waitingSince = 1574254800 // 2019-11-20T13:00:00+00:00
+    val now = 1574427600          // 2019-11-22T13:00:00+00:00
+    val expectedBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight - (144 * 2)
+
+    assert(alice.underlyingActor.timestampToBlockHeight(waitingSince, now) == expectedBlockHeight)
   }
 
   test("recv FundingLocked") { f =>
