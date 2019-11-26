@@ -23,7 +23,7 @@ import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.channel.{ChannelVersion, State}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
@@ -261,12 +261,18 @@ object CustomTypeHints {
     classOf[OutgoingPaymentStatus.Succeeded] -> "sent"
   ))
 
-  val paymentEvent = CustomTypeHints(Map(
+  val paymentEventStatus = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
     classOf[PaymentRelayed] -> "payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
     classOf[PaymentFailed] -> "payment-failed"
+  ))
+
+  val pendingRelayStatus = CustomTypeHints(Map(
+    classOf[CMD_FULFILL_HTLC] -> "cmd-fulfill-htlc",
+    classOf[CMD_FAIL_HTLC] -> "cmd-fail-htlc",
+    classOf[CMD_FAIL_MALFORMED_HTLC] -> "cmd-fail-malformed-htlc"
   ))
 }
 
@@ -305,6 +311,6 @@ object JsonSupport extends Json4sSupport {
     new JavaUUIDSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
-    CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
-
+    CustomTypeHints.paymentEventStatus +
+    CustomTypeHints.pendingRelayStatus).withTypeHintFieldName("type")
 }

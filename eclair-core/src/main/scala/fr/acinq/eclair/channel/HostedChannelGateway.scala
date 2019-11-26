@@ -14,7 +14,7 @@ import fr.acinq.eclair.wire
 
 class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
-  context.system.scheduler.schedule(1.day, 1.day)(context.system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS))
+  context.system.scheduler.schedule(6.hours, 6.hours)(context.system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS))
 
   val inMemoryHostedChannels: HashBiMap[ByteVector32, ActorRef] = HashBiMap.create[ByteVector32, ActorRef]
 
@@ -71,7 +71,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
 
   def restoreOrNotFound(channelId: ByteVector32)(whenRestored: ActorRef => Unit): Unit =
     nodeParams.db.hostedChannels.getChannel(channelId).map(restoreChannel) match {
-      case None => sender ! s"Hosted channel id=$channelId not found"
+      case None => sender ! s"Hosted channel channelId=$channelId not found"
       case Some(channel) => whenRestored(channel)
     }
 

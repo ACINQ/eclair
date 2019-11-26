@@ -24,6 +24,7 @@ object HostedChannel {
 class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, relayer: ActorRef) extends FSM[State, HostedData] with FSMDiagnosticActorLogging[State, HostedData] {
 
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+
   context.system.eventStream.subscribe(self, CMD_HOSTED_REMOVE_IDLE_CHANNELS.getClass)
 
   val forwarder: ActorRef = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
@@ -54,17 +55,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         goto(CLOSED) sending commits.getError.get
       } else {
         goto(SYNCING) sending InvokeHostedChannel(nodeParams.chainHash, commits.lastCrossSignedState.refundScriptPubKey)
-      }
-
-    case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
-      val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
-      if (failedAdds.nonEmpty && commits1.getError.isEmpty) {
-        val error = Error(commits1.channelId, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
-        stay using commits1.copy(localError = Some(error)) storing()
-      } else if (failedAdds.nonEmpty) {
-        stay using commits1 storing()
-      } else {
-        stay
       }
   }
 
@@ -197,33 +187,12 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   when(NORMAL) {
-    case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
-      Try(commits.sendFulfill(c)) match {
-        case Success((commits1, fulfill)) if c.commit => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fulfill sending makeStateUpdate(commits1)
-        case Success((commits1, fulfill)) => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fulfill
-        case Failure(cause) => handleCommandError(cause, commits, c) acking(commits.channelId, c.id)
-      }
-
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.sendAdd(c, Channel.origin(c, sender), nodeParams.currentBlockHeight)) match {
         case Failure(cause) => handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, cause, Channel.origin(c, sender), Some(commits.channelUpdate), Some(c)), commits, c)
         case Success(Left(error)) => handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, error, Channel.origin(c, sender), Some(commits.channelUpdate), Some(c)), commits, c)
         case Success(Right((commits1, add))) if c.commit => stay using commits1 storing() replying "ok" sending add sending makeStateUpdate(commits1)
         case Success(Right((commits1, add))) => stay using commits1 storing() replying "ok" sending add
-      }
-
-    case Event(c: CMD_FAIL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
-      Try(commits.sendFail(c, nodeParams.privateKey)) match {
-        case Success((commits1, fail)) if c.commit => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail sending makeStateUpdate(commits1)
-        case Success((commits1, fail)) => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail
-        case Failure(cause) => handleCommandError(cause, commits, c) acking(commits.channelId, c.id)
-      }
-
-    case Event(c: CMD_FAIL_MALFORMED_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
-      Try(commits.sendFailMalformed(c)) match {
-        case Success((commits1, fail)) if c.commit => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail sending makeStateUpdate(commits1)
-        case Success((commits1, fail)) => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail
-        case Failure(cause) => handleCommandError(cause, commits, c) acking(commits.channelId, c.id)
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, add: UpdateAddHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
@@ -342,18 +311,14 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
     case Event(c: CurrentBlockCount, commits: HOSTED_DATA_COMMITMENTS) =>
       val (commits1, failedAdds) = failTimedoutOutgoing(c.blockCount, commits)
-      if (failedAdds.nonEmpty && commits1.getError.isEmpty) {
+      if (failedAdds.nonEmpty) {
         localSuspend(commits1, ChannelErrorCodes.ERR_HOSTED_TIMED_OUT_OUTGOING_HTLC)
-      } else if (failedAdds.nonEmpty) {
-        stay using commits1 storing()
       } else {
         stay
       }
 
     case Event(CMD_HOSTED_MESSAGE(_, fulfill: UpdateFulfillHtlc), commits: HOSTED_DATA_COMMITMENTS) =>
       Try(commits.receiveFulfill(fulfill)) match {
-        case Failure(cause) if commits.localError.isEmpty =>
-          localSuspend(commits, ByteVector.view(cause.getMessage.getBytes)) replying s"Failed reason=${cause.getMessage}"
         case Success(Right((commits1, origin, htlc))) =>
           relayer ! ForwardFulfill(fulfill, origin, htlc)
           commits.getError match {
@@ -363,8 +328,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
             case None =>
               stay using commits1 storing() replying s"Relayed hash=${fulfill.paymentHash}"
           }
-        case otherwise =>
-          stay replying s"Failed reason=$otherwise"
+        case Failure(cause) => localSuspend(commits, ByteVector.view(cause.getMessage.getBytes)) replying s"Failed reason=${cause.getMessage}"
+        case otherwise => stay replying s"Failed reason=$otherwise"
       }
 
     case Event(c: CMD_ADD_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
@@ -375,6 +340,27 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
         nodeParams.hostedParams.feeProportionalMillionth, commits.lastCrossSignedState.initHostedChannel.channelCapacityMsat, enable = false)
       handleCommandError(AddHtlcFailed(commits.channelId, c.paymentHash, ChannelUnavailable(commits.channelId), Channel.origin(c, sender), Some(disabledChannelUpdate), Some(c)), commits, c)
 
+    case Event(c: CMD_FULFILL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
+      Try(commits.sendFulfill(c)) match {
+        case Success((commits1, fulfill)) if c.commit => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fulfill sending makeStateUpdate(commits1)
+        case Success((commits1, fulfill)) => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fulfill
+        case Failure(cause) => handleCommandError(cause, commits, c) acking(commits.channelId, c.id)
+      }
+
+    case Event(c: CMD_FAIL_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
+      Try(commits.sendFail(c, nodeParams.privateKey)) match {
+        case Success((commits1, fail)) if c.commit => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail sending makeStateUpdate(commits1)
+        case Success((commits1, fail)) => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail
+        case Failure(cause) => handleCommandError(cause, commits, c) acking(commits.channelId, c.id)
+      }
+
+    case Event(c: CMD_FAIL_MALFORMED_HTLC, commits: HOSTED_DATA_COMMITMENTS) =>
+      Try(commits.sendFailMalformed(c)) match {
+        case Success((commits1, fail)) if c.commit => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail sending makeStateUpdate(commits1)
+        case Success((commits1, fail)) => stay using commits1 storing() replying "ok" acking(commits.channelId, c.id) sending fail
+        case Failure(cause) => handleCommandError(cause, commits, c) acking(commits.channelId, c.id)
+      }
+
     case Event(c: CMD_HOSTED_OVERRIDE, commits: HOSTED_DATA_COMMITMENTS) if commits.isHost && commits.getError.isDefined =>
       val overridingLocallySignedLCSS = makeOverridingLocallySignedLCSS(commits, c.newLocalBalance)
       val localSO = StateOverride(blockDay = nodeParams.currentBlockDay, localBalanceMsat = overridingLocallySignedLCSS.localBalanceMsat,
@@ -384,7 +370,8 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
       stay using commits.copy(overrideProposal = Some(localSO)) storing() sending localSO replying "ok"
 
     case Event(CMD_GETINFO, commits: HOSTED_DATA_COMMITMENTS) =>
-      sender ! RES_HOSTED_GETINFO(remoteNodeId, commits.channelId, stateName, commits)
+      val pendingRelays = nodeParams.db.pendingRelay.listPendingRelay(commits.channelId)
+      sender ! RES_HOSTED_GETINFO(remoteNodeId, commits.channelId, stateName, commits, commits.nextLocalSpec, pendingRelays)
       stay
 
     case Event(any, _) =>
@@ -436,6 +423,7 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   }
 
   def restoreMissingChannel(channelId: ByteVector32, remoteLCSS: LastCrossSignedState, isHost: Boolean): HostedFsmState = {
+    log.info(s"restoring missing hosted channel channelId=$channelId")
     val commits = restoreEmptyCommits(remoteLCSS.reverse, channelId, isHost)
     val isLocalSigOk = remoteLCSS.verifyRemoteSig(nodeParams.privateKey.publicKey)
     val isRemoteSigOk = remoteLCSS.reverse.verifyRemoteSig(remoteNodeId)
@@ -480,7 +468,12 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
   def localSuspend(commits: HOSTED_DATA_COMMITMENTS, errCode: ByteVector): HostedFsmState = {
     context.system.eventStream.publish(ChannelErrorOccurred(self, commits.channelId, remoteNodeId, LocalError(new Throwable(errCode.toHex)), isFatal = true))
     val commits1 = commits.copy(localError = Some(Error(commits.channelId, errCode)))
-    goto(CLOSED) using commits1 storing() sending commits1.localError.get
+    if (stateName == OFFLINE) {
+      // Never exit OFFLINE state except by an actual reconnection
+      stay using commits1 storing()
+    } else {
+      goto(CLOSED) using commits1 storing() sending commits1.localError.get
+    }
   }
 
   def handleCommandError(cause: Throwable, commits: HOSTED_DATA_COMMITMENTS, cmd: Command): HostedFsmState = {
@@ -491,7 +484,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   def syncAndResend(commits: HOSTED_DATA_COMMITMENTS, leftovers: List[LocalOrRemoteUpdate], lcss: LastCrossSignedState, spec: CommitmentSpec): HOSTED_DATA_COMMITMENTS = {
     val commits1 = commits.copy(futureUpdates = leftovers.filter(_.isLeft), lastCrossSignedState = lcss, localSpec = spec)
-
     forwarder ! commits1.lastCrossSignedState
     for (update <- commits1.nextLocalUpdates) forwarder ! update
     if (commits1.nextLocalUpdates.nonEmpty) self ! CMD_SIGN
