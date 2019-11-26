@@ -2290,10 +2290,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def now = Platform.currentTime.milliseconds.toSeconds
 
   /**
-    * Estimates the number of blocks that have been found between now and the given @param time,
+    * Estimates the number of blocks that have been found between @param currentTime and the given @param time,
     * NB: this is an estimation and assumes blocks have been found exactly every 10mins which is not always the case
 
     * @param time: timestamp expressed in seconds, must be before now
+    * @param currentTime: unix timestamp of the current time, defaults to now but can be overridden for test
     * @return: the block height corresponding to the @param time
     */
   def timestampToBlockHeight(time: Long, currentTime: Long = now) = {
