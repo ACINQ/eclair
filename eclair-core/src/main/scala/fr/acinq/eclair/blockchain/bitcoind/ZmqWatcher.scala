@@ -47,10 +47,19 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
-  // this is to initialize block count
-  self ! TickNewBlock
+  self ! TickNewBlock // this is to initialize block count
+  // on startup we need to wait until all the channels have been restored, we'll receive
+  // watches from them and we want to scan only once for all, 'TickInitialRescan' triggers the rescan
+  context.system.scheduler.scheduleOnce(15 seconds)(self ! TickInitialRescan)
 
-  def receive: Receive = watching(Set(), Map(), SortedMap(), None)
+  /**
+    * init -----------------> scanning ---- TickInitialRescan ---> watching
+    *
+    * The watcher is initialized into a scanning state during which it will queue the events,
+    * when a 'TickInitialRescan' is received the watcher will instruct bitcoind to rescan. Only after
+    * the initial chain rescan is completed the watcher is ready to process watch events (both spent and confirm).
+    */
+  def receive: Receive = scanPending(Set(), List.empty[Any])
 
   def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
@@ -79,24 +88,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       context become watching(watches, watchedUtxos, block2tx, Some(task))
 
     case TickNewBlock =>
-      client.getBlockCount.map {
-        case count =>
-          log.debug(s"setting blockCount=$count")
-          blockCount.set(count)
-          context.system.eventStream.publish(CurrentBlockCount(count))
-      }
-
+      updateBlockCount()
       // if there are pending WatchConfirmed(s) we trigger a rescan to be able to check if any of them was confirmed
-      if(watches.exists(_.isInstanceOf[WatchConfirmed])){
-        // we use the earliest rescan height, '.min' is guaranteed to run on a non-empty list
-        val rescanHeigth = watches.collect { case w: WatchConfirmed => w.rescanHeight }.min
-        Await.ready(client.rescanBlockChain(rescanHeigth), 3 minutes)
-
-        // TODO: beware of the herd effect
-        KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
-          Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
-        }
-      }
+      val watchesConfirmed = watches.collect { case w: WatchConfirmed => w }
+      rescanAndCheck(watchesConfirmed)
       context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
@@ -205,6 +200,38 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     case 'watches => sender ! watches
   }
 
+  // watchesConfirmed = all watch confirmed events, eventQueue = everything else
+  def scanPending(watchesConfirmed: Set[WatchConfirmed], eventQueue: List[Any]): Receive = {
+    case w:WatchConfirmed => context.become(scanPending(watchesConfirmed + w, eventQueue))
+
+    // we must be able to compute heights by timestamp even before scanning
+    case GetHeightByTimestamp(time) => client.getHeightByTimestamp(time).map(GetHeightByTimestampResponse).pipeTo(sender)
+
+    // while pending initial scan we can still validate announcements
+    case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
+
+    case TickNewBlock => updateBlockCount()
+
+    case TickInitialRescan =>
+      log.info(s"doing initial chain rescan")
+      rescanAndCheck(watchesConfirmed).onSuccess { case _ =>
+        log.info(s"initial chain rescan completed, watcher ready")
+        context.system.scheduler.scheduleOnce(1 seconds)(eventQueue.foreach(self ! _)) // fire the events that we did not process while scanning
+        context.become(watching(watchesConfirmed.asInstanceOf[Set[Watch]], Map(), SortedMap(), None)) // rescan completed now goto watching
+      }
+
+    // non watch related events are stored until we go to watching state
+    case unhandled =>
+      log.info(s"received $unhandled in 'pendingScan' state")
+      context.become(scanPending(watchesConfirmed, eventQueue :+ unhandled))
+  }
+
+  def updateBlockCount() = client.getBlockCount.map { count =>
+    log.debug(s"setting blockCount=$count")
+    blockCount.set(count)
+    context.system.eventStream.publish(CurrentBlockCount(count))
+  }
+
   // NOTE: we use a single thread to publish transactions so that it preserves order.
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
@@ -219,6 +246,20 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         after(3 seconds, context.system.scheduler)(Future.successful({})).map(x => publish(tx, isRetry = true))
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
     }
+  }
+
+  /**
+    * Rescan the chain and check for confirmed watches, the rescan operation
+    * is blocking while the check is not.
+    */
+  def rescanAndCheck(watches: Set[WatchConfirmed]): Future[Unit] = {
+    if (watches.nonEmpty) {
+      for {
+        // we use the earliest rescan height '.min' is guaranteed to run on a non-empty list
+        _ <- client.rescanBlockChain(watches.map(_.rescanHeight).min)
+        _ = KamonExt.timeFuture("watcher.newblock.checkwatch.time") { Future.sequence(watches.map(checkConfirmed)) } // non blocking
+      } yield Unit
+    } else Future.successful(Unit)
   }
 
   def checkConfirmed(w: WatchConfirmed) = {
@@ -245,6 +286,7 @@ object ZmqWatcher {
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
   case object TickNewBlock
+  case object TickInitialRescan
 
   def utxo(w: Watch): Option[OutPoint] =
     w match {

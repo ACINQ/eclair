@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.TickInitialRescan
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
@@ -132,6 +133,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     implicit val system = ActorSystem(s"system-$name")
     val setup = new Setup(datadir)
     val kit = Await.result(setup.bootstrap, 10 seconds)
+    kit.watcher ! TickInitialRescan // during test we want to initialize the watcher immediately
     nodes = nodes + (name -> kit)
   }
 
