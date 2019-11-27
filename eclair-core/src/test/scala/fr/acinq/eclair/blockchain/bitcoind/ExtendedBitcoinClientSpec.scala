@@ -18,11 +18,11 @@ package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.ActorSystem
 import akka.actor.Status.Failure
-import akka.pattern.pipe
+import akka.pattern._
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair._
@@ -34,6 +34,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
+import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -87,13 +88,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
 
   test("validate short channel Ids") {
     val sender = TestProbe()
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-
-    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val client = new ExtendedBitcoinClient(bitcoinrpcclient)
     val (channelTransaction, channelShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
 
     // we won't be able to get the raw transaction if it's non-wallet
@@ -130,13 +125,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
 
   test("importmulti should import several watch addresses at once") {
     val sender = TestProbe()
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-
-    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val client = new ExtendedBitcoinClient(bitcoinrpcclient)
     val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
     val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
     bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(externalTx2).toHex).pipeTo(sender.ref)
@@ -196,5 +185,28 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     assertThrows[JsonRPCError](Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds))
   }
 
+  test("getHeightByTimestamp should return the height of the first block created before the timestamp") {
+    val probe = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
 
+
+    val expectedTime = Platform.currentTime.milliseconds.toSeconds
+
+    generateBlocks(bitcoincli, 10)
+
+    bitcoinClient.getHeightByTimestamp(expectedTime).pipeTo(probe.ref)
+    val foundHeight = probe.expectMsgType[Long]
+
+    // assert the block we found at the given height has a
+    // block time smaller or equal to the expected time
+    bitcoinClient.getBlock(foundHeight)pipeTo(probe.ref)
+    val block = probe.expectMsgType[Block]
+    assert(block.header.time <= expectedTime)
+
+    // assert the next block is older
+    bitcoinClient.getBlock(foundHeight + 1)pipeTo(probe.ref)
+    val nextBlock = probe.expectMsgType[Block]
+    assert(nextBlock.header.time > expectedTime)
+
+  }
 }

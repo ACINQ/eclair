@@ -34,6 +34,29 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
+  def getBlock(height: Long)(implicit ec: ExecutionContext): Future[Block] = for {
+    blockHash <- getBlockHash(height)
+    block <- getBlock(blockHash)
+  } yield block
+
+  def getBlock(blockHash: String)(implicit ec: ExecutionContext): Future[Block] = {
+    rpcClient.invoke("getblock", blockHash, 0).collect { case JString(rawBlock) => Block.read(rawBlock) }
+  }
+
+  def getBlockHash(height: Long)(implicit ec: ExecutionContext): Future[String] = {
+    rpcClient.invoke("getblockhash", height).collect { case JString(blockHash) => blockHash }
+  }
+
+  def getHeightByTimestamp(time: Long, fromHeight: Option[Long] = None)(implicit ec: ExecutionContext): Future[Long] = for {
+    height <- fromHeight match {
+      case Some(h) => Future.successful(h)
+      case None    => getBlockCount
+    }
+    blockHash <- getBlockHash(height)
+    JInt(blockTime) <- rpcClient.invoke("getblockheader", blockHash).map(_ \ "time")
+    foundHeight <- if(blockTime.longValue() <= time) Future.successful(height) else getHeightByTimestamp(time, Some(height - 1))
+  } yield foundHeight
+
   def isAddressImported(address: String)(implicit ec: ExecutionContext): Future[Boolean] = {
     listReceivedByAddress(filter = Some(address)).map(_.nonEmpty)
   }

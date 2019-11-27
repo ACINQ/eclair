@@ -78,6 +78,8 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   */
 final case class PublishAsap(tx: Transaction)
 final case class ValidateRequest(ann: ChannelAnnouncement)
+final case class GetHeightByTimestamp(time: Long)
+final case class GetHeightByTimestampResponse(height: Long)
 sealed trait UtxoStatus
 object UtxoStatus {
   case object Unspent extends UtxoStatus

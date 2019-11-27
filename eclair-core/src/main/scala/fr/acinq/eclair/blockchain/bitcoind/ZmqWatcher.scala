@@ -200,8 +200,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
       context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
-    case 'watches => sender ! watches
+    case GetHeightByTimestamp(time) => client.getHeightByTimestamp(time).map(GetHeightByTimestampResponse).pipeTo(sender)
 
+    case 'watches => sender ! watches
   }
 
   // NOTE: we use a single thread to publish transactions so that it preserves order.

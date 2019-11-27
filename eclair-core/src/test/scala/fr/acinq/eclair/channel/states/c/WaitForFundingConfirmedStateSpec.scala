@@ -79,16 +79,14 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     alice2bob.expectMsgType[ChannelReestablish]
     alice ! ChannelReestablish(aliceData.commitments.channelId, 1L, 2L) // simulate bob --- channel_reestablish ---> alice
 
+    val heightByTimestamp = alice2blockchain.expectMsgType[GetHeightByTimestamp]
+    assert(heightByTimestamp.time == aliceData.waitingSince)
+
+    val computedBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight - 1
+    alice ! GetHeightByTimestampResponse(computedBlockHeight)
+
     val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-    assert(watch.rescanHeight == alice.underlyingActor.timestampToBlockHeight(aliceData.waitingSince))
-
-    // UNIT TEST for 'timestampToBlockHeight'
-    // waitingSince is 2 days old, so we expect 144 * 2 block delta
-    val waitingSince = 1574254800 // 2019-11-20T13:00:00+00:00
-    val now = 1574427600          // 2019-11-22T13:00:00+00:00
-    val expectedBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight - (144 * 2)
-
-    assert(alice.underlyingActor.timestampToBlockHeight(waitingSince, now) == expectedBlockHeight)
+    assert(watch.rescanHeight == computedBlockHeight)
   }
 
   test("recv FundingLocked") { f =>
