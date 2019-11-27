@@ -22,7 +22,7 @@ import akka.actor.{ActorRef, FSM, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.Commitments
+import fr.acinq.eclair.channel.{Commitments, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -225,7 +225,11 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   def spawnChildPaymentFsm(childId: UUID): ActorRef = {
-    val childCfg = cfg.copy(id = childId, publishEvent = false)
+    val upstream = cfg.upstream match {
+      case Upstream.Local(parentId) => Upstream.Local(childId)
+      case _ => cfg.upstream
+    }
+    val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream)
     context.actorOf(PaymentLifecycle.props(nodeParams, childCfg, router, register))
   }
 

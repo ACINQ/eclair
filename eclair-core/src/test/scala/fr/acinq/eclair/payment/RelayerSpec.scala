@@ -20,16 +20,15 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPacket}
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
-import fr.acinq.eclair.router.{Announcements, ChannelHop, GetNetworkStats, GetNetworkStatsResponse, NodeHop, TickComputeNetworkStats}
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, TestkitBaseClass, UInt64, nodeFee, randomBytes32}
@@ -513,55 +512,6 @@ class RelayerSpec extends TestkitBaseClass {
     payFSM.expectMsg(fulfill_ba)
   }
 
-  test("handle an htlc-fulfill after restart") { f =>
-    import f._
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-
-    val parentId = UUID.randomUUID()
-    val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
-    val (preimage1, preimage2) = (randomBytes32, randomBytes32)
-    val (paymentHash1, paymentHash2) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2))
-
-    val add1 = UpdateAddHtlc(channelId_bc, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill1 = UpdateFulfillHtlc(channelId_bc, 72, preimage1)
-    val origin1 = Origin.Local(id1, None)
-    val add2 = UpdateAddHtlc(channelId_bc, 75, 1105 msat, paymentHash1, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill2 = UpdateFulfillHtlc(channelId_bc, 75, preimage1)
-    val origin2 = Origin.Local(id2, None)
-    val add3 = UpdateAddHtlc(channelId_bc, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill3 = UpdateFulfillHtlc(channelId_bc, 78, preimage2)
-    val origin3 = Origin.Local(id3, None)
-
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, parentId, None, paymentHash1, add1.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash1, add2.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, id3, None, paymentHash2, add3.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-
-    sender.send(relayer, ForwardFulfill(fulfill1, origin1, add1))
-    eventListener.expectNoMsg(100 millis)
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFulfill(fulfill2, origin2, add2))
-    val e1 = eventListener.expectMsgType[PaymentSent]
-    assert(e1.id === parentId)
-    assert(e1.paymentPreimage === preimage1)
-    assert(e1.paymentHash === paymentHash1)
-    assert(e1.parts.length === 2)
-    assert(e1.amount === 1666.msat)
-    assert(nodeParams.db.payments.getOutgoingPayment(id1).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFulfill(fulfill3, origin3, add3))
-    val e2 = eventListener.expectMsgType[PaymentSent]
-    assert(e2.id === id3)
-    assert(e2.paymentPreimage === preimage2)
-    assert(e2.paymentHash === paymentHash2)
-    assert(e2.parts.length === 1)
-    assert(e2.amount === 1729.msat)
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-  }
-
   test("relay an htlc-fail") { f =>
     import f._
 
@@ -589,48 +539,6 @@ class RelayerSpec extends TestkitBaseClass {
 
     // we forward to the FSM responsible for the payment to trigger the retry mechanism.
     payFSM.expectMsg(fail_ba)
-  }
-
-  test("handle an htlc-fail after restart") { f =>
-    import f._
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-
-    val parentId = UUID.randomUUID()
-    val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
-    val (paymentHash1, paymentHash2) = (randomBytes32, randomBytes32)
-
-    val add1 = UpdateAddHtlc(channelId_bc, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail1 = UpdateFailHtlc(channelId_bc, 72, ByteVector.empty)
-    val origin1 = Origin.Local(id1, None)
-    val add2 = UpdateAddHtlc(channelId_bc, 75, 1105 msat, paymentHash1, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail2 = UpdateFailHtlc(channelId_bc, 75, ByteVector.empty)
-    val origin2 = Origin.Local(id2, None)
-    val add3 = UpdateAddHtlc(channelId_bc, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail3 = UpdateFailHtlc(channelId_bc, 78, ByteVector.empty)
-    val origin3 = Origin.Local(id3, None)
-
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, parentId, None, paymentHash1, add1.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash1, add2.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, id3, None, paymentHash2, add3.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-
-    sender.send(relayer, ForwardFail(fail1, origin1, add1))
-    eventListener.expectNoMsg(100 millis)
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFail(fail2, origin2, add2))
-    val e1 = eventListener.expectMsgType[PaymentFailed]
-    assert(e1.id === parentId)
-    assert(e1.paymentHash === paymentHash1)
-    assert(nodeParams.db.payments.getOutgoingPayment(id1).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFail(fail3, origin3, add3))
-    val e2 = eventListener.expectMsgType[PaymentFailed]
-    assert(e2.id === id3)
-    assert(e2.paymentHash === paymentHash2)
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
   }
 
   test("get outgoing channels") { f =>
@@ -669,55 +577,6 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, GetOutgoingChannels())
     val OutgoingChannels(channels6) = sender.expectMsgType[OutgoingChannels]
     assert(channels6.size === 1)
-  }
-
-  test("replay pending commands after restart") { f =>
-    import f._
-
-    val channel = TestProbe()
-    val channelData = ChannelCodecsSpec.normal
-    val channelId = channelData.commitments.channelId
-    val remoteNodeId = channelData.commitments.remoteParams.nodeId
-    val (preimage1, preimage2) = (randomBytes32, randomBytes32)
-    val onionHash = randomBytes32
-
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 1, CMD_FULFILL_HTLC(1, preimage1, commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 100, CMD_FULFILL_HTLC(100, preimage2, commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 101, CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure), commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 102, CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001, commit = true))
-
-    // Channel comes online: we should replay pending commands.
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
-    val expected = Set(
-      CMD_FULFILL_HTLC(1, preimage1),
-      CMD_FULFILL_HTLC(100, preimage2),
-      CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure)),
-      CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001)
-    )
-    val received = expected.map(_ => channel.expectMsgType[Command])
-    assert(received === expected)
-
-    channel.expectMsg(CMD_SIGN) // we should then ask to sign all the updates.
-    channel.expectNoMsg(100 millis)
-
-    // 3 of the 4 HTLCs were ack-ed (maybe the peer disconnected/reconnected again).
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 1))
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 100))
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 101))
-    // Once ack-ed, these commands should be removed from the DB.
-    awaitCond(nodeParams.db.pendingRelay.listPendingRelay(channelId).length === 1)
-
-    // The last failure wasn't ack-ed, so it's re-sent.
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, SYNCING, NORMAL, channelData))
-    channel.expectMsg(CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001))
-    channel.expectMsg(CMD_SIGN)
-    channel.expectNoMsg(100 millis)
-
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 102))
-    awaitCond(nodeParams.db.pendingRelay.listPendingRelay(channelId).isEmpty)
-
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
-    channel.expectNoMsg(100 millis)
   }
 
 }

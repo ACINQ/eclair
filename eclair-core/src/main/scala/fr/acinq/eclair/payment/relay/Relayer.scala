@@ -23,11 +23,10 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.collection.mutable
@@ -73,6 +72,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
+  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer))
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
   private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, self, router, commandBuffer, register))
 
@@ -130,100 +130,51 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
       }
 
     case Status.Failure(addFailed: AddHtlcFailed) =>
-      import addFailed.paymentHash
       addFailed.origin match {
-        case Origin.Local(id, None) => handleLocalPaymentAfterRestart(PaymentFailed(id, paymentHash, Nil))
+        case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
         case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
         case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
-        case Origin.TrampolineRelayed(htlcs, None) =>
-          // TODO: @t-bast: reconcile after restart
-          log.error(s"detected pending trampoline payment after restart: not implemented yet, some channels might get closed ($htlcs)...")
+        case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
         case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
       }
 
-    case ForwardFulfill(fulfill, to, add) =>
+    case ff@ForwardFulfill(fulfill, to, add) =>
       to match {
-        case Origin.Local(id, None) =>
-          val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
-          handleLocalPaymentAfterRestart(PaymentSent(id, add.paymentHash, fulfill.paymentPreimage, Seq(PaymentSent.PartialPayment(id, add.amountMsat, feesPaid, add.channelId, None))))
-        case Origin.Local(_, Some(sender)) =>
-          sender ! fulfill
+        case Origin.Local(_, None) => postRestartCleaner forward ff
+        case Origin.Local(_, Some(sender)) => sender ! fulfill
         case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
           val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
           context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
-        case Origin.TrampolineRelayed(htlcs, None) =>
-          // TODO: @t-bast: reconcile after restart
-          log.error(s"detected pending trampoline payment after restart: not implemented yet, some channels might get closed ($htlcs)...")
+        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
         case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fulfill
       }
 
-    case ForwardFail(fail, to, add) =>
+    case ff@ForwardFail(fail, to, _) =>
       to match {
-        case Origin.Local(id, None) =>
-          handleLocalPaymentAfterRestart(PaymentFailed(id, add.paymentHash, Nil))
-        case Origin.Local(_, Some(sender)) =>
-          sender ! fail
+        case Origin.Local(_, None) => postRestartCleaner forward ff
+        case Origin.Local(_, Some(sender)) => sender ! fail
         case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
           val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-        case Origin.TrampolineRelayed(htlcs, None) =>
-          // TODO: @t-bast: reconcile after restart
-          log.error(s"detected pending trampoline payment after restart: not implemented yet, some channels might get closed ($htlcs)...")
+        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
         case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fail
       }
 
-    case ForwardFailMalformed(fail, to, add) =>
+    case ff@ForwardFailMalformed(fail, to, _) =>
       to match {
-        case Origin.Local(id, None) =>
-          handleLocalPaymentAfterRestart(PaymentFailed(id, add.paymentHash, Nil))
-        case Origin.Local(_, Some(sender)) =>
-          sender ! fail
+        case Origin.Local(_, None) => postRestartCleaner forward ff
+        case Origin.Local(_, Some(sender)) => sender ! fail
         case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
           val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-        case Origin.TrampolineRelayed(htlcs, None) =>
-          // TODO: @t-bast: reconcile after restart
-          log.error(s"detected pending trampoline payment after restart: not implemented yet, some channels might get closed ($htlcs)...")
+        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
         case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fail
       }
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
     case "ok" => () // ignoring responses from channels
-  }
-
-  /**
-   * It may happen that we sent a payment and then re-started before the payment completed.
-   * When we receive the HTLC fulfill/fail associated to that payment, the payment FSM that generated them doesn't exist
-   * anymore so we need to reconcile the database.
-   *
-   * TODO: @t-bast: this should move to a dedicated "PostRestartCleanup" actor that also handles broken trampoline MPP relays.
-   */
-  def handleLocalPaymentAfterRestart(paymentResult: PaymentEvent): Unit = paymentResult match {
-    case e: PaymentFailed =>
-      nodeParams.db.payments.updateOutgoingPayment(e)
-      // Since payments can be multi-part, we only emit the payment failed event once all child payments have failed.
-      nodeParams.db.payments.getOutgoingPayment(e.id).foreach(p => {
-        val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
-        if (payments.forall(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) {
-          context.system.eventStream.publish(PaymentFailed(p.parentId, e.paymentHash, Nil))
-        }
-      })
-    case e: PaymentSent =>
-      nodeParams.db.payments.updateOutgoingPayment(e)
-      // Since payments can be multi-part, we only emit the payment sent event once all child payments have settled.
-      nodeParams.db.payments.getOutgoingPayment(e.id).foreach(p => {
-        val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
-        if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
-          val succeeded = payments.collect {
-            case OutgoingPayment(id, _, _, _, amount, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
-              PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
-          }
-          context.system.eventStream.publish(PaymentSent(p.parentId, e.paymentHash, e.paymentPreimage, succeeded))
-        }
-      })
-    case _ =>
   }
 
 }

@@ -89,10 +89,10 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
         handler ! PoisonPill
         validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
-            log.warning(s"rejecting trampoline payment with paymentHash=$paymentHash (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} htlcCount=${parts.length} reason=$failure)")
+            log.warning(s"rejecting trampoline payment with paymentHash=$paymentHash (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length} reason=$failure)")
             rejectPayment(upstream, Some(failure))
           case None =>
-            log.info(s"relaying trampoline payment with paymentHash=$paymentHash (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} htlcCount=${parts.length})")
+            log.info(s"relaying trampoline payment with paymentHash=$paymentHash (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length})")
             val paymentId = relay(paymentHash, upstream, nextPayload, nextPacket)
             context become main(pendingIncoming - paymentHash, pendingOutgoing + (paymentId -> upstream))
         }

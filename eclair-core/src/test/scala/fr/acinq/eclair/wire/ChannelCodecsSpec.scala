@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Deterministi
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed, TrampolineRelayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
@@ -396,22 +397,27 @@ object ChannelCodecsSpec {
     DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
 
-  val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
-  val fundingAmount = fundingTx.txOut(0).amount
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
+  val normal = makeChannelDataNormal(htlcs, Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)))
 
-  val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-  val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
-  val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
-    localNextHtlcId = 32L,
-    remoteNextHtlcId = 4L,
-    originChannels = Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)),
-    remoteNextCommitInfo = Right(randomKey.publicKey),
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = ByteVector32.Zeroes)
+  def makeChannelDataNormal(htlcs: Seq[DirectedHtlc], origins: Map[Long, Origin]): DATA_NORMAL = {
+    val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING.toMilliSatoshi)
+    val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
+    val fundingAmount = fundingTx.txOut.head.amount
+    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
 
-  val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING.toMilliSatoshi)
+    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
+    val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+      localNextHtlcId = 32L,
+      remoteNextHtlcId = 4L,
+      originChannels = origins,
+      remoteNextCommitInfo = Right(randomKey.publicKey),
+      commitInput = commitmentInput,
+      remotePerCommitmentSecrets = ShaChain.init,
+      channelId = htlcs.headOption.map(_.add.channelId).getOrElse(ByteVector32.Zeroes))
 
-  val normal = DATA_NORMAL(commitments, ShortChannelId(42), true, None, channelUpdate, None, None)
+    DATA_NORMAL(commitments, ShortChannelId(42), buried = true, None, channelUpdate, None, None)
+  }
 
   object JsonSupport {
 
