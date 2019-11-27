@@ -40,7 +40,7 @@ class BackupHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
 
-    val handler = system.actorOf(BackupHandler.props(db, dest, None))
+    val handler = system.actorOf(BackupHandler.props(db, dest, backupScript = "ls"))
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[BackupEvent])
 
