@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 
@@ -49,7 +49,7 @@ case class ChannelUnavailable                  (override val channelId: ByteVect
 case class InvalidFinalScript                  (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid final script")
 case class FundingTxTimedout                   (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx timed out")
 case class FundingTxSpent                      (override val channelId: ByteVector32, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
-case class HtlcTimedout                        (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids
+case class HtlcTimedout                        (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out: ids=${htlcs.take(10).map(_.id).mkString(",")}") // we only display the first 10 ids
 case class HtlcWillTimeoutUpstream             (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs that should be fulfilled are close to timing out upstream: ids=${htlcs.take(10).map(_.id).mkString}") // we only display the first 10 ids
 case class HtlcOverridenByLocalCommit          (override val channelId: ByteVector32) extends ChannelException(channelId, "htlc was overriden by local commit")
 case class FeerateTooSmall                     (override val channelId: ByteVector32, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"remote fee rate is too small: remoteFeeratePerKw=$remoteFeeratePerKw")

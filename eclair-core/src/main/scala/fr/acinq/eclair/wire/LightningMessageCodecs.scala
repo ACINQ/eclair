@@ -16,9 +16,12 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.wire
+import fr.acinq.eclair.{KamonExt, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
-import scodec.Codec
+import kamon.Kamon
+import kamon.tag.TagSet
+import scodec.bits.BitVector
+import scodec.{Attempt, Codec}
 import scodec.codecs._
 
 /**
@@ -285,5 +288,21 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+
+  val meteredLightningMessageCodec = Codec[LightningMessage](
+    (msg: LightningMessage) => KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
+    (bits: BitVector) => {
+      // this is a bit more involved, because we don't know beforehand what the type of the message will be
+      val timer = Kamon.timer("scodec.decode.time")
+      val begin = System.nanoTime()
+      val res = lightningMessageCodec.decode(bits)
+      val end = System.nanoTime()
+      res match {
+        case Attempt.Successful(decoded) => timer.withTag("type", decoded.value.getClass.getSimpleName).record(end - begin)
+        case Attempt.Failure(_) => timer.withTag("type", "unknown").record(end - begin)
+      }
+      res
+    }
+  )
 
 }
