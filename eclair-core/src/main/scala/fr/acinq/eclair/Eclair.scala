@@ -121,7 +121,7 @@ trait Eclair {
 
   def hostedChannelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[AnyRef]
 
-  def decodeHostedState(state: ByteVector)(implicit timeout: Timeout): Future[HostedState]
+  def decodeHostedState(state: ByteVector)(implicit timeout: Timeout): Future[RemoteHostedStateResult]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -318,6 +318,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
   def hostedChannelInfo(channelId: ByteVector32)(implicit timeout: Timeout): Future[AnyRef] =
     (appKit.hostedChannelGateway ? Forward(channelId, CMD_GETINFO)).mapTo[AnyRef]
 
-  def decodeHostedState(state: ByteVector)(implicit timeout: Timeout): Future[HostedState] =
-    Future(HostedChannelCodecs.hostedStateCodec.decodeValue(state.toBitVector).require)
+  def decodeHostedState(state: ByteVector)(implicit timeout: Timeout): Future[RemoteHostedStateResult] = Future {
+    val remoteState = HostedChannelCodecs.hostedStateCodec.decodeValue(state.toBitVector).require
+    val isLocalSigOk = remoteState.lastCrossSignedState.verifyRemoteSig(appKit.nodeParams.privateKey.publicKey)
+    RemoteHostedStateResult(remoteState, isLocalSigOk)
+  }
 }
