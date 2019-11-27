@@ -235,7 +235,7 @@ object TorProtocolHandler {
 
   // @formatter:off
   sealed trait Authentication
-  case class Password(password: String)                                              extends Authentication { override def toString = "password" }
+  case class Password(password: String) extends Authentication { override def toString = "password" }
   case class SafeCookie(nonce: ByteVector = fr.acinq.eclair.randomBytes32) extends Authentication { override def toString = "safecookie" }
   // @formatter:on
 
