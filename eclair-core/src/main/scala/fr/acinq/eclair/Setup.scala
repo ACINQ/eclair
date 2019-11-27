@@ -278,7 +278,7 @@ class Setup(datadir: File,
         import scala.collection.JavaConversions._
         val outgoingNodeAddresses: Set[String] = config.getStringList("akka-backup.outgoing-node-addresses").toSet
         val incomingNodeIds: Set[PublicKey] = config.getStringList("akka-backup.incoming-node-ids").toSet.map((nodeId: String) => PublicKey.fromBin(ByteVector.fromValidHex(nodeId), checkValid = true))
-        system.actorOf(SimpleSupervisor.props(AkkaBackupHandler.props(nodeParams, incomingNodeIds, outgoingNodeAddresses, new File(chaindir, "eclair.sqlite.bak"), new File(chaindir, "remotebackups"), config.getInt("akka-backup.throttle")), AkkaBackupHandler.actorName, SupervisorStrategy.Resume))
+        system.actorOf(SimpleSupervisor.props(AkkaBackupHandler.props(nodeParams, incomingNodeIds, outgoingNodeAddresses, new File(chaindir, "eclair.sqlite.bak"), new File(chaindir, "remotebackups"), config.getInt("akka-backup.throttle")), "akka-backuphandler", SupervisorStrategy.Resume), AkkaBackupHandler.actorName)
       } else {
         throw new RuntimeException("Enable either script-backup or akka-backup")
       }
