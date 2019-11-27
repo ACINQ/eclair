@@ -152,6 +152,24 @@ package object eclair {
     }
   }
 
+  /**
+    * Converts a bitcoin script from a transaction output into its address representation,
+    * supports P2PKH, P2PSH, P2WPKH and P2WSH
+    *
+    * @param scriptPubKey a bitcoin script
+    * @return the bitcoin address of this scriptPubKey
+    */
+  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
+    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
+      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
+    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
+      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
+    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
+    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
+    case _ => throw new IllegalArgumentException(s"unknown script type script=$scriptPubKey")
+  }
+
+
   implicit class LongToBtcAmount(l: Long) {
     // @formatter:off
     def msat: MilliSatoshi = MilliSatoshi(l)

@@ -22,10 +22,10 @@ import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
-import org.json4s.JsonAST._
+import org.json4s.JsonAST.{JValue, _}
+import scodec.bits.ByteVector
 
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.concurrent.{Await, ExecutionContext, Future}
 
 /**
   * Created by PM on 26/04/2016.
@@ -34,15 +34,75 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
+  def getBlock(height: Long)(implicit ec: ExecutionContext): Future[Block] = for {
+    blockHash <- getBlockHash(height)
+    block <- getBlock(blockHash)
+  } yield block
+
+  def getBlock(blockHash: String)(implicit ec: ExecutionContext): Future[Block] = {
+    rpcClient.invoke("getblock", blockHash, 0).collect { case JString(rawBlock) => Block.read(rawBlock) }
+  }
+
+  def getBlockHash(height: Long)(implicit ec: ExecutionContext): Future[String] = {
+    rpcClient.invoke("getblockhash", height).collect { case JString(blockHash) => blockHash }
+  }
+
+  def getHeightByTimestamp(time: Long, fromHeight: Option[Long] = None)(implicit ec: ExecutionContext): Future[Long] = for {
+    height <- fromHeight match {
+      case Some(h) => Future.successful(h)
+      case None    => getBlockCount
+    }
+    blockHash <- getBlockHash(height)
+    JInt(blockTime) <- rpcClient.invoke("getblockheader", blockHash).map(_ \ "time")
+    foundHeight <- if(blockTime.longValue() <= time) Future.successful(height) else getHeightByTimestamp(time, Some(height - 1))
+  } yield foundHeight
+
+  def isAddressImported(address: String)(implicit ec: ExecutionContext): Future[Boolean] = {
+    listReceivedByAddress(filter = Some(address)).map(_.nonEmpty)
+  }
+
+  def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[String]] = {
+    (filter match {
+      case Some(address) => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly, address)
+      case None          => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly)
+    }).collect {
+      case JArray(elems) => elems.map { json => (json \ "address").extract[String] }
+    }
+  }
+
+  def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
+    rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
+  }
+
+  def importMulti(scripts: Seq[ByteVector], rescan: Boolean = false)(implicit ec: ExecutionContext): Future[Unit] = {
+    val options = JObject(("rescan", JBool(rescan)))
+    val requests = JArray(scripts.map(el => JObject(
+      ("scriptPubKey", JString(el.toHex)),
+      ("timestamp", JString("now")),
+      ("watchonly", JBool(true))
+    )).toList)
+    rpcClient.invoke("importmulti", requests, options).map(_ => Unit)
+  }
+
+  def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {
+    rpcClient.invoke("rescanblockchain", rescanSinceHeight).map(_ => Unit)
+  }
+
+  /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    */
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("gettransaction", txId)
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
+  /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    */
   def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("gettransaction", txId)
       .map(json => (json \ "blockhash").extractOpt[String])
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
@@ -66,7 +126,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
       txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]])
-      txs <- Future.sequence(txids.map(getTransaction(_)))
+      txs <- Future.sequence(txids.map(getRawTransaction(_)))
     } yield txs
 
   /**
@@ -74,14 +134,20 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     * @param ec
     * @return
     */
-  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
+  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     rpcClient.invoke("getrawtransaction", txId) collect {
-      case JString(raw) => raw
+      case JString(raw) => Transaction.read(raw)
     }
 
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txId).map(raw => Transaction.read(raw))
+    for {
+      json <- rpcClient.invoke("gettransaction", txId)
+      JString(hex) = json \ "hex"
+    } yield Transaction.read(hex)
 
+  /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    */
   def getTransactionMeta(txId: String)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
       tx_opt <- getTransaction(txId) map(Some(_)) recover { case _ => None }
@@ -95,6 +161,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } yield json != JNull
 
   /**
+    * Assumes the transaction is indexed by a previous call to 'importaddress'
     *
     * @param txId transaction id
     * @param ec
@@ -157,29 +224,23 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
         _ = span0.finish()
         span1 = Kamon.spanBuilder("getblock").start()
-        txid: String <- rpcClient.invoke("getblock", blockHash).map {
-          case json => Try {
-            val JArray(txs) = json \ "tx"
-            txs(txIndex).extract[String]
-          } getOrElse ByteVector32.Zeroes.toHex
-        }
+        // we force non verbose output to retrieve the entire serialized block
+        block <- rpcClient.invoke("getblock", blockHash, 0).collect { case JString(s) => Block.read(s) }
         _ = span1.finish()
-        span2 = Kamon.spanBuilder("getrawtx").start()
-        tx <- getRawTransaction(txid)
-        _ = span2.finish()
+        tx = block.tx(txIndex)
         span3 = Kamon.spanBuilder("utxospendable-mempool").start()
-        unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
+        unspent <- isTransactionOutputSpendable(tx.txid.toHex, outputIndex, includeMempool = true)
         _ = span3.finish()
         fundingTxStatus <- if (unspent) {
           Future.successful(UtxoStatus.Unspent)
         } else {
           // if this returns true, it means that the spending tx is *not* in the blockchain
-          isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map {
+          isTransactionOutputSpendable(tx.txid.toHex, outputIndex, includeMempool = false).map {
             case res => UtxoStatus.Spent(spendingTxConfirmed = !res)
           }
         }
         _ = span.finish()
-      } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
+      } yield ValidateResult(c, Right((tx, fundingTxStatus)))
 
   } recover { case t: Throwable => ValidateResult(c, Left(t)) }
 
