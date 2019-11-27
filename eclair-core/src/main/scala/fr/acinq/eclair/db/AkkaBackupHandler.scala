@@ -49,7 +49,7 @@ class AkkaBackupHandler(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey],
   def remoteSend(message: Any): Unit =
     for {
       addressAndPort <- outgoingNodeAddresses
-      path = s"akka.tcp://${context.system.name}@$addressAndPort/user/${AkkaBackupHandler.actorName}"
+      path = s"akka.ssl.tcp://${context.system.name}@$addressAndPort/user/${AkkaBackupHandler.actorName}"
     } context.actorSelection(path) ! message
 }
 
