@@ -19,13 +19,15 @@ package fr.acinq.eclair.integration
 import java.io.{File, PrintWriter}
 import java.util.{Properties, UUID}
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.TickInitialRescan
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
@@ -35,10 +37,10 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -47,9 +49,8 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
@@ -95,8 +96,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.to-remote-delay-blocks" -> 144,
     "eclair.multi-part-payment-expiry" -> "20 seconds"))
 
-  implicit val formats = DefaultFormats
-
   override def beforeAll(): Unit = {
     startBitcoind()
   }
@@ -133,6 +132,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     implicit val system = ActorSystem(s"system-$name")
     val setup = new Setup(datadir)
     val kit = Await.result(setup.bootstrap, 10 seconds)
+    kit.watcher ! TickInitialRescan // during test we want to initialize the watcher immediately
     nodes = nodes + (name -> kit)
   }
 
@@ -547,19 +547,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val canSend2 = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     // Fee updates may impact balances, but it shouldn't have changed much.
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
-  }
-
-  /**
-   * We currently use p2pkh script Helpers.getFinalScriptPubKey
-   */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
-    case _ => ???
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
@@ -987,6 +974,75 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  test("funding is confirmed when channel is OFFLINE") {
+    val initMessage = Init(ByteVector.fromValidHex("0200"), ByteVector.fromValidHex("088a"))
+    val sender = TestProbe()
+
+    instantiateEclairNode("X", ConfigFactory.parseMap(Map("eclair.node-alias" -> "X", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    instantiateEclairNode("Y", ConfigFactory.parseMap(Map("eclair.node-alias" -> "Y", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+
+    val node1 = nodes("X")
+    val node2 = nodes("Y")
+
+    // connect node1 <--> node2
+    val address = node2.nodeParams.publicAddresses.head
+    sender.send(node1.switchboard, Peer.Connect(
+      nodeId = node2.nodeParams.nodeId,
+      address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))
+    ))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+    // open channel node1 --> node2
+    sender.send(node1.switchboard, Peer.OpenChannel(
+      remoteNodeId = node2.nodeParams.nodeId,
+      fundingSatoshis = 5000000 sat,
+      pushMsat = 0 msat,
+      fundingTxFeeratePerKw_opt = None,
+      channelFlags = None,
+      timeout_opt = None))
+
+    val channelCreated = sender.expectMsgType[String](10 seconds)
+    assert(channelCreated.startsWith("created channel"))
+    val channelId = ByteVector32.fromValidHex(channelCreated.split(" ").last)
+
+    awaitCond({
+      sender.send(node1.register, 'channels)
+      val channelmap = sender.expectMsgType[Map[ByteVector32, ActorRef]]
+      channelmap.exists(_._1 == channelId)
+    })
+
+    // get actor handling the channel in node1
+    sender.send(node1.register, 'channels)
+    val Some(channel) = sender.expectMsgType[Map[ByteVector32, ActorRef]].get(channelId)
+
+    // shut down the channel
+    sender.send(channel, INPUT_DISCONNECTED)
+
+    // reset bitcoind's wallet (this forces the rescan and reimport from the watcher)
+    ExternalWalletHelper.swapWallet()
+
+    // confirm the funding transaction while node1 was "offline"
+    generateBlocks(bitcoincli, 6)
+
+    // get actor handling the node2 peer
+    sender.send(node1.switchboard, 'peers)
+    val remoteNode2 = sender.expectMsgType[Iterable[ActorRef]].head
+
+    // channel is now OFFLINE
+    sender.send(node1.register, Forward(channelId, CMD_GETINFO))
+    val chanInfo = sender.expectMsgType[RES_GETINFO]
+    assert(chanInfo.state == OFFLINE)
+
+    node1.system.eventStream.subscribe(sender.ref, classOf[ChannelStateChanged])
+
+    // simulate reconnection
+    channel ! INPUT_RECONNECTED(remoteNode2, initMessage, initMessage)
+
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == SYNCING)
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == WAIT_FOR_FUNDING_CONFIRMED)
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == WAIT_FOR_FUNDING_LOCKED)
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == NORMAL)
   }
 
 }
