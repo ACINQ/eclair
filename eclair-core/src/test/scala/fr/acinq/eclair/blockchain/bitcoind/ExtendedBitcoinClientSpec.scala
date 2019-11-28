@@ -89,7 +89,21 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
   test("validate short channel Ids") {
     val sender = TestProbe()
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val (channelTransaction, channelShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    val channelTransaction = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    client.publishTransaction(channelTransaction).pipeTo(sender.ref)
+    sender.expectMsgType[String]
+
+    val List(blockHash) = generateBlocks(bitcoincli, 1)
+
+    client.getBlockCount.pipeTo(sender.ref)
+    val height = sender.expectMsgType[Long]
+
+    bitcoinrpcclient.invoke("getblock", blockHash, 0).pipeTo(sender.ref)
+    val JString(rawBlock) = sender.expectMsgType[JString]
+    val block = Block.read(rawBlock)
+    val txIndex = block.tx.indexWhere(_.txid == channelTransaction.txid)
+
+    val channelShortId = ShortChannelId(height.toInt, txIndex, 0)
 
     // we won't be able to get the raw transaction if it's non-wallet
     client.getRawTransaction(channelTransaction.txid.toHex).pipeTo(sender.ref)
@@ -126,13 +140,19 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
   test("importmulti should import several watch addresses at once") {
     val sender = TestProbe()
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    val externalTx1 = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
     val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(externalTx2).toHex).pipeTo(sender.ref)
-    sender.expectMsgType[JString]
-    generateBlocks(bitcoincli, 1) // bury the tx in a block
 
-    val earliestBlockHeight = ShortChannelId.coordinates(earliestShortId).blockHeight
+    client.publishTransaction(externalTx1).pipeTo(sender.ref)
+    client.publishTransaction(externalTx2).pipeTo(sender.ref)
+
+    sender.expectMsgType[String]
+    sender.expectMsgType[String]
+
+    val List(blockHash) = generateBlocks(bitcoincli, 1)
+
+    bitcoinrpcclient.invoke("getblock", blockHash, 1).map(_ \ "height").pipeTo(sender.ref)
+    val earliestBlockHeight= sender.expectMsgType[JInt].num.longValue()
 
     // when not imported transactions can't be looked up
     client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
@@ -159,10 +179,16 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val probe = TestProbe()
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
 
-    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
-    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-    probe.expectMsgType[JString]
+    val tx = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and unconfirmed non wallet transaction
+    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system) // tx1 spends tx
+
+    // publish both transaction
+    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
+    bitcoinClient.publishTransaction(tx1).pipeTo(probe.ref)
+    probe.expectMsgType[String]
+    probe.expectMsgType[String]
+
+    // confirm both transaction
     generateBlocks(bitcoincli, 1)
 
     val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)

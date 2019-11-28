@@ -72,15 +72,18 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(), bitcoinClient))
     watcher ! TickInitialRescan // force the watcher to transition to "watching"
 
-    // tx is an unspent and confirmed non wallet transaction
-    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system)
+    // tx spends from our wallet to an external address
+    val tx = ExternalWalletHelper.nonWalletTransaction(system)
+    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
+    probe.expectMsgType[String]
+    generateBlocks(bitcoincli, 1)
     val isSpendable = Await.result(bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false)(system.dispatcher), 10 seconds)
     assert(isSpendable)
 
     // now tx is spent by tx1
     val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system)
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-    probe.expectMsgType[JString]
+    bitcoinClient.publishTransaction(tx1).pipeTo(probe.ref)
+    probe.expectMsgType[String]
     generateBlocks(bitcoincli, 1)
     val isSpendable1 = Await.result(bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false)(system.dispatcher), 10 seconds)
     assert(!isSpendable1)
@@ -133,8 +136,8 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val probe = TestProbe()
     implicit val ec = system.dispatcher
 
-    // tx is an unspent and confirmed non wallet transaction
-    val (tx, shortId) = ExternalWalletHelper.nonWalletTransaction(system)
+    // tx is an unspent and unconfirmed non wallet transaction
+    val tx = ExternalWalletHelper.nonWalletTransaction(system)
     val watchAddress = eclair.scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
 
     var addressImported = false
@@ -145,14 +148,21 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
       }
     }
 
+    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
+    probe.expectMsgType[String]
+
+    generateBlocks(bitcoincli, 1)
+
+    bitcoinClient.getBlockCount.pipeTo(probe.ref)
+    val blockHeight = probe.expectMsgType[Long]
+
     val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(), bitcoinClient))
     watcher ! TickInitialRescan // force the watcher to transition to "watching"
-
 
     Await.ready(bitcoinClient.importAddress(watchAddress), 30 seconds) // import the address manually
     addressImported = false // resetting the flag to perform the check later
 
-    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 6, BITCOIN_FUNDING_DEPTHOK, ShortChannelId.coordinates(shortId).blockHeight)
+    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 6, BITCOIN_FUNDING_DEPTHOK, blockHeight)
 
     generateBlocks(bitcoincli, 5)
 
@@ -186,8 +196,16 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     assert(rescannedAt.isEmpty)
 
     // tx and tx1 are unspent and unconfirmed non wallet transactions
-    val (nonWalletTx, _) = ExternalWalletHelper.nonWalletTransaction(system)
-    val (nonWalletTx1, _) = ExternalWalletHelper.nonWalletTransaction(system)
+    val nonWalletTx = ExternalWalletHelper.nonWalletTransaction(system)
+    val nonWalletTx1 = ExternalWalletHelper.nonWalletTransaction(system)
+
+    bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
+    bitcoinClient.publishTransaction(nonWalletTx1).pipeTo(probe.ref)
+    probe.expectMsgType[String]
+    probe.expectMsgType[String]
+
+    generateBlocks(bitcoincli, 1)
+
     val tx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx)
     val tx1 = ExternalWalletHelper.spendNonWalletTx(nonWalletTx1, receivingKeyIndex = 2) // changing receiving key tweaks the address
 
@@ -243,13 +261,22 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     val currentBlockHeight = probe.expectMsgType[Long]
 
     // create an external tx and let's be notified when it's spent
-    val (nonWalletTx, _) = ExternalWalletHelper.nonWalletTransaction(system)
+    val nonWalletTx = ExternalWalletHelper.nonWalletTransaction(system)
+    bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
+    probe.expectMsgType[String]
+
+    generateBlocks(bitcoincli, 1)
+
     // tx spending the external one, we want to be notified by the watcher when it's confirmed
     val spendingTx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx)
 
     val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentBlockHeight), bitcoinClient))
     watcher ! WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT)
+    watcher ! WatchConfirmed(probe.ref, nonWalletTx, 1L, BITCOIN_TX_CONFIRMED(nonWalletTx), currentBlockHeight)
     watcher ! WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), currentBlockHeight)
+
+    bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
+    probe.expectMsgType[String]
 
     bitcoinClient.publishTransaction(spendingTx).pipeTo(probe.ref)
     probe.expectMsgType[String]
@@ -273,6 +300,7 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
 
     // assert the watchers worked correctly
     probe.expectMsgType[WatchEventConfirmed] // 'spendingTx' has been confirmed
+    probe.expectMsgType[WatchEventConfirmed] // 'nonWalletTx' has been confirmed
     probe.expectMsgType[WatchEventSpent] // 'nonWalletTx' has been spent
   }
 }

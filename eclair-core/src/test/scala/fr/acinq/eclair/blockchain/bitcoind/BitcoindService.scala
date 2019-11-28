@@ -162,7 +162,7 @@ trait BitcoindService extends Logging {
     }
 
     // sends money from out bitcoind wallet to an external one
-    def nonWalletTransaction(implicit system: ActorSystem): (Transaction, ShortChannelId) = {
+    def nonWalletTransaction(implicit system: ActorSystem): Transaction = {
       val amountToReceive = Btc(0.1)
       val probe = TestProbe()
       val externalWalletAddress = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, Crypto.hash160(receiveKey().publicKey.value))
@@ -191,23 +191,7 @@ trait BitcoindService extends Logging {
       val sig = Transaction.signInput(tx, 0, Script.pay2pkh(receiveKey().publicKey), SIGHASH_ALL, 2500 sat, SigVersion.SIGVERSION_BASE, receiveKey().privateKey)
       val tx1 = tx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(receiveKey().publicKey.value) :: Nil)
       Transaction.correctlySpends(tx1, Seq(incomingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
-      bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-      val txId = probe.expectMsgType[JString].s
-      generateBlocks(bitcoincli, 1) // bury it in a block
-
-      bitcoinrpcclient.invoke("getbestblockhash").pipeTo(probe.ref)
-      val blockHash = probe.expectMsgType[JString].s
-
-      bitcoinrpcclient.invoke("getblock", blockHash, 0).pipeTo(probe.ref)
-      val JString(rawBlock) = probe.expectMsgType[JString]
-      val block = Block.read(rawBlock)
-      val txIndex = block.tx.indexWhere(_.txid.toHex == txId)
-
-      bitcoinrpcclient.invoke("getblockchaininfo").pipeTo(probe.ref)
-      val height = (probe.expectMsgType[JValue] \ "blocks").extract[Int]
-
-      (tx1, ShortChannelId(height, txIndex, 0))
+      tx1
     }
 
     def swapWallet()(implicit system: ActorSystem) = {
