@@ -231,6 +231,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
 object ZmqWatcher {
 
+  val MIN_PRUNE_TARGET_SIZE = 25000000000L // minimum save prune target size is ~25gb
+
   def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
   case object TickNewBlock
