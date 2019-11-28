@@ -244,17 +244,15 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
 
     // create an external tx and let's be notified when it's spent
     val (nonWalletTx, _) = ExternalWalletHelper.nonWalletTransaction(system)
-    val watchSpent = WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT)
-
     // tx spending the external one, we want to be notified by the watcher when it's confirmed
     val spendingTx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx)
-    bitcoinClient.publishTransaction(spendingTx).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-    val watchConfirmed = WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), currentBlockHeight)
 
     val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentBlockHeight), bitcoinClient))
-    watcher ! watchSpent
-    watcher ! watchConfirmed
+    watcher ! WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT)
+    watcher ! WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), currentBlockHeight)
+
+    bitcoinClient.publishTransaction(spendingTx).pipeTo(probe.ref)
+    probe.expectMsgType[String]
 
     // generate a few blocks to enable an actual scan
     generateBlocks(bitcoincli, 2)
