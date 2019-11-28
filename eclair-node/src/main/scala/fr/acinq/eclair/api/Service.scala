@@ -18,7 +18,6 @@ package fr.acinq.eclair.api
 
 import java.util.UUID
 
-import akka.actor.{Actor, ActorSystem, Props}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -36,20 +35,22 @@ import spray.http.CacheDirectives._
 import spray.routing.authentication.{BasicAuth, UserPass}
 import spray.routing.{ExceptionHandler, HttpServiceActor, MalformedFormFieldRejection, Route}
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
 case class ErrorResponse(error: String)
 
-class Service(password: String, eclairApi: Eclair)(implicit actorSystem: ActorSystem) extends HttpServiceActor with ExtraDirectives with Logging {
+trait Service extends ExtraDirectives with Logging {
 
   import JsonSupport.{json4sFormats, serialization, json4sMarshaller}
 
-  implicit val ec = actorSystem.dispatcher
-
+  implicit val ec = ExecutionContext.global
   implicit val timeout = Timeout(30 seconds)
 
-  val apiExceptionHandler = ExceptionHandler {
+  val password: String
+  val eclairApi: Eclair
+
+  implicit val apiExceptionHandler = ExceptionHandler {
     case t: IllegalArgumentException =>
       logger.error(s"API call failed with cause=${t.getMessage}", t)
       complete(StatusCodes.BadRequest, ErrorResponse(t.getMessage))
@@ -64,10 +65,8 @@ class Service(password: String, eclairApi: Eclair)(implicit actorSystem: ActorSy
 
   def userPassAuthenticator(userPass: Option[UserPass]): Future[Option[String]] = userPass match {
     case Some(UserPass(user, pass)) if pass == password => Future.successful(Some("user"))
-    case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
+    case _ => Future.successful(None)
   }
-
-  override def receive: Receive = runRoute(route)
 
   def route: Route = {
     respondWithHeaders(customHeaders) {
@@ -188,7 +187,7 @@ class Service(password: String, eclairApi: Eclair)(implicit actorSystem: ActorSy
               path("createinvoice") {
                 formFields("description".as[String], amountMsatFormParam_opt, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[Option[ByteVector32]](sha256HashUnmarshaller), "allowMultiPart".as[Boolean].?) {
                   (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt) =>
-                   complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt.getOrElse(false)))
+                    complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt.getOrElse(false)))
                 }
               } ~
               path("getinvoice") {
@@ -228,9 +227,6 @@ class Service(password: String, eclairApi: Eclair)(implicit actorSystem: ActorSy
               } ~
               path("usablebalances") {
                 complete(eclairApi.usableBalances())
-              } ~
-              path("getnewaddress"){
-                complete(eclairApi.newAddress())
               }
           }
         }

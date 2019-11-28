@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
-import fr.acinq.eclair.router.{Announcements, ChannelDesc, PublicChannel, RouteRequest, RouteResponse, Router}
+import fr.acinq.eclair.router.{Announcements, ChannelDesc, GetNetworkStats, NetworkStats, PublicChannel, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import scodec.bits.ByteVector
 
@@ -99,6 +99,8 @@ trait Eclair {
   def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
   def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]]
+
+  def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]]
 
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]]
 
@@ -270,6 +272,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
+
+  override def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]] = (appKit.router ? GetNetworkStats).mapTo[Option[NetworkStats]]
 
   override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     val filter = getDefaultTimestampFilters(from_opt, to_opt)
