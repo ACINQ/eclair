@@ -360,7 +360,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx))
     bob2blockchain.expectMsgType[PublishAsap]
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    // the WatchConfirmed for the commitment has 'rescanHeight == currentHeight'
+    val watch = bob2blockchain.expectMsgType[WatchConfirmed]
+    assert(watch.rescanHeight == bob.underlyingActor.nodeParams.currentBlockHeight)
   }
 
   test("recv UpdateAddHtlc (value too small)") { f =>
