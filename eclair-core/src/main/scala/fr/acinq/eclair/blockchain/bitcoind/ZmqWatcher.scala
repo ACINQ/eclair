@@ -274,7 +274,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           }
         }
       case None =>
-        log.warning(s"could not get confirmations of tx=${w.txId} for watch=$w")
+        log.debug(s"could not get confirmations of tx=${w.txId} for watch=$w")
     }
   }
 
