@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, NodeParams, randomBytes32}
@@ -34,8 +35,7 @@ import scala.util.{Failure, Success, Try}
  *
  * Created by PM on 17/06/2016.
  */
-class MultiPartHandler(nodeParams: NodeParams,
-                       db: IncomingPaymentsDb) extends ReceiveHandler {
+class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBuffer: ActorRef) extends ReceiveHandler {
 
   import MultiPartHandler._
 
@@ -79,53 +79,59 @@ class MultiPartHandler(nodeParams: NodeParams,
     case p: IncomingPacket.FinalPacket if doHandle(p) => db.getIncomingPayment(p.add.paymentHash) match {
       case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
         case Some(cmdFail) =>
-          ctx.sender ! cmdFail
+          commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, p.add.id, cmdFail)
         case None =>
           log.info(s"received payment for paymentHash=${p.add.paymentHash} amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
           pendingPayments.get(p.add.paymentHash) match {
             case Some((_, handler)) =>
-              handler forward MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
+              handler ! MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
             case None =>
               val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
-              handler forward MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
+              handler ! MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
               pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
           }
       }
       case None =>
-        ctx.sender ! CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
+        val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
+        commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, p.add.id, cmdFail)
     }
 
     case MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, failure, parts) =>
       log.warning(s"payment with paymentHash=$paymentHash paidAmount=${parts.map(_.payment.amount).sum} failed ($failure)")
       pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
-      parts.foreach(p => p.sender ! CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
+      parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true)))
       pendingPayments = pendingPayments - paymentHash
 
     case MultiPartPaymentFSM.MultiPartHtlcSucceeded(paymentHash, parts) =>
       val received = PaymentReceived(paymentHash, parts.map(_.payment))
       log.info(s"received complete payment for paymentHash=$paymentHash amount=${received.amount}")
+      // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
+      db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
       pendingPayments.get(paymentHash).foreach {
         case (preimage: ByteVector32, handler: ActorRef) =>
           handler ! PoisonPill
-          parts.foreach(p => p.sender ! CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true))
+          parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true)))
       }
-      db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
       ctx.system.eventStream.publish(received)
       pendingPayments = pendingPayments - paymentHash
       onSuccess(received)
 
     case MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, p, failure) => failure match {
-      case Some(failure) => p.sender ! CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true)
+      case Some(failure) => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
       // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
       // expensive code path by fetching the preimage from DB.
       case None => db.getIncomingPayment(paymentHash).foreach(record => {
-        p.sender ! CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true)
+        commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true))
         db.receiveIncomingPayment(paymentHash, p.payment.amount, p.payment.timestamp)
         ctx.system.eventStream.publish(PaymentReceived(paymentHash, p.payment :: Nil))
       })
     }
 
     case GetPendingPayments => ctx.sender ! PendingPayments(pendingPayments.keySet)
+
+    case ack: CommandBuffer.CommandAck => commandBuffer forward ack
+
+    case "ok" => // ignoring responses from channels
   }
 
 }

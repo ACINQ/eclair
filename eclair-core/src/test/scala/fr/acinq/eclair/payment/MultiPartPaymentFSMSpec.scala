@@ -40,7 +40,7 @@ class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuite
   import MultiPartPaymentFSM._
   import MultiPartPaymentFSMSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, handler: TestActorRef[MultiPartPaymentFSM], parent: TestProbe, eventListener: TestProbe, sender1: TestProbe, sender2: TestProbe) {
+  case class FixtureParam(nodeParams: NodeParams, handler: TestActorRef[MultiPartPaymentFSM], parent: TestProbe, eventListener: TestProbe) {
     def currentBlockHeight: Long = nodeParams.currentBlockHeight
   }
 
@@ -50,7 +50,7 @@ class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuite
     val handler = TestActorRef[MultiPartPaymentFSM](props(nodeParams, paymentHash, totalAmount, parent.ref))
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    FixtureParam(nodeParams, handler, parent, eventListener, TestProbe(), TestProbe())
+    FixtureParam(nodeParams, handler, parent, eventListener)
   }
 
   test("timeout waiting for first htlc") {
@@ -62,162 +62,158 @@ class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuite
     val Transition(_, WAITING_FOR_HTLC, PAYMENT_FAILED) = monitor.expectMsgClass(classOf[Transition[_]])
 
     f.parent.expectMsg(MultiPartHtlcFailed(paymentHash, wire.PaymentTimeout, Queue.empty))
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("timeout waiting for more htlcs") {
     val f = createFixture(250 millis, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 150 msat, 1))
-    f.sender2.send(f.handler, createMultiPartHtlc(1000 msat, 100 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 150 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 100 msat, 2))
 
     val fail = f.parent.expectMsgType[MultiPartHtlcFailed]
     assert(fail.paymentHash === paymentHash)
     assert(fail.failure === wire.PaymentTimeout)
     assert(setTimestamp(fail.parts, 0).toSet === Set(
-      PendingPayment(1, PartialPayment(150 msat, htlcIdToChannelId(1), 0), f.sender1.ref),
-      PendingPayment(2, PartialPayment(100 msat, htlcIdToChannelId(2), 0), f.sender2.ref)
+      PendingPayment(1, PartialPayment(150 msat, htlcIdToChannelId(1), 0)),
+      PendingPayment(2, PartialPayment(100 msat, htlcIdToChannelId(2), 0))
     ))
 
-    f.sender1.expectNoMsg(50 millis)
-    f.sender2.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("receive additional htlcs after timeout") {
     val f = createFixture(250 millis, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 150 msat, 1))
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 100 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 150 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 100 msat, 2))
     assert(f.parent.expectMsgType[MultiPartHtlcFailed].parts.length === 2)
-    f.sender1.expectNoMsg(50 millis)
 
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 3))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 3))
     val fail = f.parent.expectMsgType[ExtraHtlcReceived]
     assert(fail.paymentHash === paymentHash)
     assert(fail.failure === Some(wire.PaymentTimeout))
-    assert(setTimestamp(fail.payment :: Nil, 0) === Seq(PendingPayment(3, PartialPayment(300 msat, htlcIdToChannelId(3), 0), f.sender1.ref)))
+    assert(setTimestamp(fail.payment :: Nil, 0) === Seq(PendingPayment(3, PartialPayment(300 msat, htlcIdToChannelId(3), 0))))
 
-    f.sender1.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("fail all if total amount is not consistent") {
     val f = createFixture(250 millis, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
-    f.sender2.send(f.handler, createMultiPartHtlc(1100 msat, 650 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1100 msat, 650 msat, 2))
     val fail = f.parent.expectMsgType[MultiPartHtlcFailed]
     assert(fail.paymentHash === paymentHash)
     assert(fail.failure === IncorrectOrUnknownPaymentDetails(1100 msat, f.currentBlockHeight))
     assert(fail.parts.length === 2)
 
-    f.sender1.expectNoMsg(50 millis)
-    f.sender2.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("fulfill all when total amount reached") {
     val f = createFixture(10 seconds, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 1))
-    f.sender2.send(f.handler, createMultiPartHtlc(1000 msat, 340 msat, 2))
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 360 msat, 3))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 340 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 360 msat, 3))
 
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
     assert(paymentResult.paymentHash === paymentHash)
     assert(setTimestamp(paymentResult.parts, 0).toSet === Set(
-      PendingPayment(1, PartialPayment(300 msat, htlcIdToChannelId(1), 0), f.sender1.ref),
-      PendingPayment(2, PartialPayment(340 msat, htlcIdToChannelId(2), 0), f.sender2.ref),
-      PendingPayment(3, PartialPayment(360 msat, htlcIdToChannelId(3), 0), f.sender1.ref)
+      PendingPayment(1, PartialPayment(300 msat, htlcIdToChannelId(1), 0)),
+      PendingPayment(2, PartialPayment(340 msat, htlcIdToChannelId(2), 0)),
+      PendingPayment(3, PartialPayment(360 msat, htlcIdToChannelId(3), 0))
     ))
-    f.sender1.expectNoMsg(50 millis)
-    f.sender2.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("fulfill all with amount higher than total amount") {
     val f = createFixture(10 seconds, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 1))
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 340 msat, 2))
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 3))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 340 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 3))
 
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
     assert(paymentResult.paymentHash === paymentHash)
     assert(setTimestamp(paymentResult.parts, 0).toSet === Set(
-      PendingPayment(1, PartialPayment(300 msat, htlcIdToChannelId(1), 0), f.sender1.ref),
-      PendingPayment(2, PartialPayment(340 msat, htlcIdToChannelId(2), 0), f.sender1.ref),
-      PendingPayment(3, PartialPayment(400 msat, htlcIdToChannelId(3), 0), f.sender1.ref)
+      PendingPayment(1, PartialPayment(300 msat, htlcIdToChannelId(1), 0)),
+      PendingPayment(2, PartialPayment(340 msat, htlcIdToChannelId(2), 0)),
+      PendingPayment(3, PartialPayment(400 msat, htlcIdToChannelId(3), 0))
     ))
 
-    f.sender1.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("fulfill all with single htlc") {
     val f = createFixture(10 seconds, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 1000 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 1000 msat, 1))
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
-    assert(setTimestamp(paymentResult.parts, 0) === Seq(PendingPayment(1, PartialPayment(1000 msat, htlcIdToChannelId(1), 0), f.sender1.ref)))
-    f.sender1.expectNoMsg(50 millis)
+    assert(setTimestamp(paymentResult.parts, 0) === Seq(PendingPayment(1, PartialPayment(1000 msat, htlcIdToChannelId(1), 0))))
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("fulfill all with single htlc and amount higher than total amount") {
     val f = createFixture(10 seconds, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 1100 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 1100 msat, 1))
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
-    assert(setTimestamp(paymentResult.parts, 0) === Seq(PendingPayment(1, PartialPayment(1100 msat, htlcIdToChannelId(1), 0), f.sender1.ref)))
-    f.sender1.expectNoMsg(50 millis)
+    assert(setTimestamp(paymentResult.parts, 0) === Seq(PendingPayment(1, PartialPayment(1100 msat, htlcIdToChannelId(1), 0))))
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("receive additional htlcs after total amount reached") {
     val f = createFixture(10 seconds, 1000 msat)
 
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
-    f.sender2.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 2))
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
     assert(setTimestamp(paymentResult.parts, 0).toSet === Set(
-      PendingPayment(1, PartialPayment(600 msat, htlcIdToChannelId(1), 0), f.sender1.ref),
-      PendingPayment(2, PartialPayment(400 msat, htlcIdToChannelId(2), 0), f.sender2.ref)
+      PendingPayment(1, PartialPayment(600 msat, htlcIdToChannelId(1), 0)),
+      PendingPayment(2, PartialPayment(400 msat, htlcIdToChannelId(2), 0))
     ))
-    f.sender1.expectNoMsg(50 millis)
-    f.sender2.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
 
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 3))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 300 msat, 3))
     val extraneousPayment = f.parent.expectMsgType[ExtraHtlcReceived]
     assert(extraneousPayment.paymentHash === paymentHash)
-    assert(setTimestamp(extraneousPayment.payment :: Nil, 0) === Seq(PendingPayment(3, PartialPayment(300 msat, htlcIdToChannelId(3), 0), f.sender1.ref)))
-    f.sender1.expectNoMsg(50 millis)
+    assert(setTimestamp(extraneousPayment.payment :: Nil, 0) === Seq(PendingPayment(3, PartialPayment(300 msat, htlcIdToChannelId(3), 0))))
+    f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
   }
 
   test("actor restart") {
     val f = createFixture(10 seconds, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
 
     f.handler.suspend()
     f.handler.resume(new IllegalArgumentException("something went wrong"))
 
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 2))
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
     assert(paymentResult.paymentHash === paymentHash)
     assert(setTimestamp(paymentResult.parts, 0).toSet === Set(
-      PendingPayment(1, PartialPayment(600 msat, htlcIdToChannelId(1), 0), f.sender1.ref),
-      PendingPayment(2, PartialPayment(400 msat, htlcIdToChannelId(2), 0), f.sender1.ref)
+      PendingPayment(1, PartialPayment(600 msat, htlcIdToChannelId(1), 0)),
+      PendingPayment(2, PartialPayment(400 msat, htlcIdToChannelId(2), 0))
     ))
-    f.sender1.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
   }
 
   test("unknown message") {
     val f = createFixture(10 seconds, 1000 msat)
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
-    f.sender1.send(f.handler, "hello")
-    f.sender1.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 2))
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 600 msat, 1))
+    f.parent.send(f.handler, "hello")
+    f.parent.send(f.handler, createMultiPartHtlc(1000 msat, 400 msat, 2))
 
     val paymentResult = f.parent.expectMsgType[MultiPartHtlcSucceeded]
     assert(setTimestamp(paymentResult.parts, 0).toSet === Set(
-      PendingPayment(1, PartialPayment(600 msat, htlcIdToChannelId(1), 0), f.sender1.ref),
-      PendingPayment(2, PartialPayment(400 msat, htlcIdToChannelId(2), 0), f.sender1.ref)
+      PendingPayment(1, PartialPayment(600 msat, htlcIdToChannelId(1), 0)),
+      PendingPayment(2, PartialPayment(400 msat, htlcIdToChannelId(2), 0))
     ))
-    f.sender1.expectNoMsg(50 millis)
+    f.parent.expectNoMsg(50 millis)
   }
 
 }

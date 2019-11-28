@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, T
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
@@ -2200,17 +2200,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
       case _ => ()
     }
-
-    // let's now fail all pending htlc for which we are the final payee
-    val htlcsToFail = commitments1.remoteCommit.spec.htlcs.collect {
-      case DirectedHtlc(OUT, add) if Sphinx.PaymentPacket.peel(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket).fold(
-        _ => true, // we also fail htlcs which onion we can't decode (message won't be precise)
-        p => p.isLastPacket
-      ) => add
-    }
-
-    log.debug(s"failing htlcs=${htlcsToFail.map(Commitments.msg2String(_)).mkString(",")}")
-    htlcsToFail.foreach(add => self ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true))
 
     // have I something to sign?
     if (Commitments.localHasChanges(commitments1)) {
