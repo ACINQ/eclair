@@ -11,9 +11,10 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.ChannelPersisted
 import scodec.bits.ByteVector
 
+import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 
-class AkkaBackupHandler(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey], outgoingNodeAddresses: Set[String], localBackupFile: File, remoteBackupDir: File, throttle: Int)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
+class AkkaBackupHandler(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey], outgoingNodeAddresses: Set[String], localBackupFile: File, remoteBackupDir: File, stampDivider: String, throttle: Int)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
   context.system.scheduler.schedule(throttle.seconds, throttle.seconds, self, AkkaBackupHandler.SEND_AKKA_BACKUP_TO_REMOTE_NODE)
 
@@ -28,7 +29,8 @@ class AkkaBackupHandler(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey],
 
   def main(akkaBackupOpt: Option[AkkaBackup] = None): Receive = {
     case ab: AkkaBackup if incomingNodeIds.contains(ab.remoteNodeId) && ab.isValidSig =>
-      val backupFile = new File(remoteBackupDir.getAbsolutePath, ab.remoteNodeId.toString.concat(".eclair.sqlite.bak"))
+      val backupFileName = s"${getStamp(stampDivider).toString}-${ab.remoteNodeId.toString}.eclair.sqlite.bak"
+      val backupFile = new File(remoteBackupDir.getAbsolutePath, backupFileName)
       Files.write(ab.data.toArray, backupFile)
 
     case persisted: ChannelPersisted =>
@@ -51,6 +53,17 @@ class AkkaBackupHandler(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey],
       addressAndPort <- outgoingNodeAddresses
       path = s"akka.ssl.tcp://${context.system.name}@$addressAndPort/user/${AkkaBackupHandler.actorName}"
     } context.actorSelection(path) ! message
+
+  def getStamp(divider: String): Long = {
+    val now = Platform.currentTime / 1000
+    val remainder = divider match {
+      case "minute" => now % 60
+      case "hour" => now % (60 * 60)
+      case "day" => now % (60 * 60 * 24)
+      case _ => now % (60 * 60 * 24 * 7)
+    }
+    now - remainder
+  }
 }
 
 case class AkkaBackup(data: ByteVector, remoteNodeId: PublicKey, signature: ByteVector64) {
@@ -62,6 +75,6 @@ object AkkaBackupHandler {
 
   case object SEND_AKKA_BACKUP_TO_REMOTE_NODE
 
-  def props(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey], outgoingNodeAddresses: Set[String], localBackupFile: File, remoteBackupDir: File, throttle: Int) =
-    Props(new AkkaBackupHandler(nodeParams, incomingNodeIds, outgoingNodeAddresses, localBackupFile, remoteBackupDir, throttle))
+  def props(nodeParams: NodeParams, incomingNodeIds: Set[PublicKey], outgoingNodeAddresses: Set[String], localBackupFile: File, remoteBackupDir: File, stampDivider: String, throttle: Int) =
+    Props(new AkkaBackupHandler(nodeParams, incomingNodeIds, outgoingNodeAddresses, localBackupFile, remoteBackupDir, stampDivider, throttle))
 }
