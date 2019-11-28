@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
@@ -32,17 +33,19 @@ import scala.concurrent.duration._
 class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("init and cleanup") {
-
     val data = ChannelCodecsSpec.normal
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
 
-    // assuming that data has incoming htlcs 0 and 1, we don't care about the amount/payment_hash/onion fields
+    // assuming that data has incoming htlcs 0, 1 and 2, we don't care about the amount/payment_hash/onion fields except for fulfilled HTLCs
     val add0 = UpdateAddHtlc(data.channelId, 0, 20000 msat, randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
     val add1 = UpdateAddHtlc(data.channelId, 1, 30000 msat, randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
+    val add2 = UpdateAddHtlc(data.channelId, 2, 40000 msat, paymentHash, CltvExpiry(100), TestConstants.emptyOnionPacket)
 
     // unrelated htlc
     val add99 = UpdateAddHtlc(randomBytes32, 0, 12345678 msat, randomBytes32, CltvExpiry(100), TestConstants.emptyOnionPacket)
 
-    val brokenHtlcs = Seq(add0, add1, add99)
+    val brokenHtlcs = Seq((add0, None), (add1, None), (add2, Some(preimage)), (add99, None))
     val brokenHtlcKiller = system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
     brokenHtlcKiller ! brokenHtlcs
 
@@ -53,15 +56,17 @@ class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     sender.send(brokenHtlcKiller, ChannelStateChanged(channel.ref, system.deadLetters, data.commitments.remoteParams.nodeId, OFFLINE, NORMAL, data))
     channel.expectMsg(CMD_FAIL_HTLC(add0.id, Right(TemporaryNodeFailure), commit = true))
     channel.expectMsg(CMD_FAIL_HTLC(add1.id, Right(TemporaryNodeFailure), commit = true))
+    channel.expectMsg(CMD_FULFILL_HTLC(add2.id, preimage, commit = true))
     channel.expectNoMsg(100 millis)
 
-    // lets'assume that channel was disconnected before having signed the fails, and gets connected again:
+    // lets'assume that channel was disconnected before having signed the updates, and gets connected again:
     sender.send(brokenHtlcKiller, ChannelStateChanged(channel.ref, system.deadLetters, data.commitments.remoteParams.nodeId, OFFLINE, NORMAL, data))
     channel.expectMsg(CMD_FAIL_HTLC(add0.id, Right(TemporaryNodeFailure), commit = true))
     channel.expectMsg(CMD_FAIL_HTLC(add1.id, Right(TemporaryNodeFailure), commit = true))
+    channel.expectMsg(CMD_FULFILL_HTLC(add2.id, preimage, commit = true))
     channel.expectNoMsg(100 millis)
 
-    // let's now assume that the channel get's reconnected, and it had the time to fail the htlcs
+    // let's now assume that the channel gets reconnected, and it had the time to settle the htlcs
     val data1 = data.copy(commitments = data.commitments.copy(localCommit = data.commitments.localCommit.copy(spec = data.commitments.localCommit.spec.copy(htlcs = Set.empty))))
     sender.send(brokenHtlcKiller, ChannelStateChanged(channel.ref, system.deadLetters, data.commitments.remoteParams.nodeId, OFFLINE, NORMAL, data1))
     channel.expectNoMsg(100 millis)
@@ -69,7 +74,6 @@ class HtlcReaperSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     // reaper has cleaned up htlc, so next time it won't fail them anymore, even if we artificially submit the former state
     sender.send(brokenHtlcKiller, ChannelStateChanged(channel.ref, system.deadLetters, data.commitments.remoteParams.nodeId, OFFLINE, NORMAL, data))
     channel.expectNoMsg(100 millis)
-
   }
 
 }

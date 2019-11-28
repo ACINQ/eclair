@@ -48,7 +48,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
     case Event(MultiPartHtlc(totalAmount2, htlc), d: WaitingForHtlc) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
-      val pp = PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender)
+      val pp = PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId))
       val updatedParts = d.parts :+ pp
       if (totalAmount != totalAmount2) {
         log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now $totalAmount2")
@@ -67,7 +67,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     case Event(MultiPartHtlc(_, htlc), _) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
       log.info(s"received extraneous htlc for payment hash $paymentHash")
-      parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender), None)
+      parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId)), None)
       stay
   }
 
@@ -76,7 +76,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // The LocalPaymentHandler will create a new instance of MultiPartPaymentHandler to handle a new attempt.
     case Event(MultiPartHtlc(_, htlc), PaymentFailed(failure, _)) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
-      parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId), sender), Some(failure))
+      parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId)), Some(failure))
       stay
   }
 
@@ -121,7 +121,7 @@ object MultiPartPaymentFSM {
 
   // @formatter:off
   /** A payment that we're currently holding until we decide to fulfill or fail it. */
-  case class PendingPayment(htlcId: Long, payment: PartialPayment, sender: ActorRef)
+  case class PendingPayment(htlcId: Long, payment: PartialPayment)
   /** An incoming partial payment. */
   case class MultiPartHtlc(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc)
   /** We successfully received all parts of the payment. */
