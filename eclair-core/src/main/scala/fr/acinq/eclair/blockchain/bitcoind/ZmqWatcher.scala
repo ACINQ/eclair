@@ -273,6 +273,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
           }
         }
+      case None =>
+        log.warning(s"could not get confirmations of tx=${w.txId} for watch=$w")
     }
   }
 

@@ -19,7 +19,7 @@ package fr.acinq.eclair.integration
 import java.io.{File, PrintWriter}
 import java.util.{Properties, UUID}
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
@@ -974,6 +974,75 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  test("funding is confirmed when channel is OFFLINE") {
+    val initMessage = Init(ByteVector.fromValidHex("0200"), ByteVector.fromValidHex("088a"))
+    val sender = TestProbe()
+
+    instantiateEclairNode("X", ConfigFactory.parseMap(Map("eclair.node-alias" -> "X", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    instantiateEclairNode("Y", ConfigFactory.parseMap(Map("eclair.node-alias" -> "Y", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+
+    val node1 = nodes("X")
+    val node2 = nodes("Y")
+
+    // connect node1 <--> node2
+    val address = node2.nodeParams.publicAddresses.head
+    sender.send(node1.switchboard, Peer.Connect(
+      nodeId = node2.nodeParams.nodeId,
+      address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))
+    ))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+    // open channel node1 --> node2
+    sender.send(node1.switchboard, Peer.OpenChannel(
+      remoteNodeId = node2.nodeParams.nodeId,
+      fundingSatoshis = 5000000 sat,
+      pushMsat = 0 msat,
+      fundingTxFeeratePerKw_opt = None,
+      channelFlags = None,
+      timeout_opt = None))
+
+    val channelCreated = sender.expectMsgType[String](10 seconds)
+    assert(channelCreated.startsWith("created channel"))
+    val channelId = ByteVector32.fromValidHex(channelCreated.split(" ").last)
+
+    awaitCond({
+      sender.send(node1.register, 'channels)
+      val channelmap = sender.expectMsgType[Map[ByteVector32, ActorRef]]
+      channelmap.exists(_._1 == channelId)
+    })
+
+    // get actor handling the channel in node1
+    sender.send(node1.register, 'channels)
+    val Some(channel) = sender.expectMsgType[Map[ByteVector32, ActorRef]].get(channelId)
+
+    // shut down the channel
+    sender.send(channel, INPUT_DISCONNECTED)
+
+    // reset bitcoind's wallet (this forces the rescan and reimport from the watcher)
+    ExternalWalletHelper.swapWallet()
+
+    // confirm the funding transaction while node1 was "offline"
+    generateBlocks(bitcoincli, 6)
+
+    // get actor handling the node2 peer
+    sender.send(node1.switchboard, 'peers)
+    val remoteNode2 = sender.expectMsgType[Iterable[ActorRef]].head
+
+    // channel is now OFFLINE
+    sender.send(node1.register, Forward(channelId, CMD_GETINFO))
+    val chanInfo = sender.expectMsgType[RES_GETINFO]
+    assert(chanInfo.state == OFFLINE)
+
+    node1.system.eventStream.subscribe(sender.ref, classOf[ChannelStateChanged])
+
+    // simulate reconnection
+    channel ! INPUT_RECONNECTED(remoteNode2, initMessage, initMessage)
+
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == SYNCING)
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == WAIT_FOR_FUNDING_CONFIRMED)
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == WAIT_FOR_FUNDING_LOCKED)
+    assert(sender.expectMsgType[ChannelStateChanged].currentState == NORMAL)
   }
 
 }
