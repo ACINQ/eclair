@@ -45,7 +45,9 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  require(!features.allowMultiPart || features.allowPaymentSecret, "there must be a payment secret when using multi-part")
+  if (features.allowMultiPart) {
+    require(features.allowPaymentSecret, "there must be a payment secret when using multi-part")
+  }
   if (features.allowPaymentSecret) {
     require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
   }
