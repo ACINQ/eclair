@@ -94,7 +94,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       context.watch(watch.channel)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
-    case watch@WatchConfirmed(_, txid, publicKeyScript, _, _) =>
+    case watch@WatchConfirmed(_, txid, publicKeyScript, _, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-confirmed on txid=$txid scriptHash=$scriptHash")
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
@@ -135,7 +135,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       }).flatten
       // this is for WatchConfirmed
       watches.collect {
-        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
+        case WatchConfirmed(_, txid, _, minDepth, _, _) if txid == tx.txid =>
           val txheight = item.height
           val confirmations = height - txheight + 1
           log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
@@ -149,7 +149,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction)) =>
       val confirmations = height - txheight + 1
       val triggered = watches.collect {
-        case w@WatchConfirmed(channel, txid, _, minDepth, event) if txid == tx_hash && confirmations >= minDepth =>
+        case w@WatchConfirmed(channel, txid, _, minDepth, event, _) if txid == tx_hash && confirmations >= minDepth =>
           log.info(s"txid=$txid had confirmations=$confirmations in block=$txheight pos=$pos")
           channel ! WatchEventConfirmed(event, txheight.toInt, pos, tx)
           w
@@ -171,7 +171,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         val parentTxid = tx.txIn(0).outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
-        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx), blockCount)
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
@@ -209,6 +209,9 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       // we remember watches and keep track of tx that have not yet been published
       // we also re-send the txes that we previously sent but hadn't yet received the confirmation
       context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
+
+    // we use a dummy value here because electrum watcher doesn't need to compute heights and do chain rescan
+    case GetHeightByTimestamp(_) => sender ! GetHeightByTimestampResponse(0)
   }
 
 }
