@@ -56,8 +56,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val bob2blockchain = TestProbe()
     val registerA = system.actorOf(Props(new TestRegister()))
     val registerB = system.actorOf(Props(new TestRegister()))
-    val commandBufferA = system.actorOf(Props(new CommandBuffer(Alice.nodeParams, registerA)))
-    val commandBufferB = system.actorOf(Props(new CommandBuffer(Bob.nodeParams, registerB)))
+    val commandBufferA = system.actorOf(Props(new TestCommandBuffer(Alice.nodeParams, registerA)))
+    val commandBufferB = system.actorOf(Props(new TestCommandBuffer(Bob.nodeParams, registerB)))
     val paymentHandlerA = system.actorOf(Props(new PaymentHandler(Alice.nodeParams, commandBufferA)))
     val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, commandBufferB)))
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA, commandBufferA, paymentHandlerA))
@@ -100,6 +100,16 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       case Register.Forward(_, msg) => channel forward msg
       case Register.ForwardShortId(_, msg) => channel forward msg
     }
+  }
+
+  class TestCommandBuffer(nodeParams: NodeParams, register: ActorRef) extends CommandBuffer(nodeParams, register) {
+    def filterRemoteEvents: Receive = {
+      // This is needed because we use the same actor system for A and B's CommandBuffers. If A receives an event from
+      // B's channel and it has a pending relay with the same htlcId as one of B's htlc, it may mess up B's state.
+      case ChannelStateChanged(_, _, remoteNodeId, _, _, _) if remoteNodeId == nodeParams.nodeId => ()
+    }
+
+    override def receive: Receive = filterRemoteEvents orElse super.receive
   }
 
   class SenderActor(sendChannel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch, count: Int) extends Actor with ActorLogging {

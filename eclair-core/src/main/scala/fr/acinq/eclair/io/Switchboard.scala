@@ -256,7 +256,7 @@ class HtlcReaper extends Actor with ActorLogging {
                 log.info(s"failing broken htlc=$htlc")
                 channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
             }
-            false // the channel may very well be disconnected before we sign (=ack) the fail, so we keep it for now
+            false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
           case _ =>
             true // the htlc has already been failed, we can forget about it now
         }
