@@ -39,7 +39,7 @@ object Boot extends App with Logging {
   try {
     val plugins = Plugin.loadPlugins(args.map(new File(_)))
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
-    implicit val system: ActorSystem = ActorSystem("eclair-node")
+    implicit val system: ActorSystem = ActorSystem("eclair-actor-system")
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
 

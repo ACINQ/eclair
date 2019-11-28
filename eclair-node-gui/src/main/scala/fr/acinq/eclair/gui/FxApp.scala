@@ -82,7 +82,7 @@ class FxApp extends Application with Logging {
           mainFXML.setController(controller)
           val mainRoot = mainFXML.load[Parent]
           val datadir = new File(getParameters.getUnnamed.get(0))
-          implicit val system = ActorSystem("eclair-node-gui")
+          implicit val system = ActorSystem("eclair-actor-system")
           val setup = new Setup(datadir)
 
           val unitConf = setup.config.getString("gui.unit")

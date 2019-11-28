@@ -46,35 +46,25 @@ import scala.util.{Failure, Success, Try}
   *
   * Constructor is private so users will have to use BackupHandler.props() which always specific a custom mailbox
   */
-class BackupHandler private(databases: Databases, backupFile: File, backupScript_opt: Option[String]) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
+class BackupHandler private(databases: Databases, backupFile: File, backupScript: String) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
 
   // we listen to ChannelPersisted events, which will trigger a backup
   context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
 
-  def receive = {
+  def receive: Receive = {
     case persisted: ChannelPersisted =>
-      val start = System.currentTimeMillis()
-      val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
-      databases.backup(tmpFile)
-      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
-      // as the temporary file
-      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-      val end = System.currentTimeMillis()
-
+      val timing = BackupHandler.makeBackup(databases, backupFile)
       // publish a notification that we have updated our backup
       context.system.eventStream.publish(BackupCompleted)
+      log.info(s"database backup triggered by channelId=${persisted.channelId} took ${timing}ms")
 
-      log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
-
-      backupScript_opt.foreach(backupScript => {
-        Try {
-          // run the script in the current thread and wait until it terminates
-          Process(backupScript).!
-        } match {
-          case Success(exitCode) => log.info(s"backup notify script $backupScript returned $exitCode")
-          case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
-        }
-      })
+      Try {
+        // run the script in the current thread and wait until it terminates
+        Process(backupScript)!
+      } match {
+        case Success(exitCode) => log.info(s"backup notify script $backupScript returned $exitCode")
+        case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
+      }
   }
 }
 
@@ -86,5 +76,14 @@ case object BackupCompleted extends BackupEvent
 object BackupHandler {
   // using this method is the only way to create a BackupHandler actor
   // we make sure that it uses a custom bounded mailbox, and a custom pinned dispatcher (i.e our actor will have its own thread pool with 1 single thread)
-  def props(databases: Databases, backupFile: File, backupScript_opt: Option[String]) = Props(new BackupHandler(databases, backupFile, backupScript_opt)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
+  def props(databases: Databases, backupFile: File, backupScript: String) = Props(new BackupHandler(databases, backupFile, backupScript)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
+
+  def makeBackup(databases: Databases, backupFile: File): Long = {
+    val start = System.currentTimeMillis()
+    val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
+    databases.backup(tmpFile)
+    // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem as the temporary file
+    Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    System.currentTimeMillis() - start
+  }
 }

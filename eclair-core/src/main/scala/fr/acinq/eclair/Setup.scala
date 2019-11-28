@@ -28,6 +28,7 @@ import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
@@ -41,7 +42,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.db.{BackupHandler, Databases}
+import fr.acinq.eclair.db.{AkkaBackupHandler, BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
@@ -229,10 +230,8 @@ class Setup(datadir: File,
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
-        case _ =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+        case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+        case _ => new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
         case feerates: FeeratesPerKB =>
@@ -265,21 +264,26 @@ class Setup(datadir: File,
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
-          implicit val timeout = Timeout(30 seconds)
+          implicit val timeout: Timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getFinalAddress.map {
-        case address => logger.info(s"initial wallet address=$address")
+        address => logger.info(s"initial wallet address=$address")
       }
-      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
-      backupHandler = system.actorOf(SimpleSupervisor.props(
-        BackupHandler.props(
-          nodeParams.db,
-          new File(chaindir, "eclair.sqlite.bak"),
-          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-        ), "backuphandler", SupervisorStrategy.Resume))
-      audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
+      _ = if (config.getBoolean("script-backup.enabled")) {
+        // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
+        system.actorOf(SimpleSupervisor.props(BackupHandler.props(nodeParams.db, new File(chaindir, "eclair.sqlite.bak"), config.getString("script-backup.notify-script")), "backuphandler", SupervisorStrategy.Resume))
+      } else if (config.getBoolean("akka-backup.enabled")) {
+        import scala.collection.JavaConversions._
+        val outgoingNodeAddresses: Set[String] = config.getStringList("akka-backup.outgoing-node-addresses").toSet
+        val incomingNodeIds: Set[PublicKey] = config.getStringList("akka-backup.incoming-node-ids").toSet.map((nodeId: String) => PublicKey.fromBin(ByteVector.fromValidHex(nodeId), checkValid = true))
+        system.actorOf(SimpleSupervisor.props(AkkaBackupHandler.props(nodeParams, incomingNodeIds, outgoingNodeAddresses, new File(chaindir, "eclair.sqlite.bak"), new File(chaindir, "remotebackups"), config.getString("akka-backup.stamp-divider"), config.getInt("akka-backup.throttle")), "akka-backuphandler", SupervisorStrategy.Resume), AkkaBackupHandler.actorName)
+      } else {
+        throw new RuntimeException("Enable either script-backup or akka-backup")
+      }
+
+      _ = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams), "payment-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
