@@ -18,28 +18,40 @@ package fr.acinq.eclair.blockchain.bitcoind
 
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import akka.pattern._
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, OutPoint, Transaction}
 import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.TickInitialRescan
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{NewBlock, Watch, WatchConfirmed, WatchEventConfirmed, WatchEventSpent, WatchSpent, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction, RescanFrom, Watch, WatchConfirmed, WatchEvent, WatchEventConfirmed, WatchEventSpent, WatchEventSpentBasic, WatchSpent, WatchSpentBasic}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_TX_CONFIRMED, BitcoinEvent}
 import fr.acinq.eclair.{ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JLong, JString}
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, Outcome, fixture}
 
 import scala.collection.JavaConversions._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.compat.Platform
 import scala.concurrent.duration._
 
-class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging with IdiomaticMockito {
+class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService with fixture.FunSuiteLike with BeforeAndAfterAll with Logging with IdiomaticMockito {
+
+  implicit val ec = system.dispatcher
+
+  case class FixtureParam(probe: TestProbe, receiveKey: PrivateKey, sendKey: PrivateKey, bitcoinClient: ExtendedBitcoinClient)
+
+  override def withFixture(test: OneArgTest): Outcome = {
+    val probe = TestProbe()
+    val bitcoinClient = spy(new ExtendedBitcoinClient(bitcoinrpcclient))
+    val (receiveKey, sendKey) = (PrivateKey(randomBytes32), PrivateKey(randomBytes32))
+
+    withFixture(test.toNoArgTest(FixtureParam(probe, receiveKey, sendKey, bitcoinClient)))
+  }
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
@@ -60,40 +72,74 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     stopBitcoind()
   }
 
-  test("wait bitcoind ready") {
+  test("wait bitcoind ready") { f =>
     waitForBitcoindReady()
   }
 
-  // TODO: extend to test watch spent with non-exsisting or non published txs
-  test("zmq watcher should detect if a non wallet tx is being spent") {
-    implicit val ec = system.dispatcher
-    val probe = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(), bitcoinClient))
+  test("watcher should trigger watch spent event when it receives the spending transaction") { f =>
+    import f._
+
+    bitcoinClient.getBlockCount.pipeTo(probe.ref)
+    val currentHeight = probe.expectMsgType[Long]
+
+    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentHeight), bitcoinClient))
     watcher ! TickInitialRescan // force the watcher to transition to "watching"
 
-    // tx spends from our wallet to an external address
-    val tx = ExternalWalletHelper.nonWalletTransaction(system)
-    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-    generateBlocks(bitcoincli, 1)
-    val isSpendable = Await.result(bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false)(system.dispatcher), 10 seconds)
-    assert(isSpendable)
+    // tx spends from our wallet to an external address, NOT YET PUBLISHED
+    val tx = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system)
 
-    // now tx is spent by tx1
-    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system)
-    bitcoinClient.publishTransaction(tx1).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-    generateBlocks(bitcoincli, 1)
-    val isSpendable1 = Await.result(bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false)(system.dispatcher), 10 seconds)
-    assert(!isSpendable1)
+    // we now add the watch 'tx' is not yet published
+    watcher ! WatchSpent(probe.ref, tx, 0, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(currentHeight)))
 
-    probe.send(watcher, WatchSpent(probe.ref, tx, 0, BITCOIN_FUNDING_SPENT))
+    // the watcher will acknowledge the watch only after it's done importing its address
+    awaitCond({
+      probe.send(watcher, 'watches)
+      probe.expectMsgType[Set[Watch]].size == 1
+    })
+
+    // now let's spend 'tx'
+    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx, receiveKey, sendKey)(system)
+
+    // forward the spending transaction to the watcher
+    watcher ! NewTransaction(tx1)
+
     val ws = probe.expectMsgType[WatchEventSpent]
     assert(ws.tx.txid == tx1.txid)
   }
 
-  test("add/remove watches from/to utxo map") {
+  test("watcher should trigger watch spent event if the transaction has already been spent in a block") { f =>
+    import f._
+
+    bitcoinClient.getBlockCount.pipeTo(probe.ref)
+    val currentHeight = probe.expectMsgType[Long]
+
+    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentHeight), bitcoinClient))
+    watcher ! TickInitialRescan // force the watcher to transition to "watching"
+
+    // tx spends from our wallet to an external address
+    val tx = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system)
+    // tx1 spends tx
+    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx, receiveKey, sendKey)(system)
+
+    // publish both
+    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
+    bitcoinClient.publishTransaction(tx1).pipeTo(probe.ref)
+    probe.expectMsgType[String]
+    probe.expectMsgType[String]
+
+    // mine them in a few blocks
+    generateBlocks(bitcoincli, 2)
+
+    bitcoinClient.isTransactionOutputSpendable(tx.txid.toHex, 0, false).pipeTo(probe.ref)
+    assert(!probe.expectMsgType[Boolean])
+
+    // we now add the watch, it should fire immediately
+    watcher ! WatchSpent(probe.ref, tx, 0, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(currentHeight)))
+    assert(probe.expectMsgType[WatchEventSpent].tx.txid == tx1.txid)
+  }
+
+
+  test("add/remove watches from/to utxo map") { f =>
     import ZmqWatcher._
 
     val m0 = Map.empty[OutPoint, Set[Watch]]
@@ -103,11 +149,11 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
 
     val utxo = OutPoint(txid.reverse, outputIndex)
 
-    val w1 = WatchSpent(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT)
-    val w2 = WatchSpent(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT)
-    val w3 = WatchSpentBasic(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT)
-    val w4 = WatchSpentBasic(null, randomBytes32, 5, randomBytes32, BITCOIN_FUNDING_SPENT)
-    val w5 = WatchConfirmed(null, txid, randomBytes32, 3, BITCOIN_FUNDING_SPENT, 0L)
+    val w1 = WatchSpent(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(Platform.currentTime.millisecond.toSeconds)))
+    val w2 = WatchSpent(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(Platform.currentTime.millisecond.toSeconds)))
+    val w3 = WatchSpentBasic(null, txid, outputIndex, randomBytes32, BITCOIN_FUNDING_SPENT,RescanFrom(rescanTimestamp = Some(Platform.currentTime.millisecond.toSeconds)))
+    val w4 = WatchSpentBasic(null, randomBytes32, 5, randomBytes32, BITCOIN_FUNDING_SPENT,RescanFrom(rescanTimestamp = Some(Platform.currentTime.millisecond.toSeconds)))
+    val w5 = WatchConfirmed(null, txid, randomBytes32, 3, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(Platform.currentTime.millisecond.toSeconds)))
 
     // we test as if the collection was immutable
     val m1 = addWatchedUtxos(m0, w1)
@@ -132,148 +178,24 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     assert(m10.isEmpty)
   }
 
-  test("the watcher should not import addresses if they're already being watched") {
-    val probe = TestProbe()
-    implicit val ec = system.dispatcher
+  test("on startup the watcher should queue events until the scan is completed") { f =>
+    import f._
 
-    // tx is an unspent and unconfirmed non wallet transaction
-    val tx = ExternalWalletHelper.nonWalletTransaction(system)
-    val watchAddress = eclair.scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
-
-    var addressImported = false
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient) {
-      override def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
-        if(script == watchAddress) addressImported = true
-        super.importAddress(script)
-      }
-    }
-
-    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-
-    generateBlocks(bitcoincli, 1)
-
-    bitcoinClient.getBlockCount.pipeTo(probe.ref)
-    val blockHeight = probe.expectMsgType[Long]
-
-    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(), bitcoinClient))
-    watcher ! TickInitialRescan // force the watcher to transition to "watching"
-
-    Await.ready(bitcoinClient.importAddress(watchAddress), 30 seconds) // import the address manually
-    addressImported = false // resetting the flag to perform the check later
-
-    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 6, BITCOIN_FUNDING_DEPTHOK, blockHeight)
-
-    generateBlocks(bitcoincli, 5)
-
-    assert(!addressImported) // assert the watcher did not import the address
-  }
-
-  test("the watcher should use the minimum rescan height of all the pending WatchConfirmed") {
-    val probe = TestProbe()
-    implicit val ec = system.dispatcher
-    implicit val timeout = Timeout(10 seconds)
-    var numRescans = 0
-    var rescannedAt: Option[Long] = None
-
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient) {
-      override def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {
-        rescannedAt = Some(rescanSinceHeight)
-        numRescans += 1
-        super.rescanBlockChain(rescanSinceHeight)
-      }
-    }
-    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(), bitcoinClient))
-    watcher ! TickInitialRescan // force the watcher to transition to "watching"
-
-    // mine a block and forward it to the watcher
-    val List(blockId1) = generateBlocks(bitcoincli, 1)
-    bitcoinrpcclient.invoke("getblock", blockId1, 0).pipeTo(probe.ref)
-    val block1 = Block.read(probe.expectMsgType[JString].s)
-    watcher ! NewBlock(block1)
-
-    // if there is no WatchConfirmed we should not rescan
-    assert(rescannedAt.isEmpty)
-
-    // tx and tx1 are unspent and unconfirmed non wallet transactions
-    val nonWalletTx = ExternalWalletHelper.nonWalletTransaction(system)
-    val nonWalletTx1 = ExternalWalletHelper.nonWalletTransaction(system)
-
-    bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
-    bitcoinClient.publishTransaction(nonWalletTx1).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-    probe.expectMsgType[String]
-
-    generateBlocks(bitcoincli, 1)
-
-    val tx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx)
-    val tx1 = ExternalWalletHelper.spendNonWalletTx(nonWalletTx1, receivingKeyIndex = 2) // changing receiving key tweaks the address
-
-    // broadcast the first transaction
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx).toHex).pipeTo(probe.ref)
-    probe.expectMsgType[JString]
-
-    generateBlocks(bitcoincli, 1)
-
-    // broadcast the second transaction, this will end up in a block after the first
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-    probe.expectMsgType[JString]
-
-    bitcoinClient.getBlockCount.pipeTo(probe.ref)
-    val blockHeightTx1 = probe.expectMsgType[Long]
-    val blockHeightTx = blockHeightTx1 - 1 // "tx" was included one block before "tx1", we should rescan from there
-
-    // add the watcher for a non confirmed non wallet transaction "tx"
-    watcher ! WatchConfirmed(probe.ref, tx1, minDepth = 1, BITCOIN_FUNDING_DEPTHOK, blockHeightTx1)
-    watcher ! WatchConfirmed(probe.ref, tx, minDepth = 1, BITCOIN_FUNDING_DEPTHOK, blockHeightTx)
-
-    // rescans are queued until a new block is found
-    assert(rescannedAt.isEmpty)
-
-    // generate a new block, this will contain the transactions
-    val List(blockId) = generateBlocks(bitcoincli, 1)
-    bitcoinrpcclient.invoke("getblock", blockId, 0).pipeTo(probe.ref)
-    val block = Block.read(probe.expectMsgType[JString].s)
-
-    // forward the new block event to the watcher
-    watcher ! NewBlock(block)
-
-    probe.expectMsgType[WatchEventConfirmed]
-    probe.expectMsgType[WatchEventConfirmed]
-
-    // assert the rescan used the earliest block height of all the watchers
-    assert(rescannedAt.contains(Math.min(blockHeightTx, blockHeightTx1)))
-    assert(numRescans == 1)
-  }
-
-  test("on startup the watcher should queue events until the scan is completed") {
-    implicit val ec = system.dispatcher
-    implicit val timeout = Timeout(30 seconds)
-    val probe = TestProbe()
-    var numRescans = 0
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient) {
-      override def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {
-        numRescans += 1
-        super.rescanBlockChain(rescanSinceHeight)
-      }
-    }
     bitcoinClient.getBlockCount.pipeTo(probe.ref)
     val currentBlockHeight = probe.expectMsgType[Long]
 
     // create an external tx and let's be notified when it's spent
-    val nonWalletTx = ExternalWalletHelper.nonWalletTransaction(system)
-    bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-
-    generateBlocks(bitcoincli, 1)
-
+    val nonWalletTx = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system)
     // tx spending the external one, we want to be notified by the watcher when it's confirmed
-    val spendingTx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx)
+    val spendingTx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx, receiveKey, sendKey)
 
     val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentBlockHeight), bitcoinClient))
-    watcher ! WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT)
-    watcher ! WatchConfirmed(probe.ref, nonWalletTx, 1L, BITCOIN_TX_CONFIRMED(nonWalletTx), currentBlockHeight)
-    watcher ! WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), currentBlockHeight)
+    watcher ! WatchConfirmed(probe.ref, nonWalletTx, 1L, BITCOIN_TX_CONFIRMED(nonWalletTx), RescanFrom(rescanHeight = Some(currentBlockHeight)))
+    watcher ! WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), RescanFrom(rescanHeight = Some(currentBlockHeight)))
+    watcher ! WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(currentBlockHeight)))
+
+    // assert we haven't imported anything yet
+    bitcoinClient.importMulti(any, any).wasNever(called)
 
     bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
     probe.expectMsgType[String]
@@ -281,26 +203,23 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     bitcoinClient.publishTransaction(spendingTx).pipeTo(probe.ref)
     probe.expectMsgType[String]
 
-    // generate a few blocks to enable an actual scan
+    // generate a few blocks to bury the transactions
     generateBlocks(bitcoincli, 2)
 
     // even if 'nonWalletTx' has been spent its 'WatchSpent' is on hold until we do the initial rescan
-    // the event will be processed later
     probe.expectNoMsg(1 seconds)
-
-    // at this point the watcher has a watch spent and a watch confirmed, until it receives
-    // initial scan trigger it should not scan.
-    assert(numRescans == 0)
 
     // trigger the initial rescan
     watcher ! TickInitialRescan
 
-    // assert the rescan has been done
-    awaitCond(numRescans == 1)
-
     // assert the watchers worked correctly
-    probe.expectMsgType[WatchEventConfirmed] // 'spendingTx' has been confirmed
-    probe.expectMsgType[WatchEventConfirmed] // 'nonWalletTx' has been confirmed
-    probe.expectMsgType[WatchEventSpent] // 'nonWalletTx' has been spent
+    val we1 = probe.expectMsgType[WatchEvent] // 'nonWalletTx' has been confirmed
+    val we2 = probe.expectMsgType[WatchEvent] // 'spendingTx' has been confirmed
+    val we3 = probe.expectMsgType[WatchEvent] // 'nonWalletTx' has been spent
+    assert(Set(we1, we2, we3).collect { case w: WatchEventSpent => w }.size == 1)
+    assert(Set(we1, we2, we3).collect { case w: WatchEventConfirmed => w }.size == 2)
+
+    // assert we imported exactly once
+    bitcoinClient.importMulti(any, any).wasCalled(once)
   }
 }

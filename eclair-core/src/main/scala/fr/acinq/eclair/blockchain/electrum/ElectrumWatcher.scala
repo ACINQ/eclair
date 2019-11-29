@@ -80,14 +80,14 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case watch: Watch if watches.contains(watch) => ()
 
-    case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _) =>
+    case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
       context.watch(watch.channel)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
-    case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _) =>
+    case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-spent-basic on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
@@ -122,13 +122,13 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem)) =>
       // this is for WatchSpent/WatchSpendBasic
       val watchSpentTriggered = tx.txIn.map(_.outPoint).flatMap(outPoint => watches.collect {
-        case WatchSpent(channel, txid, pos, _, event) if txid == outPoint.txid && pos == outPoint.index.toInt =>
+        case WatchSpent(channel, txid, pos, _, event, _) if txid == outPoint.txid && pos == outPoint.index.toInt =>
           log.info(s"output $txid:$pos spent by transaction ${tx.txid}")
           channel ! WatchEventSpent(event, tx)
           // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
           // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
           None
-        case w@WatchSpentBasic(channel, txid, pos, _, event) if txid == outPoint.txid && pos == outPoint.index.toInt =>
+        case w@WatchSpentBasic(channel, txid, pos, _, event, _) if txid == outPoint.txid && pos == outPoint.index.toInt =>
           log.info(s"output $txid:$pos spent by transaction ${tx.txid}")
           channel ! WatchEventSpentBasic(event)
           Some(w)
@@ -171,7 +171,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         val parentTxid = tx.txIn(0).outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
-        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx), blockCount)
+        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx), RescanFrom(rescanHeight = Some(blockCount)))
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)

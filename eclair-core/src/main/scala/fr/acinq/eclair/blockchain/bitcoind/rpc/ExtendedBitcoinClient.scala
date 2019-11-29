@@ -64,14 +64,16 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
   }
 
-  def importMulti(scripts: Seq[ByteVector], rescan: Boolean = false)(implicit ec: ExecutionContext): Future[Unit] = {
+  def importMulti(scripts: Seq[(String, Long)], rescan: Boolean = true)(implicit ec: ExecutionContext): Future[Boolean] = {
     val options = JObject(("rescan", JBool(rescan)))
     val requests = JArray(scripts.map(el => JObject(
-      ("scriptPubKey", JString(el.toHex)),
-      ("timestamp", JString("now")),
+      ("scriptPubKey", JObject(("address", JString(el._1)))),
+      ("timestamp", JInt(el._2)),
       ("watchonly", JBool(true))
     )).toList)
-    rpcClient.invoke("importmulti", requests, options).map(_ => Unit)
+    rpcClient.invoke("importmulti", requests, options)
+      .collect { case JArray(arr) => arr.forall(p => (p \ "success").extract[Boolean]) }
+      .recover { case e: JsonRPCError => throw new IllegalStateException(s"error while importing addresses: ${e.error.message}")}
   }
 
   def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {

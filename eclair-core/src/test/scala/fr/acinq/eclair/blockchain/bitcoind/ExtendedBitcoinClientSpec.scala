@@ -88,7 +88,8 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
   test("validate short channel Ids") {
     val sender = TestProbe()
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val channelTransaction = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    val (receiveKey, sendKey) = (PrivateKey(randomBytes32), PrivateKey(randomBytes32))
+    val channelTransaction = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system) // create a non wallet transaction
     client.publishTransaction(channelTransaction).pipeTo(sender.ref)
     sender.expectMsgType[String]
 
@@ -139,8 +140,12 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
   test("importmulti should import several watch addresses at once") {
     val sender = TestProbe()
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val externalTx1 = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
-    val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
+    val (receiveKey, sendKey) = (PrivateKey(randomBytes32), PrivateKey(randomBytes32))
+    val externalTx1 = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system) // create a non wallet transaction
+    val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receiveKey, sendKey)// spend non wallet transaction
+
+    val address1 = scriptPubKeyToAddress(externalTx1.txOut.head.publicKeyScript)
+    val address2 = scriptPubKeyToAddress(externalTx2.txOut.head.publicKeyScript)
 
     client.publishTransaction(externalTx1).pipeTo(sender.ref)
     client.publishTransaction(externalTx2).pipeTo(sender.ref)
@@ -161,8 +166,10 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     sender.expectMsgType[Failure]
 
     val importAndScan = for {
-      _ <- client.importMulti(Seq(externalTx1.txOut.head.publicKeyScript, externalTx2.txOut.head.publicKeyScript))
-      _ <- client.rescanBlockChain(earliestBlockHeight)
+      _ <- client.importMulti(
+        scripts = Seq((address1, earliestBlockHeight), (address2, earliestBlockHeight)),
+        rescan = true
+      )
     } yield Unit
 
     Await.ready(importAndScan, 30 seconds)
