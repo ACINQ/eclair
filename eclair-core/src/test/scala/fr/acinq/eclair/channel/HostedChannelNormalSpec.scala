@@ -546,13 +546,13 @@ class HostedChannelNormalSpec extends TestkitBaseClass with HostedStateTestsHelp
     alice ! CurrentBlockCount(400145)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === cmdAdd1.paymentHash)
     alice ! CurrentBlockCount(400155)
-    system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS) // Pending HTLCs prevent channel from being closed
+    alice ! CMD_HOSTED_REMOVE_IDLE_CHANNELS // Pending HTLCs prevent channel from being closed
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === cmdAdd2.paymentHash)
     alice ! CurrentBlockCount(400165)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === cmdAdd3.paymentHash)
     alice ! CurrentBlockCount(400175)
     relayerA.expectNoMsg(100 millis)
-    system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS)
+    alice ! CMD_HOSTED_REMOVE_IDLE_CHANNELS
     aliceTestProbe.expectTerminated(alice)
   }
 

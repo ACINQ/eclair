@@ -25,8 +25,6 @@ class HostedChannel(val nodeParams: NodeParams, remoteNodeId: PublicKey, router:
 
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
 
-  context.system.eventStream.subscribe(self, CMD_HOSTED_REMOVE_IDLE_CHANNELS.getClass)
-
   val forwarder: ActorRef = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
   startWith(OFFLINE, HostedNothing)

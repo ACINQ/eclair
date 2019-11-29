@@ -218,7 +218,8 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     awaitCond(alice.stateName == WAIT_FOR_INIT_INTERNAL)
     bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     alice ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
-    system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS)
+    bob ! CMD_HOSTED_REMOVE_IDLE_CHANNELS
+    alice ! CMD_HOSTED_REMOVE_IDLE_CHANNELS
     bobTestProbe.expectTerminated(bob)
     aliceTestProbe.expectTerminated(alice)
   }
@@ -232,7 +233,8 @@ class HostedChannelEstablishmentSpec extends TestkitBaseClass with HostedStateTe
     reachNormal(f, channelId)
     bob ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
     alice ! CMD_HOSTED_INPUT_DISCONNECTED(channelId)
-    system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS)
+    bob ! CMD_HOSTED_REMOVE_IDLE_CHANNELS
+    alice ! CMD_HOSTED_REMOVE_IDLE_CHANNELS
     bobTestProbe.expectTerminated(bob)
     aliceTestProbe.expectTerminated(alice)
   }

@@ -9,12 +9,13 @@ import fr.acinq.eclair.channel.HostedChannelGateway.HotChannels
 import fr.acinq.eclair.channel.Register.Forward
 
 import scala.concurrent.ExecutionContext
+import scala.compat.java8.FunctionConverters._
 import scala.concurrent.duration._
 import fr.acinq.eclair.wire
 
 class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
 
-  context.system.scheduler.schedule(6.hours, 6.hours)(context.system.eventStream.publish(CMD_HOSTED_REMOVE_IDLE_CHANNELS))
+  context.system.scheduler.schedule(6.hours, 6.hours, self, CMD_HOSTED_REMOVE_IDLE_CHANNELS)
 
   val inMemoryHostedChannels: HashBiMap[ByteVector32, ActorRef] = HashBiMap.create[ByteVector32, ActorRef]
 
@@ -47,7 +48,13 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
 
     case Terminated(channelRef) => inMemoryHostedChannels.inverse.remove(channelRef)
 
-    case HotChannels(channels) => channels.foreach(restoreChannel)
+    case HotChannels(channels) =>
+      log.info(s"hosted gateway started with in-memory channels=${inMemoryHostedChannels.size}")
+      channels.foreach(restoreChannel)
+
+    case CMD_HOSTED_REMOVE_IDLE_CHANNELS =>
+      log.info(s"in-memory hosted channels=${inMemoryHostedChannels.size}")
+      inMemoryHostedChannels.values().forEach(asJavaConsumer[ActorRef](_ ! CMD_HOSTED_REMOVE_IDLE_CHANNELS))
   }
 
   def spawnNewChannel(channelId: ByteVector32, remoteNodeId: PublicKey): ActorRef = {
