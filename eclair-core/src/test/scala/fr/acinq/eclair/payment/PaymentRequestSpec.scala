@@ -312,8 +312,8 @@ class PaymentRequestSpec extends FunSuite {
 
     val featureBits = Map(
       Features(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00010000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00100000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00011000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00101000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
       Features(bin"               00010100000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
       Features(bin"               00011000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
       Features(bin"               00101000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
@@ -349,6 +349,16 @@ class PaymentRequestSpec extends FunSuite {
     val pr2 = PaymentRequest.read("lnbc40n1pw9qjvwpp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsq2elakl")
     assert(!pr2.features.requirePaymentSecret)
     assert(pr2.paymentSecret === None)
+
+    // An invoice that sets the payment secret feature bit must provide a payment secret.
+    assertThrows[IllegalArgumentException](
+      PaymentRequest.read("lntb15u1pwahg4kpp56hhnss8tshz2qz539a0u69yjlcq4vpm7776tuqqv53mqn8eeslpsdq4xysyymr0vd4kzcmrd9hx7cqp29qy9qqq6t3lep4wkqeuj4y58fwxj6lqykzqdaa7a7cak4elywptgft0mcfnl0k243870ek8dwnnqww67wrak5kxpfw428rgu58z66er76sh5zsqw0zvns")
+    )
+
+    // A multi-part invoice must use a payment secret.
+    assertThrows[IllegalArgumentException](
+      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    )
   }
 
   test("trampoline") {
@@ -359,7 +369,7 @@ class PaymentRequestSpec extends FunSuite {
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL, PAYMENT_SECRET_OPTIONAL)))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 
