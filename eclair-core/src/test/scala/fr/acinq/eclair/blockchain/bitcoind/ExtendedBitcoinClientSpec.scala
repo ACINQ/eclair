@@ -34,7 +34,6 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -175,64 +174,4 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     sender.expectMsg(externalTx2)
   }
 
-  test("swapping wallet should make bitcoind forget the imported watch_only addresses") {
-    val probe = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-
-    val tx = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and unconfirmed non wallet transaction
-    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system) // tx1 spends tx
-
-    // publish both transaction
-    bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
-    bitcoinClient.publishTransaction(tx1).pipeTo(probe.ref)
-    probe.expectMsgType[String]
-    probe.expectMsgType[String]
-
-    // confirm both transaction
-    generateBlocks(bitcoincli, 1)
-
-    val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
-    Await.ready(bitcoinClient.importAddress(addressToImport), 10 seconds)
-
-    Await.ready(bitcoinClient.rescanBlockChain(10), 30 seconds)
-
-    val receivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
-    assert(receivedByAddress.contains(addressToImport)) // assert the address was correctly imported
-
-    val fetched = Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds)
-    assert(fetched.txid == tx.txid) // assert we can fetch the transaction related to the address
-
-    // wipes out all the previously imported addresses
-    ExternalWalletHelper.swapWallet()
-
-    val emptyWalletReceivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
-    assert(!emptyWalletReceivedByAddress.contains(addressToImport)) // assert the new wallet doesn't have the address imported
-
-    assertThrows[JsonRPCError](Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds))
-  }
-
-  test("getHeightByTimestamp should return the height of the first block created before the timestamp") {
-    val probe = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-
-
-    val expectedTime = Platform.currentTime.milliseconds.toSeconds
-
-    generateBlocks(bitcoincli, 10)
-
-    bitcoinClient.getHeightByTimestamp(expectedTime).pipeTo(probe.ref)
-    val foundHeight = probe.expectMsgType[Long]
-
-    // assert the block we found at the given height has a
-    // block time smaller or equal to the expected time
-    bitcoinClient.getBlock(foundHeight)pipeTo(probe.ref)
-    val block = probe.expectMsgType[Block]
-    assert(block.header.time <= expectedTime)
-
-    // assert the next block is older
-    bitcoinClient.getBlock(foundHeight + 1)pipeTo(probe.ref)
-    val nextBlock = probe.expectMsgType[Block]
-    assert(nextBlock.header.time > expectedTime)
-
-  }
 }

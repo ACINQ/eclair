@@ -209,9 +209,6 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       // we remember watches and keep track of tx that have not yet been published
       // we also re-send the txes that we previously sent but hadn't yet received the confirmation
       context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
-
-    // we use a dummy value here because electrum watcher doesn't need to compute heights and do chain rescan
-    case GetHeightByTimestamp(_) => sender ! GetHeightByTimestampResponse(0)
   }
 
 }

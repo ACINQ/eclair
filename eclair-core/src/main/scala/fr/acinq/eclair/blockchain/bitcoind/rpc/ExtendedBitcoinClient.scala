@@ -47,16 +47,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     rpcClient.invoke("getblockhash", height).collect { case JString(blockHash) => blockHash }
   }
 
-  def getHeightByTimestamp(time: Long, fromHeight: Option[Long] = None)(implicit ec: ExecutionContext): Future[Long] = for {
-    height <- fromHeight match {
-      case Some(h) => Future.successful(h)
-      case None    => getBlockCount
-    }
-    blockHash <- getBlockHash(height)
-    JInt(blockTime) <- rpcClient.invoke("getblockheader", blockHash).map(_ \ "time")
-    foundHeight <- if(blockTime.longValue() <= time) Future.successful(height) else getHeightByTimestamp(time, Some(height - 1))
-  } yield foundHeight
-
   def isAddressImported(address: String)(implicit ec: ExecutionContext): Future[Boolean] = {
     listReceivedByAddress(filter = Some(address)).map(_.nonEmpty)
   }

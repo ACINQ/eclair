@@ -246,9 +246,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
 
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          log.info(s"computing chain height at ${d.waitingSince}")
-          blockchain ! GetHeightByTimestamp(d.waitingSince)
-          stay using d
+          // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchConfirmed(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEPTHOK, rescanHeight = d.waitingSince)
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          // we make sure that the funding tx has been published
+          blockchain ! GetTxWithMeta(d.commitments.commitInput.outPoint.txid)
+          goto(OFFLINE) using data
 
         case d: DATA_WAIT_FOR_FUNDING_LOCKED =>
           // add watchers
@@ -262,15 +266,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           goto(OFFLINE) using data
       }
-
-    case Event(GetHeightByTimestampResponse(height), data: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      log.info(s"adding watchers to restore the channel, rescan due from height=$height")
-      blockchain ! WatchConfirmed(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK, height)
-      blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-      blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
-      // we make sure that the funding tx has been published
-      blockchain ! GetTxWithMeta(data.commitments.commitInput.outPoint.txid)
-      goto(OFFLINE) using data
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"
 
@@ -1460,14 +1455,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      log.info(s"computing chain height at ${d.waitingSince}")
-      // before we can watch the funding we need to compute the chain height which we'll use to rescan and track the transaction
-      blockchain ! GetHeightByTimestamp(d.waitingSince)
-      stay using d
-
-    case Event(GetHeightByTimestampResponse(height), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK, height)
+      blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK, d.waitingSince)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>

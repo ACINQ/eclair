@@ -195,17 +195,12 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
       context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
-    case GetHeightByTimestamp(time) => client.getHeightByTimestamp(time).map(GetHeightByTimestampResponse).pipeTo(sender)
-
     case 'watches => sender ! watches
   }
 
   // watchesConfirmed = all watch confirmed events, eventQueue = everything else
   def scanPending(watchesConfirmed: Set[WatchConfirmed], eventQueue: List[Any]): Receive = {
     case w:WatchConfirmed => context.become(scanPending(watchesConfirmed + w, eventQueue))
-
-    // we must be able to compute heights by timestamp even before scanning
-    case GetHeightByTimestamp(time) => client.getHeightByTimestamp(time).map(GetHeightByTimestampResponse).pipeTo(sender)
 
     // while pending initial scan we can still validate announcements
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
