@@ -56,7 +56,7 @@ object Origin {
  * It also receives channel HTLC events (fulfill / failed) and relays those to the appropriate handlers.
  * It also maintains an up-to-date view of local channel balances.
  */
-class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
+class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
 
   import Relayer._
 
@@ -67,7 +67,6 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
-  private val commandBuffer = context.actorOf(Props(new CommandBuffer(nodeParams, register)))
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
 
   override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
@@ -211,7 +210,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, register, paymentHandler)
+  def props(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, register, commandBuffer, paymentHandler)
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
   type NodeChannels = mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]

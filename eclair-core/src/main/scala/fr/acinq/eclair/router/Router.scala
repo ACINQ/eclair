@@ -298,7 +298,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay // ignored on Android
 
     case Event(GetNetworkStats, d: Data) =>
-      stay // ignored on Android
+      sender ! GetNetworkStatsResponse(d.stats)
+      stay
 
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId).ann

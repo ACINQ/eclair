@@ -26,9 +26,9 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PendingRelayDb}
 import fr.acinq.eclair.payment.IncomingPacket
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Rebroadcast
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
@@ -59,7 +59,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     })
     val peers = nodeParams.db.peers.listPeers()
 
-    checkBrokenHtlcsLink(channels, nodeParams.privateKey, nodeParams.globalFeatures) match {
+    checkBrokenHtlcsLink(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.globalFeatures) match {
       case Nil => ()
       case brokenHtlcs =>
         val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
@@ -150,15 +150,16 @@ object Switchboard {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   /**
-   * If we have stopped eclair while it was forwarding HTLCs, it is possible that we are in a state were an incoming HTLC
-   * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream node.
+   * If we have stopped eclair while it was handling HTLCs, it is possible that we are in a state were an incoming HTLC
+   * was committed by both sides, but we didn't have time to send and/or sign the corresponding HTLC to the downstream
+   * node (if we're an intermediate node) or didn't have time to fail/fulfill the payment (if we're the recipient).
    *
-   * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel will
-   * get closed, which is a major inconvenience.
+   * In that case, if we do nothing, the incoming HTLC will eventually expire and we won't lose money, but the channel
+   * will get closed, which is a major inconvenience.
    *
-   * This check will detect this and will allow us to fast-fail HTLCs and thus preserve channels.
+   * This check will detect this and will allow us to fast-settle HTLCs and thus preserve channels.
    */
-  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): Seq[UpdateAddHtlc] = {
+  def checkBrokenHtlcsLink(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): Seq[(UpdateAddHtlc, Option[ByteVector32])] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
@@ -167,7 +168,13 @@ object Switchboard {
       .filter(_.direction == OUT)
       .map(_.add)
       .map(IncomingPacket.decrypt(_, privateKey, features))
-      .collect { case Right(IncomingPacket.ChannelRelayPacket(add, _, _)) => add } // we only consider htlcs that are relayed, not the ones for which we are the final node
+      .collect {
+        case Right(IncomingPacket.ChannelRelayPacket(add, _, _)) => (add, None) // we consider all relayed htlcs
+        case Right(IncomingPacket.FinalPacket(add, _)) => paymentsDb.getIncomingPayment(add.paymentHash) match {
+          case Some(IncomingPayment(_, preimage, _, IncomingPaymentStatus.Received(_, _))) => (add, Some(preimage)) // incoming payment that succeeded
+          case _ => (add, None) // incoming payment that didn't succeed
+        }
+      }
 
     // TODO: @t-bast: will need to update this to take into account trampoline-relayed (and thoroughly test).
 
@@ -177,7 +184,9 @@ object Switchboard {
       .collect { case r: Origin.Relayed => r }
       .toSet
 
-    val htlcs_broken = htlcs_in.filterNot(htlc_in => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id))
+    val htlcs_broken = htlcs_in.filterNot {
+      case (htlc_in, _) => relayed_out.exists(r => r.originChannelId == htlc_in.channelId && r.originHtlcId == htlc_in.id)
+    }
 
     log.info(s"htlcs_in=${htlcs_in.size} htlcs_out=${relayed_out.size} htlcs_broken=${htlcs_broken.size}")
 
@@ -227,25 +236,30 @@ class HtlcReaper extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = {
-    case initialHtlcs: Seq[UpdateAddHtlc]@unchecked => context become main(initialHtlcs)
+    case initialHtlcs: Seq[(UpdateAddHtlc, Option[ByteVector32])]@unchecked => context become main(initialHtlcs)
   }
 
-  def main(htlcs: Seq[UpdateAddHtlc]): Receive = {
+  def main(htlcs: Seq[(UpdateAddHtlc, Option[ByteVector32])]): Receive = {
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
       val acked = htlcs
-        .filter(_.channelId == data.channelId) // only consider htlcs related to this channel
+        .filter(_._1.channelId == data.channelId) // only consider htlcs related to this channel
         .filter {
-          case htlc if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
-            // this htlc is cross signed in the current commitment, we can fail it
-            log.info(s"failing broken htlc=$htlc")
-            channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
-            false // the channel may very well be disconnected before we sign (=ack) the fail, so we keep it for now
+          case (htlc, preimage) if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
+            // this htlc is cross signed in the current commitment, we can settle it
+            preimage match {
+              case Some(preimage) =>
+                log.info(s"fulfilling broken htlc=$htlc")
+                channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+              case None =>
+                log.info(s"failing broken htlc=$htlc")
+                channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+            }
+            false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
           case _ =>
             true // the htlc has already been failed, we can forget about it now
         }
-      acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}"))
+      acked.foreach { case (htlc, _) => log.info(s"forgetting htlc id=${htlc.id} channelId=${htlc.channelId}") }
       context become main(htlcs diff acked)
   }
-
 
 }

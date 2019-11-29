@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
-import akka.actor.{Actor, ActorContext, ActorLogging, Props}
+import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
 import akka.event.LoggingAdapter
 import fr.acinq.eclair.NodeParams
 
@@ -28,10 +28,10 @@ trait ReceiveHandler {
 /**
  * Generic payment handler that delegates handling of incoming messages to a list of handlers.
  */
-class PaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
+class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Actor with ActorLogging {
 
   // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
-  private val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments)
+  private val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments, commandBuffer)
 
   override def receive: Receive = normal(defaultHandler.handle(context, log))
 
@@ -44,5 +44,5 @@ class PaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 }
 
 object PaymentHandler {
-  def props(nodeParams: NodeParams): Props = Props(new PaymentHandler(nodeParams))
+  def props(nodeParams: NodeParams, commandBuffer: ActorRef): Props = Props(new PaymentHandler(nodeParams, commandBuffer))
 }

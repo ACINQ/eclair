@@ -29,7 +29,7 @@ import scala.concurrent.duration._
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("compose payment handlers") {
-    val handler = system.actorOf(PaymentHandler.props(Alice.nodeParams))
+    val handler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref))
 
     val intHandler = new ReceiveHandler {
       override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = {
