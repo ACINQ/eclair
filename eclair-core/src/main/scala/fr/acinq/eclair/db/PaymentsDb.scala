@@ -26,9 +26,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
 
-trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb {
-  def listPaymentsOverview(limit: Int): Seq[PlainPayment]
-}
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
@@ -195,6 +193,10 @@ object FailureSummary {
     case RemoteFailure(route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList)
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }
+}
+
+trait PaymentsOverviewDb {
+  def listPaymentsOverview(limit: Int): Seq[PlainPayment]
 }
 
 /**
