@@ -114,7 +114,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val payment_preimage: ByteVector32 = randomBytes32
     val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
     val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-    val cmd = OutgoingPacket.buildCommand(UUID.randomUUID, payment_hash, ChannelHop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
+    val cmd = OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID), payment_hash, ChannelHop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
     (payment_preimage, cmd)
   }
 
