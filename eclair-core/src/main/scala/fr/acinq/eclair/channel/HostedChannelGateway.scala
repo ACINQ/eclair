@@ -49,7 +49,7 @@ class HostedChannelGateway(nodeParams: NodeParams, router: ActorRef, relayer: Ac
     case Terminated(channelRef) => inMemoryHostedChannels.inverse.remove(channelRef)
 
     case HotChannels(channels) =>
-      log.info(s"hosted gateway started with in-memory channels=${inMemoryHostedChannels.size}")
+      log.info(s"hosted gateway started with in-memory channels=${channels.size}")
       channels.foreach(restoreChannel)
 
     case CMD_HOSTED_REMOVE_IDLE_CHANNELS =>
