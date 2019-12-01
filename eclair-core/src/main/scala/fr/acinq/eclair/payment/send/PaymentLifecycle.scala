@@ -262,7 +262,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id))
+    Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id))
   }
 
   initialize()
