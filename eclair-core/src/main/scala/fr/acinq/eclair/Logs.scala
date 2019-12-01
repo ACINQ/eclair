@@ -34,13 +34,14 @@ import fr.acinq.eclair.wire.{ChannelReestablish, Ping, Pong, RoutingMessage, Upd
 
 object Logs {
 
-  def mdc(category_opt: Option[LogCategory], remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, parentPaymentId_opt: Option[UUID] = None, paymentId_opt: Option[UUID] = None): MDC =
+  def mdc(category_opt: Option[LogCategory] = None, remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, parentPaymentId_opt: Option[UUID] = None, paymentId_opt: Option[UUID] = None, paymentHash_opt: Option[ByteVector32] = None): MDC =
     Seq(
       category_opt.map(l => "category" -> s" ${l.category}"),
       remoteNodeId_opt.map(n => "nodeId" -> s" n:$n"), // nb: we preformat MDC values so that there is no white spaces in logs when they are not defined
       channelId_opt.map(c => "channelId" -> s" c:$c"),
       parentPaymentId_opt.map(p => "parentPaymentId" -> s" p:$p"),
-      paymentId_opt.map(i => "paymentId" -> s" i:$i")
+      paymentId_opt.map(i => "paymentId" -> s" i:$i"),
+      paymentHash_opt.map(h => "paymentHash" -> s" h:$h")
     ).flatten.toMap
 
   /**
@@ -49,7 +50,7 @@ object Logs {
     * This is useful in some cases where we can't rely on the `aroundReceive` trick to set the MDC before processing a
     * message because we don't have enough context. That's typically the case when handling `Terminated` messages.
     */
-  def withMdc(mdc: MDC)(f: => Any)(implicit log: DiagnosticLoggingAdapter) = {
+  def withMdc(log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => Any) = {
     val mdc0 = log.mdc // backup the current mdc
     try {
       log.mdc(mdc0 ++ mdc) // add the new mdc to the current one
