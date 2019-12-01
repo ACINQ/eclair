@@ -18,7 +18,8 @@ package fr.acinq.eclair.payment.relay
 
 import java.util.UUID
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
+import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -27,7 +28,7 @@ import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{Logs, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.collection.mutable
@@ -56,7 +57,7 @@ object Origin {
  * It also receives channel HTLC events (fulfill / failed) and relays those to the appropriate handlers.
  * It also maintains an up-to-date view of local channel balances.
  */
-class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
+class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef) extends Actor with DiagnosticActorLogging {
 
   import Relayer._
 
@@ -97,29 +98,29 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
       context become main(channelUpdates1, node2channels)
 
     case ForwardAdd(add, previousFailures) =>
-      log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
+      log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPacket.decrypt(add, nodeParams.privateKey, nodeParams.globalFeatures) match {
         case Right(p: IncomingPacket.FinalPacket) =>
-          log.debug(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to payment-handler")
+          log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
         case Right(r: IncomingPacket.ChannelRelayPacket) =>
           channelRelayer forward ChannelRelayer.RelayHtlc(r, previousFailures, channelUpdates, node2channels)
         case Right(r: IncomingPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
-            log.warning(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
+            log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
             commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           } else {
             // TODO: @t-bast: relay trampoline payload instead of rejecting.
-            log.warning(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline not implemented yet")
+            log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline not implemented yet")
             commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
-          log.warning(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
+          log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
         case Left(failure) =>
-          log.warning(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=$failure")
+          log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
           val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
       }
@@ -204,6 +205,18 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
         }
       })
     case _ =>
+  }
+
+  override def mdc(currentMessage: Any): MDC = {
+    val paymentHash_opt = currentMessage match {
+      case ForwardAdd(add, _) => Some(add.paymentHash)
+      case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
+      case ForwardFulfill(_, _, add) => Some(add.paymentHash)
+      case ForwardFail(_, _, add) => Some(add.paymentHash)
+      case ForwardFailMalformed(_, _, add) => Some(add.paymentHash)
+      case _ => None
+    }
+    Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
   }
 
 }

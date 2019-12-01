@@ -188,9 +188,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
 
     case Event(Terminated(actor), d: InitializingData) if actor == d.transport =>
-      Logs.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
         log.warning(s"lost connection to $remoteNodeId")
-      }(diagLog)
+      }
       goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels)
 
     case Event(Terminated(actor), d: InitializingData) if d.channels.exists(_._2 == actor) =>
