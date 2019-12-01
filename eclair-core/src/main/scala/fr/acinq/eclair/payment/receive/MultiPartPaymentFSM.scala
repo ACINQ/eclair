@@ -17,10 +17,11 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.{ActorRef, Props}
+import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, MilliSatoshi, NodeParams, wire}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
 
 import scala.collection.immutable.Queue
 
@@ -66,7 +67,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // intermediate nodes will be able to fulfill that htlc anyway. This is a harmless spec violation.
     case Event(MultiPartHtlc(_, htlc), _) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
-      log.info(s"received extraneous htlc for payment hash $paymentHash")
+      log.info(s"received extraneous htlc amountMsat=${htlc.amountMsat}")
       parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId)), None)
       stay
   }
@@ -110,6 +111,9 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   initialize()
 
+  override def mdc(currentMessage: Any): MDC = {
+    Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = Some(paymentHash))
+  }
 }
 
 object MultiPartPaymentFSM {

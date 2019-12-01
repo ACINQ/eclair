@@ -102,12 +102,12 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
   // we should not restart a failing socks client
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false) {
     case t =>
-      Logs.withMdc(Logs.mdc(category_opt = Some(LogCategory.CONNECTION), remoteNodeId_opt = Some(remoteNodeId))) {
+      Logs.withMdc(log)(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         t match {
           case Socks5Error(msg) => log.info(s"SOCKS5 error: $msg")
           case _ => log.error(t, "")
         }
-      }(log)
+      }
       SupervisorStrategy.Stop
   }
 
