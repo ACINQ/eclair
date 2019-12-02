@@ -41,7 +41,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
-    startBitcoind()
+    startBitcoind(txIndexEnabled = true)
     waitForBitcoindReady()
     super.beforeAll()
   }
@@ -67,12 +67,12 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
     val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
 
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
+    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid)) // tx is still in mempool
     val JString(hex) = probe.expectMsgType[JValue]
     val tx = Transaction.read(hex)
 
     val listener = TestProbe()
-    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
+    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK, RescanFrom(rescanHeight = Some(0)))) // when using the electrum watcher 'rescanHeight' can be 0
     generateBlocks(bitcoincli, 5)
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid.toHex === txid)
@@ -114,7 +114,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     }
 
     val listener = TestProbe()
-    probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(0))))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]

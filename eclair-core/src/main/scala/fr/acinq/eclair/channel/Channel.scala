@@ -205,7 +205,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             case _ =>
               // in all other cases we need to be ready for any type of closing
               // TODO: should we wait for an acknowledgment from the watcher?
-              blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+              blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(now)))
               blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
               closing.mutualClosePublished.foreach(doPublish)
               closing.localCommitPublished.foreach(doPublish)
@@ -224,7 +224,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
         case normal: DATA_NORMAL =>
           // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(ShortChannelId.coordinates(normal.shortChannelId).blockHeight)))
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId))
 
@@ -245,17 +245,24 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
 
-        case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchConfirmed(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEPTHOK, RescanFrom(rescanTimestamp = Some(d.waitingSince)))
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(d.waitingSince)))
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           // we make sure that the funding tx has been published
-          blockchain ! GetTxWithMeta(funding.commitments.commitInput.outPoint.txid)
+          blockchain ! GetTxWithMeta(d.commitments.commitInput.outPoint.txid)
+          goto(OFFLINE) using data
+
+        case d: DATA_WAIT_FOR_FUNDING_LOCKED =>
+          // add watchers
+          log.info("adding watchers to restore the channel")
+          blockchain ! WatchConfirmed(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED, RescanFrom(rescanHeight = Some(ShortChannelId.coordinates(d.shortChannelId).blockHeight)))
           goto(OFFLINE) using data
 
         case _ =>
           // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(now))) // TODO: review
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           goto(OFFLINE) using data
       }
@@ -438,8 +445,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           // NB: we don't send a ChannelSignatureSent for the first commit
           log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
-          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT,  RescanFrom(rescanTimestamp = Some(now))) // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK,  RescanFrom(rescanTimestamp = Some(now)))
           context.system.scheduler.scheduleOnce(FUNDING_TIMEOUT_FUNDEE, self, BITCOIN_FUNDING_TIMEOUT)
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, now, None, Right(fundingSigned)) storing() sending fundingSigned
       }
@@ -475,8 +482,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val now = Platform.currentTime.milliseconds.toSeconds
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
-          blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT,  RescanFrom(rescanTimestamp = Some(now))) // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK,  RescanFrom(rescanTimestamp = Some(now)))
           log.info(s"committing txid=${fundingTx.txid}")
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
@@ -569,7 +576,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
     case Event(FundingLocked(_, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, _)) =>
       // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
+      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED,  RescanFrom(rescanHeight = Some(ShortChannelId.coordinates(shortChannelId).blockHeight)))
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimum, nodeParams.feeBase, nodeParams.feeProportionalMillionth, commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
@@ -1259,7 +1266,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventSpent(BITCOIN_OUTPUT_SPENT, tx), d: DATA_CLOSING) =>
       // one of the outputs of the local/remote/revoked commit was spent
       // we just put a watch to be notified when it is confirmed
-      blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx))
+      blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx), RescanFrom(rescanTimestamp = Some(now)))
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
@@ -1279,7 +1286,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
         val (rev1, tx_opt) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx, nodeParams.onChainFeeConf.feeEstimator)
         tx_opt.foreach(claimTx => blockchain ! PublishAsap(claimTx))
-        tx_opt.foreach(claimTx => blockchain ! WatchSpent(self, tx, claimTx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+        tx_opt.foreach(claimTx => blockchain ! WatchSpent(self, tx, claimTx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT, RescanFrom(rescanTimestamp = Some(now))))
         rev1
       }
       stay using d.copy(revokedCommitPublished = revokedCommitPublished1) storing()
@@ -1449,7 +1456,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+      blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK, RescanFrom(rescanTimestamp = Some(d.waitingSince)))
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
@@ -1507,7 +1514,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (!d.buried) {
             // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
             // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
-            blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
+            blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED, RescanFrom(rescanHeight = Some(ShortChannelId.coordinates(d.shortChannelId).blockHeight)))
           } else {
             // channel has been buried enough, should we (re)send our announcement sigs?
             d.channelAnnouncement match {
@@ -1944,7 +1951,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def doPublish(closingTx: Transaction): Unit = {
     blockchain ! PublishAsap(closingTx)
-    blockchain ! WatchConfirmed(self, closingTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx))
+    blockchain ! WatchConfirmed(self, closingTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx), RescanFrom(rescanTimestamp = Some(now)))
   }
 
   def spendLocalCurrent(d: HasCommitments) = {
@@ -1991,7 +1998,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
   def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
+    process.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx), RescanFrom(rescanTimestamp = Some(now))))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
@@ -2000,7 +2007,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
   def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]): Unit = {
     val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => blockchain ! WatchSpent(self, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+    process.foreach(tx => blockchain ! WatchSpent(self, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT, RescanFrom(rescanTimestamp = Some(now))))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
