@@ -238,9 +238,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
     initChannels.values.foreach { pc =>
       val txid = pc.fundingTxid
-      val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
+      val TxCoordinates(blockHeight, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(pc.ann.bitcoinKey1, pc.ann.bitcoinKey2)))
-      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId), RescanFrom(rescanHeight = Some(blockHeight)))
     }
 
     // on restart we update our node announcement
@@ -336,7 +336,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                 log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
                 None
               case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
-                val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
+                val TxCoordinates(blockHeight, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
                 val (fundingOutputScript, ok) = Kamon.runWithSpan(Kamon.spanBuilder("checked-pubkeyscript").start(), finishSpan = true) {
                   // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
                   val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
@@ -351,7 +351,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                   }
                   None
                 } else {
-                  watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+                  watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId), RescanFrom(rescanHeight = Some(blockHeight)))
                   // TODO: check feature bit set
                   log.debug("added channel channelId={}", c.shortChannelId)
                   val capacity = tx.txOut(outputIndex).amount

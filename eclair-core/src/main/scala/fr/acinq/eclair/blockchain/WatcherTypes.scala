@@ -35,12 +35,12 @@ sealed trait Watch {
   def channel: ActorRef
   def event: BitcoinEvent
 }
-// we need a public key script to use electrum apis
-final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent) extends Watch
+// we need a public key script to use electrum apis, rescanHeight is the earliest block height at which we need to scan to index the watched transaction
+final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent, rescanFrom: RescanFrom) extends Watch
 object WatchConfirmed {
   // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
   // we support both p2pkh and p2wpkh scripts
-  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(ByteVector.empty), minDepth, event)
+  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent, rescanFrom: RescanFrom): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(ByteVector.empty), minDepth, event, rescanFrom)
 
   def extractPublicKeyScript(witness: ScriptWitness): ByteVector = Try(PublicKey(witness.stack.last)) match {
     case Success(pubKey) =>
@@ -52,15 +52,15 @@ object WatchConfirmed {
   }
 }
 
-final case class WatchSpent(channel: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch
+final case class WatchSpent(channel: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent, rescanFrom: RescanFrom) extends Watch
 object WatchSpent {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
-  def apply(channel: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpent = WatchSpent(channel, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
+  def apply(channel: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent, rescanFrom: RescanFrom): WatchSpent = WatchSpent(channel, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event, rescanFrom)
 }
-final case class WatchSpentBasic(channel: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch // we use this when we don't care about the spending tx, and we also assume txid already exists
+final case class WatchSpentBasic(channel: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent, rescanFrom: RescanFrom) extends Watch // we use this when we don't care about the spending tx, and we also assume txid already exists
 object WatchSpentBasic {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
-  def apply(channel: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpentBasic = WatchSpentBasic(channel, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
+  def apply(channel: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent, rescanFrom: RescanFrom): WatchSpentBasic = WatchSpentBasic(channel, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event, rescanFrom)
 }
 // TODO: notify me if confirmation number gets below minDepth?
 final case class WatchLost(channel: ActorRef, txId: ByteVector32, minDepth: Long, event: BitcoinEvent) extends Watch
@@ -78,6 +78,11 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   */
 final case class PublishAsap(tx: Transaction)
 final case class ValidateRequest(ann: ChannelAnnouncement)
+final case class RescanFrom(rescanTimestamp: Option[Long] = None, rescanHeight: Option[Long] = None) {
+  require(rescanTimestamp.isDefined || rescanHeight.isDefined)
+}
+case class ImportMultiItem(address: String, label: String, timestamp: Long)
+case class WatchAddressItem(address: String, label: String)
 sealed trait UtxoStatus
 object UtxoStatus {
   case object Unspent extends UtxoStatus

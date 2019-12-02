@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.scriptPubKeyToAddress
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -31,13 +32,19 @@ import scodec.bits.ByteVector
 
 import scala.collection.{Set, SortedMap}
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 /**
   * A blockchain watcher that:
   * - receives bitcoin events (new blocks and new txes) directly from the bitcoin network
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
+  *
+  *
+  * When the watcher starts it waits until bitcoind has indexed all the relevant addresses/transactions
+  *
+  * During normal operation (state `watching`) it
+  *
   * Created by PM on 21/02/2016.
   */
 class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
@@ -46,12 +53,19 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
-  // this is to initialize block count
-  self ! TickNewBlock
+  self ! TickNewBlock // this is to initialize block count
+  // on startup we need to wait until all the channels have been restored, we'll receive
+  // watches from them and we want to scan only once for all, 'TickInitialRescan' triggers the rescan
+  context.system.scheduler.scheduleOnce(15 seconds)(self ! TickInitialRescan)
 
-  case class TriggerEvent(w: Watch, e: WatchEvent)
-
-  def receive: Receive = watching(Set(), Map(), SortedMap(), None)
+  /**
+    * init -----------------> scanning ---- TickInitialRescan ---> watching
+    *
+    * The watcher is initialized into a scanning state during which it will queue the events,
+    * when a 'TickInitialRescan' is received the watcher will instruct bitcoind to rescan. Only after
+    * the initial chain rescan is completed the watcher is ready to process watch events (both spent and confirm).
+    */
+  def receive: Receive = scanPending(Set.empty, Map.empty, List.empty)
 
   def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
@@ -79,18 +93,14 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       val task = context.system.scheduler.scheduleOnce(2 seconds, self, TickNewBlock)
       context become watching(watches, watchedUtxos, block2tx, Some(task))
 
+    // we don't check for watch-spent when a new block arrives
     case TickNewBlock =>
-      client.getBlockCount.map {
-        case count =>
-          log.debug(s"setting blockCount=$count")
-          blockCount.set(count)
-          context.system.eventStream.publish(CurrentBlockCount(count))
+      updateBlockCount()
+      val watchConfirmed = watches.collect { case w: WatchConfirmed => w }.asInstanceOf[Set[Watch]]
+      importMultiAndScan(watchConfirmed).onSuccess { case _ =>
+          checkWatches(watchConfirmed)
+          context become watching(watches, watchedUtxos, block2tx, None)
       }
-      // TODO: beware of the herd effect
-      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
-        Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
-      }
-      context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
       log.info(s"triggering $w")
@@ -109,51 +119,13 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       toPublish.values.flatten.map(tx => publish(tx))
       context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, None)
     }
-
     case w: Watch if !watches.contains(w) =>
-      w match {
-        case WatchSpentBasic(_, txid, outputIndex, _, _) =>
-          // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
-          client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
-            case false =>
-              log.info(s"output=$outputIndex of txid=$txid has already been spent")
-              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-          }
-
-        case WatchSpent(_, txid, outputIndex, _, _) =>
-          // first let's see if the parent tx was published or not
-          client.getTxConfirmations(txid.toString()).collect {
-            case Some(_) =>
-              // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
-                case false =>
-                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
-                  client.getMempool().map { mempoolTxs =>
-                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-                      case Nil =>
-                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
-                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
-                          self ! NewTransaction(tx)
-                        }
-                      case txs =>
-                        log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                        txs.foreach(tx => self ! NewTransaction(tx))
-                    }
-                  }
-              }
-          }
-
-        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
-
-        case _: WatchLost => () // TODO: not implemented
-
-        case w => log.warning(s"ignoring $w")
-      }
-
       log.debug(s"adding watch $w for $sender")
-      context.watch(w.channel)
-      context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
+      importMultiAndScan(Set(w)).onSuccess { case _ =>
+        checkWatches(Set(w))
+        context.watch(w.channel)
+        context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
+      }
 
     case PublishAsap(tx) =>
       val blockCount = this.blockCount.get()
@@ -164,7 +136,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         val parentTxid = tx.txIn(0).outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
-        self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx), RescanFrom(rescanHeight = Some(blockCount)))
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
@@ -196,6 +168,45 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   }
 
+  /**
+    * Initial state: during this state we queue the watches and wait for `TickInitialRescan` which is
+    * the trigger. Once received the trigger we call `importMulti` RPC using proper timestamps
+    * for each script, `importMulti` will also rescan the chain. If and only if the `importMulti`
+    * completed successfully we can transition to `watching` state.
+    *
+    * NB: `importmulti` is treated as an atomic operation, when it completes we assume it also rescanned
+    * from where it was necessary (see timestamp), if we see some scripts already imported
+    * we exclude them from `importmulti` because they are already indexed
+    */
+  def scanPending(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], eventQueue: List[Any]): Receive = {
+
+    case w: Watch => context.become(scanPending(watches + w, addWatchedUtxos(watchedUtxos, w), eventQueue))
+    // while pending initial scan we can still validate announcements
+    case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
+
+    case TickNewBlock => updateBlockCount()
+
+    case TickInitialRescan =>
+      log.info(s"doing initial chain rescan")
+      importMultiAndScan(watches).onSuccess { case _ =>
+        checkWatches(watches)
+        context.system.scheduler.scheduleOnce(1 seconds)(eventQueue.foreach(self ! _)) // fire non watch events that were queued while scanning
+        context.become(watching(watches, watchedUtxos, SortedMap(), None)) // rescan completed now goto watching
+      }
+
+    case 'watches => sender ! watches
+    // non watch related events are stored until we go to watching state
+    case unhandled =>
+      log.info(s"received $unhandled in 'pendingScan' state")
+      context.become(scanPending(watches, watchedUtxos, eventQueue :+ unhandled))
+  }
+
+  def updateBlockCount() = client.getBlockCount.map { count =>
+    log.debug(s"setting blockCount=$count")
+    blockCount.set(count)
+    context.system.eventStream.publish(CurrentBlockCount(count))
+  }
+
   // NOTE: we use a single thread to publish transactions so that it preserves order.
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
@@ -212,10 +223,74 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     }
   }
 
+  /**
+    * Computes the address and timestamp for each watch, then it imports those that are not yet imported
+    * instructing bitcoind to use the timestamp for the rescan height.
+    */
+  def importMultiAndScan(watches: Set[Watch]): Future[Unit] = {
+    val scriptsWithTimestamp = watches.toSeq.collect {
+      case WatchConfirmed(_, _, script, _, _, RescanFrom(Some(timestamp), _))  => Future.successful((scriptPubKeyToAddress(script), timestamp))
+      case WatchSpent(_, _, _, script, _, RescanFrom(Some(timestamp), _))      => Future.successful((scriptPubKeyToAddress(script), timestamp))
+      case WatchSpentBasic(_, _, _, script, _, RescanFrom(Some(timestamp), _)) => Future.successful((scriptPubKeyToAddress(script), timestamp))
+      case WatchConfirmed(_, _, script, _, _, RescanFrom(_, Some(height)))  => client.getBlock(height).map { block => (scriptPubKeyToAddress(script), block.header.time) }
+      case WatchSpent(_, _, _, script, _, RescanFrom(_, Some(height)))      => client.getBlock(height).map { block => (scriptPubKeyToAddress(script), block.header.time) }
+      case WatchSpentBasic(_, _, _, script, _, RescanFrom(_, Some(height))) => client.getBlock(height).map { block => (scriptPubKeyToAddress(script), block.header.time) }
+    }
+
+    for {
+      alreadyImported <- client.listReceivedByAddress().map(_.filter(_.label == "IMPORTED")).map(_.map(_.address))
+      resolved <- Future.sequence(scriptsWithTimestamp)
+      toImport = resolved.filterNot(el => alreadyImported.contains(el._1)).map {
+        case (address, timestamp) => ImportMultiItem(address, "PENDING", timestamp)
+      }
+      imported <- if(toImport.nonEmpty) client.importMulti(toImport, rescan = true) else Future.successful(true) // import addresses and rescan
+      _ = if(!imported) throw new IllegalStateException("failed to import some addresses")
+      _ <- if(toImport.nonEmpty) Future.sequence(toImport.map( item => client.setLabel(item.address, "IMPORTED"))) else Future.successful(true)
+    } yield Unit
+  }
+
+  def checkWatches(watches: Set[Watch]): Future[Set[Any]] = {
+    KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+      Future.sequence(watches.collect {
+        case w: WatchConfirmed => checkConfirmed(w)
+        case w: WatchSpent => checkSpent(w)
+        case w: WatchSpentBasic => checkSpentBasic(w)
+      })
+    }
+  }
+
+  def checkSpent(w: WatchSpent) = {
+    client.isTransactionOutputSpendable(w.txId.toString(), w.outputIndex, true).collect {
+      case false =>
+        log.info(s"${w.txId.toHex}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
+        client.getMempool().map { mempoolTxs =>
+          mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+            case Nil =>
+              log.warning(s"${w.txId.toHex}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
+              client.lookForSpendingTx(None, w.txId.toString(), w.outputIndex).map { tx =>
+                log.warning(s"found the spending tx of ${w.txId.toHex}:${w.outputIndex} in the blockchain: txid=${tx.txid}")
+                self ! NewTransaction(tx)
+              }
+            case txs =>
+              log.info(s"found ${txs.size} txs spending ${w.txId.toHex}:${w.outputIndex} in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+              txs.foreach(tx => self ! NewTransaction(tx))
+          }
+        }
+    }
+  }
+
+  def checkSpentBasic(w: WatchSpentBasic) = {
+    // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
+    client.isTransactionOutputSpendable(w.txId.toString(), w.outputIndex, true).collect {
+      case false =>
+        log.info(s"output=${w.outputIndex} of txid=${w.txId.toHex} has already been spent")
+        self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+    }
+  }
+
   def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
-    // matter because this only happens once, when the watched transaction has reached min_depth
+    // NB: this assumes that the tx addresses have been imported and the rescan has been done
     client.getTxConfirmations(w.txId.toString).map {
       case Some(confirmations) if confirmations >= w.minDepth =>
         client.getTransaction(w.txId.toString).map {
@@ -224,6 +299,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
           }
         }
+      case None =>
+        log.warning(s"could not get confirmations of tx=${w.txId} for watch=$w")
     }
   }
 
@@ -231,9 +308,13 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
 object ZmqWatcher {
 
+  val MIN_PRUNE_TARGET_SIZE = 25000000000L // minimum save prune target size is ~25gb
+
   def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
+  case class TriggerEvent(w: Watch, e: WatchEvent)
   case object TickNewBlock
+  case object TickInitialRescan
 
   def utxo(w: Watch): Option[OutPoint] =
     w match {
