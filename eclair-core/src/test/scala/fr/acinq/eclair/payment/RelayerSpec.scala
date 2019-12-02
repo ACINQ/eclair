@@ -590,6 +590,18 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, GetOutgoingChannels())
     val OutgoingChannels(channels6) = sender.expectMsgType[OutgoingChannels]
     assert(channels6.size === 1)
+
+    // Simulate a chain re-org that changes the shortChannelId:
+    relayer ! ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId))
+    sender.send(relayer, GetOutgoingChannels())
+    sender.expectMsg(OutgoingChannels(Nil))
+
+    // We should receive the updated channel update containing the new shortChannelId:
+    relayer ! LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat))
+    sender.send(relayer, GetOutgoingChannels())
+    val OutgoingChannels(channels7) = sender.expectMsgType[OutgoingChannels]
+    assert(channels7.size === 1)
+    assert(channels7.head.channelUpdate.shortChannelId === ShortChannelId(42))
   }
 
   test("replay pending commands after restart") { f =>
