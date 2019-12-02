@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment.relay
 
 import java.util.UUID
 
+import akka.Done
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -30,6 +31,7 @@ import fr.acinq.eclair.{MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.collection.mutable
+import scala.concurrent.Promise
 
 // @formatter:off
 sealed trait Origin
@@ -61,7 +63,7 @@ object Origin {
  * It also receives channel HTLC events (fulfill / failed) and relays those to the appropriate handlers.
  * It also maintains an up-to-date view of local channel balances.
  */
-class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
+class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import Relayer._
 
@@ -72,7 +74,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
-  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer))
+  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer, initialized))
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
   private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, self, router, commandBuffer, register))
 
@@ -181,7 +183,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeParams, router, register, commandBuffer, paymentHandler)
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) =
+    Props(classOf[Relayer], nodeParams, router, register, commandBuffer, paymentHandler, initialized)
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
   type NodeChannels = mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]

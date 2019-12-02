@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.payment.relay
 
+import akka.Done
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -28,6 +29,9 @@ import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
 import scodec.bits.ByteVector
+
+import scala.concurrent.Promise
+import scala.util.Try
 
 /**
  * Created by t-bast on 21/11/2019.
@@ -44,7 +48,7 @@ import scodec.bits.ByteVector
  * payment (because of multi-part): we have lost the intermediate state necessary to retry that payment, so we need to
  * wait for the partial HTLC set sent downstream to either fail or fulfill the payment in our DB.
  */
-class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef) extends Actor with ActorLogging {
+class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import PostRestartHtlcCleaner._
 
@@ -63,6 +67,9 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef) ex
   }
 
   override def receive: Receive = main(brokenHtlcs)
+
+  // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
+  Try(initialized.map(_.success(Done)))
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
@@ -188,7 +195,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef) ex
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, commandBuffer: ActorRef) = Props(classOf[PostRestartHtlcCleaner], nodeParams, commandBuffer)
+  def props(nodeParams: NodeParams, commandBuffer: ActorRef, initialized: Option[Promise[Done]] = None) = Props(classOf[PostRestartHtlcCleaner], nodeParams, commandBuffer, initialized)
 
   /**
    * @param add      incoming HTLC that was committed upstream.
