@@ -259,16 +259,6 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_d.invoiceRoutingInfo === Some(routingHints))
   }
 
-  test("fail to build a trampoline payment to non-trampoline recipient for 0-value invoice") {
-    // This is disabled because it would let the trampoline node steal the whole payment (if malicious).
-    val routingHints = List(List(PaymentRequest.ExtraHop(randomKey.publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
-    val invoiceFeatures = Features(PAYMENT_SECRET_OPTIONAL, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
-    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, "#abittooreckless", None, None, routingHints, features = Some(invoiceFeatures))
-    assertThrows[IllegalArgumentException](
-      buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalLegacyPayload(finalAmount, finalExpiry))
-    )
-  }
-
   test("fail to build a trampoline payment when too much invoice data is provided") {
     val routingHintOverflow = List(List.fill(7)(PaymentRequest.ExtraHop(randomKey.publicKey, ShortChannelId(1), 10 msat, 100, CltvExpiryDelta(12))))
     val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, "#reckless", None, None, routingHintOverflow)

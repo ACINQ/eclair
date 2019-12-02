@@ -27,8 +27,8 @@ import scodec.bits.HexStringSyntax
 import scodec.codecs._
 
 /**
-  * Created by t-bast on 20/06/2019.
-  */
+ * Created by t-bast on 20/06/2019.
+ */
 
 class TlvCodecsSpec extends FunSuite {
 
@@ -36,116 +36,135 @@ class TlvCodecsSpec extends FunSuite {
 
   test("encode/decode truncated uint16") {
     val testCases = Seq(
-      (hex"00", 0),
-      (hex"01 01", 1),
-      (hex"01 2a", 42),
-      (hex"01 ff", 255),
-      (hex"02 0100", 256),
-      (hex"02 0231", 561),
-      (hex"02 ffff", 65535)
+      (hex"", hex"00", 0),
+      (hex"01", hex"01 01", 1),
+      (hex"2a", hex"01 2a", 42),
+      (hex"ff", hex"01 ff", 255),
+      (hex"0100", hex"02 0100", 256),
+      (hex"0231", hex"02 0231", 561),
+      (hex"ffff", hex"02 ffff", 65535)
     )
 
-    for ((bin, expected) <- testCases) {
+    for ((bin, lengthPrefixedBin, expected) <- testCases) {
       val decoded = tu16.decode(bin.bits).require.value
+      val decoded1 = ltu16.decode(lengthPrefixedBin.bits).require.value
       assert(decoded === expected)
+      assert(decoded1 === expected)
 
       val encoded = tu16.encode(expected).require.bytes
+      val encoded1 = ltu16.encode(expected).require.bytes
       assert(encoded === bin)
+      assert(encoded1 === lengthPrefixedBin)
     }
   }
 
   test("encode/decode truncated uint32") {
     val testCases = Seq(
-      (hex"00", 0L),
-      (hex"01 01", 1L),
-      (hex"01 2a", 42L),
-      (hex"01 ff", 255L),
-      (hex"02 0100", 256L),
-      (hex"02 0231", 561L),
-      (hex"02 ffff", 65535L),
-      (hex"03 010000", 65536L),
-      (hex"03 ffffff", 16777215L),
-      (hex"04 01000000", 16777216L),
-      (hex"04 01020304", 16909060L),
-      (hex"04 ffffffff", 4294967295L)
+      (hex"", hex"00", 0L),
+      (hex"01", hex"01 01", 1L),
+      (hex"2a", hex"01 2a", 42L),
+      (hex"ff", hex"01 ff", 255L),
+      (hex"0100", hex"02 0100", 256L),
+      (hex"0231", hex"02 0231", 561L),
+      (hex"ffff", hex"02 ffff", 65535L),
+      (hex"010000", hex"03 010000", 65536L),
+      (hex"ffffff", hex"03 ffffff", 16777215L),
+      (hex"01000000", hex"04 01000000", 16777216L),
+      (hex"01020304", hex"04 01020304", 16909060L),
+      (hex"ffffffff", hex"04 ffffffff", 4294967295L)
     )
 
-    for ((bin, expected) <- testCases) {
+    for ((bin, lengthPrefixedBin, expected) <- testCases) {
       val decoded = tu32.decode(bin.bits).require.value
+      val decoded1 = ltu32.decode(lengthPrefixedBin.bits).require.value
       assert(decoded === expected)
+      assert(decoded1 === expected)
 
       val encoded = tu32.encode(expected).require.bytes
+      val encoded1 = ltu32.encode(expected).require.bytes
       assert(encoded === bin)
+      assert(encoded1 === lengthPrefixedBin)
     }
   }
 
   test("encode/decode truncated uint64") {
     val testCases = Seq(
-      (hex"00", UInt64(0)),
-      (hex"01 01", UInt64(1)),
-      (hex"01 2a", UInt64(42)),
-      (hex"01 ff", UInt64(255)),
-      (hex"02 0100", UInt64(256)),
-      (hex"02 0231", UInt64(561)),
-      (hex"02 ffff", UInt64(65535)),
-      (hex"03 010000", UInt64(65536)),
-      (hex"03 ffffff", UInt64(16777215)),
-      (hex"04 01000000", UInt64(16777216)),
-      (hex"04 01020304", UInt64(16909060)),
-      (hex"04 ffffffff", UInt64(4294967295L)),
-      (hex"05 0100000000", UInt64(4294967296L)),
-      (hex"05 0102030405", UInt64(4328719365L)),
-      (hex"05 ffffffffff", UInt64(1099511627775L)),
-      (hex"06 010000000000", UInt64(1099511627776L)),
-      (hex"06 010203040506", UInt64(1108152157446L)),
-      (hex"06 ffffffffffff", UInt64(281474976710655L)),
-      (hex"07 01000000000000", UInt64(281474976710656L)),
-      (hex"07 01020304050607", UInt64(283686952306183L)),
-      (hex"07 ffffffffffffff", UInt64(72057594037927935L)),
-      (hex"08 0100000000000000", UInt64(72057594037927936L)),
-      (hex"08 0102030405060708", UInt64(72623859790382856L)),
-      (hex"08 ffffffffffffffff", UInt64.MaxValue)
+      (hex"", hex"00", UInt64(0)),
+      (hex"01", hex"01 01", UInt64(1)),
+      (hex"2a", hex"01 2a", UInt64(42)),
+      (hex"ff", hex"01 ff", UInt64(255)),
+      (hex"0100", hex"02 0100", UInt64(256)),
+      (hex"0231", hex"02 0231", UInt64(561)),
+      (hex"ffff", hex"02 ffff", UInt64(65535)),
+      (hex"010000", hex"03 010000", UInt64(65536)),
+      (hex"ffffff", hex"03 ffffff", UInt64(16777215)),
+      (hex"01000000", hex"04 01000000", UInt64(16777216)),
+      (hex"01020304", hex"04 01020304", UInt64(16909060)),
+      (hex"ffffffff", hex"04 ffffffff", UInt64(4294967295L)),
+      (hex"0100000000", hex"05 0100000000", UInt64(4294967296L)),
+      (hex"0102030405", hex"05 0102030405", UInt64(4328719365L)),
+      (hex"ffffffffff", hex"05 ffffffffff", UInt64(1099511627775L)),
+      (hex"010000000000", hex"06 010000000000", UInt64(1099511627776L)),
+      (hex"010203040506", hex"06 010203040506", UInt64(1108152157446L)),
+      (hex"ffffffffffff", hex"06 ffffffffffff", UInt64(281474976710655L)),
+      (hex"01000000000000", hex"07 01000000000000", UInt64(281474976710656L)),
+      (hex"01020304050607", hex"07 01020304050607", UInt64(283686952306183L)),
+      (hex"ffffffffffffff", hex"07 ffffffffffffff", UInt64(72057594037927935L)),
+      (hex"0100000000000000", hex"08 0100000000000000", UInt64(72057594037927936L)),
+      (hex"0102030405060708", hex"08 0102030405060708", UInt64(72623859790382856L)),
+      (hex"ffffffffffffffff", hex"08 ffffffffffffffff", UInt64.MaxValue)
     )
 
-    for ((bin, expected) <- testCases) {
+    for ((bin, lengthPrefixedBin, expected) <- testCases) {
       val decoded = tu64.decode(bin.bits).require.value
+      val decoded1 = ltu64.decode(lengthPrefixedBin.bits).require.value
       assert(decoded === expected)
+      assert(decoded1 === expected)
 
       val encoded = tu64.encode(expected).require.bytes
+      val encoded1 = ltu64.encode(expected).require.bytes
       assert(encoded === bin)
+      assert(encoded1 === lengthPrefixedBin)
     }
   }
 
   test("encode/decode truncated uint64 overflow") {
-    assert(tu64overflow.encode(Long.MaxValue).require.toByteVector === hex"087fffffffffffffff")
-    assert(tu64overflow.decode(hex"087fffffffffffffff".bits).require.value === Long.MaxValue)
+    assert(tu64overflow.encode(Long.MaxValue).require.toByteVector === hex"7fffffffffffffff")
+    assert(tu64overflow.decode(hex"7fffffffffffffff".bits).require.value === Long.MaxValue)
 
-    assert(tu64overflow.encode(42L).require.toByteVector === hex"012a")
-    assert(tu64overflow.decode(hex"012a".bits).require.value === 42L)
+    assert(tu64overflow.encode(42L).require.toByteVector === hex"2a")
+    assert(tu64overflow.decode(hex"2a".bits).require.value === 42L)
 
     assert(tu64overflow.encode(-1L).isFailure)
-    assert(tu64overflow.decode(hex"088000000000000000".bits).isFailure)
+    assert(tu64overflow.decode(hex"8000000000000000".bits).isFailure)
+  }
+
+  test("decode length-prefixed truncated uint64 ignores trailing bytes") {
+    assert(ltu64.decode(hex"00 1234".bits).require.value === UInt64(0))
+    assert(ltu64.decode(hex"01 2a ff".bits).require.value === UInt64(42))
+    assert(ltu64.decode(hex"02 0451 1234".bits).require.value === UInt64(1105))
+    assert(ltu64.decode(hex"03 010000 0000".bits).require.value === UInt64(65536))
   }
 
   test("decode invalid truncated integers") {
     val testCases = Seq(
-      (tu16, hex"01 00"), // not minimal
-      (tu16, hex"02 0001"), // not minimal
-      (tu16, hex"03 ffffff"), // length too big
-      (tu32, hex"01 00"), // not minimal
-      (tu32, hex"02 0001"), // not minimal
-      (tu32, hex"03 000100"), // not minimal
-      (tu32, hex"04 00010000"), // not minimal
-      (tu32, hex"05 ffffffffff"), // length too big
-      (tu64, hex"01 00"), // not minimal
-      (tu64, hex"02 0001"), // not minimal
-      (tu64, hex"03 000100"), // not minimal
-      (tu64, hex"04 00010000"), // not minimal
-      (tu64, hex"05 0001000000"), // not minimal
-      (tu64, hex"06 000100000000"), // not minimal
-      (tu64, hex"07 00010000000000"), // not minimal
-      (tu64, hex"08 0001000000000000"), // not minimal
-      (tu64, hex"09 ffffffffffffffffff") // length too big
+      (tu16, hex"00"), // not minimal
+      (tu16, hex"0001"), // not minimal
+      (tu16, hex"ffffff"), // length too big
+      (tu32, hex"00"), // not minimal
+      (tu32, hex"0001"), // not minimal
+      (tu32, hex"000100"), // not minimal
+      (tu32, hex"00010000"), // not minimal
+      (tu32, hex"ffffffffff"), // length too big
+      (tu64, hex"00"), // not minimal
+      (tu64, hex"0001"), // not minimal
+      (tu64, hex"000100"), // not minimal
+      (tu64, hex"00010000"), // not minimal
+      (tu64, hex"0001000000"), // not minimal
+      (tu64, hex"000100000000"), // not minimal
+      (tu64, hex"00010000000000"), // not minimal
+      (tu64, hex"0001000000000000"), // not minimal
+      (tu64, hex"ffffffffffffffffff") // length too big
     )
 
     for ((codec, bin) <- testCases) {
@@ -307,9 +326,9 @@ class TlvCodecsSpec extends FunSuite {
 
   test("get optional TLV field") {
     val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
-    assert(stream.get[TestType254] == Some(TestType254(42)))
-    assert(stream.get[TestType1] == Some(TestType1(42)))
-    assert(stream.get[TestType2] == None)
+    assert(stream.get[TestType254] === Some(TestType254(42)))
+    assert(stream.get[TestType1] === Some(TestType1(42)))
+    assert(stream.get[TestType2] === None)
   }
 }
 
@@ -324,7 +343,7 @@ object TlvCodecsSpec {
   case class TestType3(nodeId: PublicKey, value1: UInt64, value2: UInt64) extends TestTlv
   case class TestType254(intValue: Int) extends TestTlv
 
-  private val testCodec1: Codec[TestType1] = ("value" | tu64).as[TestType1]
+  private val testCodec1: Codec[TestType1] = ("value" | ltu64).as[TestType1]
   private val testCodec2: Codec[TestType2] = (("length" | constant(hex"08")) :: ("short_channel_id" | shortchannelid)).as[TestType2]
   private val testCodec3: Codec[TestType3] = (("length" | constant(hex"31")) :: ("node_id" | publicKey) :: ("value_1" | uint64) :: ("value_2" | uint64)).as[TestType3]
   private val testCodec254: Codec[TestType254] = (("length" | constant(hex"02")) :: ("value" | uint16)).as[TestType254]
@@ -342,8 +361,8 @@ object TlvCodecsSpec {
   case class OtherType1(uintValue: UInt64) extends OtherTlv
   case class OtherType2(smallValue: Long) extends OtherTlv
 
-  val otherCodec1: Codec[OtherType1] = ("value" | tu64).as[OtherType1]
-  val otherCodec2: Codec[OtherType2] = ("value" | tu32).as[OtherType2]
+  val otherCodec1: Codec[OtherType1] = ("value" | ltu64).as[OtherType1]
+  val otherCodec2: Codec[OtherType2] = ("value" | ltu32).as[OtherType2]
   val otherTlvStreamCodec = tlvStream(discriminated[OtherTlv].by(varint)
     .typecase(10, otherCodec1)
     .typecase(11, otherCodec2))

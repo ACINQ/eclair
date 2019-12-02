@@ -66,6 +66,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
 
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
 
@@ -95,6 +96,19 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
         case None => channelUpdates // we only consider the balance if we have the channel_update
       }
       context become main(channelUpdates1, node2channels)
+
+    case ShortChannelIdAssigned(_, channelId, shortChannelId, previousShortChannelId) =>
+      previousShortChannelId.foreach(previousShortChannelId => {
+        if (previousShortChannelId != shortChannelId) {
+          log.debug(s"shortChannelId changed for channelId=$channelId ($previousShortChannelId->$shortChannelId, probably due to chain re-org)")
+          // We simply remove the old entry: we should receive a LocalChannelUpdate with the new shortChannelId shortly.
+          val node2channels1 = channelUpdates.get(previousShortChannelId).map(_.nextNodeId) match {
+            case Some(remoteNodeId) => node2channels.removeBinding(remoteNodeId, previousShortChannelId)
+            case None => node2channels
+          }
+          context become main(channelUpdates - previousShortChannelId, node2channels1)
+        }
+      })
 
     case ForwardAdd(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId}")
