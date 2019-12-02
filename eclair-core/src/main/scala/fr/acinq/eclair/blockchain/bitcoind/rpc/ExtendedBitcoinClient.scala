@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
-import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, ImportMultiItem, WatchAddressItem, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
 import org.json4s.JsonAST.{JValue, _}
@@ -51,24 +51,30 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     listReceivedByAddress(filter = Some(address)).map(_.nonEmpty)
   }
 
-  def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[String]] = {
+  def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[WatchAddressItem]] = {
     (filter match {
       case Some(address) => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly, address)
       case None          => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly)
     }).collect {
-      case JArray(elems) => elems.map { json => (json \ "address").extract[String] }
+      case JArray(elems) => elems.map { json =>
+        WatchAddressItem(
+          address = (json \ "address").extract[String],
+          label = (json \ "label").extract[String]
+        )
+      }
     }
   }
 
-  def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
-    rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
+  def setLabel(address: String, label: String)(implicit ec: ExecutionContext): Future[Unit] = {
+    rpcClient.invoke("setlabel", address, label).map(_ => Unit)
   }
 
-  def importMulti(scripts: Seq[(String, Long)], rescan: Boolean = true)(implicit ec: ExecutionContext): Future[Boolean] = {
+  def importMulti(scripts: Seq[ImportMultiItem], rescan: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = {
     val options = JObject(("rescan", JBool(rescan)))
     val requests = JArray(scripts.map(el => JObject(
-      ("scriptPubKey", JObject(("address", JString(el._1)))),
-      ("timestamp", JInt(el._2)),
+      ("scriptPubKey", JObject(("address", JString(el.address)))),
+      ("timestamp", JInt(el.timestamp)),
+      ("label", JString(el.label)),
       ("watchonly", JBool(true))
     )).toList)
     rpcClient.invoke("importmulti", requests, options)

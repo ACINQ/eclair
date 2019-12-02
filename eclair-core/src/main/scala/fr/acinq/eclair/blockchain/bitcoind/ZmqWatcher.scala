@@ -238,11 +238,14 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     }
 
     for {
-      alreadyImported <- client.listReceivedByAddress()
+      alreadyImported <- client.listReceivedByAddress().map(_.filter(_.label == "IMPORTED")).map(_.map(_.address))
       resolved <- Future.sequence(scriptsWithTimestamp)
-      toImport = resolved.filterNot(el => alreadyImported.contains(el._1))
-      imported <- if(toImport.nonEmpty) client.importMulti(toImport) else Future.successful(true) // import addresses and rescan
+      toImport = resolved.filterNot(el => alreadyImported.contains(el._1)).map {
+        case (address, timestamp) => ImportMultiItem(address, "PENDING", timestamp)
+      }
+      imported <- if(toImport.nonEmpty) client.importMulti(toImport, rescan = true) else Future.successful(true) // import addresses and rescan
       _ = if(!imported) throw new IllegalStateException("failed to import some addresses")
+      _ <- if(toImport.nonEmpty) Future.sequence(toImport.map( item => client.setLabel(item.address, "IMPORTED"))) else Future.successful(true)
     } yield Unit
   }
 

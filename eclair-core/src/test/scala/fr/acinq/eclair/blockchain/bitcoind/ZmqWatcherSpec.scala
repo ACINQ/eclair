@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.{Block, OutPoint, Transaction}
 import fr.acinq.eclair
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.TickInitialRescan
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction, RescanFrom, Watch, WatchConfirmed, WatchEvent, WatchEventConfirmed, WatchEventSpent, WatchEventSpentBasic, WatchSpent, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.{ImportMultiItem, NewBlock, NewTransaction, RescanFrom, Watch, WatchConfirmed, WatchEvent, WatchEventConfirmed, WatchEventSpent, WatchEventSpentBasic, WatchSpent, WatchSpentBasic}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_TX_CONFIRMED, BitcoinEvent}
 import fr.acinq.eclair.{ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
@@ -184,27 +184,32 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     bitcoinClient.getBlockCount.pipeTo(probe.ref)
     val currentBlockHeight = probe.expectMsgType[Long]
 
-    // create an external tx and let's be notified when it's spent
+    // create an external tx, we'll be notified when it's spent
     val nonWalletTx = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system)
     // tx spending the external one, we want to be notified by the watcher when it's confirmed
     val spendingTx = ExternalWalletHelper.spendNonWalletTx(nonWalletTx, receiveKey, sendKey)
 
-    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentBlockHeight), bitcoinClient))
-    watcher ! WatchConfirmed(probe.ref, nonWalletTx, 1L, BITCOIN_TX_CONFIRMED(nonWalletTx), RescanFrom(rescanHeight = Some(currentBlockHeight)))
-    watcher ! WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), RescanFrom(rescanHeight = Some(currentBlockHeight)))
-    watcher ! WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(currentBlockHeight)))
+    // we manually import ONE of the addresses for the watches
+    val address = eclair.scriptPubKeyToAddress(spendingTx.txOut.head.publicKeyScript)
+    bitcoinClient.importMulti(Seq(ImportMultiItem(address, "IMPORTED", Platform.currentTime.milliseconds.toSeconds)), rescan = false).pipeTo(probe.ref)
+    probe.expectMsgType[Boolean]
 
-    // assert we haven't imported anything yet
-    bitcoinClient.importMulti(any, any).wasNever(called)
+    bitcoinClient.importMulti(any, any).wasCalled(once)
 
+    // publish the transactions
     bitcoinClient.publishTransaction(nonWalletTx).pipeTo(probe.ref)
     probe.expectMsgType[String]
-
     bitcoinClient.publishTransaction(spendingTx).pipeTo(probe.ref)
     probe.expectMsgType[String]
 
     // generate a few blocks to bury the transactions
     generateBlocks(bitcoincli, 2)
+
+    // create the watcher and add the watches
+    val watcher = system.actorOf(ZmqWatcher.props(new AtomicLong(currentBlockHeight), bitcoinClient))
+    watcher ! WatchConfirmed(probe.ref, nonWalletTx, 1L, BITCOIN_TX_CONFIRMED(nonWalletTx), RescanFrom(rescanHeight = Some(currentBlockHeight)))
+    watcher ! WatchConfirmed(probe.ref, spendingTx, 1L, BITCOIN_TX_CONFIRMED(spendingTx), RescanFrom(rescanHeight = Some(currentBlockHeight)))
+    watcher ! WatchSpent(probe.ref, nonWalletTx, 0, BITCOIN_FUNDING_SPENT, RescanFrom(rescanHeight = Some(currentBlockHeight)))
 
     // even if 'nonWalletTx' has been spent its 'WatchSpent' is on hold until we do the initial rescan
     probe.expectNoMsg(1 seconds)
@@ -219,7 +224,9 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     assert(Set(we1, we2, we3).collect { case w: WatchEventSpent => w }.size == 1)
     assert(Set(we1, we2, we3).collect { case w: WatchEventConfirmed => w }.size == 2)
 
-    // assert we imported exactly once
-    bitcoinClient.importMulti(any, any).wasCalled(once)
-  }
+    // assert we imported twice: once in the watcher + once in the test
+    bitcoinClient.importMulti(any, any).wasCalled(twice)
+    // assert we updated the address label exactly TWICE because one of the three watches was already imported
+    bitcoinClient.setLabel(any, "IMPORTED").wasCalled(twice)
+   }
 }

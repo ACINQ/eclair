@@ -81,6 +81,8 @@ final case class ValidateRequest(ann: ChannelAnnouncement)
 final case class RescanFrom(rescanTimestamp: Option[Long] = None, rescanHeight: Option[Long] = None) {
   require(rescanTimestamp.isDefined || rescanHeight.isDefined)
 }
+case class ImportMultiItem(address: String, label: String, timestamp: Long)
+case class WatchAddressItem(address: String, label: String)
 sealed trait UtxoStatus
 object UtxoStatus {
   case object Unspent extends UtxoStatus

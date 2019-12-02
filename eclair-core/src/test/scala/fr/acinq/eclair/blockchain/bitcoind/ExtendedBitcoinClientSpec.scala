@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{ImportMultiItem, WatchAddressItem, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, _}
@@ -167,18 +167,45 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
 
     val importAndScan = for {
       _ <- client.importMulti(
-        scripts = Seq((address1, earliestBlockHeight), (address2, earliestBlockHeight)),
+        scripts = Seq(
+          ImportMultiItem(address1, "PENDING", earliestBlockHeight),
+          ImportMultiItem(address2, "PENDING", earliestBlockHeight)),
         rescan = true
       )
     } yield Unit
 
     Await.ready(importAndScan, 30 seconds)
 
+    // assert the transactions are now indexed and retrievable with 'gettransaction'
     client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
     sender.expectMsg(externalTx1)
 
     client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
     sender.expectMsg(externalTx2)
+
+    // retrieve their label
+    client.listReceivedByAddress().pipeTo(sender.ref)
+    val addressesWithLabel = sender.expectMsgType[List[WatchAddressItem]].filter {
+      case WatchAddressItem(address, _) if address == address1 || address == address2 => true
+      case _ => false
+    }
+
+    assert(addressesWithLabel.forall(_.label == "PENDING"))
+
+    // update the labels
+    val updatedAddressesWithLabelF = for {
+      _ <- client.setLabel(address1, "IMPORTED")
+      _ <- client.setLabel(address2, "IMPORTED")
+      addresses <- client.listReceivedByAddress()
+    } yield addresses
+
+    // assert the labels have been updated
+    updatedAddressesWithLabelF.pipeTo(sender.ref)
+    val updatedAddressesWithLabel = sender.expectMsgType[List[WatchAddressItem]].filter {
+      case WatchAddressItem(address, _) if address == address1 || address == address2 => true
+      case _ => false
+    }
+    assert(updatedAddressesWithLabel.forall(_.label == "IMPORTED"))
   }
 
 }
