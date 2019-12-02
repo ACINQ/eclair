@@ -56,10 +56,13 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
   def main(pendingIncoming: Map[ByteVector32, PendingRelay], pendingOutgoing: Map[UUID, Upstream.TrampolineRelayed]): Receive = {
     // We make sure we receive all payment parts before forwarding to the next trampoline node.
     case IncomingPacket.NodeRelayPacket(add, outer, inner, next) => outer.paymentSecret match {
-      case None => rejectHtlc(add.id, add.channelId, add.amountMsat)
+      case None =>
+        log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: missing payment secret")
+        rejectHtlc(add.id, add.channelId, add.amountMsat)
       case Some(secret) => pendingIncoming.get(add.paymentHash) match {
         case Some(relay) =>
           if (relay.secret != secret) {
+            log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: payment secret doesn't match other HTLCs in the set")
             rejectHtlc(add.id, add.channelId, add.amountMsat)
           } else {
             relay.handler ! MultiPartPaymentFSM.MultiPartHtlc(outer.totalAmount, add)
