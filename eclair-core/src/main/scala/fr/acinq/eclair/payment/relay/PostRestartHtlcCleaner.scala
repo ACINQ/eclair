@@ -137,8 +137,9 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
           }
           val relayedOut1 = relayedOut diff Seq((fulfilledHtlc.channelId, fulfilledHtlc.id))
           if (relayedOut1.isEmpty) {
-            // TODO: @t-bast: emit a payment relayed event
             log.info(s"payment with paymentHash=${fulfilledHtlc.paymentHash} successfully relayed")
+            // We could emit a TrampolinePaymentRelayed event but that requires more book-keeping on incoming HTLCs.
+            // It seems low priority so isn't done at the moment but can be added when we feel we need it.
             context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin, settledUpstream = brokenHtlcs.settledUpstream - origin))
           } else {
             context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut + (origin -> relayedOut1), settledUpstream = brokenHtlcs.settledUpstream + origin))

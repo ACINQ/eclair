@@ -147,7 +147,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
         case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
           val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
-          context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
+          context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, add.paymentHash, originChannelId, fulfill.channelId))
         case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
         case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fulfill
       }

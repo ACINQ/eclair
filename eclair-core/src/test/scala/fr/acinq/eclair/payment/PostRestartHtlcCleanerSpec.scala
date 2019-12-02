@@ -327,8 +327,6 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
       case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
-    // TODO: @t-bast: assert Relayed event
-
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_3, testCase.upstream_2, preimage2))
     commandBuffer.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
@@ -348,8 +346,6 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     commandBuffer.expectMsg(testCase.upstream_2.origins.map {
       case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
-
-    // TODO: @t-bast: assert Relayed event
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
     commandBuffer.expectNoMsg(100 millis) // the payment has already been fulfilled upstream

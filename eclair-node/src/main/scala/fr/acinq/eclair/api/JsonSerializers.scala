@@ -263,7 +263,7 @@ object CustomTypeHints {
 
   val paymentEvent = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
-    classOf[PaymentRelayed] -> "payment-relayed",
+    classOf[ChannelPaymentRelayed] -> "payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
     classOf[PaymentFailed] -> "payment-failed"

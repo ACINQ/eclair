@@ -27,7 +27,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
-import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent, TrampolinePaymentRelayed}
 import fr.acinq.eclair.router.{RouteParams, Router}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
@@ -39,21 +39,20 @@ import scala.collection.immutable.Queue
  */
 
 /**
- * The Node Relayer is used to relay an upstream payment to a downstream remote (non-peer) node.
+ * The Node Relayer is used to relay an upstream payment to a downstream remote node (which is not necessarily a direct peer).
  * It aggregates incoming HTLCs (in case multi-part was used upstream) and then forwards the requested amount (using the
  * router to find a route to the remote node and potentially splitting the payment using multi-part).
  */
 class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) extends Actor with ActorLogging {
 
   // TODO: @t-bast: if fees/cltv insufficient (could not find route) send special error (sender should retry with higher fees/cltv)?
-  // TODO: @t-bast: test HTLC timeout handling (malicious next node goes silent and we need to close -> propagate errors correctly to fail related HTLCs)
   // TODO: @t-bast: add Kamon counters to monitor the size of pendingIncoming/Outgoing?
 
   import NodeRelayer._
 
   override def receive: Receive = main(Map.empty, Map.empty)
 
-  def main(pendingIncoming: Map[ByteVector32, PendingRelay], pendingOutgoing: Map[UUID, Upstream.TrampolineRelayed]): Receive = {
+  def main(pendingIncoming: Map[ByteVector32, PendingRelay], pendingOutgoing: Map[UUID, PendingResult]): Receive = {
     // We make sure we receive all payment parts before forwarding to the next trampoline node.
     case IncomingPacket.NodeRelayPacket(add, outer, inner, next) => outer.paymentSecret match {
       case None =>
@@ -97,15 +96,20 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
           case None =>
             log.info(s"relaying trampoline payment with paymentHash=$paymentHash (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length})")
             val paymentId = relay(paymentHash, upstream, nextPayload, nextPacket)
-            context become main(pendingIncoming - paymentHash, pendingOutgoing + (paymentId -> upstream))
+            context become main(pendingIncoming - paymentHash, pendingOutgoing + (paymentId -> PendingResult(upstream, nextPayload)))
         }
       case None => throw new RuntimeException(s"could not find pending incoming payment (paymentHash=$paymentHash)")
     }
 
-    case PaymentSent(id, paymentHash, paymentPreimage, _) =>
-      // TODO: @t-bast: emit PaymentRelayed event
+    case PaymentSent(id, paymentHash, paymentPreimage, parts) =>
       log.debug(s"trampoline payment with paymentHash=$paymentHash successfully relayed")
-      pendingOutgoing.get(id).foreach(upstream => fulfillPayment(upstream, paymentPreimage))
+      pendingOutgoing.get(id).foreach {
+        case PendingResult(upstream, nextPayload) =>
+          fulfillPayment(upstream, paymentPreimage)
+          val fromChannelIds = upstream.adds.map(_.channelId)
+          val toChannelIds = parts.map(_.toChannelId)
+          context.system.eventStream.publish(TrampolinePaymentRelayed(upstream.amountIn, nextPayload.amountToForward, paymentHash, nextPayload.outgoingNodeId, fromChannelIds, toChannelIds))
+      }
       context become main(pendingIncoming, pendingOutgoing - id)
 
     case PaymentFailed(id, paymentHash, _, _) =>
@@ -113,7 +117,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       //  - if local failure because balance too low: we should send a TEMPORARY failure upstream (they should retry when we have more balance available)
       //  - if local failure because route not found: sender probably need to raise fees/cltv?
       log.debug(s"trampoline payment with paymentHash=$paymentHash failed")
-      pendingOutgoing.get(id).foreach(upstream => rejectPayment(upstream))
+      pendingOutgoing.get(id).foreach { case PendingResult(upstream, _) => rejectPayment(upstream) }
       context become main(pendingIncoming, pendingOutgoing - id)
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
@@ -189,6 +193,14 @@ object NodeRelayer {
    * @param handler     actor handling the aggregation of the incoming HTLC set.
    */
   case class PendingRelay(htlcs: Queue[UpdateAddHtlc], secret: ByteVector32, nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef)
+
+  /**
+   * Once the payment is forwarded, we're waiting for fail/fulfill responses from downstream nodes.
+   *
+   * @param upstream    complete HTLC set received.
+   * @param nextPayload relay instructions.
+   */
+  case class PendingResult(upstream: Upstream.TrampolineRelayed, nextPayload: Onion.NodeRelayPayload)
 
   def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)

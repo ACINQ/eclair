@@ -47,13 +47,14 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
   import NodeRelayerSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, nodeRelayer: TestActorRef[NodeRelayer], relayer: TestProbe, outgoingPayFSM: TestProbe, commandBuffer: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, nodeRelayer: TestActorRef[NodeRelayer], relayer: TestProbe, outgoingPayFSM: TestProbe, commandBuffer: TestProbe, eventListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(30 seconds) {
       val nodeParams = TestConstants.Bob.nodeParams
       val outgoingPayFSM = TestProbe()
-      val (relayer, router, commandBuffer, register) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
+      val (relayer, router, commandBuffer, register, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
+      system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
       class TestNodeRelayer extends NodeRelayer(nodeParams, relayer.ref, router.ref, commandBuffer.ref, register.ref) {
         override def spawnOutgoingPayFSM(cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
           outgoingPayFSM.ref ! cfg
@@ -61,7 +62,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
         }
       }
       val nodeRelayer = TestActorRef(new TestNodeRelayer().asInstanceOf[NodeRelayer])
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelayer, relayer, outgoingPayFSM, commandBuffer)))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelayer, relayer, outgoingPayFSM, commandBuffer, eventListener)))
     }
   }
 
@@ -195,6 +196,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, Nil))
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(incomingAmount, nodeParams.currentBlockHeight)), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
+    eventListener.expectNoMsg(100 millis)
   }
 
   test("compute route params") { f =>
@@ -223,8 +225,11 @@ class NodeRelayerSpec extends TestkitBaseClass {
     validateOutgoingPayment(outgoingPayment)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    // TODO: @t-bast: assert PaymentRelayed event
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+    val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.fromChannelIds.toSet === incomingMultiPart.map(_.add.channelId).toSet)
+    assert(relayEvent.toChannelIds.nonEmpty)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -240,9 +245,12 @@ class NodeRelayerSpec extends TestkitBaseClass {
     validateOutgoingPayment(outgoingPayment)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    // TODO: @t-bast: assert PaymentRelayed event
     val incomingAdd = incomingSinglePart.add
     commandBuffer.expectMsg(CommandBuffer.CommandSend(incomingAdd.channelId, incomingAdd.id, CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true)))
+    val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.fromChannelIds === Seq(incomingSinglePart.add.channelId))
+    assert(relayEvent.toChannelIds.nonEmpty)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -269,8 +277,11 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.assistedRoutes === hints)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    // TODO: @t-bast: assert PaymentRelayed event
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+    val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.fromChannelIds === incomingMultiPart.map(_.add.channelId))
+    assert(relayEvent.toChannelIds.nonEmpty)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -296,8 +307,11 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.assistedRoutes === hints)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    // TODO: @t-bast: assert PaymentRelayed event
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+    val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
+    validateRelayEvent(relayEvent)
+    assert(relayEvent.fromChannelIds === incomingMultiPart.map(_.add.channelId))
+    assert(relayEvent.toChannelIds.length === 1)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -319,6 +333,13 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.additionalTlvs === Seq(OnionTlv.TrampolineOnion(nextTrampolinePacket)))
     assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === Nil)
+  }
+
+  def validateRelayEvent(e: TrampolinePaymentRelayed): Unit = {
+    assert(e.amountIn === incomingAmount)
+    assert(e.amountOut === outgoingAmount)
+    assert(e.paymentHash === paymentHash)
+    assert(e.toNodeId === outgoingNodeId)
   }
 
 }
