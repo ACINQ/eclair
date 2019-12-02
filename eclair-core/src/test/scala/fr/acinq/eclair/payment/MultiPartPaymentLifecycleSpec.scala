@@ -68,7 +68,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(500))
     val (childPayFsm, router, relayer, sender, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     class TestMultiPartPaymentLifecycle extends MultiPartPaymentLifecycle(nodeParams, cfg, relayer.ref, router.ref, TestProbe().ref) {
-      override def spawnChildPaymentFsm(childId: UUID): ActorRef = childPayFsm.ref
+      override def spawnChildPaymentFsm(childId: UUID, includeTrampolineFees: Boolean): ActorRef = childPayFsm.ref
     }
     val paymentHandler = TestFSMRef(new TestMultiPartPaymentLifecycle().asInstanceOf[MultiPartPaymentLifecycle])
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])

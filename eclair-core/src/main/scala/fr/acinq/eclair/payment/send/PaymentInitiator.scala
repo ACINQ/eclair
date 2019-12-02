@@ -70,7 +70,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       if (!r.paymentRequest.features.allowTrampoline && r.paymentRequest.amount.isEmpty) {
         sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")) :: Nil)
       } else {
-        val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentRequest.paymentHash, r.trampolineNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = true)
+        val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentRequest.paymentHash, r.trampolineNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = true, Some(r))
         val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
           Onion.createMultiPartPayload(r.finalAmount, r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
         } else {
@@ -110,7 +110,6 @@ object PaymentInitiator {
    * TODO: @t-bast: remove this message once full Trampoline is implemented.
    */
   case class SendTrampolinePaymentRequest(finalAmount: MilliSatoshi,
-                                          // TODO: @t-bast: those fees should appear in the DB when the payment succeeds
                                           trampolineFees: MilliSatoshi,
                                           paymentRequest: PaymentRequest,
                                           trampolineNodeId: PublicKey,
@@ -143,6 +142,8 @@ object PaymentInitiator {
                                upstream: Upstream,
                                paymentRequest: Option[PaymentRequest],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
-                               publishEvent: Boolean)
+                               publishEvent: Boolean,
+                               // TODO: @t-bast: this is a very awkward work-around to get accurate data in the DB: fix this once we update the DB schema
+                               trampolineData: Option[SendTrampolinePaymentRequest] = None)
 
 }
