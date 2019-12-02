@@ -43,10 +43,10 @@ import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
-import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.payment.Auditor
+import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -210,6 +210,7 @@ class Setup(datadir: File,
       zmqTxConnected = Promise[Done]()
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
+      postRestartCleanUpInitialized = Promise[Done]()
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
@@ -283,8 +284,11 @@ class Setup(datadir: File,
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, commandBuffer), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, commandBuffer, paymentHandler), "relayer", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, commandBuffer, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
+      // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
+      // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
+      _ <- postRestartCleanUpInitialized.future
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, relayer, register), "payment-initiator", SupervisorStrategy.Restart))
