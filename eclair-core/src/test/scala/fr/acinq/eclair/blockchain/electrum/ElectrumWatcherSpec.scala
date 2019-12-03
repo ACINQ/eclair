@@ -134,7 +134,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     {
       // tx is in the blockchain
       val txid = ByteVector32(hex"c0b18008713360d7c30dae0940d88152a4bbb10faef5a69fefca5f7a7e1a06cc")
-      probe.send(watcher, GetTxWithMeta(txid))
+      probe.send(watcher, GetTxWithMeta(probe.ref, txid))
       val res = probe.expectMsgType[GetTxWithMetaResponse]
       assert(res.txid === txid)
       assert(res.tx_opt === Some(Transaction.read("0100000001b5cbd7615a7494f60304695c180eb255113bd5effcf54aec6c7dfbca67f533a1010000006a473044022042115a5d1a489bbc9bd4348521b098025625c9b6c6474f84b96b11301da17a0602203ccb684b1d133ff87265a6017ef0fdd2d22dd6eef0725c57826f8aaadcc16d9d012103629aa3df53cad290078bbad26491f1e11f9c01697c65db0967561f6f142c993cffffffff02801015000000000017a914b8984d6344eed24689cdbc77adaf73c66c4fdd688734e9e818000000001976a91404607585722760691867b42d43701905736be47d88ac00000000")))
@@ -144,7 +144,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     {
       // tx doesn't exist
       val txid = ByteVector32(hex"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-      probe.send(watcher, GetTxWithMeta(txid))
+      probe.send(watcher, GetTxWithMeta(probe.ref, txid))
       val res = probe.expectMsgType[GetTxWithMetaResponse]
       assert(res.txid === txid)
       assert(res.tx_opt === None)

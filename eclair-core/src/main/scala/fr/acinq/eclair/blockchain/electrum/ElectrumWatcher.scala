@@ -156,7 +156,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       }
       context become running(height, tip, watches -- triggered, scriptHashStatus, block2tx, sent)
 
-    case GetTxWithMeta(txid) => client ! ElectrumClient.GetTransaction(txid, Some(sender))
+    case GetTxWithMeta(channel, txid) => client ! ElectrumClient.GetTransaction(txid, Some(channel))
 
     case ElectrumClient.GetTransactionResponse(tx, Some(origin: ActorRef)) => origin ! GetTxWithMetaResponse(tx.txid, Some(tx), tip.time)
 

@@ -19,11 +19,10 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
-import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, ImportMultiItem, WatchAddressItem, UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, ImportMultiItem, UtxoStatus, ValidateResult, WatchAddressItem}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
 import org.json4s.JsonAST.{JValue, _}
-import scodec.bits.ByteVector
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -78,7 +77,15 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       ("watchonly", JBool(true))
     )).toList)
     rpcClient.invoke("importmulti", requests, options)
-      .collect { case JArray(arr) => arr.forall(p => (p \ "success").extract[Boolean]) }
+      .collect { case JArray(arr) =>
+        arr.forall { importResult =>
+          val success = (importResult \ "success").extract[Boolean]
+          val errorCode = (importResult \ "error" \ "code").extractOpt[Int]
+          // code = -4 indicates the wallet already knows the key for this address, we silently continue
+          //https://github.com/bitcoin/bitcoin/blob/d8a66626d63135fd245d5afc524b88b9a94d208b/test/functional/wallet_importmulti.py#L208
+          success || errorCode.contains(-4)
+        }
+      }
       .recover { case e: JsonRPCError => throw new IllegalStateException(s"error while importing addresses: ${e.error.message}")}
   }
 

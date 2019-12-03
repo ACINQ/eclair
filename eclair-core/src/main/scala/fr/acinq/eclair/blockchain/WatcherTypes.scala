@@ -23,6 +23,7 @@ import fr.acinq.eclair.channel.BitcoinEvent
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import scodec.bits.ByteVector
 
+import scala.collection.Set
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -82,6 +83,7 @@ final case class RescanFrom(rescanTimestamp: Option[Long] = None, rescanHeight: 
   require(rescanTimestamp.isDefined || rescanHeight.isDefined)
 }
 case class ImportMultiItem(address: String, label: String, timestamp: Long)
+case class ScanCompleted(watches: Set[Watch])
 case class WatchAddressItem(address: String, label: String)
 sealed trait UtxoStatus
 object UtxoStatus {
@@ -90,7 +92,7 @@ object UtxoStatus {
 }
 final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 
-final case class GetTxWithMeta(txid: ByteVector32)
+final case class GetTxWithMeta(sender: ActorRef, txid: ByteVector32)
 final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: Long)
 
 // @formatter:on

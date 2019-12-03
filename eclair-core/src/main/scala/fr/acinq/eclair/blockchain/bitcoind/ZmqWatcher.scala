@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
+import akka.actor.{Actor, ActorLogging, Cancellable, Props, Status, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.scriptPubKeyToAddress
@@ -40,11 +40,6 @@ import scala.util.{Failure, Success, Try}
   * - receives bitcoin events (new blocks and new txes) directly from the bitcoin network
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   *
-  *
-  * When the watcher starts it waits until bitcoind has indexed all the relevant addresses/transactions
-  *
-  * During normal operation (state `watching`) it
-  *
   * Created by PM on 21/02/2016.
   */
 class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
@@ -59,11 +54,14 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   context.system.scheduler.scheduleOnce(15 seconds)(self ! TickInitialRescan)
 
   /**
-    * init -----------------> scanning ---- TickInitialRescan ---> watching
+    * init ------> scanPending ---- TickInitialRescan ---> watching ---> scanning --|
+    *                                                        ^                      |
+    *                                                        |----------------------|
     *
-    * The watcher is initialized into a scanning state during which it will queue the events,
+    * The watcher is initialized into a 'scanPending' state during which it will queue the events,
     * when a 'TickInitialRescan' is received the watcher will instruct bitcoind to rescan. Only after
     * the initial chain rescan is completed the watcher is ready to process watch events (both spent and confirm).
+    * The "scanning" state is used to queue chain scan during normal operation.
     */
   def receive: Receive = scanPending(Set.empty, Map.empty, List.empty)
 
@@ -97,10 +95,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     case TickNewBlock =>
       updateBlockCount()
       val watchConfirmed = watches.collect { case w: WatchConfirmed => w }.asInstanceOf[Set[Watch]]
-      importMultiAndScan(watchConfirmed).onSuccess { case _ =>
-          checkWatches(watchConfirmed)
-          context become watching(watches, watchedUtxos, block2tx, None)
-      }
+      importMultiAndScan(watchConfirmed).map(_ => ScanCompleted(watchConfirmed)).pipeTo(self)
+      context.become(scanning(watchConfirmed, List.empty, watches, watchedUtxos, block2tx, nextTick))
 
     case TriggerEvent(w, e) if watches.contains(w) =>
       log.info(s"triggering $w")
@@ -121,11 +117,14 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     }
     case w: Watch if !watches.contains(w) =>
       log.debug(s"adding watch $w for $sender")
-      importMultiAndScan(Set(w)).onSuccess { case _ =>
-        checkWatches(Set(w))
-        context.watch(w.channel)
-        context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
-      }
+      importMultiAndScan(Set(w)).map(_ => ScanCompleted(Set(w))).pipeTo(self)
+      context.become(scanning(Set(w), List.empty, watches, watchedUtxos, block2tx, nextTick))
+
+    case ScanCompleted(scannedWatches) =>
+      checkWatches(scannedWatches)
+      scannedWatches.foreach(w => context.watch(w.channel))
+      val updatedUtxos = scannedWatches.map( w => addWatchedUtxos(watchedUtxos, w)).reduce(_ ++ _)
+      context.become(watching(watches ++ scannedWatches, updatedUtxos, block2tx, nextTick))
 
     case PublishAsap(tx) =>
       val blockCount = this.blockCount.get()
@@ -156,7 +155,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
 
-    case GetTxWithMeta(txid) => client.getTransactionMeta(txid.toString()).pipeTo(sender)
+    case GetTxWithMeta(channel, txid) => client.getTransactionMeta(txid.toString()).pipeTo(channel)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
@@ -165,7 +164,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
     case 'watches => sender ! watches
-
+    case 'state => sender ! "WATCHING"
   }
 
   /**
@@ -188,17 +187,45 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case TickInitialRescan =>
       log.info(s"doing initial chain rescan")
-      importMultiAndScan(watches).onSuccess { case _ =>
-        checkWatches(watches)
-        context.system.scheduler.scheduleOnce(1 seconds)(eventQueue.foreach(self ! _)) // fire non watch events that were queued while scanning
-        context.become(watching(watches, watchedUtxos, SortedMap(), None)) // rescan completed now goto watching
+      importMultiAndScan(watches).onComplete {
+        case Success(_) =>
+          checkWatches(watches)
+          context.system.scheduler.scheduleOnce(1 seconds)(eventQueue.foreach(self ! _)) // fire non watch events that were queued while scanning
+          context.become(watching(watches, watchedUtxos, SortedMap(), None)) // rescan completed now goto watching
+        case Failure(exception) =>
+          log.error(s"failed importing watch=${watches.toSeq.map(_.getClass.getSimpleName)}", exception)
+          context.system.scheduler.scheduleOnce(2 seconds)(self ! TickInitialRescan)
       }
 
     case 'watches => sender ! watches
+    case 'state => sender ! "INITIAL_SCAN_PENDING"
     // non watch related events are stored until we go to watching state
     case unhandled =>
       log.info(s"received $unhandled in 'pendingScan' state")
       context.become(scanPending(watches, watchedUtxos, eventQueue :+ unhandled))
+  }
+
+  def scanning(scanningWatches: Set[Watch], eventQueue: List[Any], oldWatches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
+    case s: ScanCompleted =>
+      log.debug(s"scan completed")
+      context.system.scheduler.scheduleOnce(1 seconds)(self ! s)
+      context.system.scheduler.scheduleOnce(1 seconds)(eventQueue.foreach(self ! _))
+      context.become(watching(oldWatches, watchedUtxos, block2tx, nextTick))
+
+    case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
+
+    case 'state => sender ! "SCANNING"
+    case 'watches => sender ! scanningWatches
+
+    case Status.Failure(exception) =>
+      log.warning(s"failed importing, retry in 2s watches=${scanningWatches.toSeq.map(_.getClass.getSimpleName)}", exception)
+      context.system.scheduler.scheduleOnce(2 seconds){
+        importMultiAndScan(scanningWatches).map(_ => ScanCompleted(scanningWatches)).pipeTo(self)
+      }
+
+    case unhandled =>
+      log.info(s"received $unhandled in 'scanning' state")
+      context.become(scanning(scanningWatches, eventQueue :+ unhandled, oldWatches, watchedUtxos, block2tx, nextTick))
   }
 
   def updateBlockCount() = client.getBlockCount.map { count =>

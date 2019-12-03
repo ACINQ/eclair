@@ -216,7 +216,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
               // if commitment number is zero, we also need to make sure that the funding tx has been published
               if (closing.commitments.localCommit.index == 0 && closing.commitments.remoteCommit.index == 0) {
-                blockchain ! GetTxWithMeta(closing.commitments.commitInput.outPoint.txid)
+                blockchain ! GetTxWithMeta(self, closing.commitments.commitInput.outPoint.txid)
               }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
@@ -251,7 +251,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, RescanFrom(rescanTimestamp = Some(d.waitingSince)))
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           // we make sure that the funding tx has been published
-          blockchain ! GetTxWithMeta(d.commitments.commitInput.outPoint.txid)
+          blockchain ! GetTxWithMeta(self, d.commitments.commitInput.outPoint.txid)
           goto(OFFLINE) using data
 
         case d: DATA_WAIT_FOR_FUNDING_LOCKED =>
@@ -1811,7 +1811,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             blockchain ! PublishAsap(fundingTx)
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
-            context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
+            context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(self, txid))
           case None if (now.seconds - waitingSince.seconds) > FUNDING_TIMEOUT_FUNDEE && (now.seconds - lastBlockTimestamp.seconds) < 1.hour =>
             // if we are fundee, we give up after some time
             // NB: we want to be sure that the blockchain is in sync to prevent false negatives
@@ -1820,7 +1820,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           case None =>
             // let's wait a little longer
             log.info(s"funding tx still hasn't been published in ${(now.seconds - waitingSince.seconds).toDays} days, will wait ${(FUNDING_TIMEOUT_FUNDEE - now.seconds + waitingSince.seconds).toDays} more days...")
-            context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
+            context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(self, txid))
         }
     }
     stay
