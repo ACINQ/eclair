@@ -21,18 +21,14 @@ object PostgreHostedChannelsDbModel {
 
 class PostgreHostedChannelsDbModel(tag: Tag) extends Table[DbType](tag, "hostedchannels") {
   def id: Rep[Long] = column[Long]("id", O.PrimaryKey, O.AutoInc)
-  def channelId: Rep[Array[Byte]] = column[Array[Byte]]("channel_id")
-  def shortChannelId: Rep[Long] = column[Long]("short_channel_id")
+  def channelId: Rep[Array[Byte]] = column[Array[Byte]]("channel_id", O.Unique)
+  def shortChannelId: Rep[Long] = column[Long]("short_channel_id", O.Unique)
   def inFlightHtlcs: Rep[Int] = column[Int]("in_flight_htlcs")
   def inFlightIncomingAmount: Rep[Long] = column[Long]("in_flight_incoming_amount")
   def inFlightOutgoingAmount: Rep[Long] = column[Long]("in_flight_outgoing_amount")
   def capacity: Rep[Long] = column[Long]("capacity")
   def createdAt: Rep[Long] = column[Long]("created_at")
   def data: Rep[Array[Byte]] = column[Array[Byte]]("data")
-
-  def channelIdIdx: Index = index("hostedchannels__channel_id__idx", channelId, unique = true)
-  def shortChannelIdIdx: Index = index("hostedchannels__short_channel_id__idx", channelId, unique = true)
-  def inFlightHtlcsIdx: Index = index("hostedchannels__in_flight_htlcs__idx", inFlightHtlcs, unique = false)
   def * = (id, channelId, shortChannelId, inFlightHtlcs, inFlightIncomingAmount, inFlightOutgoingAmount, capacity, createdAt, data)
 }
 

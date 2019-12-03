@@ -37,12 +37,12 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
-import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
-import fr.acinq.eclair.blockchain.{EclairWallet, _}
+import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{HostedChannelGateway, Register}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.noop.NoopHostedChannelsDb
-import fr.acinq.eclair.db.postgre.PostgreHostedChannelsDb
+import fr.acinq.eclair.db.postgre.{PostgreHostedChannelsDb, PostgreHostedChannelsDbModel}
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -96,9 +96,10 @@ class Setup(datadir: File,
     case (Some(d), _) => d
     case (None, "postgre") =>
       import slick.jdbc.PostgresProfile.api._
-      val postgreTestDb: PostgresProfile.backend.Database = Database.forConfig("postgre", config)
+      val postgreDb: PostgresProfile.backend.Database = Database.forConfig("postgre", config)
       val (sqliteAudit, sqliteNetwork, sqliteEclair) = Databases.sqliteJDBC(chaindir)
-      Databases.assemble(sqliteAudit, sqliteNetwork, sqliteEclair, new PostgreHostedChannelsDb(postgreTestDb))
+      Await.result(postgreDb.run(PostgreHostedChannelsDbModel.model.schema.createIfNotExists), PostgreHostedChannelsDbModel.awaitSpan)
+      Databases.assemble(sqliteAudit, sqliteNetwork, sqliteEclair, new PostgreHostedChannelsDb(postgreDb))
     case _ =>
       val (sqliteAudit, sqliteNetwork, sqliteEclair) = Databases.sqliteJDBC(chaindir)
       Databases.assemble(sqliteAudit, sqliteNetwork, sqliteEclair, new NoopHostedChannelsDb)
