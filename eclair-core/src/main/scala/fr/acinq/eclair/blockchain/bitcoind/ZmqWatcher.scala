@@ -122,6 +122,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case ScanCompleted(scannedWatches) =>
       checkWatches(scannedWatches)
+      // we always re-watch the channel and re-add the watch to the watched-utxo
       scannedWatches.foreach(w => context.watch(w.channel))
       val updatedUtxos = scannedWatches.map( w => addWatchedUtxos(watchedUtxos, w)).reduce(_ ++ _)
       context.become(watching(watches ++ scannedWatches, updatedUtxos, block2tx, nextTick))

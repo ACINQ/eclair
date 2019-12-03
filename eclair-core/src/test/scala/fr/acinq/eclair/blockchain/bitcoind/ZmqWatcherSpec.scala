@@ -176,6 +176,11 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     assert(m9.keySet == Set(OutPoint(w4.txId.reverse, w4.outputIndex)))
     val m10 = removeWatchedUtxos(m9, w4)
     assert(m10.isEmpty)
+
+    // adding twice the same watch results in the same set
+    val m11 = addWatchedUtxos(m4, w5)
+    val m12 = addWatchedUtxos(m11, w5)
+    assert(m11 == m12)
   }
 
   test("on startup the watcher should queue events until the scan is completed") { f =>
@@ -216,6 +221,13 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
 
     // trigger the initial rescan
     watcher ! TickInitialRescan
+
+    // wait for the scan to complete
+    awaitCond({
+      val probe1 = TestProbe()
+      probe1.send(watcher, 'state)
+      probe1.expectMsgType[String] == "WATCHING"
+    }, max = 10 seconds)
 
     // assert the watchers worked correctly
     val we1 = probe.expectMsgType[WatchEvent] // 'nonWalletTx' has been confirmed
