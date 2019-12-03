@@ -124,7 +124,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       checkWatches(scannedWatches)
       // we always re-watch the channel and re-add the watch to the watched-utxo
       scannedWatches.foreach(w => context.watch(w.channel))
-      val updatedUtxos = scannedWatches.map( w => addWatchedUtxos(watchedUtxos, w)).reduce(_ ++ _)
+      val updatedUtxos = scannedWatches.foldLeft(watchedUtxos)((acc, w) => addWatchedUtxos(acc, w))
       context.become(watching(watches ++ scannedWatches, updatedUtxos, block2tx, nextTick))
 
     case PublishAsap(tx) =>
@@ -165,6 +165,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
     case 'watches => sender ! watches
+    case 'watchedUtxo => sender ! watchedUtxos
     case 'state => sender ! "WATCHING"
   }
 
@@ -188,15 +189,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case TickInitialRescan =>
       log.info(s"doing initial chain rescan")
-      importMultiAndScan(watches).onComplete {
-        case Success(_) =>
-          checkWatches(watches)
-          context.system.scheduler.scheduleOnce(1 seconds)(eventQueue.foreach(self ! _)) // fire non watch events that were queued while scanning
-          context.become(watching(watches, watchedUtxos, SortedMap(), None)) // rescan completed now goto watching
-        case Failure(exception) =>
-          log.error(s"failed importing watch=${watches.toSeq.map(_.getClass.getSimpleName)}", exception)
-          context.system.scheduler.scheduleOnce(2 seconds)(self ! TickInitialRescan)
-      }
+      importMultiAndScan(watches).map(_ => ScanCompleted(watches)).pipeTo(self)
+      context.become(scanning(watches, eventQueue, Set.empty, watchedUtxos, SortedMap.empty, None))
 
     case 'watches => sender ! watches
     case 'state => sender ! "INITIAL_SCAN_PENDING"

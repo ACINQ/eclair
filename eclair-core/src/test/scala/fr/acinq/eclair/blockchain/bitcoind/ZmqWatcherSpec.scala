@@ -93,8 +93,13 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
 
     // the watcher will acknowledge the watch only after it's done importing its address
     awaitCond({
-      probe.send(watcher, 'watches)
-      probe.expectMsgType[Set[Watch]].size == 1
+      probe.send(watcher, 'state)
+      probe.expectMsgType[String] == "WATCHING"
+    })
+
+    awaitCond({
+      probe.send(watcher, 'watchedUtxo)
+      probe.expectMsgType[Map[OutPoint, Set[Watch]]].size == 1
     })
 
     // now let's spend 'tx'
