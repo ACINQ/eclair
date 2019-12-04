@@ -24,6 +24,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Block, Btc, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Script, ScriptFlags, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.{ShortChannelId, TestUtils, randomBytes32}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
@@ -139,33 +140,27 @@ trait BitcoindService extends Logging {
   }
 
   object ExternalWalletHelper {
-    // master key used to simulate non wallet transactions
-    val nonWalletMasterKey = DeterministicWallet.generate(randomBytes32)
-
-    def receiveKey(index: Long = 0) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
-    def sendKey(index: Long = 1) = DeterministicWallet.derivePrivateKey(nonWalletMasterKey, index)
-
     // create a signed tx that spends the transaction created with 'nonWalletTransaction' does not broadcast it
-    def spendNonWalletTx(tx: Transaction, receivingKeyIndex: Long = 0)(implicit system: ActorSystem): Transaction = {
+    def spendNonWalletTx(tx: Transaction, receiveKey: PrivateKey, sendKey: PrivateKey)(implicit system: ActorSystem): Transaction = {
       val spendTx = Transaction(
         version = 2L,
         txIn = TxIn(OutPoint(tx, 0), ByteVector.empty,  TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(tx.txOut(0).amount - 200.sat, Script.write(Script.pay2pkh(receiveKey(receivingKeyIndex).publicKey))) :: Nil, // amount - fee
+        txOut = TxOut(tx.txOut(0).amount - 200.sat, Script.write(Script.pay2pkh(receiveKey.publicKey))) :: Nil, // amount - fee
         lockTime = 0
       )
 
-      val sig = Transaction.signInput(spendTx, 0, tx.txOut(0).publicKeyScript, SIGHASH_ALL, tx.txOut(0).amount - 200.sat, SigVersion.SIGVERSION_BASE, sendKey().privateKey)
-      val tx1 = spendTx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(sendKey().publicKey) :: Nil)
+      val sig = Transaction.signInput(spendTx, 0, tx.txOut(0).publicKeyScript, SIGHASH_ALL, tx.txOut(0).amount - 200.sat, SigVersion.SIGVERSION_BASE, sendKey)
+      val tx1 = spendTx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(sendKey.publicKey) :: Nil)
       Transaction.correctlySpends(tx1, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       tx1
     }
 
     // sends money from out bitcoind wallet to an external one
-    def nonWalletTransaction(implicit system: ActorSystem): (Transaction, ShortChannelId) = {
+    def nonWalletTransaction(receiveKey: PrivateKey, sendKey: PrivateKey)(implicit system: ActorSystem): Transaction = {
       val amountToReceive = Btc(0.1)
       val probe = TestProbe()
-      val externalWalletAddress = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, Crypto.hash160(receiveKey().publicKey.value))
+      val externalWalletAddress = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, Crypto.hash160(receiveKey.publicKey.value))
 
       // send bitcoins from our wallet to an external wallet
       bitcoinrpcclient.invoke("sendtoaddress", externalWalletAddress, amountToReceive.toBigDecimal.toString()).pipeTo(probe.ref)
@@ -174,7 +169,7 @@ trait BitcoindService extends Logging {
       bitcoinrpcclient.invoke("getrawtransaction", spendingToExternalTxId).pipeTo(probe.ref)
       val JString(rawTx) = probe.expectMsgType[JValue]
       val incomingTx = Transaction.read(rawTx)
-      val outIndex = incomingTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2pkh(receiveKey().publicKey)))
+      val outIndex = incomingTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2pkh(receiveKey.publicKey)))
 
       assert(outIndex >= 0)
 
@@ -184,30 +179,14 @@ trait BitcoindService extends Logging {
       val tx = Transaction(
         version = 2L,
         txIn = TxIn(OutPoint(incomingTx, outIndex), ByteVector.empty,  TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(amountToReceive.toSatoshi - 200.sat, Script.write(Script.pay2pkh(sendKey().publicKey))) :: Nil, // amount - fee
+        txOut = TxOut(amountToReceive.toSatoshi - 200.sat, Script.write(Script.pay2pkh(sendKey.publicKey))) :: Nil, // amount - fee
         lockTime = 0
       )
 
-      val sig = Transaction.signInput(tx, 0, Script.pay2pkh(receiveKey().publicKey), SIGHASH_ALL, 2500 sat, SigVersion.SIGVERSION_BASE, receiveKey().privateKey)
-      val tx1 = tx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(receiveKey().publicKey.value) :: Nil)
+      val sig = Transaction.signInput(tx, 0, Script.pay2pkh(receiveKey.publicKey), SIGHASH_ALL, 2500 sat, SigVersion.SIGVERSION_BASE, receiveKey)
+      val tx1 = tx.updateSigScript(0, OP_PUSHDATA(sig) :: OP_PUSHDATA(receiveKey.publicKey.value) :: Nil)
       Transaction.correctlySpends(tx1, Seq(incomingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
-      bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-      val txId = probe.expectMsgType[JString].s
-      generateBlocks(bitcoincli, 1) // bury it in a block
-
-      bitcoinrpcclient.invoke("getbestblockhash").pipeTo(probe.ref)
-      val blockHash = probe.expectMsgType[JString].s
-
-      bitcoinrpcclient.invoke("getblock", blockHash, 0).pipeTo(probe.ref)
-      val JString(rawBlock) = probe.expectMsgType[JString]
-      val block = Block.read(rawBlock)
-      val txIndex = block.tx.indexWhere(_.txid.toHex == txId)
-
-      bitcoinrpcclient.invoke("getblockchaininfo").pipeTo(probe.ref)
-      val height = (probe.expectMsgType[JValue] \ "blocks").extract[Int]
-
-      (tx1, ShortChannelId(height, txIndex, 0))
+      tx1
     }
 
     def swapWallet()(implicit system: ActorSystem) = {
