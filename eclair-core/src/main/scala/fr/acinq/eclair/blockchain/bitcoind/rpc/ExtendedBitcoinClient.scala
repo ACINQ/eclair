@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
-import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, ImportMultiItem, UtxoStatus, ValidateResult, WatchAddressItem}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
 import org.json4s.JsonAST.{JValue, _}
@@ -47,41 +47,47 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     rpcClient.invoke("getblockhash", height).collect { case JString(blockHash) => blockHash }
   }
 
-  def getHeightByTimestamp(time: Long, fromHeight: Option[Long] = None)(implicit ec: ExecutionContext): Future[Long] = for {
-    height <- fromHeight match {
-      case Some(h) => Future.successful(h)
-      case None    => getBlockCount
-    }
-    blockHash <- getBlockHash(height)
-    JInt(blockTime) <- rpcClient.invoke("getblockheader", blockHash).map(_ \ "time")
-    foundHeight <- if(blockTime.longValue() <= time) Future.successful(height) else getHeightByTimestamp(time, Some(height - 1))
-  } yield foundHeight
-
   def isAddressImported(address: String)(implicit ec: ExecutionContext): Future[Boolean] = {
     listReceivedByAddress(filter = Some(address)).map(_.nonEmpty)
   }
 
-  def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[String]] = {
+  def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[WatchAddressItem]] = {
     (filter match {
       case Some(address) => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly, address)
       case None          => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly)
     }).collect {
-      case JArray(elems) => elems.map { json => (json \ "address").extract[String] }
+      case JArray(elems) => elems.map { json =>
+        WatchAddressItem(
+          address = (json \ "address").extract[String],
+          label = (json \ "label").extract[String]
+        )
+      }
     }
   }
 
-  def importAddress(script: String)(implicit ec: ExecutionContext): Future[Unit] = {
-    rpcClient.invoke("importaddress", script, "", false).map(_ => Unit)
+  def setLabel(address: String, label: String)(implicit ec: ExecutionContext): Future[Unit] = {
+    rpcClient.invoke("setlabel", address, label).map(_ => Unit)
   }
 
-  def importMulti(scripts: Seq[ByteVector], rescan: Boolean = false)(implicit ec: ExecutionContext): Future[Unit] = {
+  def importMulti(scripts: Seq[ImportMultiItem], rescan: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = {
     val options = JObject(("rescan", JBool(rescan)))
     val requests = JArray(scripts.map(el => JObject(
-      ("scriptPubKey", JString(el.toHex)),
-      ("timestamp", JString("now")),
+      ("scriptPubKey", JObject(("address", JString(el.address)))),
+      ("timestamp", el.timestamp.map(JInt(_)).getOrElse(JString("now"))), // either use the given timestamp or "now"
+      ("label", JString(el.label)),
       ("watchonly", JBool(true))
     )).toList)
-    rpcClient.invoke("importmulti", requests, options).map(_ => Unit)
+    rpcClient.invoke("importmulti", requests, options)
+      .collect { case JArray(arr) =>
+        arr.forall { importResult =>
+          val success = (importResult \ "success").extract[Boolean]
+          val errorCode = (importResult \ "error" \ "code").extractOpt[Int]
+          // code = -4 indicates the wallet already knows the key for this address, we silently continue
+          //https://github.com/bitcoin/bitcoin/blob/d8a66626d63135fd245d5afc524b88b9a94d208b/test/functional/wallet_importmulti.py#L208
+          success || errorCode.contains(-4)
+        }
+      }
+      .recover { case e: JsonRPCError => throw new IllegalStateException(s"error while importing addresses: ${e.error.message}")}
   }
 
   def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {

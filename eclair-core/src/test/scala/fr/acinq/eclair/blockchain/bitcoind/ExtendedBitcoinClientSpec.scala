@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{ImportMultiItem, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, _}
@@ -132,7 +132,8 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     sender.expectMsgType[JString]
     generateBlocks(bitcoincli, 1) // bury the tx in a block
 
-    val earliestBlockHeight = ShortChannelId.coordinates(earliestShortId).blockHeight
+    val address1 = scriptPubKeyToAddress(externalTx1.txOut.head.publicKeyScript)
+    val address2 = scriptPubKeyToAddress(externalTx2.txOut.head.publicKeyScript)
 
     // when not imported transactions can't be looked up
     client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
@@ -142,8 +143,12 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     sender.expectMsgType[Failure]
 
     val importAndScan = for {
-      _ <- client.importMulti(Seq(externalTx1.txOut.head.publicKeyScript, externalTx2.txOut.head.publicKeyScript))
-      _ <- client.rescanBlockChain(earliestBlockHeight)
+      _ <- client.importMulti(
+        scripts = Seq(
+          ImportMultiItem(address1, "PENDING", None),
+          ImportMultiItem(address2, "PENDING", None)),
+        rescan = true
+      )
     } yield Unit
 
     Await.ready(importAndScan, 30 seconds)
@@ -155,58 +160,4 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     sender.expectMsg(externalTx2)
   }
 
-  test("swapping wallet should make bitcoind forget the imported watch_only addresses") {
-    val probe = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-
-    val (tx, _) = ExternalWalletHelper.nonWalletTransaction(system) // tx is an unspent and confirmed non wallet transaction
-    val tx1 = ExternalWalletHelper.spendNonWalletTx(tx)(system)               // now tx is spent
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(tx1).toHex).pipeTo(probe.ref)
-    probe.expectMsgType[JString]
-    generateBlocks(bitcoincli, 1)
-
-    val addressToImport = scriptPubKeyToAddress(tx.txOut.head.publicKeyScript)
-    Await.ready(bitcoinClient.importAddress(addressToImport), 10 seconds)
-
-    Await.ready(bitcoinClient.rescanBlockChain(10), 30 seconds)
-
-    val receivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
-    assert(receivedByAddress.contains(addressToImport)) // assert the address was correctly imported
-
-    val fetched = Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds)
-    assert(fetched.txid == tx.txid) // assert we can fetch the transaction related to the address
-
-    // wipes out all the previously imported addresses
-    ExternalWalletHelper.swapWallet()
-
-    val emptyWalletReceivedByAddress = Await.result(bitcoinClient.listReceivedByAddress(), 10 seconds)
-    assert(!emptyWalletReceivedByAddress.contains(addressToImport)) // assert the new wallet doesn't have the address imported
-
-    assertThrows[JsonRPCError](Await.result(bitcoinClient.getTransaction(tx.txid.toHex), 10 seconds))
-  }
-
-  test("getHeightByTimestamp should return the height of the first block created before the timestamp") {
-    val probe = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-
-
-    val expectedTime = Platform.currentTime.milliseconds.toSeconds
-
-    generateBlocks(bitcoincli, 10)
-
-    bitcoinClient.getHeightByTimestamp(expectedTime).pipeTo(probe.ref)
-    val foundHeight = probe.expectMsgType[Long]
-
-    // assert the block we found at the given height has a
-    // block time smaller or equal to the expected time
-    bitcoinClient.getBlock(foundHeight)pipeTo(probe.ref)
-    val block = probe.expectMsgType[Block]
-    assert(block.header.time <= expectedTime)
-
-    // assert the next block is older
-    bitcoinClient.getBlock(foundHeight + 1)pipeTo(probe.ref)
-    val nextBlock = probe.expectMsgType[Block]
-    assert(nextBlock.header.time > expectedTime)
-
-  }
 }
