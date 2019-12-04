@@ -328,14 +328,14 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     // -- feed db with incoming payments
     val expiredInvoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), randomBytes32, alicePriv, "incoming #1", timestamp = 1)
-    val expiredPayment = IncomingPayment(expiredInvoice, randomBytes32, expiredInvoice.timestamp.seconds.toMillis, IncomingPaymentStatus.Expired)
+    val expiredPayment = IncomingPayment(expiredInvoice, randomBytes32, 100, IncomingPaymentStatus.Expired)
     val pendingInvoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(456 msat), randomBytes32, alicePriv, "incoming #2")
-    val pendingPayment = IncomingPayment(pendingInvoice, randomBytes32, pendingInvoice.timestamp.seconds.toMillis, IncomingPaymentStatus.Pending)
+    val pendingPayment = IncomingPayment(pendingInvoice, randomBytes32, 120, IncomingPaymentStatus.Pending)
     val paidInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(789 msat), randomBytes32, alicePriv, "incoming #3")
-    val receivedAt1 = 250
-    val receivedPayment1 = IncomingPayment(paidInvoice1, randomBytes32, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt1))
+    val receivedAt1 = 150
+    val receivedPayment1 = IncomingPayment(paidInvoice1, randomBytes32, 130, IncomingPaymentStatus.Received(561 msat, receivedAt1))
     val paidInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(888 msat), randomBytes32, alicePriv, "incoming #4")
-    val receivedAt2 = 270
+    val receivedAt2 = 160
     val receivedPayment2 = IncomingPayment(paidInvoice2, randomBytes32, paidInvoice2.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(889 msat, receivedAt2))
     db.addIncomingPayment(pendingInvoice, pendingPayment.paymentPreimage)
     db.addIncomingPayment(expiredInvoice, expiredPayment.paymentPreimage)
@@ -348,39 +348,53 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val parentId1 = UUID.randomUUID()
     val parentId2 = UUID.randomUUID()
     val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1337 msat), paymentHash1, davePriv, "outgoing #1", expirySeconds = None, timestamp = 0)
-    val outgoing1 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, 123 msat, alice, 100, Some(invoice), OutgoingPaymentStatus.Pending)
-    val outgoing2 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, 200 msat, bob, 200, Some(invoice), OutgoingPaymentStatus.Pending)
-    val outgoing3 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, 300 msat, bob, 210, Some(invoice), OutgoingPaymentStatus.Pending)
+
+    // 1st attempt, pending -> failed
+    val outgoing1 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, 123 msat, alice, 200, Some(invoice), OutgoingPaymentStatus.Pending)
     db.addOutgoingPayment(outgoing1)
+    db.updateOutgoingPayment(PaymentFailed(outgoing1.id, outgoing1.paymentHash, Nil, 210))
+    // 2nd attempt: pending
+    val outgoing2 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, 123 msat, alice, 211, Some(invoice), OutgoingPaymentStatus.Pending)
     db.addOutgoingPayment(outgoing2)
+
+    // -- 1st check: result contains 2 incoming PAID, 1 outgoing PENDING. Outgoing1 must not be overridden by Outgoing2
+    val check1 = db.listPaymentsOverview(10)
+    assert(check1.size == 3)
+    assert(check1.head.paymentHash == paymentHash1)
+    assert(check1.head.isInstanceOf[PlainOutgoingPayment])
+    assert(check1.head.asInstanceOf[PlainOutgoingPayment].status == OutgoingPaymentStatus.Pending)
+
+    // failed #2 and add a successful payment (made of 2 partial payments)
+    db.updateOutgoingPayment(PaymentFailed(outgoing2.id, outgoing2.paymentHash, Nil, 250))
+    val outgoing3 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, 200 msat, bob, 300, Some(invoice), OutgoingPaymentStatus.Pending)
+    val outgoing4 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, 300 msat, bob, 310, Some(invoice), OutgoingPaymentStatus.Pending)
     db.addOutgoingPayment(outgoing3)
-    // fail #1
-    db.updateOutgoingPayment(PaymentFailed(outgoing1.id, outgoing1.paymentHash, Nil, 310))
+    db.addOutgoingPayment(outgoing4)
     // complete #2 and #3 partial payments
     val sent = PaymentSent(parentId2, paymentHash1, preimage1, Seq(
-      PaymentSent.PartialPayment(outgoing2.id, outgoing2.amount, 15 msat, randomBytes32, None, 400),
-      PaymentSent.PartialPayment(outgoing3.id, outgoing3.amount, 20 msat, randomBytes32, None, 410)
+      PaymentSent.PartialPayment(outgoing3.id, outgoing3.amount, 15 msat, randomBytes32, None, 400),
+      PaymentSent.PartialPayment(outgoing4.id, outgoing4.amount, 20 msat, randomBytes32, None, 410)
     ))
     db.updateOutgoingPayment(sent)
 
-    // check that overview contains 2 incoming PAID, 1 outgoing FAILED and 1 outgoing SUCCEEDED, in correct order
-    val result = db.listPaymentsOverview(10)
-    assert(result.size == 4)
-    assert(result.head.paymentHash == paymentHash1)
-    assert(result.head.isInstanceOf[PlainOutgoingPayment])
-    assert(result.head.asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    // -- 2nd check: result contains 2 incoming PAID, 1 outgoing FAILED and 1 outgoing SUCCEEDED, in correct order
+    val check2 = db.listPaymentsOverview(10)
+    assert(check2.size == 4)
+    assert(check2.head.paymentHash == paymentHash1)
+    assert(check2.head.isInstanceOf[PlainOutgoingPayment])
+    assert(check2.head.asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
 
-    assert(result(1).paymentHash == paymentHash1)
-    assert(result(1).isInstanceOf[PlainOutgoingPayment])
-    assert(result(1).asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    assert(check2(1).paymentHash == paymentHash1)
+    assert(check2(1).isInstanceOf[PlainOutgoingPayment])
+    assert(check2(1).asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Failed])
 
-    assert(result(2).paymentHash == paidInvoice2.paymentHash)
-    assert(result(2).isInstanceOf[PlainIncomingPayment])
-    assert(result(2).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(check2(2).paymentHash == paidInvoice2.paymentHash)
+    assert(check2(2).isInstanceOf[PlainIncomingPayment])
+    assert(check2(2).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
 
-    assert(result(3).paymentHash == paidInvoice1.paymentHash)
-    assert(result(3).isInstanceOf[PlainIncomingPayment])
-    assert(result(3).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(check2(3).paymentHash == paidInvoice1.paymentHash)
+    assert(check2(3).isInstanceOf[PlainIncomingPayment])
+    assert(check2(3).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
   }
 
 }
