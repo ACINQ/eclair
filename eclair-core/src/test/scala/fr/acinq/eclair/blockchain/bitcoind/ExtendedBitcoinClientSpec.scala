@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{ImportMultiItem, UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.{ImportMultiItem, UtxoStatus, ValidateResult, WatchAddressItem}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, _}
@@ -86,10 +86,25 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val txid = tx.txid.toString()
   }
 
-  test("validate short channel Ids") {
+  test("validate short_channel_id without using txindex") {
     val sender = TestProbe()
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val (channelTransaction, channelShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
+    val (receiveKey, sendKey) = (PrivateKey(randomBytes32), PrivateKey(randomBytes32))
+    val channelTransaction = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system) // create a non wallet transaction
+    client.publishTransaction(channelTransaction).pipeTo(sender.ref)
+    sender.expectMsgType[String]
+
+    val List(blockHash) = generateBlocks(bitcoincli, 1)
+
+    client.getBlockCount.pipeTo(sender.ref)
+    val height = sender.expectMsgType[Long]
+
+    bitcoinrpcclient.invoke("getblock", blockHash, 0).pipeTo(sender.ref)
+    val JString(rawBlock) = sender.expectMsgType[JString]
+    val block = Block.read(rawBlock)
+    val txIndex = block.tx.indexWhere(_.txid == channelTransaction.txid)
+
+    val channelShortId = ShortChannelId(height.toInt, txIndex, 0)
 
     // we won't be able to get the raw transaction if it's non-wallet
     client.getRawTransaction(channelTransaction.txid.toHex).pipeTo(sender.ref)
@@ -123,41 +138,26 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     assert(validationResult.fundingTx.isLeft)
   }
 
-  test("importmulti should import several watch addresses at once") {
+  test("importmulti should import watch addresses and new block are scanned for the addresses") {
     val sender = TestProbe()
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val (externalTx1, earliestShortId) = ExternalWalletHelper.nonWalletTransaction(system) // create a non wallet transaction
-    val externalTx2 = ExternalWalletHelper.spendNonWalletTx(externalTx1, receivingKeyIndex = 21)// spend non wallet transaction
-    bitcoinrpcclient.invoke("sendrawtransaction", Transaction.write(externalTx2).toHex).pipeTo(sender.ref)
-    sender.expectMsgType[JString]
-    generateBlocks(bitcoincli, 1) // bury the tx in a block
+    val (receiveKey, sendKey) = (PrivateKey(randomBytes32), PrivateKey(randomBytes32))
+    val externalTx = ExternalWalletHelper.nonWalletTransaction(receiveKey, sendKey)(system) // create a non wallet transaction
+    val address1 = scriptPubKeyToAddress(externalTx.txOut.head.publicKeyScript)
 
-    val address1 = scriptPubKeyToAddress(externalTx1.txOut.head.publicKeyScript)
-    val address2 = scriptPubKeyToAddress(externalTx2.txOut.head.publicKeyScript)
+    client.importMulti(Seq(ImportMultiItem(address1, "PENDING", None)), rescan = false).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Boolean])
 
-    // when not imported transactions can't be looked up
-    client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
-    sender.expectMsgType[Failure]
+    // publish tx
+    client.publishTransaction(externalTx).pipeTo(sender.ref)
+    sender.expectMsgType[String]
 
-    client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
-    sender.expectMsgType[Failure]
+    // mine it in blocks
+    generateBlocks(bitcoincli, 2)
 
-    val importAndScan = for {
-      _ <- client.importMulti(
-        scripts = Seq(
-          ImportMultiItem(address1, "PENDING", None),
-          ImportMultiItem(address2, "PENDING", None)),
-        rescan = true
-      )
-    } yield Unit
-
-    Await.ready(importAndScan, 30 seconds)
-
-    client.getTransaction(externalTx1.txid.toHex).pipeTo(sender.ref)
-    sender.expectMsg(externalTx1)
-
-    client.getTransaction(externalTx2.txid.toHex).pipeTo(sender.ref)
-    sender.expectMsg(externalTx2)
+    // lookup transaction
+    client.getTransaction(externalTx.txid.toHex).pipeTo(sender.ref)
+    sender.expectMsg(externalTx)
   }
 
 }

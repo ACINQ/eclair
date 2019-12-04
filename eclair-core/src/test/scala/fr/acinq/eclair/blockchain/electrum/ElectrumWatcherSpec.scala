@@ -41,7 +41,7 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
-    startBitcoind()
+    startBitcoind(txIndexEnabled = true)
     waitForBitcoindReady()
     super.beforeAll()
   }
