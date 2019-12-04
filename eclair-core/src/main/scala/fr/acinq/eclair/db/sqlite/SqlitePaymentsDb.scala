@@ -349,7 +349,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |    NULL as target_node_id,
         |    created_at,
         |    received_at as completed_at,
-        |    expire_at
+        |    expire_at,
+        |    NULL as order_trick
         |  FROM received_payments
         |  WHERE final_amount > 0
         |UNION ALL
@@ -363,7 +364,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |    target_node_id,
         |    created_at,
         |    completed_at,
-        |    NULL as expire_at
+        |    NULL as expire_at,
+        |    MAX(coalesce(completed_at, created_at)) as order_trick
         |  FROM sent_payments
         |  GROUP BY parent_id
         |)
