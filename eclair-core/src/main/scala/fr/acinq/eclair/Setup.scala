@@ -29,6 +29,7 @@ import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.eclair
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
@@ -39,7 +40,7 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
-import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.{DATA_CLOSING, DATA_NEGOTIATING, DATA_NORMAL, DATA_SHUTDOWN, DATA_WAIT_FOR_FUNDING_CONFIRMED, DATA_WAIT_FOR_FUNDING_LOCKED, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, Register}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
@@ -197,6 +198,52 @@ class Setup(datadir: File,
       }
       val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
+  }
+
+  def reimportWatches(): Future[Unit] = {
+
+    val bitcoinClient = bitcoin match {
+      case Bitcoind(rpcClient) => new ExtendedBitcoinClient(rpcClient)
+      case _ => throw new IllegalArgumentException("can't perform this action if not running with bitcoind")
+    }
+
+    bitcoinClient.listReceivedByAddress().map(_.filter(_.label != "IMPORTED")).map {
+      case Nil => logger.info(s"no address found to import")
+      case nonImportedAddresses =>
+        logger.info(s"found ${nonImportedAddresses.size} addresses to be imported")
+        val addressesWithInfo: Seq[(Option[Either[ShortChannelId, Long]], String)] = database.channels.listLocalChannels()
+          .map( data => (data, eclair.scriptPubKeyToAddress(data.commitments.commitInput.txOut.publicKeyScript))) // compute import address for each channel
+          .filter( el => nonImportedAddresses.exists(_.address == el._2)) // filter only non imported addresses
+          .map {
+          case (DATA_NORMAL(_, shortChannelId, _, _, _, _, _), address)             => (Some(Left(shortChannelId)), address)
+          case (DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, waitingSince, _, _), address) => (Some(Right(waitingSince)), address)
+          case (DATA_WAIT_FOR_FUNDING_LOCKED(_, shortChannelId, _), address)        => (Some(Left(shortChannelId)), address)
+          case (DATA_SHUTDOWN(_, _, _), address)                                    => (None, address)
+          case (DATA_NEGOTIATING(_, _, _, _, _), address)                           => (None, address)
+          case (DATA_CLOSING(_, _, _, _, _, _, _, _, _, _), address)                => (None, address)
+          case (DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(_, _), address)      => (None, address)
+        }
+
+
+        val importMultiInputF = Future.sequence(addressesWithInfo.map {
+          case (Some(Left(shortChannelId)), address) =>
+            bitcoinClient.getBlock(ShortChannelId.coordinates(shortChannelId).blockHeight)
+              .map(_.header.time) // compute block time from block height
+              .map { timestamp =>
+              ImportMultiItem(address, "PENDING", Some(timestamp))
+            }
+          case (optWaitingSince, address) =>
+            Future.successful(ImportMultiItem(address, "PENDING", optWaitingSince.map(_.right.get)))
+        })
+
+
+        for {
+          imInput <- importMultiInputF
+          imported <- bitcoinClient.importMulti(imInput, rescan = true)
+        } yield imported
+
+    }
+
   }
 
   def bootstrap: Future[Kit] = {
