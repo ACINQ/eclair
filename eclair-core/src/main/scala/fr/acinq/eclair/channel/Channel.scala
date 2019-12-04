@@ -21,6 +21,7 @@ import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
@@ -99,7 +100,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   import nodeParams.keyManager
 
   // we pass these to helpers classes so that they have the logging context
-  implicit def implicitLog: akka.event.LoggingAdapter = log
+  implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
@@ -1682,7 +1683,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       (state, nextState, stateData, nextStateData) match {
         // ORDER MATTERS!
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
-          log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+          Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+            log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+          }
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
           // don't do anything if neither the channel_update nor the channel_announcement didn't change
@@ -2272,11 +2275,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def now = Platform.currentTime.milliseconds.toSeconds
 
   override def mdc(currentMessage: Any): MDC = {
+    val category_opt = LogCategory(currentMessage)
     val id = currentMessage match {
       case INPUT_RESTORED(data) => data.channelId
       case _ => Helpers.getChannelId(stateData)
     }
-    Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
+    Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
   }
 
   // we let the peer decide what to do
