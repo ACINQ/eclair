@@ -359,7 +359,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |    external_id,
         |    payment_hash,
         |    payment_preimage,
-        |    sum(amount_msat) as final_amount,
+        |    sum(amount_msat + fees_msat) as final_amount,
         |    payment_request,
         |    target_node_id,
         |    created_at,
