@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypt
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.{NewTransaction, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -943,7 +943,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitCond({
       sender.send(nodes("C").watcher, 'watches)
       sender.expectMsgType[Set[Watch]].size == 41
-    }, max = 40 seconds, interval = 2 seconds)
+    }, max = 90 seconds, interval = 3 seconds)
 
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
