@@ -78,6 +78,8 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   */
 final case class PublishAsap(tx: Transaction)
 final case class ValidateRequest(ann: ChannelAnnouncement)
+case class ImportMultiItem(address: String, label: String, timestamp: Option[Long])
+case class WatchAddressItem(address: String, label: String)
 sealed trait UtxoStatus
 object UtxoStatus {
   case object Unspent extends UtxoStatus
