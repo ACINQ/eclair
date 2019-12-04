@@ -926,18 +926,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 20)
     // then we publish F's revoked transactions
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", revokedCommitTx.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcSuccess.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 6
-    }, max = 30 seconds, interval = 1 second)
+    }, max = 40 seconds, interval = 3 second)
     // we generate blocks to make tx confirm
     generateBlocks(bitcoincli, 2)
     // and we wait for C'channel to close
