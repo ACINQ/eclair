@@ -371,6 +371,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
               Try(Helpers.decrypt(nodeParams.privateKey.value, channelData)) match {
                 case Success(state) =>
                   log.warning(s"restoring channelId=${msg.channelId}")
+                  nodeParams.db.channels.addOrUpdateChannel(state)
                   val channel = spawnChannel(nodeParams, origin_opt = None)
                   channel ! INPUT_RESTORED(state)
                   channel ! INPUT_RECONNECTED(d.transport, d.localInit, d.remoteInit)
