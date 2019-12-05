@@ -23,7 +23,6 @@ import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, ImportMultiItem, UtxoS
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
 import org.json4s.JsonAST.{JValue, _}
-import scodec.bits.ByteVector
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 
@@ -45,10 +44,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def getBlockHash(height: Long)(implicit ec: ExecutionContext): Future[String] = {
     rpcClient.invoke("getblockhash", height).collect { case JString(blockHash) => blockHash }
-  }
-
-  def isAddressImported(address: String)(implicit ec: ExecutionContext): Future[Boolean] = {
-    listReceivedByAddress(filter = Some(address)).map(_.nonEmpty)
   }
 
   def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[WatchAddressItem]] = {
@@ -78,24 +73,12 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       ("watchonly", JBool(true))
     )).toList)
     rpcClient.invoke("importmulti", requests, options)
-      .collect { case JArray(arr) =>
-        arr.forall { importResult =>
-          val success = (importResult \ "success").extract[Boolean]
-          val errorCode = (importResult \ "error" \ "code").extractOpt[Int]
-          // code = -4 indicates the wallet already knows the key for this address, we silently continue
-          //https://github.com/bitcoin/bitcoin/blob/d8a66626d63135fd245d5afc524b88b9a94d208b/test/functional/wallet_importmulti.py#L208
-          success || errorCode.contains(-4)
-        }
-      }
+      .collect { case JArray(arr) => arr.forall ( el => (el \ "success").extract[Boolean]) }
       .recover { case e: JsonRPCError => throw new IllegalStateException(s"error while importing addresses: ${e.error.message}")}
   }
 
-  def rescanBlockChain(rescanSinceHeight: Long)(implicit ec: ExecutionContext): Future[Unit] = {
-    rpcClient.invoke("rescanblockchain", rescanSinceHeight).map(_ => Unit)
-  }
-
   /**
-    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    * Assumes the transaction is indexed
     */
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     rpcClient.invoke("gettransaction", txId)
@@ -105,7 +88,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       }
 
   /**
-    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    * Assumes the transaction is indexed
     */
   def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
     rpcClient.invoke("gettransaction", txId)
@@ -152,7 +135,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } yield Transaction.read(hex)
 
   /**
-    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    * Assumes the transaction is indexed
     */
   def getTransactionMeta(txId: String)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
@@ -167,7 +150,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } yield json != JNull
 
   /**
-    * Assumes the transaction is indexed by a previous call to 'importaddress'
+    * Assumes the transaction is indexed
     *
     * @param txId transaction id
     * @param ec

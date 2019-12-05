@@ -203,7 +203,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     * address is already imported. When importing we instruct bitcoind to NOT rescan any past block.
     * Imported addresses have a "IMPORTED" label in bitcoind's wallet.
     *
-    * @return: true if all watches were correctly imported, false otherwise
+    * @return: successful empty future if all watches were correctly imported, failed future otherwise
     */
   def importMulti(watches: Set[Watch]): Future[Unit] = {
     val addresses = watches.toSeq.collect {
