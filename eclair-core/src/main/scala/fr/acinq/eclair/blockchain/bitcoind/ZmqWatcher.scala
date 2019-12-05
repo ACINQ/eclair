@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -112,6 +113,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case w: Watch if !watches.contains(w) =>
       w match {
+        // watch spent basic don't need to be imported and indexed
         case WatchSpentBasic(_, txid, outputIndex, _, _) =>
           // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
           client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
@@ -120,31 +122,15 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
           }
 
-        case WatchSpent(_, txid, outputIndex, _, _) =>
-          // first let's see if the parent tx was published or not
-          client.getTxConfirmations(txid.toString()).collect {
-            case Some(_) =>
-              // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
-                case false =>
-                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
-                  client.getMempool().map { mempoolTxs =>
-                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-                      case Nil =>
-                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
-                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
-                          self ! NewTransaction(tx)
-                        }
-                      case txs =>
-                        log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                        txs.foreach(tx => self ! NewTransaction(tx))
-                    }
-                  }
-              }
-          }
+        case ws: WatchSpent => for {
+          _ <- importMulti(Set(ws))
+          _ = checkSpent(ws)
+        } Unit
 
-        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+        case wc: WatchConfirmed => for {
+          _ <- importMulti(Set(wc))
+          _ = checkConfirmed(wc) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+        } Unit
 
         case _: WatchLost => () // TODO: not implemented
 
@@ -212,6 +198,53 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     }
   }
 
+  /**
+    * Import the given watches addresses into bitcoind's wallet, watches are skipped if their
+    * address is already imported. When importing we instruct bitcoind to NOT rescan any past block.
+    * Imported addresses have a "IMPORTED" label in bitcoind's wallet.
+    *
+    * @return: successful empty future if all watches were correctly imported, failed future otherwise
+    */
+  def importMulti(watches: Set[Watch]): Future[Unit] = {
+    val addresses = watches.toSeq.collect {
+      case WatchConfirmed(_, _, script, _, _)  => eclair.scriptPubKeyToAddress(script)
+      case WatchSpent(_, _, _, script, _)      => eclair.scriptPubKeyToAddress(script)
+    }
+
+    for {
+      alreadyImported <- client.listReceivedByAddress().map(_.filter(_.label == "IMPORTED")).map(_.map(_.address))
+      toImport = addresses.filterNot(alreadyImported.contains).map(ImportMultiItem(_, "PENDING", None))
+      imported <- if(toImport.nonEmpty) client.importMulti(toImport, rescan = true) else Future.successful(true) // import addresses
+      _ = if(!imported) throw new IllegalStateException("failed to import some addresses")
+      _ <- if(toImport.nonEmpty) Future.sequence(toImport.map( item => client.setLabel(item.address, "IMPORTED"))) else Future.successful(true)
+    } yield Unit
+  }
+
+  def checkSpent(w: WatchSpent) = {
+    // first let's see if the parent tx was published or not
+    client.getTxConfirmations(w.txId.toString()).collect {
+      case Some(_) =>
+        // parent tx was published, we need to make sure this particular output has not been spent
+        client.isTransactionOutputSpendable(w.txId.toString(), w.outputIndex, true).collect {
+          case false =>
+            log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
+            client.getMempool().map { mempoolTxs =>
+              mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+                case Nil =>
+                  log.warning(s"${w.txId}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
+                  client.lookForSpendingTx(None, w.txId.toString(), w.outputIndex).map { tx =>
+                    log.warning(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${tx.txid}")
+                    self ! NewTransaction(tx)
+                  }
+                case txs =>
+                  log.info(s"found ${txs.size} txs spending ${w.txId}:${w.outputIndex} in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                  txs.foreach(tx => self ! NewTransaction(tx))
+              }
+            }
+        }
+    }
+  }
+
   def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
@@ -230,6 +263,8 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 }
 
 object ZmqWatcher {
+
+  val MIN_PRUNE_TARGET_SIZE = 25000000000L // minimum save prune target size is ~25gb
 
   def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
