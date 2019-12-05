@@ -385,21 +385,23 @@ case object IncompatibleNetworkDBException extends RuntimeException("network dat
 object Setup {
   def reconcileWatchAddresses(bitcoinClient: ExtendedBitcoinClient, databases: Databases)(implicit ec: ExecutionContext, logger: Logger): Future[Unit] = {
     // lookup existing addresses in bitcoin
-    bitcoinClient.listReceivedByAddress().map(_.filter(_.label != "IMPORTED")).map {
-      case Nil => logger.info(s"no addresses found to import")
+    bitcoinClient.listReceivedByAddress().map(_.filter(_.label != "IMPORTED")).flatMap {
+      case Nil =>
+        logger.info(s"no addresses found to import")
+        Future.successful(Unit)
       case nonImportedAddresses =>
-        logger.info(s"found ${nonImportedAddresses.size} addresses to be imported")
+        logger.info(s"found ${nonImportedAddresses.size} addresses with label different than IMPORTED")
         val addressesWithInfo: Seq[(Option[Either[ShortChannelId, Long]], String)] = databases.channels.listLocalChannels()
           .map( data => (data, eclair.scriptPubKeyToAddress(data.commitments.commitInput.txOut.publicKeyScript))) // compute the address for each channel
           .filter( el => nonImportedAddresses.exists(_.address == el._2)) // filter only non imported addresses
           .map {
-          case (DATA_NORMAL(_, shortChannelId, _, _, _, _, _), address)             => (Some(Left(shortChannelId)), address)
-          case (DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, waitingSince, _, _), address) => (Some(Right(waitingSince)), address)
-          case (DATA_WAIT_FOR_FUNDING_LOCKED(_, shortChannelId, _), address)        => (Some(Left(shortChannelId)), address)
-          case (DATA_SHUTDOWN(_, _, _), address)                                    => (None, address)
-          case (DATA_NEGOTIATING(_, _, _, _, _), address)                           => (None, address)
-          case (DATA_CLOSING(_, _, _, _, _, _, _, _, _, _), address)                => (None, address)
-          case (DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(_, _), address)      => (None, address)
+            case (DATA_NORMAL(_, shortChannelId, _, _, _, _, _), address)             => (Some(Left(shortChannelId)), address)
+            case (DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, waitingSince, _, _), address) => (Some(Right(waitingSince)), address)
+            case (DATA_WAIT_FOR_FUNDING_LOCKED(_, shortChannelId, _), address)        => (Some(Left(shortChannelId)), address)
+            case (DATA_SHUTDOWN(_, _, _), address)                                    => (None, address)
+            case (DATA_NEGOTIATING(_, _, _, _, _), address)                           => (None, address)
+            case (DATA_CLOSING(_, _, _, _, _, _, _, _, _, _), address)                => (None, address)
+            case (DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(_, _), address)      => (None, address)
         }
 
         val importMultiInputF = Future.sequence(addressesWithInfo.map {
@@ -413,14 +415,14 @@ object Setup {
             Future.successful(ImportMultiItem(address, "PENDING", optWaitingSince.map(_.right.get)))
         })
 
-
         for {
           imInput <- importMultiInputF
-          _ = logger.info(s"importing addresses")
+          _ = logger.info(s"importing ${imInput.size} addresses")
           imported <- bitcoinClient.importMulti(imInput, rescan = true)
+          _ = if(!imported) throw new IllegalStateException("could not import all addresses")
           _ <- Future.sequence(imInput.map(el => bitcoinClient.setLabel(el.address, "IMPORTED")))
-        } yield imported
-        logger.info(s"done importing")
+          _ = logger.info(s"done importing")
+        } yield ()
     }
   }
 }
