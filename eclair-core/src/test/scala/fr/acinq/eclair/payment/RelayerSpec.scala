@@ -20,16 +20,15 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPacket}
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
-import fr.acinq.eclair.router.{Announcements, ChannelHop, NodeHop}
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, TestkitBaseClass, UInt64, nodeFee, randomBytes32}
@@ -46,17 +45,17 @@ class RelayerSpec extends TestkitBaseClass {
 
   import PaymentPacketSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, relayer: ActorRef, register: TestProbe, paymentHandler: TestProbe, sender: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, relayer: ActorRef, router: TestProbe, register: TestProbe, paymentHandler: TestProbe, sender: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(30 seconds) {
       val nodeParams = TestConstants.Bob.nodeParams
-      val register = TestProbe()
+      val (router, register) = (TestProbe(), TestProbe())
       val commandBuffer = system.actorOf(Props(new CommandBuffer(nodeParams, register.ref)))
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
-      val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, commandBuffer, paymentHandler.ref))
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, register, paymentHandler, TestProbe())))
+      val relayer = system.actorOf(Relayer.props(nodeParams, router.ref, register.ref, commandBuffer, paymentHandler.ref))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, router, register, paymentHandler, TestProbe())))
     }
   }
 
@@ -67,7 +66,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // we use this to build a valid onion
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -116,7 +115,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // we use this to build a valid onion
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
@@ -156,10 +155,59 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(50 millis)
   }
 
+  test("relay a trampoline htlc-add with retries") { f =>
+    import f._
+
+    // we tell the relayer about channel B-C
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
+
+    val totalAmount = finalAmount * 3 // we simulate a payment split between multiple trampoline routes.
+    val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, nodeParams.expiryDeltaBlocks, nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, finalAmount)) :: Nil
+    val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
+
+    // A sends a multi-part payment to trampoline node B
+    val secret_ab = randomBytes32
+    val (cmd1, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(trampolineAmount - 10000000.msat, trampolineAmount, trampolineExpiry, secret_ab, trampolineOnion.packet))
+    val add_ab1 = UpdateAddHtlc(channelId_ab, 561, cmd1.amount, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
+    val (cmd2, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(10000000.msat, trampolineAmount, trampolineExpiry, secret_ab, trampolineOnion.packet))
+    val add_ab2 = UpdateAddHtlc(channelId_ab, 565, cmd2.amount, cmd2.paymentHash, cmd2.cltvExpiry, cmd2.onion)
+    sender.send(relayer, ForwardAdd(add_ab1))
+    sender.send(relayer, ForwardAdd(add_ab2))
+
+    // A multi-part payment FSM should start to relay the payment.
+    router.expectMsg(GetNetworkStats)
+    router.send(router.lastSender, GetNetworkStatsResponse(None))
+    router.expectMsg(TickComputeNetworkStats)
+
+    // first try
+    val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd1.message.upstream.asInstanceOf[Upstream.TrampolineRelayed].adds === Seq(add_ab1, add_ab2))
+
+    // channel returns an error
+    val origin1 = TrampolineRelayed((channelId_ab, 561L) :: (channelId_ab, 565L) :: Nil, Some(register.lastSender))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcValueTooHighInFlight(channelId_bc, UInt64(1000000000L), 1516977616L msat), origin1, Some(channelUpdate_bc), originalCommand = Some(fwd1.message))))
+
+    // second try
+    val fwd2 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd2.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd2.message.upstream.asInstanceOf[Upstream.TrampolineRelayed].adds === Seq(add_ab1, add_ab2))
+
+    // the downstream HTLC is successfully fulfilled
+    val origin2 = TrampolineRelayed((channelId_ab, 561L) :: (channelId_ab, 565L) :: Nil, Some(register.lastSender))
+    val add_bc = UpdateAddHtlc(channelId_bc, 72, cmd1.amount + cmd2.amount, paymentHash, cmd1.cltvExpiry, onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, paymentPreimage)
+    sender.send(relayer, ForwardFulfill(fulfill_ba, origin2, add_bc))
+
+    // it should trigger a fulfill on the upstream HTLCs
+    register.expectMsg(Register.Forward(channelId_ab, CMD_FULFILL_HTLC(561, paymentPreimage, commit = true)))
+    register.expectMsg(Register.Forward(channelId_ab, CMD_FULFILL_HTLC(565, paymentPreimage, commit = true)))
+  }
+
   test("relay an htlc-add at the final node to the payment handler") { f =>
     import f._
 
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops.take(1), FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops.take(1), FinalLegacyPayload(finalAmount, finalExpiry))
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     sender.send(relayer, ForwardAdd(add_ab))
 
@@ -181,7 +229,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(trampolineAmount === finalAmount)
     assert(trampolineExpiry === finalExpiry)
 
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32, trampolineOnion.packet))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32, trampolineOnion.packet))
     assert(cmd.amount === finalAmount)
     assert(cmd.cltvExpiry === finalExpiry)
 
@@ -203,7 +251,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // we use this to build a valid onion
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
@@ -222,7 +270,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // we use this to build a valid onion
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -248,7 +296,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // check that payments are sent properly
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
@@ -264,7 +312,7 @@ class RelayerSpec extends TestkitBaseClass {
     // now tell the relayer that the channel is down and try again
     relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId = channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.nodeId)
 
-    val (cmd1, _) = buildCommand(UUID.randomUUID(), randomBytes32, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd1, _) = buildCommand(Upstream.Local(UUID.randomUUID()), randomBytes32, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     val add_ab1 = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd1.amount, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
     sender.send(relayer, ForwardAdd(add_ab1))
 
@@ -280,7 +328,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // we use this to build a valid onion
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = Announcements.makeChannelFlags(Announcements.isNode1(channelUpdate_bc.channelFlags), enable = false))
@@ -300,7 +348,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     // we use this to build a valid onion
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc with an invalid onion (hmac)
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion.copy(hmac = cmd.onion.hmac.reverse))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -321,12 +369,12 @@ class RelayerSpec extends TestkitBaseClass {
 
     val nodeParams = TestConstants.Bob.nodeParams.copy(enableTrampolinePayment = false)
     val commandBuffer = system.actorOf(Props(new CommandBuffer(nodeParams, register.ref)))
-    val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, commandBuffer, paymentHandler.ref))
+    val relayer = system.actorOf(Relayer.props(nodeParams, router.ref, register.ref, commandBuffer, paymentHandler.ref))
 
     // we use this to build a valid trampoline onion inside a normal onion
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b) :: Nil
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createSinglePartPayload(finalAmount, finalExpiry))
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32, trampolineOnion.packet))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32, trampolineOnion.packet))
 
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
@@ -348,7 +396,7 @@ class RelayerSpec extends TestkitBaseClass {
     // we use this to build a valid onion
     val finalPayload = FinalLegacyPayload(channelUpdate_bc.htlcMinimumMsat - (1 msat), finalExpiry)
     val zeroFeeHops = hops.map(hop => hop.copy(lastUpdate = hop.lastUpdate.copy(feeBaseMsat = 0 msat, feeProportionalMillionths = 0)))
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, zeroFeeHops, finalPayload)
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, zeroFeeHops, finalPayload)
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -367,7 +415,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(cltvExpiryDelta = CltvExpiryDelta(0))))
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops1, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops1, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -386,7 +434,7 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(feeBaseMsat = hops(1).lastUpdate.feeBaseMsat / 2)))
-    val (cmd, _) = buildCommand(UUID.randomUUID(), paymentHash, hops1, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops1, FinalLegacyPayload(finalAmount, finalExpiry))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
@@ -437,8 +485,8 @@ class RelayerSpec extends TestkitBaseClass {
 
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 42, paymentPreimage = ByteVector32.Zeroes)
-    val origin = Relayed(channelId_ab, 150, 11000000 msat, 10000000 msat)
+    val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 72, paymentPreimage = ByteVector32.Zeroes)
+    val origin = Relayed(channelId_ab, 42, 11000000 msat, 10000000 msat)
     sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
@@ -449,53 +497,19 @@ class RelayerSpec extends TestkitBaseClass {
     assert(paymentRelayed.copy(timestamp = 0) === PaymentRelayed(origin.amountIn, origin.amountOut, add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
   }
 
-  test("handle an htlc-fulfill after restart") { f =>
+  test("relay a trampoline htlc-fulfill") { f =>
     import f._
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
-    val parentId = UUID.randomUUID()
-    val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
-    val (preimage1, preimage2) = (randomBytes32, randomBytes32)
-    val (paymentHash1, paymentHash2) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2))
+    val payFSM = TestProbe()
 
-    val add1 = UpdateAddHtlc(channelId_bc, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill1 = UpdateFulfillHtlc(channelId_bc, 72, preimage1)
-    val origin1 = Origin.Local(id1, None)
-    val add2 = UpdateAddHtlc(channelId_bc, 75, 1105 msat, paymentHash1, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill2 = UpdateFulfillHtlc(channelId_bc, 75, preimage1)
-    val origin2 = Origin.Local(id2, None)
-    val add3 = UpdateAddHtlc(channelId_bc, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill3 = UpdateFulfillHtlc(channelId_bc, 78, preimage2)
-    val origin3 = Origin.Local(id3, None)
+    // we build a fake htlc for the downstream channel
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 72, paymentPreimage = ByteVector32.Zeroes)
+    val origin = TrampolineRelayed(List((channelId_ab, 42), (randomBytes32, 7)), Some(payFSM.ref))
+    sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
 
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, parentId, None, paymentHash1, add1.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash1, add2.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, id3, None, paymentHash2, add3.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-
-    sender.send(relayer, ForwardFulfill(fulfill1, origin1, add1))
-    eventListener.expectNoMsg(100 millis)
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFulfill(fulfill2, origin2, add2))
-    val e1 = eventListener.expectMsgType[PaymentSent]
-    assert(e1.id === parentId)
-    assert(e1.paymentPreimage === preimage1)
-    assert(e1.paymentHash === paymentHash1)
-    assert(e1.parts.length === 2)
-    assert(e1.amount === 1666.msat)
-    assert(nodeParams.db.payments.getOutgoingPayment(id1).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFulfill(fulfill3, origin3, add3))
-    val e2 = eventListener.expectMsgType[PaymentSent]
-    assert(e2.id === id3)
-    assert(e2.paymentPreimage === preimage2)
-    assert(e2.paymentHash === paymentHash2)
-    assert(e2.parts.length === 1)
-    assert(e2.amount === 1729.msat)
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    // we forward to the FSM responsible for the payment.
+    payFSM.expectMsg(fulfill_ba)
   }
 
   test("relay an htlc-fail") { f =>
@@ -503,8 +517,8 @@ class RelayerSpec extends TestkitBaseClass {
 
     // we build a fake htlc for the downstream channel
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
-    val origin = Relayed(channelId_ab, 150, 11000000 msat, 10000000 msat)
+    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
+    val origin = Relayed(channelId_ab, 42, 11000000 msat, 10000000 msat)
     sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
@@ -512,46 +526,19 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.message.id === origin.originHtlcId)
   }
 
-  test("handle an htlc-fail after restart") { f =>
+  test("relay a trampoline htlc-fail") { f =>
     import f._
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
-    val parentId = UUID.randomUUID()
-    val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
-    val (paymentHash1, paymentHash2) = (randomBytes32, randomBytes32)
+    val payFSM = TestProbe()
 
-    val add1 = UpdateAddHtlc(channelId_bc, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail1 = UpdateFailHtlc(channelId_bc, 72, ByteVector.empty)
-    val origin1 = Origin.Local(id1, None)
-    val add2 = UpdateAddHtlc(channelId_bc, 75, 1105 msat, paymentHash1, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail2 = UpdateFailHtlc(channelId_bc, 75, ByteVector.empty)
-    val origin2 = Origin.Local(id2, None)
-    val add3 = UpdateAddHtlc(channelId_bc, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail3 = UpdateFailHtlc(channelId_bc, 78, ByteVector.empty)
-    val origin3 = Origin.Local(id3, None)
+    // we build a fake htlc for the downstream channel
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
+    val origin = TrampolineRelayed(List((channelId_ab, 42), (randomBytes32, 7)), Some(payFSM.ref))
+    sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
 
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, parentId, None, paymentHash1, add1.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash1, add2.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, id3, None, paymentHash2, add3.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-
-    sender.send(relayer, ForwardFail(fail1, origin1, add1))
-    eventListener.expectNoMsg(100 millis)
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFail(fail2, origin2, add2))
-    val e1 = eventListener.expectMsgType[PaymentFailed]
-    assert(e1.id === parentId)
-    assert(e1.paymentHash === paymentHash1)
-    assert(nodeParams.db.payments.getOutgoingPayment(id1).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(nodeParams.db.payments.getOutgoingPayment(id2).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status === OutgoingPaymentStatus.Pending)
-
-    sender.send(relayer, ForwardFail(fail3, origin3, add3))
-    val e2 = eventListener.expectMsgType[PaymentFailed]
-    assert(e2.id === id3)
-    assert(e2.paymentHash === paymentHash2)
-    assert(nodeParams.db.payments.getOutgoingPayment(id3).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    // we forward to the FSM responsible for the payment to trigger the retry mechanism.
+    payFSM.expectMsg(fail_ba)
   }
 
   test("get outgoing channels") { f =>
@@ -609,55 +596,6 @@ class RelayerSpec extends TestkitBaseClass {
     val OutgoingChannels(channels8) = sender.expectMsgType[OutgoingChannels]
     assert(channels8.size === 1)
     assert(channels8.head.channelUpdate.shortChannelId === ShortChannelId(42))
-  }
-
-  test("replay pending commands after restart") { f =>
-    import f._
-
-    val channel = TestProbe()
-    val channelData = ChannelCodecsSpec.normal
-    val channelId = channelData.commitments.channelId
-    val remoteNodeId = channelData.commitments.remoteParams.nodeId
-    val (preimage1, preimage2) = (randomBytes32, randomBytes32)
-    val onionHash = randomBytes32
-
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 1, CMD_FULFILL_HTLC(1, preimage1, commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 100, CMD_FULFILL_HTLC(100, preimage2, commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 101, CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure), commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 102, CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001, commit = true))
-
-    // Channel comes online: we should replay pending commands.
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
-    val expected = Set(
-      CMD_FULFILL_HTLC(1, preimage1),
-      CMD_FULFILL_HTLC(100, preimage2),
-      CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure)),
-      CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001)
-    )
-    val received = expected.map(_ => channel.expectMsgType[Command])
-    assert(received === expected)
-
-    channel.expectMsg(CMD_SIGN) // we should then ask to sign all the updates.
-    channel.expectNoMsg(100 millis)
-
-    // 3 of the 4 HTLCs were ack-ed (maybe the peer disconnected/reconnected again).
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 1))
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 100))
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 101))
-    // Once ack-ed, these commands should be removed from the DB.
-    awaitCond(nodeParams.db.pendingRelay.listPendingRelay(channelId).length === 1)
-
-    // The last failure wasn't ack-ed, so it's re-sent.
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, SYNCING, NORMAL, channelData))
-    channel.expectMsg(CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001))
-    channel.expectMsg(CMD_SIGN)
-    channel.expectNoMsg(100 millis)
-
-    channel.send(relayer, CommandBuffer.CommandAck(channelId, 102))
-    awaitCond(nodeParams.db.pendingRelay.listPendingRelay(channelId).isEmpty)
-
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
-    channel.expectNoMsg(100 millis)
   }
 
 }

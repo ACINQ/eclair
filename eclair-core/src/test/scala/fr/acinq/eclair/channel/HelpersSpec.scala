@@ -17,8 +17,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing._
+import fr.acinq.eclair.wire.ChannelCodecsSpec
 import org.scalatest.FunSuite
 
 import scala.compat.Platform
@@ -338,6 +340,16 @@ class HelpersSpec extends FunSuite {
       )
     ).contains(RevokedClose))
 
+  }
+
+  test("encrypt/decrypt channel data") {
+    val data = ChannelCodecsSpec.normal
+    val key = randomBytes32
+
+    val encrypted = Helpers.encrypt(key, data)
+    val decrypted = Helpers.decrypt(key, encrypted)
+
+    assert(data === decrypted)
   }
 
 }

@@ -337,6 +337,23 @@ class PaymentRequestSpec extends FunSuite {
     }
   }
 
+  test("feature bits to minimally-encoded feature bytes") {
+    val testCases = Seq(
+      (bin"   0010000100000101", hex"  2105"),
+      (bin"   1010000100000101", hex"  a105"),
+      (bin"  11000000000000110", hex"018006"),
+      (bin"  01000000000000110", hex"  8006"),
+      (bin" 001000000000000000", hex"  8000"),
+      (bin" 101000000000000000", hex"028000"),
+      (bin"0101110000000000110", hex"02e006"),
+      (bin"1001110000000000110", hex"04e006")
+    )
+
+    for ((bitmask, featureBytes) <- testCases) {
+      assert(Features(bitmask).toByteVector === featureBytes)
+    }
+  }
+
   test("payment secret") {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(pr.paymentSecret.isDefined)

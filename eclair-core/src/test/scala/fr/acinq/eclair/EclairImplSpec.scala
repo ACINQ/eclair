@@ -147,7 +147,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(expiredInvoice)), 50 millis))
   }
 
-  test("allupdates can filter by nodeId") { f =>
+  ignore("allupdates can filter by nodeId") { f =>
     import f._
 
     val (a_priv, b_priv, c_priv, d_priv, e_priv) = (

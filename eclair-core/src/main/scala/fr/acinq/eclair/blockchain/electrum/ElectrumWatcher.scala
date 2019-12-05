@@ -22,12 +22,13 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
-import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, TxCoordinates}
 
 import scala.collection.SortedMap
 import scala.collection.immutable.Queue
+import scala.util.Random
 
 
 class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor with Stash with ActorLogging {
@@ -135,13 +136,18 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       }).flatten
       // this is for WatchConfirmed
       watches.collect {
-        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
+        case w@WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
           val txheight = item.height
           val confirmations = height - txheight + 1
           log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
           if (confirmations >= minDepth) {
-            // we need to get the tx position in the block
-            client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
+            if (w.minDepth == 0 && w.event == BITCOIN_FUNDING_DEPTHOK) {
+              // TODO: special case for phoenix
+              self ! ElectrumClient.GetMerkleResponse(tx.txid, Nil, block_height = Random.nextInt(height - 10), 0, Some(tx))
+            } else {
+              // we need to get the tx position in the block
+              client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
+            }
           }
       }
       context become running(height, tip, watches -- watchSpentTriggered, scriptHashStatus, block2tx, sent)

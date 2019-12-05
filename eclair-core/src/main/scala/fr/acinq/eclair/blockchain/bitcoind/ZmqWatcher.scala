@@ -25,14 +25,14 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
 import scodec.bits.ByteVector
 
 import scala.collection.{Set, SortedMap}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.util.{Random, Try}
 
 /**
   * A blockchain watcher that:
@@ -69,6 +69,11 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
           }
       }
+      watches
+        .collect {
+          case w: WatchConfirmed if w.event == BITCOIN_FUNDING_DEPTHOK && w.minDepth == 0 && w.txId == tx.txid =>
+            checkConfirmed(w)
+        }
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
@@ -213,19 +218,23 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   }
 
   def checkConfirmed(w: WatchConfirmed) = {
-    log.debug(s"checking confirmations of txid=${w.txId}")
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
-    // matter because this only happens once, when the watched transaction has reached min_depth
-    client.getTxConfirmations(w.txId.toString).map {
-      case Some(confirmations) if confirmations >= w.minDepth =>
-        client.getTransaction(w.txId.toString).map {
-          case tx =>
-            client.getTransactionShortId(w.txId.toString).map {
-              case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
+      log.debug(s"checking confirmations of txid=${w.txId}")
+      // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
+      // matter because this only happens once, when the watched transaction has reached min_depth
+      client.getTxConfirmations(w.txId.toString).flatMap {
+        case Some(confirmations) if confirmations >= w.minDepth =>
+          client.getTransaction(w.txId.toString).flatMap {
+            case tx if w.minDepth == 0 && w.event == BITCOIN_FUNDING_DEPTHOK =>
+              // TODO: special case for phoenix
+              self ! TriggerEvent(w, WatchEventConfirmed(w.event, blockHeight = Random.nextInt(10000000), txIndex = 0, tx))
+              Future.successful(Unit)
+            case tx =>
+              client.getTransactionShortId(w.txId.toString).map {
+                case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
+              }
           }
-        }
+      }
     }
-  }
 
 }
 

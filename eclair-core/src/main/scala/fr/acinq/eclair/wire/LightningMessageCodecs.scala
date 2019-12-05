@@ -24,6 +24,8 @@ import scodec.bits.BitVector
 import scodec.{Attempt, Codec}
 import scodec.codecs._
 
+import scodec.bits._
+
 /**
  * Created by PM on 15/11/2016.
  */
@@ -49,7 +51,8 @@ object LightningMessageCodecs {
       ("nextLocalCommitmentNumber" | uint64overflow) ::
       ("nextRemoteRevocationNumber" | uint64overflow) ::
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
-      ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
+      ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey)) ::
+      ("channelData" | optional(bitsRemaining, varsizebinarydata))).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
@@ -69,7 +72,8 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | byte)).as[OpenChannel]
+      ("channelFlags" | byte) ::
+      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
@@ -93,9 +97,16 @@ object LightningMessageCodecs {
       ("fundingOutputIndex" | uint16) ::
       ("signature" | bytes64)).as[FundingCreated]
 
+  // this magic is used because not all fields are length-protected when we store channel data :-/
+  val magic: Codec[Boolean] = recover(constant(hex"abcdef"))
+
+  // we have limited space for backup, largest message is commit_sig with 30 htlcs in each direction: 65535B - (32B + 64B + 2*30*64B) = 61599B ~= 60000B
+  val channeldataoptional: Codec[Option[ByteVector]] = choice(optional(magic, limitedSizeBytes( 60000, variableSizeBytes(uint16, bytes))), provide(Option.empty[ByteVector]))
+
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("channelId" | bytes32) ::
-      ("signature" | bytes64)).as[FundingSigned]
+      ("signature" | bytes64) ::
+      ("channelData" | channeldataoptional)).as[FundingSigned]
 
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("channelId" | bytes32) ::
@@ -103,12 +114,14 @@ object LightningMessageCodecs {
 
   val shutdownCodec: Codec[wire.Shutdown] = (
     ("channelId" | bytes32) ::
-      ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
+      ("scriptPubKey" | varsizebinarydata) ::
+      ("channelData" | channeldataoptional)).as[Shutdown]
 
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | bytes32) ::
       ("feeSatoshis" | satoshi) ::
-      ("signature" | bytes64)).as[ClosingSigned]
+      ("signature" | bytes64) ::
+      ("channelData" | channeldataoptional)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
@@ -137,13 +150,14 @@ object LightningMessageCodecs {
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | bytes32) ::
       ("signature" | bytes64) ::
-      ("htlcSignatures" | listofsignatures)).as[CommitSig]
+      ("htlcSignatures" | listofsignatures) ::
+      ("channelData" | channeldataoptional)).as[CommitSig]
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | bytes32) ::
       ("perCommitmentSecret" | privateKey) ::
-      ("nextPerCommitmentPoint" | publicKey)
-    ).as[RevokeAndAck]
+      ("nextPerCommitmentPoint" | publicKey) ::
+      ("channelData" | channeldataoptional)).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (
     ("channelId" | bytes32) ::
@@ -259,6 +273,56 @@ object LightningMessageCodecs {
       ("timestampRange" | uint32)
     ).as[GossipTimestampFilter]
 
+  // NB: blank lines to minimize merge conflicts
+  val payToOpenRequestCodec: Codec[PayToOpenRequest] = (
+    ("chainHash" | bytes32) ::
+      ("fundingSatoshis" | satoshi) ::
+      ("pushMsat" | millisatoshi) ::
+      ("feeSatoshis" | satoshi) ::
+      ("paymentHash" | bytes32)).as[PayToOpenRequest]
+
+  val payToOpenResponseCodec: Codec[PayToOpenResponse] = (
+    ("chainHash" | bytes32) ::
+      ("paymentHash" | bytes32) ::
+      ("paymentPreimage" | bytes32)).as[PayToOpenResponse]
+  //
+  val swapInRequestCodec: Codec[SwapInRequest] =
+    ("channelId" | bytes32).as[SwapInRequest]
+
+  val swapInResponseCodec: Codec[SwapInResponse] = (
+    ("channelId" | bytes32) ::
+      ("bitcoinAddress" | variableSizeBytes(uint16, utf8))
+    ).as[SwapInResponse]
+
+  val swapInPendingCodec: Codec[SwapInPending] = (
+    ("bitcoinAddress" | variableSizeBytes(uint16, utf8)) ::
+      ("amount" | satoshi)
+    ).as[SwapInPending]
+
+  val swapInConfirmedCodec: Codec[SwapInConfirmed] = (
+    ("bitcoinAddress" | variableSizeBytes(uint16, utf8)) ::
+      ("amount" | millisatoshi)
+    ).as[SwapInConfirmed]
+  //
+  val swapOutRequestCodec: Codec[SwapOutRequest] = (
+    ("chainHash" | bytes32) ::
+      ("amountSatoshis" | satoshi) ::
+      ("bitcoinAddress" | variableSizeBytes(uint16, utf8)) ::
+      ("feeratePerKw" | uint32)
+    ).as[SwapOutRequest]
+
+  val swapOutResponseCodec: Codec[SwapOutResponse] = (
+    ("chainHash" | bytes32) ::
+      ("amountSatoshis" | satoshi) ::
+      ("feeSatoshis" | satoshi) ::
+      ("paymentRequest" | variableSizeBytes(uint16, utf8))
+    ).as[SwapOutResponse]
+  //
+
+  //
+
+  //
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -288,6 +352,22 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+  // NB: blank lines to minimize merge conflicts
+    .typecase(35001, payToOpenRequestCodec)
+    .typecase(35003, payToOpenResponseCodec)
+  //
+    .typecase(35005, swapInPendingCodec)
+    .typecase(35007, swapInRequestCodec)
+    .typecase(35009, swapInResponseCodec)
+    .typecase(35015, swapInConfirmedCodec)
+  //
+    .typecase(35011, swapOutRequestCodec)
+    .typecase(35013, swapOutResponseCodec)
+  //
+
+  //
+
+  //
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),

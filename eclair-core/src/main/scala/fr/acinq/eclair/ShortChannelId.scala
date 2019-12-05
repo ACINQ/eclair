@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.Crypto.PublicKey
+
 /**
   * A short channel id uniquely identifies a channel by the coordinates of its funding tx output in the blockchain.
   *
@@ -47,6 +49,14 @@ object ShortChannelId {
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
   def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(((shortChannelId.id >> 40) & 0xFFFFFF).toInt, ((shortChannelId.id >> 16) & 0xFFFFFF).toInt, (shortChannelId.id & 0xFFFF).toInt)
+
+  /**
+    * This is a trick to encode a partial hash of node id in a short channel id.
+    * We use a prefix of 0xff to make it easily distinguishable from normal short channel id.
+    */
+  def peerId(remoteNodeId: PublicKey): ShortChannelId = ShortChannelId(0xff00000000000000L | remoteNodeId.value.takeRight(7).toLong())
+
+  def isPeerId(shortChannelId: ShortChannelId): Boolean = (shortChannelId.id & 0xff00000000000000L) == 0xff00000000000000L
 }
 
 case class TxCoordinates(blockHeight: Int, txIndex: Int, outputIndex: Int)

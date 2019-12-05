@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OnionRoutingPacket, OpenChannel, OpenTlv, Shutdown, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
 import scodec.bits.{BitVector, ByteVector}
 
 object JsonSerializers {
@@ -74,6 +74,8 @@ object JsonSerializers {
   implicit val commitmentsReadWriter: ReadWriter[Commitments] = macroRW
   implicit val actorRefReadWriter: ReadWriter[ActorRef] = readwriter[String].bimap[ActorRef](_.toString, _ => ActorRef.noSender)
   implicit val shortChannelIdReadWriter: ReadWriter[ShortChannelId] = readwriter[String].bimap[ShortChannelId](_.toString, s => ShortChannelId(s))
+
+  implicit val optionalTlvStreamReadWriter: ReadWriter[Option[TlvStream[OpenTlv]]] = readwriter[String].bimap[Option[TlvStream[OpenTlv]]](_ => "", _ => null)
 
   implicit val initReadWriter: ReadWriter[Init] = macroRW
   implicit val openChannelReadWriter: ReadWriter[OpenChannel] = macroRW

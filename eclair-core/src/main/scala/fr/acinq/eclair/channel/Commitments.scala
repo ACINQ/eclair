@@ -27,6 +27,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{MilliSatoshi, _}
+import scodec.bits.ByteVector
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -55,10 +56,11 @@ case class Commitments(channelVersion: ChannelVersion,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
+                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
+                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32,
+                       remoteChannelData: Option[ByteVector] = None) {
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -521,7 +523,7 @@ object Commitments {
       publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
-    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
+    val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1, remoteChannelData = commit.channelData) // TODO: cap data size
 
     (commitments1, revocation)
   }
@@ -560,7 +562,8 @@ object Commitments {
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index),
-          originChannels = originChannels1)
+          originChannels = originChannels1,
+          remoteChannelData = revocation.channelData)
         (commitments1, forwards)
       case Right(_) =>
         throw UnexpectedRevocation(commitments.channelId)

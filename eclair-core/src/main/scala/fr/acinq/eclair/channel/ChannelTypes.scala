@@ -110,6 +110,11 @@ object Upstream {
   final case class Local(id: UUID) extends Upstream
   /** Our node forwarded a single incoming HTLC to an outgoing channel. */
   final case class Relayed(add: UpdateAddHtlc) extends Upstream
+  /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
+  final case class TrampolineRelayed(adds: Seq[UpdateAddHtlc]) extends Upstream {
+    val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
+    val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+  }
 }
 
 sealed trait Command
@@ -243,10 +248,12 @@ object ChannelVersion {
   val LENGTH_BITS = 4 * 8
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+  val ZERO_RESERVE_BIT = 3
 
   def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
   val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+  val ZERO_RESERVE = fromBit(ZERO_RESERVE_BIT)
 
   val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
 }

@@ -14,19 +14,29 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.io
+package fr.acinq.eclair.wire
 
-import akka.actor.ActorRef
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.PayToOpenRequest
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.TlvCodecs.tlvStream
+import scodec.Codec
+import scodec.codecs._
 
-import scala.concurrent.Promise
+sealed trait OpenTlv extends Tlv
 
-sealed trait PeerEvent
+object OpenTlv {
 
-case class PeerConnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
+  case class ChannelVersionTlv(channelVersion: ChannelVersion) extends OpenTlv
 
-case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
+  val openTlvCodec: Codec[TlvStream[OpenTlv]] = tlvStream(
+    discriminated.by(varint)
+      .typecase(UInt64(0x47000000), bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion].as[ChannelVersionTlv])
+  )
 
-case class PayToOpenRequestEvent(peer: ActorRef, payToOpenRequest: PayToOpenRequest, paymentPreimage: Promise[Boolean])
+}
+
+
+
+
+

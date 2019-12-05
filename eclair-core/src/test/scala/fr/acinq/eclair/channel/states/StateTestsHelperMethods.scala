@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.states
 import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
@@ -70,10 +71,10 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   def reachNormal(setup: SetupFixture,
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelVersion = if (tags.contains("zero_reserve")) ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE else ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
+    val (aliceParams, bobParams) = (Alice.channelParams.modify(_.channelReserve).setToIf(channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT))(0.sat), Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
@@ -114,7 +115,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val payment_preimage: ByteVector32 = randomBytes32
     val payment_hash: ByteVector32 = Crypto.sha256(payment_preimage)
     val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-    val cmd = OutgoingPacket.buildCommand(UUID.randomUUID, payment_hash, ChannelHop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
+    val cmd = OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID), payment_hash, ChannelHop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)
     (payment_preimage, cmd)
   }
 

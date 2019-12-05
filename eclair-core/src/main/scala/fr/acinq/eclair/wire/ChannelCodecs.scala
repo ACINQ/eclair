@@ -193,10 +193,16 @@ object ChannelCodecs extends Logging {
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
+    listOfN(uint16, bytes32 ~ int64) ::
+      ("sender" | provide(Option.empty[ActorRef]))
+    ).as[Origin.TrampolineRelayed]
+
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x03, localCodec) // backward compatible
     .typecase(0x01, provide(Origin.Local(UNKNOWN_UUID, None)))
     .typecase(0x02, relayedCodec)
+    .typecase(0x04, trampolineRelayedCodec)
 
   val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
 
@@ -227,7 +233,8 @@ object ChannelCodecs extends Logging {
       ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
+      ("channelId" | bytes32) ::
+      ("remoteChannelData" | optional(magic, varsizebinarydata))).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::

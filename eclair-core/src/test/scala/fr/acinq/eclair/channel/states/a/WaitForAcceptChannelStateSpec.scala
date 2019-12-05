@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
@@ -49,8 +50,8 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       init(wallet = noopWallet)
     }
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
+    val channelVersion = if (test.tags.contains("zero_reserve")) ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE else ChannelVersion.STANDARD
+    val (aliceParams, bobParams) = (Alice.channelParams.modify(_.channelReserve).setToIf(channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT))(Satoshi(0)), Bob.channelParams)
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
     within(30 seconds) {
@@ -118,6 +119,17 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val reserveTooSmall = accept.dustLimitSatoshis - 1.sat
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage))
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv AcceptChannel (reserve below dust limit, zero-reserve channel)", Tag("zero_reserve")) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val reserveTooSmall = accept.dustLimitSatoshis - Satoshi(1)
+    alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
+    // NB: the zero-reserve is only for fundee
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage))
     awaitCond(alice.stateName == CLOSED)

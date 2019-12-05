@@ -23,9 +23,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import org.scalatest.FunSuite
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.DecodeResult
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 
 /**
  * Created by PM on 31/05/2016.
@@ -42,6 +43,66 @@ class LightningMessageCodecsSpec extends FunSuite {
   def point(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
+
+  test("channeldataoptional with truncation") {
+
+    // encoding none
+    assert(channeldataoptional.encode(None).require.bytes === ByteVector.empty)
+
+    // decoding unrelated data (no magic)
+    val unrelated = randomBytes(42)
+    assert(channeldataoptional.decode(unrelated.bits).require === DecodeResult(None, unrelated.bits))
+
+    // decoding empty data
+    assert(channeldataoptional.decode(BitVector.empty).require === DecodeResult(None, BitVector.empty))
+
+    // nominal case (roundtrip)
+    val data = randomBytes(5000)
+    val bin = hex"abcdef 1388" ++ data
+    assert(channeldataoptional.encode(Some(data)).require.bytes === bin)
+    assert(channeldataoptional.decode(bin.bits).require === DecodeResult(Some(data), BitVector.empty))
+
+    // data too large
+    val toolong = randomBytes(61000)
+    assert(channeldataoptional.encode(Some(toolong)).require === BitVector.empty)
+  }
+
+  test("nonreg backup channel data") {
+
+    val channelId = randomBytes32
+    val signature = randomBytes64
+    val key = randomKey
+    val point = randomKey.publicKey
+
+    val refs = Map(
+      (hex"0023" ++ channelId ++ signature, hex"") -> FundingSigned(channelId, signature, None),
+      (hex"0023" ++ channelId ++ signature, hex"deadbeef") -> FundingSigned(channelId, signature, None),
+      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0000", hex"") -> FundingSigned(channelId, signature, Some(ByteVector.empty)),
+      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0000", hex"deadbeef") -> FundingSigned(channelId, signature, Some(ByteVector.empty)),
+      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0007 cccccccccccccc", hex"") -> FundingSigned(channelId, signature, Some(hex"cccccccccccccc")),
+      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0007 cccccccccccccc", hex"deadbeef") -> FundingSigned(channelId, signature, Some(hex"cccccccccccccc")),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value, hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), None),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"0000", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(ByteVector.empty)),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"0007 bbbbbbbbbbbbbb", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(hex"bbbbbbbbbbbbbb")),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000", hex"") -> CommitSig(channelId, signature, Nil, None),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000", hex"deadbeef") -> CommitSig(channelId, signature, Nil, None),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0000", hex"") -> CommitSig(channelId, signature, Nil, Some(ByteVector.empty)),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0000", hex"deadbeef") -> CommitSig(channelId, signature, Nil, Some(ByteVector.empty)),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0007 cccccccccccccc", hex"") -> CommitSig(channelId, signature, Nil, Some(hex"cccccccccccccc")),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0007 cccccccccccccc", hex"deadbeef") -> CommitSig(channelId, signature, Nil, Some(hex"cccccccccccccc")),
+      (hex"0085" ++ channelId ++ key.value ++ point.value, hex"") -> RevokeAndAck(channelId, key, point, None),
+      (hex"0085" ++ channelId ++ key.value ++ point.value, hex"deadbeef") -> RevokeAndAck(channelId, key, point, None),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0000", hex"") -> RevokeAndAck(channelId, key, point, Some(ByteVector.empty)),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0000", hex"deadbeef") -> RevokeAndAck(channelId, key, point, Some(ByteVector.empty)),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0007 cccccccccccccc", hex"") -> RevokeAndAck(channelId, key, point, Some(hex"cccccccccccccc")),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0007 cccccccccccccc", hex"deadbeef") -> RevokeAndAck(channelId, key, point, Some(hex"cccccccccccccc"))
+    )
+
+    refs.foreach { case ((bin, remainder), init) =>
+      assert(lightningMessageCodec.decode(bin.bits ++ remainder.bits).require === DecodeResult(init, remainder.bits))
+      assert(lightningMessageCodec.encode(init).require === bin.bits)
+    }
+  }
 
   test("encode/decode live node_announcements") {
     val ann = hex"a58338c9660d135fd7d087eb62afd24a33562c54507a9334e79f0dc4f17d407e6d7c61f0e2f3d0d38599502f61704cf1ae93608df027014ade7ff592f27ce2690001025acdf50702d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec00841122116c6e302e646563656e7465722e776f726c64000000000000000000000000000000130200000000000000000000ffffae8a0b082607"

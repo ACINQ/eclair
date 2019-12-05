@@ -23,7 +23,7 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
@@ -36,11 +36,11 @@ import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Failure, Random, Success, Try}
 
 /**
- * Created by PM on 26/08/2016.
- */
+  * Created by PM on 26/08/2016.
+  */
 class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
@@ -272,6 +272,20 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       }
       stay using d.copy(expectedPong_opt = None)
 
+    case Event(s: SendSwapOutRequest, d: ConnectedData) =>
+      d.transport ! SwapOutRequest(nodeParams.chainHash, s.amountSatoshis, s.bitcoinAddress, s.feeratePerKw)
+      stay
+
+    case Event(swapOutRequest: SwapOutRequest, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(swapOutRequest)
+      paymentHandler forward swapOutRequest
+      stay
+
+    case Event(swapOutResponse: SwapOutResponse, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(swapOutResponse)
+      context.system.eventStream.publish(swapOutResponse)
+      stay
+
     case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
       d.transport ! TransportHandler.ReadAck(err)
       log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
@@ -288,14 +302,46 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       }
       stay
 
+    case Event(payToOpen: Peer.PayToOpen, d: ConnectedData) =>
+      d.transport ! payToOpen.payToOpenRequest
+      val existing = d.payToOpenReqs.getOrElse(payToOpen.payToOpenRequest.paymentHash, Nil)
+      stay using d.copy(payToOpenReqs = d.payToOpenReqs + (payToOpen.payToOpenRequest.paymentHash -> (payToOpen +: existing)))
+
+    case Event(payToOpenRequest: PayToOpenRequest, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(payToOpenRequest)
+      paymentHandler forward payToOpenRequest
+      stay
+
+    case Event(_: SendSwapInRequest, d: ConnectedData) =>
+      d.transport ! SwapInRequest(nodeParams.chainHash)
+      stay
+
+    case Event(s: SwapInResponse, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(s)
+      context.system.eventStream.publish(s)
+      stay
+
+    case Event(s: SwapInPending, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(s)
+      context.system.eventStream.publish(s)
+      stay
+
+    case Event(s: SwapInConfirmed, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(s)
+      context.system.eventStream.publish(s)
+      stay
+
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
       c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
       val temporaryChannelId = randomBytes32
       val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
       val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-      log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
+      //TODO: hack! if push_msat > 0 then this is a pay2open
+      val channelVersion = if (c.pushMsat > 0.msat) ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE else ChannelVersion.STANDARD
+      val localParams1 = if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) localParams.copy(channelReserve = 0.sat) else localParams
+      log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams1")
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams1, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelVersion)
       stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
@@ -311,6 +357,35 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         case Some(_) =>
           log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
           stay
+      }
+
+    case Event(msg: wire.ChannelReestablish, d: ConnectedData) =>
+      d.transport ! TransportHandler.ReadAck(msg)
+      d.channels.get(FinalChannelId(msg.channelId)) match {
+        case Some(channel) =>
+          channel forward msg
+          stay
+        case None =>
+          msg.channelData match {
+            case Some(channelData) =>
+              Try(Helpers.decrypt(nodeParams.privateKey.value, channelData)) match {
+                case Success(state) =>
+                  log.warning(s"restoring channelId=${msg.channelId}")
+                  val channel = spawnChannel(nodeParams, origin_opt = None)
+                  channel ! INPUT_RESTORED(state)
+                  channel ! INPUT_RECONNECTED(d.transport, d.localInit, d.remoteInit)
+                  channel forward msg
+                  stay using d.copy(channels = d.channels + (FinalChannelId(state.channelId) -> channel))
+                case Failure(t) =>
+                  log.error(t, s"failed to restore channelId=${msg.channelId} ")
+                  d.transport ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
+                  stay
+              }
+
+            case None =>
+              d.transport ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
+              stay
+          }
       }
 
     case Event(msg: wire.HasChannelId, d: ConnectedData) =>
@@ -516,6 +591,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
 
     case Event(_: BadMessage, _) => stay // we got disconnected while syncing
+
+    case Event(o@(_: UpdateAddHtlc, _: PayToOpenRequest), _) =>
+      // we do as if the register didn't find the peer
+      sender ! Status.Failure(Register.ForwardPeerIdFailure(Register.ForwardPeerId(ShortChannelId.peerId(remoteNodeId), o)))
+      stay
   }
 
   /**
@@ -539,6 +619,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case CONNECTED -> DISCONNECTED =>
       Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+      // we cancel pending pay-to-open requests
+      cancelPayToOpenRequests()
   }
 
   onTermination {
@@ -562,6 +644,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   def stopPeer() = {
+    cancelPayToOpenRequests()
     log.info("removing peer from db")
     nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
@@ -570,6 +653,20 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   // TODO gets the first of the list, improve selection?
   def getPeerAddressFromNodeAnnouncement: Option[InetSocketAddress] = {
     nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
+  }
+
+  def cancelPayToOpenRequests() = {
+    stateData match {
+      case d: ConnectedData =>
+        d.payToOpenReqs
+          .values
+          .flatten
+          .foreach { case payToOpen =>
+            log.info(s"cancelling pay-to-open request paymentHash=${payToOpen.payToOpenRequest.paymentHash}")
+            payToOpen.relayer ! Status.Failure(Register.ForwardPeerIdFailure(Register.ForwardPeerId(ShortChannelId.peerId(remoteNodeId), payToOpen)))
+          }
+      case _ => ()
+    }
   }
 
   // a failing channel won't be restarted, it should handle its states
@@ -609,7 +706,7 @@ object Peer {
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], nextReconnectionDelay: FiniteDuration = 10 seconds) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef], localInit: wire.Init) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, payToOpenReqs: Map[ByteVector32, List[PayToOpen]] = Map.empty) extends Data
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
@@ -629,6 +726,7 @@ object Peer {
   case object Reconnect
   case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
+  case class PayToOpen(add: UpdateAddHtlc, payToOpenRequest: PayToOpenRequest, relayer: ActorRef)
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(fundingSatoshis < Channel.MAX_FUNDING, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING}")
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
@@ -640,9 +738,13 @@ object Peer {
   case object SendPing
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
-  case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+  case class PeerRoutingMessage(transport: ActorRef, remoteNodeId: PublicKey, message: LightningMessage)
+
+  case class SendSwapOutRequest(nodeId: PublicKey, amountSatoshis: Satoshi, bitcoinAddress: String, feeratePerKw: Long)
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
+
+  case class SendSwapInRequest(nodeId: PublicKey)
 
   sealed trait BadMessage
   case class InvalidSignature(r: RoutingMessage) extends BadMessage

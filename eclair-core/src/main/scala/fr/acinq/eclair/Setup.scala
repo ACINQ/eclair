@@ -19,7 +19,6 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.Done
@@ -27,7 +26,7 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
@@ -39,11 +38,11 @@ import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
-import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
-import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
+import fr.acinq.eclair.io.{Authenticator, Switchboard}
 import fr.acinq.eclair.payment.Auditor
+import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -63,7 +62,8 @@ import scala.concurrent.duration._
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
-            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+            db: Option[Databases] = None,
+            eclairWallet_opt: Option[EclairWallet] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
@@ -130,6 +130,7 @@ class Setup(datadir: File,
     for {
       _ <- Future.successful(true)
       feeratesRetrieved = Promise[Done]()
+      postRestartCleanUpInitialized = Promise[Done]()
 
       bitcoin: Bitcoin = nodeParams.watcherType match {
         case ELECTRUM =>
@@ -198,15 +199,19 @@ class Setup(datadir: File,
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, None), "router", SupervisorStrategy.Resume))
 
-      wallet = bitcoin match {
-        case Electrum(electrumClient) =>
-          val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
-          val walletDb = new SqliteWalletDb(sqlite)
-          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
-          implicit val timeout = Timeout(30 seconds)
-          new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
-        case _ => ???
+      wallet = eclairWallet_opt match {
+        case Some(eclairWallet) => eclairWallet
+        case None => bitcoin match {
+          case Electrum(electrumClient) =>
+            val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
+            val walletDb = new SqliteWalletDb(sqlite)
+            val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
+            implicit val timeout = Timeout(30 seconds)
+            new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
+          case _ => ???
+        }
       }
+
       _ = wallet.getFinalAddress.map {
         case address => logger.info(s"initial wallet address=$address")
       }
@@ -222,8 +227,11 @@ class Setup(datadir: File,
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, commandBuffer), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, commandBuffer, paymentHandler), "relayer", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, commandBuffer, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
+      // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
+      // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
+      _ <- postRestartCleanUpInitialized.future
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, relayer, register), "payment-initiator", SupervisorStrategy.Restart))
 

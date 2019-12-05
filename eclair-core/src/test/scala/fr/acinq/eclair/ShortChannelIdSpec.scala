@@ -58,4 +58,9 @@ class ShortChannelIdSpec extends FunSuite {
     assert(Try(ShortChannelId("42000x27")).isFailure)
     assert(Try(ShortChannelId("42000x")).isFailure)
   }
+
+  test("create and recognize peer ids") {
+    assert(!ShortChannelId.isPeerId(ShortChannelId("1454070x44x0")))
+    assert(ShortChannelId.isPeerId(ShortChannelId.peerId(randomKey.publicKey)))
+  }
 }

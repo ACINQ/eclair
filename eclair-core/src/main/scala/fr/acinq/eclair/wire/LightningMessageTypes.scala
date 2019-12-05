@@ -65,7 +65,8 @@ case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
                               yourLastPerCommitmentSecret: Option[PrivateKey] = None,
-                              myCurrentPerCommitmentPoint: Option[PublicKey] = None) extends ChannelMessage with HasChannelId
+                              myCurrentPerCommitmentPoint: Option[PublicKey] = None,
+                              channelData: Option[ByteVector] = None) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
@@ -84,7 +85,8 @@ case class OpenChannel(chainHash: ByteVector32,
                        delayedPaymentBasepoint: PublicKey,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
-                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       channelFlags: Byte,
+                       tlvStream_opt: Option[TlvStream[OpenTlv]] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
@@ -107,17 +109,20 @@ case class FundingCreated(temporaryChannelId: ByteVector32,
                           signature: ByteVector64) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingSigned(channelId: ByteVector32,
-                         signature: ByteVector64) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64,
+                         channelData: Option[ByteVector] = None) extends ChannelMessage with HasChannelId
 
 case class FundingLocked(channelId: ByteVector32,
                          nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
 case class Shutdown(channelId: ByteVector32,
-                    scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
+                    scriptPubKey: ByteVector,
+                    channelData: Option[ByteVector] = None) extends ChannelMessage with HasChannelId
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
-                         signature: ByteVector64) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64,
+                         channelData: Option[ByteVector] = None) extends ChannelMessage with HasChannelId
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
@@ -141,11 +146,13 @@ case class UpdateFailMalformedHtlc(channelId: ByteVector32,
 
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
-                     htlcSignatures: List[ByteVector64]) extends HtlcMessage with HasChannelId
+                     htlcSignatures: List[ByteVector64],
+                     channelData: Option[ByteVector] = None) extends HtlcMessage with HasChannelId
 
 case class RevokeAndAck(channelId: ByteVector32,
                         perCommitmentSecret: PrivateKey,
-                        nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
+                        nextPerCommitmentPoint: PublicKey,
+                        channelData: Option[ByteVector] = None) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: ByteVector32,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
@@ -285,3 +292,39 @@ object ReplyChannelRange {
 case class GossipTimestampFilter(chainHash: ByteVector32,
                                  firstTimestamp: Long,
                                  timestampRange: Long) extends RoutingMessage with HasChainHash
+
+// NB: blank lines to minimize merge conflicts
+case class PayToOpenRequest(chainHash: ByteVector32,
+                            fundingSatoshis: Satoshi,
+                            amountMsat: MilliSatoshi,
+                            feeSatoshis: Satoshi,
+                            paymentHash: ByteVector32
+                           ) extends LightningMessage with HasChainHash
+
+case class PayToOpenResponse(chainHash: ByteVector32,
+                             paymentHash: ByteVector32,
+                             paymentPreimage: ByteVector32 // preimage all-zero means we say no to the pay-to-open request
+                            ) extends LightningMessage with HasChainHash
+//
+case class SwapInRequest(chainHash: ByteVector32) extends LightningMessage with HasChainHash
+
+case class SwapInResponse(chainHash: ByteVector32, bitcoinAddress: String) extends LightningMessage with HasChainHash
+
+case class SwapInPending(bitcoinAddress: String, amount: Satoshi) extends LightningMessage
+
+case class SwapInConfirmed(bitcoinAddress: String, amount: MilliSatoshi) extends LightningMessage
+//
+case class SwapOutRequest(chainHash: ByteVector32,
+                          amountSatoshis: Satoshi,
+                          bitcoinAddress: String,
+                          feeratePerKw: Long) extends LightningMessage with HasChainHash
+
+case class SwapOutResponse(chainHash: ByteVector32,
+                           amountSatoshis: Satoshi,
+                           feeSatoshis: Satoshi,
+                           paymentRequest: String) extends LightningMessage with HasChainHash
+//
+
+//
+
+//

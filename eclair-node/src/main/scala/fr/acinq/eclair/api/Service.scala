@@ -165,6 +165,13 @@ trait Service extends ExtraDirectives with Logging {
                   case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                 }
               } ~
+              // TODO: @t-bast: remove this API once stabilized: should re-work the payment APIs to integrate Trampoline nicely
+              path("sendtotrampoline") {
+                formFields(invoiceFormParam_opt, "trampolineId".as[Option[PublicKey]](publicKeyUnmarshaller), "trampolineFeesMsat".as[Option[MilliSatoshi]](millisatoshiUnmarshaller), "trampolineExpiryDelta".as[Int]) {
+                  (invoice, trampolineId, trampolineFees, trampolineExpiryDelta) =>
+                    complete(eclairApi.sendToTrampoline(invoice.get, trampolineId.get, trampolineFees.get, CltvExpiryDelta(trampolineExpiryDelta)))
+                }
+              } ~
               path("sendtonode") {
                 formFields(amountMsatFormParam_opt, paymentHashFormParam_opt, nodeIdFormParam_opt, "maxAttempts".as[Int].?, "feeThresholdSat".as[Option[Satoshi]](satoshiUnmarshaller), "maxFeePct".as[Double].?, "externalId".?) {
                   (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>

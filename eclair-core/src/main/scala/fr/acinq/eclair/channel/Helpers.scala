@@ -17,17 +17,19 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
-import fr.acinq.eclair.crypto.{Generators, KeyManager}
+import fr.acinq.eclair.crypto.{ChaCha20Poly1305, Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.wire.OpenTlv.ChannelVersionTlv
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
 import scodec.bits.ByteVector
@@ -81,6 +83,14 @@ object Helpers {
   }
 
   /**
+    * Retrieves channel version from a tlv record in message `open_channel`
+    */
+  def getChannelVersion(open: OpenChannel): ChannelVersion =
+    open.tlvStream_opt
+      .flatMap(_.records.collectFirst { case tlv: ChannelVersionTlv => tlv.channelVersion })
+      .getOrElse(ChannelVersion.STANDARD)
+
+  /**
    * Called by the fundee
    */
   def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
@@ -101,8 +111,12 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
 
-    // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
-    if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
+    if (getChannelVersion(open).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+      // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
+    } else {
+      // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
+      if (open.dustLimitSatoshis > open.channelReserveSatoshis) throw DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, open.channelReserveSatoshis)
+    }
 
     // BOLT #2: The receiving node MUST fail the channel if both to_local and to_remote amounts for the initial commitment
     // transaction are less than or equal to channel_reserve_satoshis (see BOLT 3).
@@ -142,13 +156,17 @@ object Helpers {
     // MAY reject the channel.
     if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
 
+    if (getChannelVersion(open).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+      // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
+    } else {
+      // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
+      // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
+      if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
+    }
+
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
     //  MUST reject the channel.
     if (accept.channelReserveSatoshis < open.dustLimitSatoshis) throw ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, accept.channelReserveSatoshis, open.dustLimitSatoshis)
-
-    // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
-    // MUST reject the channel. Other fields have the same requirements as their counterparts in open_channel.
-    if (open.channelReserveSatoshis < accept.dustLimitSatoshis) throw DustLimitAboveOurChannelReserve(accept.temporaryChannelId, accept.dustLimitSatoshis, open.channelReserveSatoshis)
 
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
@@ -1142,6 +1160,25 @@ object Helpers {
         }
       } else None
     }
+  }
+
+
+  def encrypt(key: ByteVector32, d: HasCommitments) = {
+    val bin = ChannelCodecs.stateDataCodec.encode(d).require.bytes
+    // NB: there is a chance of collision here, due to how the nonce is calculated. Probability of collision is once every 2.2E19 times.
+    // See https://en.wikipedia.org/wiki/Birthday_attack
+    val nonce = Crypto.sha256(bin).take(12)
+    val (ciphertext, tag) = ChaCha20Poly1305.encrypt(key, nonce, bin, ByteVector.empty)
+    ciphertext ++ nonce ++ tag
+  }
+
+  def decrypt(key: ByteVector32, data: ByteVector): HasCommitments = {
+    // nonce is 12B, tag is 16B
+    val ciphertext = data.dropRight(12 + 16)
+    val nonce = data.takeRight(12 + 16).take(12)
+    val tag = data.takeRight(16)
+    val d = ChaCha20Poly1305.decrypt(key, nonce, ciphertext, ByteVector.empty, tag)
+    ChannelCodecs.stateDataCodec.decode(d.bits).require.value
   }
 
 }
