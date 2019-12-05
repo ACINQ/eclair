@@ -944,11 +944,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     nodes("C").watcher ! NewTransaction(htlcSuccess)
     nodes("C").watcher ! NewTransaction(htlcTimeout)
 
-    // when C has seen all the revoked transactions it will have 38 watches
-    awaitCond({
-      sender.send(nodes("C").watcher, 'watches)
-      sender.expectMsgType[Set[Watch]].size == 38
-    }, max = 90 seconds, interval = 3 seconds)
+    // wait for C to start closing the channel
+    awaitCond(stateListener.expectMsgType[ChannelStateChanged](40 seconds).currentState == CLOSING, max = 40 seconds)
 
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
