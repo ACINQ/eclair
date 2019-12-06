@@ -19,10 +19,12 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.Done
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, DiagnosticActorLogging, Props}
+import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.{Logs, NodeParams}
 import kamon.Kamon
 
 import scala.concurrent.Promise
@@ -30,7 +32,7 @@ import scala.concurrent.Promise
 /**
   * Created by PM on 27/10/2015.
   */
-class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
 
   import Tcp._
   import context.system
@@ -59,7 +61,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
       listener ! ResumeAccepting(batchSize = 1)
   }
 
-  override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
+  override def mdc(currentMessage: Any): MDC = Logs.mdc(Some(LogCategory.CONNECTION))
 }
 
 object Server {
