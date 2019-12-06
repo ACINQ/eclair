@@ -24,9 +24,9 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, db, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.FunSuite
 
 import scala.compat.Platform
@@ -236,8 +236,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val paidInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32, alicePriv, "invoice #5")
     val paidInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32, bobPriv, "invoice #6", expirySeconds = Some(60))
     val receivedAt1 = Platform.currentTime + 1
-    val payment1 = IncomingPayment(paidInvoice1, randomBytes32, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt1))
     val receivedAt2 = Platform.currentTime + 2
+    val payment1 = IncomingPayment(paidInvoice1, randomBytes32, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt2))
     val payment2 = IncomingPayment(paidInvoice2, randomBytes32, paidInvoice2.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(1111 msat, receivedAt2))
 
     db.addIncomingPayment(pendingInvoice1, pendingPayment1.paymentPreimage)
@@ -257,7 +257,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.listReceivedIncomingPayments(0, now) === Nil)
     assert(db.listPendingIncomingPayments(0, now) === Seq(pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
 
-    db.receiveIncomingPayment(paidInvoice1.paymentHash, 561 msat, receivedAt1)
+    db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
+    db.receiveIncomingPayment(paidInvoice1.paymentHash, 100 msat, receivedAt2) // adding another payment to this invoice should sum
     db.receiveIncomingPayment(paidInvoice2.paymentHash, 1111 msat, receivedAt2)
 
     assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1))
@@ -322,13 +323,87 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentFailed(s1.id, s1.paymentHash, Nil)))
   }
 
+  test("high level payments overview") {
+    val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
+
+    // -- feed db with incoming payments
+    val expiredInvoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), randomBytes32, alicePriv, "incoming #1", timestamp = 1)
+    val expiredPayment = IncomingPayment(expiredInvoice, randomBytes32, 100, IncomingPaymentStatus.Expired)
+    val pendingInvoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(456 msat), randomBytes32, alicePriv, "incoming #2")
+    val pendingPayment = IncomingPayment(pendingInvoice, randomBytes32, 120, IncomingPaymentStatus.Pending)
+    val paidInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(789 msat), randomBytes32, alicePriv, "incoming #3")
+    val receivedAt1 = 150
+    val receivedPayment1 = IncomingPayment(paidInvoice1, randomBytes32, 130, IncomingPaymentStatus.Received(561 msat, receivedAt1))
+    val paidInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(888 msat), randomBytes32, alicePriv, "incoming #4")
+    val receivedAt2 = 160
+    val receivedPayment2 = IncomingPayment(paidInvoice2, randomBytes32, paidInvoice2.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(889 msat, receivedAt2))
+    db.addIncomingPayment(pendingInvoice, pendingPayment.paymentPreimage)
+    db.addIncomingPayment(expiredInvoice, expiredPayment.paymentPreimage)
+    db.addIncomingPayment(paidInvoice1, receivedPayment1.paymentPreimage)
+    db.addIncomingPayment(paidInvoice2, receivedPayment2.paymentPreimage)
+    db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
+    db.receiveIncomingPayment(paidInvoice2.paymentHash, 666 msat, receivedAt2)
+
+    // -- feed db with outgoing payments
+    val parentId1 = UUID.randomUUID()
+    val parentId2 = UUID.randomUUID()
+    val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1337 msat), paymentHash1, davePriv, "outgoing #1", expirySeconds = None, timestamp = 0)
+
+    // 1st attempt, pending -> failed
+    val outgoing1 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, 123 msat, alice, 200, Some(invoice), OutgoingPaymentStatus.Pending)
+    db.addOutgoingPayment(outgoing1)
+    db.updateOutgoingPayment(PaymentFailed(outgoing1.id, outgoing1.paymentHash, Nil, 210))
+    // 2nd attempt: pending
+    val outgoing2 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, 123 msat, alice, 211, Some(invoice), OutgoingPaymentStatus.Pending)
+    db.addOutgoingPayment(outgoing2)
+
+    // -- 1st check: result contains 2 incoming PAID, 1 outgoing PENDING. Outgoing1 must not be overridden by Outgoing2
+    val check1 = db.listPaymentsOverview(10)
+    assert(check1.size == 3)
+    assert(check1.head.paymentHash == paymentHash1)
+    assert(check1.head.isInstanceOf[PlainOutgoingPayment])
+    assert(check1.head.asInstanceOf[PlainOutgoingPayment].status == OutgoingPaymentStatus.Pending)
+
+    // failed #2 and add a successful payment (made of 2 partial payments)
+    db.updateOutgoingPayment(PaymentFailed(outgoing2.id, outgoing2.paymentHash, Nil, 250))
+    val outgoing3 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, 200 msat, bob, 300, Some(invoice), OutgoingPaymentStatus.Pending)
+    val outgoing4 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, 300 msat, bob, 310, Some(invoice), OutgoingPaymentStatus.Pending)
+    db.addOutgoingPayment(outgoing3)
+    db.addOutgoingPayment(outgoing4)
+    // complete #2 and #3 partial payments
+    val sent = PaymentSent(parentId2, paymentHash1, preimage1, Seq(
+      PaymentSent.PartialPayment(outgoing3.id, outgoing3.amount, 15 msat, randomBytes32, None, 400),
+      PaymentSent.PartialPayment(outgoing4.id, outgoing4.amount, 20 msat, randomBytes32, None, 410)
+    ))
+    db.updateOutgoingPayment(sent)
+
+    // -- 2nd check: result contains 2 incoming PAID, 1 outgoing FAILED and 1 outgoing SUCCEEDED, in correct order
+    val check2 = db.listPaymentsOverview(10)
+    assert(check2.size == 4)
+    assert(check2.head.paymentHash == paymentHash1)
+    assert(check2.head.isInstanceOf[PlainOutgoingPayment])
+    assert(check2.head.asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+
+    assert(check2(1).paymentHash == paymentHash1)
+    assert(check2(1).isInstanceOf[PlainOutgoingPayment])
+    assert(check2(1).asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Failed])
+
+    assert(check2(2).paymentHash == paidInvoice2.paymentHash)
+    assert(check2(2).isInstanceOf[PlainIncomingPayment])
+    assert(check2(2).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
+
+    assert(check2(3).paymentHash == paidInvoice1.paymentHash)
+    assert(check2(3).isInstanceOf[PlainIncomingPayment])
+    assert(check2(3).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
+  }
+
 }
 
 object SqlitePaymentsDbSpec {
   val (alicePriv, bobPriv, carolPriv, davePriv) = (randomKey, randomKey, randomKey, randomKey)
   val (alice, bob, carol, dave) = (alicePriv.publicKey, bobPriv.publicKey, carolPriv.publicKey, davePriv.publicKey)
-  val hop_ab = Hop(alice, bob, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(42), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
-  val hop_bc = Hop(bob, carol, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(43), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
+  val hop_ab = ChannelHop(alice, bob, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(42), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
+  val hop_bc = ChannelHop(bob, carol, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(43), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))
   val (preimage1, preimage2, preimage3, preimage4) = (randomBytes32, randomBytes32, randomBytes32, randomBytes32)
   val (paymentHash1, paymentHash2, paymentHash3, paymentHash4) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3), Crypto.sha256(preimage4))
 }

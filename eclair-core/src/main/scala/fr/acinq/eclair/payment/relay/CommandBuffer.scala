@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.payment.relay
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin.ByteVector32
@@ -22,40 +22,36 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
 
 /**
-  * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
-  * in a database because we don't want to lose preimages, or to forget to fail
-  * incoming htlcs, which would lead to unwanted channel closings.
-  */
+ * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
+ * in a database because we don't want to lose preimages, or to forget to fail
+ * incoming htlcs, which would lead to unwanted channel closings.
+ */
 class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import CommandBuffer._
-  import nodeParams.db._
+
+  val db = nodeParams.db.pendingRelay
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = {
 
     case CommandSend(channelId, htlcId, cmd) =>
-      // save command in db
       register forward Register.Forward(channelId, cmd)
-      // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
-      pendingRelay.addPendingRelay(channelId, htlcId, cmd)
+      // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
+      db.addPendingRelay(channelId, htlcId, cmd)
 
     case CommandAck(channelId, htlcId) =>
-      //delete from db
       log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
-      pendingRelay.removePendingRelay(channelId, htlcId)
+      db.removePendingRelay(channelId, htlcId)
 
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
-      import d.channelId
-      // if channel is in a state where it can have pending htlcs, we send them the fulfills/fails we know of
-      pendingRelay.listPendingRelay(channelId) match {
+      db.listPendingRelay(d.channelId) match {
         case Nil => ()
         case cmds =>
-          log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel $channelId")
+          log.info(s"re-sending ${cmds.size} unacked fulfills/fails to channel ${d.channelId}")
           cmds.foreach(channel ! _) // they all have commit = false
-          // better to sign once instead of after each fulfill
-          channel ! CMD_SIGN
+          channel ! CMD_SIGN // so we can sign all of them at once
       }
 
     case _: ChannelStateChanged => () // ignored

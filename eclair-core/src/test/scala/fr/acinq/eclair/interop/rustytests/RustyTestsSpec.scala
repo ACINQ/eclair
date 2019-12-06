@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.NoopPaymentHandler
+import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.wire.Init
 import fr.acinq.eclair.{LongToBtcAmount, TestUtils}
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
@@ -36,8 +36,8 @@ import scala.concurrent.duration._
 import scala.io.Source
 
 /**
-  * Created by PM on 30/05/2016.
-  */
+ * Created by PM on 30/05/2016.
+ */
 
 class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
 
@@ -49,7 +49,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
+    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref)))
+    paymentHandler ! new ForwardHandler(TestProbe().ref)
     // we just bypass the relayer for this test
     val relayer = paymentHandler
     val router = TestProbe()

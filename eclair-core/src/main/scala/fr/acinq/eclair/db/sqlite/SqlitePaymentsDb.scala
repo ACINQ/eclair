@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
 import grizzled.slf4j.Logging
 import scodec.Attempt
+import scodec.bits.BitVector
 import scodec.codecs._
 
 import scala.collection.immutable.Queue
@@ -141,7 +142,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   private def parseOutgoingPayment(rs: ResultSet): OutgoingPayment = {
-    val result = OutgoingPayment(
+    val status = buildOutgoingPaymentStatus(
+      rs.getByteVector32Nullable("payment_preimage"),
+      rs.getMilliSatoshiNullable("fees_msat"),
+      rs.getBitVectorOpt("payment_route"),
+      rs.getLongNullable("completed_at"),
+      rs.getBitVectorOpt("failures"))
+
+    OutgoingPayment(
       UUID.fromString(rs.getString("id")),
       UUID.fromString(rs.getString("parent_id")),
       rs.getStringNullable("external_id"),
@@ -150,30 +158,31 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       PublicKey(rs.getByteVector("target_node_id")),
       rs.getLong("created_at"),
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
-      OutgoingPaymentStatus.Pending
+      status
     )
-    // If we have a pre-image, the payment succeeded.
-    rs.getByteVector32Nullable("payment_preimage") match {
-      case Some(paymentPreimage) => result.copy(status = OutgoingPaymentStatus.Succeeded(
-        paymentPreimage,
-        MilliSatoshi(rs.getLong("fees_msat")),
-        rs.getBitVectorOpt("payment_route").map(b => paymentRouteCodec.decode(b) match {
+  }
+
+  private def buildOutgoingPaymentStatus(preimage_opt: Option[ByteVector32], fees_opt: Option[MilliSatoshi], paymentRoute_opt: Option[BitVector], completedAt_opt: Option[Long], failures: Option[BitVector]): OutgoingPaymentStatus = {
+    preimage_opt match {
+      // If we have a pre-image, the payment succeeded.
+      case Some(preimage) => OutgoingPaymentStatus.Succeeded(
+        preimage, fees_opt.getOrElse(MilliSatoshi(0)), paymentRoute_opt.map(b => paymentRouteCodec.decode(b) match {
           case Attempt.Successful(route) => route.value
           case Attempt.Failure(_) => Nil
         }).getOrElse(Nil),
-        rs.getLong("completed_at")
-      ))
-      case None => getNullableLong(rs, "completed_at") match {
+        completedAt_opt.getOrElse(0)
+      )
+      case None => completedAt_opt match {
         // Otherwise if the payment was marked completed, it's a failure.
-        case Some(completedAt) => result.copy(status = OutgoingPaymentStatus.Failed(
-          rs.getBitVectorOpt("failures").map(b => paymentFailuresCodec.decode(b) match {
-            case Attempt.Successful(failures) => failures.value
+        case Some(completedAt) => OutgoingPaymentStatus.Failed(
+          failures.map(b => paymentFailuresCodec.decode(b) match {
+            case Attempt.Successful(f) => f.value
             case Attempt.Failure(_) => Nil
           }).getOrElse(Nil),
           completedAt
-        ))
+        )
         // Else it's still pending.
-        case _ => result
+        case _ => OutgoingPaymentStatus.Pending
       }
     }
   }
@@ -234,23 +243,29 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
-    using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
-      statement.setLong(1, amount.toLong)
-      statement.setLong(2, receivedAt)
-      statement.setBytes(3, paymentHash.toArray)
-      val res = statement.executeUpdate()
-      if (res == 0) throw new IllegalArgumentException("Inserted a received payment without having an invoice")
+    using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
+      update.setLong(1, amount.toLong)
+      update.setLong(2, receivedAt)
+      update.setBytes(3, paymentHash.toArray)
+      val updated = update.executeUpdate()
+      if (updated == 0) {
+        throw new IllegalArgumentException("Inserted a received payment without having an invoice")
+      }
     }
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
-    val paymentRequest = PaymentRequest.read(rs.getString("payment_request"))
-    val paymentPreimage = rs.getByteVector32("payment_preimage")
-    val createdAt = rs.getLong("created_at")
-    val received = getNullableLong(rs, "received_msat").map(MilliSatoshi(_))
-    received match {
-      case Some(amount) => IncomingPayment(paymentRequest, paymentPreimage, createdAt, IncomingPaymentStatus.Received(amount, rs.getLong("received_at")))
-      case None if paymentRequest.isExpired => IncomingPayment(paymentRequest, paymentPreimage, createdAt, IncomingPaymentStatus.Expired)
-      case None => IncomingPayment(paymentRequest, paymentPreimage, createdAt, IncomingPaymentStatus.Pending)
+    val paymentRequest = rs.getString("payment_request")
+    IncomingPayment(PaymentRequest.read(paymentRequest),
+      rs.getByteVector32("payment_preimage"),
+      rs.getLong("created_at"),
+      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getLongNullable("received_at")))
+  }
+
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[Long]): IncomingPaymentStatus = {
+    amount_opt match {
+      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0))
+      case None if serializedPaymentRequest_opt.exists(PaymentRequest.fastHasExpired) => IncomingPaymentStatus.Expired
+      case None => IncomingPaymentStatus.Pending
     }
   }
 
@@ -314,5 +329,76 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       }
       q
     }
+
+  override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = {
+    // This query is an UNION of the ``sent_payments`` and ``received_payments`` table
+    // - missing fields set to NULL when needed.
+    // - only retrieve incoming payments that did receive funds.
+    // - outgoing payments are grouped by parent_id.
+    // - order by completion date (or creation date if nothing else).
+    using(sqlite.prepareStatement(
+      """
+        |SELECT * FROM (
+        |	 SELECT 'received' as type,
+        |	   NULL as parent_id,
+        |    NULL as external_id,
+        |    payment_hash,
+        |    payment_preimage,
+        |    received_msat as final_amount,
+        |    payment_request,
+        |    NULL as target_node_id,
+        |    created_at,
+        |    received_at as completed_at,
+        |    expire_at,
+        |    NULL as order_trick
+        |  FROM received_payments
+        |  WHERE final_amount > 0
+        |UNION ALL
+        |  SELECT 'sent' as type,
+        |	   parent_id,
+        |    external_id,
+        |    payment_hash,
+        |    payment_preimage,
+        |    sum(amount_msat + fees_msat) as final_amount,
+        |    payment_request,
+        |    target_node_id,
+        |    created_at,
+        |    completed_at,
+        |    NULL as expire_at,
+        |    MAX(coalesce(completed_at, created_at)) as order_trick
+        |  FROM sent_payments
+        |  GROUP BY parent_id
+        |)
+        |ORDER BY coalesce(completed_at, created_at) DESC
+        |LIMIT ?
+      """.stripMargin
+    )) { statement =>
+      statement.setInt(1, limit)
+      val rs = statement.executeQuery()
+      var q: Queue[PlainPayment] = Queue()
+      while (rs.next()) {
+        val parentId = rs.getUUIDNullable("parent_id")
+        val externalId_opt = rs.getStringNullable("external_id")
+        val paymentHash = rs.getByteVector32("payment_hash")
+        val paymentRequest_opt = rs.getStringNullable("payment_request")
+        val amount_opt = rs.getMilliSatoshiNullable("final_amount")
+        val createdAt = rs.getLong("created_at")
+        val completedAt_opt = rs.getLongNullable("completed_at")
+        val expireAt_opt = rs.getLongNullable("expire_at")
+
+        val p = if (rs.getString("type") == "received") {
+          val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
+          PlainIncomingPayment(paymentHash, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
+        } else {
+          val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
+          // note that the resulting status will not contain any details (routes, failures...)
+          val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
+          PlainOutgoingPayment(parentId, externalId_opt, paymentHash, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
+        }
+        q = q :+ p
+      }
+      q
+    }
+  }
 
 }

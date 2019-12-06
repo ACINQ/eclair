@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
@@ -49,7 +50,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
         KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
         remoteNodeId_opt.map(_.value),
         connection = connection,
-        codec = LightningMessageCodecs.lightningMessageCodec))
+        codec = LightningMessageCodecs.meteredLightningMessageCodec))
       context watch transport
       context become ready(switchboard, authenticating + (transport -> pending))
 
@@ -82,7 +83,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
       case HandshakeCompleted(_, _, remoteNodeId) => Some(remoteNodeId)
       case _ => None
     }
-    Logs.mdc(remoteNodeId_opt = remoteNodeId_opt)
+    Logs.mdc(Some(LogCategory.CONNECTION), remoteNodeId_opt = remoteNodeId_opt)
   }
 }
 

@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
-import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, lightningMessageCodec}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, meteredLightningMessageCodec}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -63,6 +63,7 @@ case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage {
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
 case class InvalidOnionPayload(tag: UInt64, offset: Int) extends Perm { def message = "onion per-hop payload is invalid" }
+case object PaymentTimeout extends FailureMessage { def message = "the complete payment amount was not received within a reasonable time" }
 
 /**
  * We allow remote nodes to send us unknown failure codes (e.g. deprecated failure codes).
@@ -85,7 +86,7 @@ object FailureMessageCodecs {
   val NODE = 0x2000
   val UPDATE = 0x1000
 
-  val channelUpdateCodecWithType = lightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
+  val channelUpdateCodecWithType = meteredLightningMessageCodec.narrow[ChannelUpdate](f => Attempt.successful(f.asInstanceOf[ChannelUpdate]), g => g)
 
   // NB: for historical reasons some implementations were including/omitting the message type (258 for ChannelUpdate)
   // this codec supports both versions for decoding, and will encode with the message type
@@ -115,7 +116,8 @@ object FailureMessageCodecs {
       .typecase(18, ("expiry" | cltvExpiry).as[FinalIncorrectCltvExpiry])
       .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
       .typecase(21, provide(ExpiryTooFar))
-      .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload]),
+      .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload])
+      .typecase(23, provide(PaymentTimeout)),
     uint16.xmap(code => {
       val failureMessage = code match {
         // @formatter:off
