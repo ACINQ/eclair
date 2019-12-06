@@ -50,7 +50,7 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JString, JValue}
+import org.json4s.JsonAST.{JArray, JNull, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
@@ -939,13 +939,23 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
     sender.expectMsgType[JValue](10 seconds)
 
-    // forward the transaction to C for quicker acknowledgment
+    // forward the transaction to C for quicker acknowledgement
     nodes("C").watcher ! NewTransaction(revokedCommitTx)
     nodes("C").watcher ! NewTransaction(htlcSuccess)
     nodes("C").watcher ! NewTransaction(htlcTimeout)
 
     // wait for C to start closing the channel
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](40 seconds).currentState == CLOSING, max = 40 seconds)
+
+    // assert the htlc transactions have been spent
+    awaitCond({
+      val client = new ExtendedBitcoinClient(bitcoinrpcclient)
+      val spentF = for {
+       successSpent <- client.isTransactionOutputSpendable(htlcSuccess.txid.toHex, 0, true)
+       timeoutSpent <- client.isTransactionOutputSpendable(htlcTimeout.txid.toHex, 0, true)
+      } yield successSpent && timeoutSpent
+      Await.result(spentF, 15 seconds)
+    }, max = 40 seconds, interval = 3 seconds)
 
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
