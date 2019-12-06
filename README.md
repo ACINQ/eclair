@@ -47,9 +47,10 @@ You will find detailed guides and frequently asked questions there.
 
 :warning: Eclair requires Bitcoin Core 0.17.1 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
 
-Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
+Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
-You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
+You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes. If you want to run 
+eclair on constrained devices check out the [pruned](#Pruned) section below.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -57,7 +58,6 @@ Run bitcoind with the following minimal `bitcoin.conf`:
 server=1
 rpcuser=foo
 rpcpassword=bar
-txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
@@ -214,7 +214,6 @@ so you can easily run your bitcoin node on both mainnet and testnet. For example
 
 ```conf
 server=1
-txindex=1
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
 rpcpassword=<your-mainnet-rpc-password-here>
@@ -226,6 +225,14 @@ rpcpassword=<your-testnet-rpc-password-here>
 zmqpubrawblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
 ```
+
+## Pruned
+Eclair has experimental support for running alongside a pruned, non indexing bitcoind but there are known limitations:
+- Eclair won't be able to validate *all* the gossip messages, this can lead to problems when sending payments.
+- Pruning target size must be at least 25GB.
+- Eclair must not be offline for a period that exceeds the non pruned blockchain window, if your bitcoind keeps 1 month of blocks you should not
+  stop eclair for more than that.
+
 
 ## Resources
 
