@@ -212,7 +212,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     }
 
     for {
-      alreadyImported <- client.listReceivedByAddress().map(_.filter(_.label == "IMPORTED")).map(_.map(_.address))
+      alreadyImported <- client.listReceivedByAddress(minConf = 1, includeEmpty = true, includeWatchOnly = true).map(_.filter(_.label == "IMPORTED")).map(_.map(_.address))
       toImport = addresses.filterNot(alreadyImported.contains).map(ImportMultiItem(_, "PENDING", None))
       imported <- if(toImport.nonEmpty) client.importMulti(toImport, rescan = true) else Future.successful(true) // import addresses
       _ = if(!imported) throw new IllegalStateException("failed to import some addresses")
@@ -247,7 +247,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
+    // NB: this is very inefficient since internally we call `gettransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth
     client.getTxConfirmations(w.txId.toString).map {
       case Some(confirmations) if confirmations >= w.minDepth =>

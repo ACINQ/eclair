@@ -86,7 +86,6 @@ class StartupSpec extends FunSuite with IdiomaticMockito {
     databases.channels returns channelDb
 
     val bitcoinClient = mock[ExtendedBitcoinClient]
-
     val mockBlockChannel2 = Block.read("000000209d2308ba402235101251dbe62b22f5376012bd8167e4ab7084e5707f3b440f1756b1998cac8786fc3613f23285fa534505d7a2def663a01269df0ebe9257cbb2f4a5df5dffff7f200000000001020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff0502b7260101ffffffff0200000000000000001600148f15f444bbacc9a8541ec424fddcabfff5561eb50000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000")
 
     val channel1 = ChannelCodecsSpec.normal
@@ -105,7 +104,6 @@ class StartupSpec extends FunSuite with IdiomaticMockito {
 
     val channel2Height = ShortChannelId.coordinates(channel2.shortChannelId).blockHeight
 
-    //Mockito.lenient().when(channelDb.listLocalChannels()) thenReturn Seq.empty
     channelDb.listLocalChannels() returns Seq(channel1, channel2, channel3)
 
     // channel1 is already IMPORTED, channel2 is PENDING, no data for channel3

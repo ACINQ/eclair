@@ -86,7 +86,7 @@ class ZmqWatcherSpec extends TestKit(ActorSystem("test")) with BitcoindService w
     })
 
     // assert the imported watch becomes a watch-only address with IMPORTED label
-    bitcoinClient.listReceivedByAddress().pipeTo(probe.ref)
+    bitcoinClient.listReceivedByAddress(minConf = 1, includeEmpty = true, includeWatchOnly = true).pipeTo(probe.ref)
     probe.expectMsgType[List[WatchAddressItem]] == List(WatchAddressItem(address, "IMPORTED"))
 
     // now let's spend 'tx'
