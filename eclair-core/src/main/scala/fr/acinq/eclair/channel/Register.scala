@@ -48,8 +48,13 @@ class Register extends Actor with ActorLogging {
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
 
-    case ShortChannelIdAssigned(_, channelId, shortChannelId, _) =>
-      context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
+    case ShortChannelIdAssigned(_, channelId, shortChannelId, previousShortChannelId) =>
+      previousShortChannelId match {
+        case Some(previousShortChannelId) if previousShortChannelId != shortChannelId =>
+          context become main(channels, shortIds + (shortChannelId -> channelId) - previousShortChannelId, channelsTo)
+        case _ =>
+          context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
+      }
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1
