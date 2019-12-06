@@ -50,7 +50,7 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JString, JValue}
+import org.json4s.JsonAST.{JArray, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
@@ -939,13 +939,22 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
     sender.expectMsgType[JValue](10 seconds)
 
-    // forward the transaction to C for quicker acknowledgment
-    nodes("C").watcher ! NewTransaction(revokedCommitTx)
-    nodes("C").watcher ! NewTransaction(htlcSuccess)
-    nodes("C").watcher ! NewTransaction(htlcTimeout)
-
     // wait for C to start closing the channel
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](40 seconds).currentState == CLOSING, max = 40 seconds)
+
+    // wait for C to publish the punish and claim transactions
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
+      val rcps = sender.expectMsgType[DATA_CLOSING].revokedCommitPublished
+      sender.send(bitcoincli, BitcoinReq("getrawmempool"))
+      val mempoolTxIds = sender.expectMsgType[JArray].arr.asInstanceOf[List[JString]].map(_.s)
+      rcps.size == 1 &&
+       rcps.head.claimMainOutputTx.isDefined &&
+       rcps.head.claimHtlcDelayedPenaltyTxs.size == 2 &&
+       mempoolTxIds.contains(rcps.head.claimMainOutputTx.get.txid.toHex) &&
+       mempoolTxIds.contains(rcps.head.claimHtlcDelayedPenaltyTxs(0).txid.toHex) &&
+       mempoolTxIds.contains(rcps.head.claimHtlcDelayedPenaltyTxs(1).txid.toHex)
+    }, max = 40 seconds, interval = 2 seconds)
 
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
