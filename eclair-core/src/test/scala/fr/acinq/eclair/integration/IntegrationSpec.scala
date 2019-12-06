@@ -949,6 +949,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // wait for C to publish the punish transactions
     awaitCond({
+
       sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
       val rcps = sender.expectMsgType[DATA_CLOSING].revokedCommitPublished
       rcps.size == 1 &&
