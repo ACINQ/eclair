@@ -385,7 +385,7 @@ case object IncompatibleNetworkDBException extends RuntimeException("network dat
 object Setup {
   def reconcileWatchAddresses(bitcoinClient: ExtendedBitcoinClient, databases: Databases)(implicit ec: ExecutionContext, logger: Logger): Future[Unit] = {
     // lookup existing addresses in bitcoin
-    bitcoinClient.listReceivedByAddress().map(_.filter(_.label == "IMPORTED")).flatMap {
+    bitcoinClient.listReceivedByAddress(minConf = 1, includeEmpty = true, includeWatchOnly = true).map(_.filter(_.label == "IMPORTED")).flatMap {
       case Nil =>
         logger.info(s"no addresses found to import")
         Future.successful(Unit)

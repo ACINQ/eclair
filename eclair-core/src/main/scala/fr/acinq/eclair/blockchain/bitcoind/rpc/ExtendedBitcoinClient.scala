@@ -22,9 +22,9 @@ import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, ImportMultiItem, UtxoStatus, ValidateResult, WatchAddressItem}
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import kamon.Kamon
-import org.json4s.JsonAST.{JValue, _}
+import org.json4s.JsonAST._
 
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 26/04/2016.
@@ -46,7 +46,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     rpcClient.invoke("getblockhash", height).collect { case JString(blockHash) => blockHash }
   }
 
-  def listReceivedByAddress(minConf: Int = 1, includeEmpty: Boolean = true, includeWatchOnly: Boolean = true, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[WatchAddressItem]] = {
+  def listReceivedByAddress(minConf: Int, includeEmpty: Boolean, includeWatchOnly: Boolean, filter: Option[String] = None)(implicit ec: ExecutionContext): Future[List[WatchAddressItem]] = {
     (filter match {
       case Some(address) => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly, address)
       case None          => rpcClient.invoke("listreceivedbyaddress", minConf, includeEmpty, includeWatchOnly)
@@ -64,6 +64,10 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     rpcClient.invoke("setlabel", address, label).map(_ => Unit)
   }
 
+  /**
+    * Import addresses into bitcoin-core wallet, optionally rescanning blocks. Returns true if all the
+    * addresses were successfully imported
+    */
   def importMulti(scripts: Seq[ImportMultiItem], rescan: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = {
     val options = JObject(("rescan", JBool(rescan)))
     val requests = JArray(scripts.map(el => JObject(
