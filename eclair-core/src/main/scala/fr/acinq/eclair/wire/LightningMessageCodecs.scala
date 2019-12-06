@@ -259,6 +259,24 @@ object LightningMessageCodecs {
       ("timestampRange" | uint32)
     ).as[GossipTimestampFilter]
 
+  // NB: blank lines to minimize merge conflicts
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -288,6 +306,23 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+  // NB: blank lines to minimize merge conflicts
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
