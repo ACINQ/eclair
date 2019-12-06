@@ -25,9 +25,10 @@ import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.{NewTransaction, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -47,10 +48,9 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
-import org.json4s.JsonAST.{JString, JValue}
+import org.json4s.JsonAST.{JArray, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
@@ -94,8 +94,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.auto-reconnect" -> false,
     "eclair.to-remote-delay-blocks" -> 144,
     "eclair.multi-part-payment-expiry" -> "20 seconds"))
-
-  implicit val formats = DefaultFormats
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -549,19 +547,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
   }
 
-  /**
-   * We currently use p2pkh script Helpers.getFinalScriptPubKey
-   */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
-    case _ => ???
-  }
-
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
     val sender = TestProbe()
     // we subscribe to C's channel state transitions
@@ -939,20 +924,54 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     Transaction.correctlySpends(htlcTimeout, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // we then generate blocks to make the htlc timeout (nothing will happen in the channel because all of them have already been fulfilled)
     generateBlocks(bitcoincli, 20)
+
+    // wait until C is in sync
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("getblockchaininfo"))
+      (sender.expectMsgType[JValue] \ "blocks").extract[Long] == nodes("C").nodeParams.currentBlockHeight
+    })
+
     // then we publish F's revoked transactions
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", revokedCommitTx.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcSuccess.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
+
+    // wait for C to start closing the channel
+    awaitCond(stateListener.expectMsgType[ChannelStateChanged](40 seconds).currentState == CLOSING, max = 40 seconds)
+
+    // wait for C to publish the punish and claim transactions
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
+      val rcps = sender.expectMsgType[DATA_CLOSING].revokedCommitPublished
+      println(s"rcps.size = ${rcps.size}")
+      rcps.zipWithIndex.foreach { case (rcp, i) =>
+        println(s"rcp.[$i].claimMainOutputTx=${rcp.claimMainOutputTx.isDefined}")
+        println(s"rcp.[$i].claimHtlcDelayedPenaltyTxs=${rcp.claimHtlcDelayedPenaltyTxs.size}")
+        println(s"rcp.[$i].mainPenaltyTx=${rcp.mainPenaltyTx.isDefined}")
+        println(s"rcp.[$i].htlcPenaltyTxs=${rcp.htlcPenaltyTxs.size}")
+        println(s"rcp.[$i].irrevocablySpent=${rcp.irrevocablySpent.size}")
+        println(s"##")
+      }
+      sender.send(bitcoincli, BitcoinReq("getrawmempool"))
+      val mempoolTxIds = sender.expectMsgType[JArray].arr.asInstanceOf[List[JString]].map(_.s)
+      rcps.size == 1 &&
+       rcps.head.claimMainOutputTx.isDefined &&
+       rcps.head.claimHtlcDelayedPenaltyTxs.size == 2 &&
+       mempoolTxIds.contains(rcps.head.claimMainOutputTx.get.txid.toHex) &&
+       mempoolTxIds.contains(rcps.head.claimHtlcDelayedPenaltyTxs(0).txid.toHex) &&
+       mempoolTxIds.contains(rcps.head.claimHtlcDelayedPenaltyTxs(1).txid.toHex)
+    }, max = 40 seconds, interval = 2 seconds)
+
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 6
-    }, max = 30 seconds, interval = 1 second)
+    }, max = 40 seconds, interval = 3 second)
     // we generate blocks to make tx confirm
     generateBlocks(bitcoincli, 2)
     // and we wait for C'channel to close
