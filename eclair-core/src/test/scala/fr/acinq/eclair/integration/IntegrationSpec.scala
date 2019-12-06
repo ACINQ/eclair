@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypt
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{NewTransaction, Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -939,13 +939,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
     sender.expectMsgType[JValue](10 seconds)
 
-    // forward the transaction to C for quicker acknowledgment
-    nodes("C").watcher ! NewTransaction(revokedCommitTx)
-    nodes("C").watcher ! NewTransaction(htlcSuccess)
-    nodes("C").watcher ! NewTransaction(htlcTimeout)
-
     // wait for C to start closing the channel
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](40 seconds).currentState == CLOSING, max = 40 seconds)
+
+    // wait for C to publish punish and claim transactions
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
+      val rcp = sender.expectMsgType[DATA_CLOSING].revokedCommitPublished
+      rcp.size == 1 &&
+        rcp.head.mainPenaltyTx.isDefined &&
+        rcp.head.claimMainOutputTx.isDefined &&
+        rcp.head.claimHtlcDelayedPenaltyTxs.size == 2
+    }, max = 40 seconds, interval = 2 seconds)
 
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
