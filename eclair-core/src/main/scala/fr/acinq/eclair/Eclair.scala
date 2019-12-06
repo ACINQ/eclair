@@ -18,13 +18,15 @@ package fr.acinq.eclair
 
 import java.util.UUID
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, Props}
 import akka.pattern._
 import akka.util.Timeout
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -33,6 +35,9 @@ import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.recovery.RecoveryFSM
+import fr.acinq.eclair.recovery.RecoveryFSM.RecoveryConnect
+import fr.acinq.eclair.router.{ChannelDesc, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.router.{Announcements, ChannelDesc, GetNetworkStats, NetworkStats, PublicChannel, RouteRequest, RouteResponse, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
@@ -117,6 +122,8 @@ trait Eclair {
   def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
+
+  def doRecovery(uri: NodeURI): Unit
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -311,4 +318,17 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
     (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
+
+  override def doRecovery(uri: NodeURI): Unit = {
+    implicit val shttp = OkHttpFutureBackend()
+
+    val bitcoinRpcClient = new BasicBitcoinJsonRPCClient(
+      user = appKit.nodeParams.config.getString("bitcoind.rpcuser"),
+      password = appKit.nodeParams.config.getString("bitcoind.rpcpassword"),
+      host = appKit.nodeParams.config.getString("bitcoind.host"),
+      port = appKit.nodeParams.config.getInt("bitcoind.rpcport")
+    )
+
+    appKit.system.actorOf(RecoveryFSM.props(uri, appKit.nodeParams, appKit.wallet, bitcoinRpcClient), RecoveryFSM.actorName)
+  }
 }

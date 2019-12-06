@@ -23,6 +23,7 @@ import akka.http.scaladsl.Http
 import akka.stream.{ActorMaterializer, BindFailedException}
 import com.typesafe.config.Config
 import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.recovery.RecoveryTool
 import grizzled.slf4j.Logging
 import kamon.Kamon
 
@@ -52,6 +53,10 @@ object Boot extends App with Logging {
       case Success(kit) =>
         startApiServiceIfEnabled(setup.config, kit)
         plugins.foreach(_.onKit(kit))
+        if(setup.config.hasPath("recovery-tool")){
+          RecoveryTool.interactiveRecovery(kit)
+        }
+
       case Failure(t) => onError(t)
     }
   } catch {
