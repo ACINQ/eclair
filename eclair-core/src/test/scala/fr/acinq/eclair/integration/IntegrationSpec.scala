@@ -939,7 +939,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
     sender.expectMsgType[JValue](10 seconds)
 
-    // forward the transactions to C for quicked acknowledgement
+    // forward the transactions to C for quicker acknowledgement
     nodes("C").watcher ! NewTransaction(revokedCommitTx)
     nodes("C").watcher ! NewTransaction(htlcSuccess)
     nodes("C").watcher ! NewTransaction(htlcTimeout)
