@@ -47,7 +47,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
         case RelayFailure(cmdFail) =>
           log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
-          commandBuffer ! CommandBuffer.CommandSend(r.add.channelId, r.add.id, cmdFail)
+          commandBuffer ! CommandBuffer.CommandSend(r.add.channelId, cmdFail)
         case RelaySuccess(selectedShortChannelId, cmdAdd) =>
           log.info(s"forwarding htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=$selectedShortChannelId")
           register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
@@ -56,7 +56,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
     case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
-      commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+      commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
 
     case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
       case Origin.Relayed(originChannelId, originHtlcId, _, _) => addFailed.originalCommand match {
@@ -67,7 +67,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
           val failure = translateError(addFailed)
           val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
           log.info(s"rejecting htlc #$originHtlcId from channelId=$originChannelId reason=${cmdFail.reason}")
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmdFail)
       }
       case _ => throw new IllegalArgumentException(s"channel relayer received unexpected failure: $addFailed")
     }
