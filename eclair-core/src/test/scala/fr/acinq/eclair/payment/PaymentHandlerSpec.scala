@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorSystem}
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.payment.receive.{PaymentHandler, ReceiveHandler}
@@ -29,16 +29,16 @@ import scala.concurrent.duration._
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
   test("compose payment handlers") {
-    val handler = system.actorOf(PaymentHandler.props(Alice.nodeParams))
+    val handler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref))
 
     val intHandler = new ReceiveHandler {
-      override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = {
+      override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
         case i: Int => ctx.sender ! -i
       }
     }
 
     val stringHandler = new ReceiveHandler {
-      override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = {
+      override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
         case s: String => ctx.sender ! s.reverse
       }
     }

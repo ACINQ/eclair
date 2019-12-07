@@ -49,7 +49,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams)))
+    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref)))
     paymentHandler ! new ForwardHandler(TestProbe().ref)
     // we just bypass the relayer for this test
     val relayer = paymentHandler
