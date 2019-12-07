@@ -122,21 +122,21 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
         case Right(r: IncomingPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
-            commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
+            commandBuffer ! CommandBuffer.CommandSend(add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           } else {
             // TODO: @t-bast: relay trampoline payload instead of rejecting.
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline not implemented yet")
-            commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
+            commandBuffer ! CommandBuffer.CommandSend(add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
-          commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+          commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
           val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
+          commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
       }
 
     case Status.Failure(addFailed: AddHtlcFailed) =>
@@ -159,7 +159,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
           sender ! fulfill
         case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
           val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
           context.system.eventStream.publish(PaymentRelayed(amountIn, amountOut, add.paymentHash, fromChannelId = originChannelId, toChannelId = fulfill.channelId))
       }
 
@@ -171,7 +171,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
           sender ! fail
         case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
           val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
       }
 
     case ForwardFailMalformed(fail, to, add) =>
@@ -182,7 +182,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, commandBuffer: ActorRe
           sender ! fail
         case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
           val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
+          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
       }
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
