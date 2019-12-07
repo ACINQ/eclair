@@ -137,8 +137,10 @@ class ChannelCodecsSpec extends FunSuite {
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = DirectedHtlc(direction = IN, add = add)
     val htlc2 = DirectedHtlc(direction = OUT, add = add)
-    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
-    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require === htlc2)
+    assert(htlcCodec(false).decodeValue(htlcCodec(false).encode(htlc1).require).require === htlc1)
+    assert(htlcCodec(false).decodeValue(htlcCodec(false).encode(htlc2).require).require === htlc2)
+    assert(htlcCodec(true).decodeValue(htlcCodec(true).encode(htlc2).require).require === htlc2)
+    assert(htlcCodec(true).decodeValue(htlcCodec(true).encode(htlc2).require).require === htlc2)
   }
 
   test("encode/decode commitment spec") {
@@ -159,15 +161,15 @@ class ChannelCodecsSpec extends FunSuite {
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
     val htlc2 = DirectedHtlc(direction = OUT, add = add2)
     val htlcs = Set(htlc1, htlc2)
-    assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
+    assert(setCodec(htlcCodec(true)).decodeValue(setCodec(htlcCodec(true)).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       feeratePerKw = Random.nextInt(Int.MaxValue),
       toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
     )
-    val encoded = commitmentSpecCodec.encode(o).require
-    val decoded = commitmentSpecCodec.decode(encoded).require
+    val encoded = commitmentSpecCodec(true).encode(o).require
+    val decoded = commitmentSpecCodec(true).decode(encoded).require
     assert(o === decoded.value)
   }
 
@@ -202,8 +204,8 @@ class ChannelCodecsSpec extends FunSuite {
 
   test("basic serialization test (NORMAL)") {
     val data = normal
-    val bin = ChannelCodecs.DATA_NORMAL_Codec.encode(data).require
-    val check = ChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
+    val bin = ChannelCodecs.DATA_NORMAL_13_Codec.encode(data).require
+    val check = ChannelCodecs.DATA_NORMAL_13_Codec.decodeValue(bin).require
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
   }
@@ -248,8 +250,8 @@ class ChannelCodecsSpec extends FunSuite {
     assert(Platform.currentTime.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
-    // data should now be encoded under the new format, with version=0 and type=8
-    assert(bin_new.startsWith(hex"000008"))
+    // data should now be encoded under the new format, with version=0 and type=11
+    assert(bin_new.startsWith(hex"000011"))
     // now let's decode it again
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -291,8 +293,8 @@ class ChannelCodecsSpec extends FunSuite {
       val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
-      // make sure that encoding used the new 0x10 codec
-      assert(newbin.startsWith(hex"000010"))
+      // make sure that encoding used the new 0x13 codec
+      assert(newbin.startsWith(hex"000013"))
       // make sure that roundtrip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
