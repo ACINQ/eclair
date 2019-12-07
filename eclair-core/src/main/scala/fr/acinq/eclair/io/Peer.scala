@@ -456,7 +456,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
-      log.info(s"lost connection to $remoteNodeId")
+      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+        log.info(s"lost connection to $remoteNodeId")
+      }
       if (d.channels.isEmpty) {
         // we have no existing channels, we can forget about this peer
         stopPeer()
