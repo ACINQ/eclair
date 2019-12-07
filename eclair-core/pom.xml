@@ -195,6 +195,21 @@
             <version>3.27.2.1</version>
         </dependency>
         <dependency>
+            <groupId>com.typesafe.slick</groupId>
+            <artifactId>slick_${scala.version.short}</artifactId>
+            <version>3.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.slick</groupId>
+            <artifactId>slick-hikaricp_${scala.version.short}</artifactId>
+            <version>3.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>9.4-1206-jdbc42</version>
+        </dependency>
+        <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
             <groupId>com.google.code.findbugs</groupId>
             <artifactId>jsr305</artifactId>
