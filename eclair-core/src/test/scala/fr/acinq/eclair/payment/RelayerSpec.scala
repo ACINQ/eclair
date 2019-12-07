@@ -621,10 +621,10 @@ class RelayerSpec extends TestkitBaseClass {
     val (preimage1, preimage2) = (randomBytes32, randomBytes32)
     val onionHash = randomBytes32
 
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 1, CMD_FULFILL_HTLC(1, preimage1, commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 100, CMD_FULFILL_HTLC(100, preimage2, commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 101, CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure), commit = true))
-    nodeParams.db.pendingRelay.addPendingRelay(channelId, 102, CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001, commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, CMD_FULFILL_HTLC(1, preimage1, commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, CMD_FULFILL_HTLC(100, preimage2, commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure), commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001, commit = true))
 
     // Channel comes online: we should replay pending commands.
     system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
