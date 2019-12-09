@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.Done
@@ -176,10 +177,11 @@ class Setup(datadir: File,
       }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
+      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
         case feerates: FeeratesPerKB =>
