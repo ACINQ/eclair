@@ -21,14 +21,16 @@ import java.util.{Properties, UUID}
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
+import akka.pattern.pipe
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{NewTransaction, Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.{NewTransaction, Watch, WatchAddressItem, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -998,6 +1000,87 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  test("restart eclair with a new bitcoind wallet") {
+    val sender = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+
+    instantiateEclairNode("X", ConfigFactory.parseMap(Map("eclair.node-alias" -> "X", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    instantiateEclairNode("Y", ConfigFactory.parseMap(Map("eclair.node-alias" -> "Y", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    val node1 = nodes("X")
+    val node2 = nodes("Y")
+
+    // store a reference to node1 db for later reuse
+    val node1Db = node1.nodeParams.db
+
+    // connect node1 <--> node2
+    sender.send(node1.switchboard, Peer.Connect(
+      nodeId = node2.nodeParams.nodeId,
+      address_opt = Some(HostAndPort.fromParts(
+        node2.nodeParams.publicAddresses.head.socketAddress.getHostString,
+        node2.nodeParams.publicAddresses.head.socketAddress.getPort))
+    ))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+    // open channel node1 --> node2
+    sender.send(node1.switchboard, Peer.OpenChannel(
+      remoteNodeId = node2.nodeParams.nodeId,
+      fundingSatoshis = 5000000 sat,
+      pushMsat = 0 msat,
+      fundingTxFeeratePerKw_opt = None,
+      channelFlags = None,
+      timeout_opt = None))
+
+    val channelCreated = sender.expectMsgType[String](10 seconds)
+    assert(channelCreated.startsWith("created channel"))
+    val channelId = ByteVector32.fromValidHex(channelCreated.split(" ").last)
+
+    awaitCond({
+      sender.send(node1.register, 'channels)
+      val channelmap = sender.expectMsgType[Map[ByteVector32, ActorRef]]
+      channelmap.exists(_._1 == channelId)
+    })
+
+    // get actor handling the channel in node1
+    sender.send(node1.register, 'channels)
+    val Some(channel) = sender.expectMsgType[Map[ByteVector32, ActorRef]].get(channelId)
+
+    // compute the address of the channel funding
+    sender.send(channel, CMD_GETSTATEDATA)
+    val stateData = sender.expectMsgType[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+    val channelAddress = eclair.scriptPubKeyToAddress(stateData.commitments.commitInput.txOut.publicKeyScript)
+
+    // make the channel go to NORMAL state
+    generateBlocks(bitcoincli, 6)
+    awaitCond({
+      sender.send(channel, CMD_GETSTATE)
+      sender.expectMsgType[State] == NORMAL
+    })
+
+    // assert the address was imported in bitcoind
+    bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)
+    assert(sender.expectMsgType[List[WatchAddressItem]].exists(_.address == channelAddress))
+
+    // stop eclair node X
+    Await.result(node1.system.terminate(), 30 seconds)
+
+    // wipe out bitcoind wallet
+    ExternalWalletHelper.swapWallet()
+
+    // assert the address is currently NOT imported in bitcoind
+    bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)
+    assert(!sender.expectMsgType[List[WatchAddressItem]].exists(_.address == channelAddress))
+
+    // to recreate node-X we reuse its data directory
+    val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-X")
+    val systemX = ActorSystem(s"system-X-new")
+    val setup = new Setup(datadir, db = Some(node1Db))(systemX)
+
+    Await.ready(setup.bootstrap, 10 seconds)
+
+    // when bootstrap is completed the address must have been imported
+    bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)
+    sender.expectMsgType[List[WatchAddressItem]].exists(_.address == channelAddress)
   }
 
 }
