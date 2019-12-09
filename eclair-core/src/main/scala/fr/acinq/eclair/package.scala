@@ -20,9 +20,15 @@ import java.security.SecureRandom
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.{ImportMultiItem, WatchAddressItem}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.channel.{DATA_CLOSING, DATA_NEGOTIATING, DATA_NORMAL, DATA_SHUTDOWN, DATA_WAIT_FOR_FUNDING_CONFIRMED, DATA_WAIT_FOR_FUNDING_LOCKED, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, HasCommitments}
+import fr.acinq.eclair.db.Databases
+import grizzled.slf4j.Logger
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
@@ -203,4 +209,58 @@ package object eclair {
     // @formatter:on
   }
 
+  // returns all watch addresses with label IMPORTED
+  def listImported(bitcoinClient: ExtendedBitcoinClient)(implicit ec: ExecutionContext): Future[List[WatchAddressItem]] = {
+    bitcoinClient.listReceivedByAddress(minConf = 1, includeEmpty = true, includeWatchOnly = true).map(_.filter(_.label == "IMPORTED"))
+  }
+
+  // extracts rescan info from each channel data
+  def getChannelAddressWithRescanInfo(channel: HasCommitments) = channel match {
+    case DATA_NORMAL(_, shortChannelId, _, _, _, _, _)             => Some(Left(shortChannelId))
+    case DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, waitingSince, _, _) => Some(Right(waitingSince))
+    case DATA_WAIT_FOR_FUNDING_LOCKED(_, shortChannelId, _)        => Some(Left(shortChannelId))
+    case DATA_SHUTDOWN(_, _, _)                                    => None
+    case DATA_NEGOTIATING(_, _, _, _, _)                           => None
+    case DATA_CLOSING(_, _, _, _, _, _, _, _, _, _)                => None
+    case DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(_, _)      => None
+  }
+
+  // converts the optional short channel id into timestamp, returns elements ready to be imported with 'importMulti'
+  def addressToImportMultiItem(elem: (Option[Either[ShortChannelId, Long]], String), bitcoinClient: ExtendedBitcoinClient)(implicit ec: ExecutionContext): Future[ImportMultiItem] = {
+    elem match {
+      case (Some(Left(shortChannelId)), address) =>
+        bitcoinClient.getBlock(ShortChannelId.coordinates(shortChannelId).blockHeight)
+          .map(_.header.time) // compute block time from block height
+          .map { timestamp =>
+          ImportMultiItem(address, "PENDING", Some(timestamp))
+        }
+      case (optWaitingSince, address) =>
+        Future.successful(ImportMultiItem(address, "PENDING", optWaitingSince.map(_.right.get)))
+
+    }
+  }
+
+  def reconcileWatchAddresses(bitcoinClient: ExtendedBitcoinClient, databases: Databases)(implicit ec: ExecutionContext, logger: Logger): Future[Unit] = {
+    // lookup existing imported addresses
+    listImported(bitcoinClient).flatMap { importedAddresses =>
+        logger.info(s"found ${importedAddresses.size} addresses already IMPORTED")
+        val addressesWithInfo: Seq[(Option[Either[ShortChannelId, Long]], String)] =
+          databases.channels.listLocalChannels()
+          .map( data => (data, eclair.scriptPubKeyToAddress(data.commitments.commitInput.txOut.publicKeyScript))) // compute the address for each channel
+          .filterNot( el => importedAddresses.exists(_.address == el._2))                                         // discard already imported addresses
+          .map { case (channel, address) => (getChannelAddressWithRescanInfo(channel), address) }                 // get rescan info for each address
+
+        // convert rescan info into timestamp and each element in ImportMultiItem
+        val importMultiInputF = Future.sequence(addressesWithInfo.map(addressToImportMultiItem(_, bitcoinClient)))
+
+        for {
+          imInput <- importMultiInputF
+          _ = logger.info(s"importing ${imInput.size} addresses")
+          imported <- bitcoinClient.importMulti(imInput, rescan = true)
+          _ = if(!imported) throw new IllegalStateException("could not import all addresses")
+          _ <- Future.sequence(imInput.map(el => bitcoinClient.setLabel(el.address, "IMPORTED")))
+          _ = logger.info(s"done importing")
+        } yield ()
+    }
+  }
 }
