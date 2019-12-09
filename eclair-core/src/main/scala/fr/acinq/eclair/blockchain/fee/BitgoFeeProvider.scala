@@ -26,7 +26,7 @@ import org.json4s.jackson.Serialization
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(chainHash: ByteVector32, readTimeOut: Duration = 5 seconds)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: ByteVector32, readTimeOut: Duration)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 

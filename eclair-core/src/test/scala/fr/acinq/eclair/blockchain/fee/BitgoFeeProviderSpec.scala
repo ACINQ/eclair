@@ -75,8 +75,20 @@ class BitgoFeeProviderSpec extends FunSuite {
     implicit val ec = system.dispatcher
     implicit val sttp = OkHttpFutureBackend()
     implicit val timeout = Timeout(30 seconds)
-    val bitgo = new BitgoFeeProvider(Block.LivenetGenesisBlock.hash)
+    val bitgo = new BitgoFeeProvider(Block.LivenetGenesisBlock.hash, 5 seconds)
     assert(Await.result(bitgo.getFeerates, timeout.duration).block_1 > 0)
   }
 
+  test("check that read timeout is enforced") {
+    import scala.concurrent.duration._
+    implicit val system = ActorSystem("test")
+    implicit val ec = system.dispatcher
+    implicit val sttp = OkHttpFutureBackend()
+    implicit val timeout = Timeout(1 second)
+    val bitgo = new BitgoFeeProvider(Block.LivenetGenesisBlock.hash, 1 millisecond)
+    val e = intercept[Exception] {
+      Await.result(bitgo.getFeerates, timeout.duration)
+    }
+    assert(e.getMessage.contains("Read timed out"))
+  }
 }

@@ -28,7 +28,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 16/11/2017.
   */
-class EarnDotComFeeProvider(readTimeOut: Duration = 5 seconds)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
+class EarnDotComFeeProvider(readTimeOut: Duration)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import EarnDotComFeeProvider._
 
