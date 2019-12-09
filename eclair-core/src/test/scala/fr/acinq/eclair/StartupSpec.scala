@@ -18,15 +18,26 @@ package fr.acinq.eclair
 
 import java.util.concurrent.atomic.AtomicLong
 
-import com.typesafe.config.{ConfigFactory, ConfigValue}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
+import fr.acinq.eclair
+import fr.acinq.eclair.blockchain.{ImportMultiItem, WatchAddressItem}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.channel.DATA_WAIT_FOR_FUNDING_CONFIRMED
+import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.{ChannelsDb, Databases}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, FundingSigned}
+import grizzled.slf4j.Logger
+import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.FunSuite
 
 import scala.collection.JavaConversions._
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration._
 import scala.util.Try
 
-class StartupSpec extends FunSuite {
+class StartupSpec extends FunSuite with IdiomaticMockito {
 
   test("check configuration") {
     val blockCount = new AtomicLong(0)
@@ -64,5 +75,4 @@ class StartupSpec extends FunSuite {
     val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator))
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
   }
-
 }
