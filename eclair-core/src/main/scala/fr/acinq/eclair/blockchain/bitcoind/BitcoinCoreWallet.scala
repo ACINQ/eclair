@@ -62,7 +62,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
 
-  def getTransaction(txid: ByteVector32): Future[Transaction] = rpcClient.invoke("getrawtransaction", txid.toString()) collect { case JString(hex) => Transaction.read(hex) }
+  def getRawTransaction(txid: ByteVector32): Future[Transaction] = rpcClient.invoke("getrawtransaction", txid.toString()) collect { case JString(hex) => Transaction.read(hex) }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = publishTransaction(Transaction.write(tx).toHex)
 
@@ -111,7 +111,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     .map(_ => true) // if bitcoind says OK, then we consider the tx successfully published
     .recoverWith { case JsonRPCError(e) =>
     logger.warn(s"txid=${tx.txid} error=$e")
-    getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
+    getRawTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool, then we consider that the tx was not published
   }
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
@@ -119,15 +119,9 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   override def doubleSpent(tx: Transaction): Future[Boolean] =
   for {
-    exists <- getTransaction(tx.txid)
+    exists <- getRawTransaction(tx.txid)
       .map(_ => true) // we have found the transaction
-      .recover {
-      case JsonRPCError(Error(_, message)) if message.contains("index") =>
-        sys.error("Fatal error: bitcoind is indexing!!")
-        System.exit(1) // bitcoind is indexing, that's a fatal error!!
-        false // won't be reached
-      case _ => false
-    }
+      .recover { case _ => false }
     doublespent <- if (exists) {
       // if the tx is in the blockchain, it can't have been double-spent
       Future.successful(false)
