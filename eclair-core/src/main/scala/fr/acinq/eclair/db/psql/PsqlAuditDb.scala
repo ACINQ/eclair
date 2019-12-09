@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.Connection
 import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, Channel, ChannelErrorOccurred, NetworkFeePaid}
 import fr.acinq.eclair.db._
@@ -135,12 +134,14 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def add(e: NetworkFeePaid): Unit =
+  override def add(e: NetworkFeePaid): Unit = add(e, None)
+
+  def add(e: NetworkFeePaid, txId_opt: Option[ByteVector32]): Unit =
     withConnection { psql =>
       using(psql.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setBytes(1, e.channelId.toArray)
         statement.setBytes(2, e.remoteNodeId.value.toArray)
-        statement.setBytes(3, e.tx.txid.toArray)
+        statement.setBytes(3, txId_opt.getOrElse(e.tx.txid).toArray)
         statement.setLong(4, e.fee.toLong)
         statement.setString(5, e.txType)
         statement.setLong(6, Platform.currentTime)

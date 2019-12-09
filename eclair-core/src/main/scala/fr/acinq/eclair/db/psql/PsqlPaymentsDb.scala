@@ -16,18 +16,19 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.{Connection, ResultSet, Statement}
+import java.sql.ResultSet
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.{HopSummary, _}
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
 import grizzled.slf4j.Logging
 import javax.sql.DataSource
 import scodec.Attempt
+import scodec.bits.BitVector
 import scodec.codecs._
 
 import scala.collection.immutable.Queue
@@ -82,12 +83,34 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
   }
 
+  def addOutgoingPayment(sent: (UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector])): Unit = {
+    val (id, parentId,externalId,paymentHash,amount,targetNodeId,createdAt,paymentRequest,completedAt,paymentPreimage, fees, route, failures) = sent
+    withConnection { psql =>
+      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request,completed_at, payment_preimage,fees_msat,payment_route,failures) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, id.toString)
+        statement.setString(2, parentId.toString)
+        statement.setString(3, externalId.orNull)
+        statement.setString(4, paymentHash.toHex)
+        statement.setLong(5, amount.toLong)
+        statement.setString(6, targetNodeId.value.toHex)
+        statement.setLong(7, createdAt)
+        statement.setString(8, paymentRequest.map(PaymentRequest.write).orNull)
+        completedAt.fold(statement.setNull(9, java.sql.Types.BIGINT))(statement.setLong(9, _))
+        statement.setString(10, paymentPreimage.map(_.toHex).orNull)
+        fees.fold(statement.setNull(11, java.sql.Types.BIGINT))(x => statement.setLong(11, x.toLong))
+        statement.setBytes(12, route.map(_.toByteArray).orNull)
+        statement.setBytes(13, failures.map(_.toByteArray).orNull)
+        statement.executeUpdate()
+      }
+    }
+  }
+
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit =
     withConnection { psql =>
       using(psql.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         paymentResult.parts.foreach(p => {
           statement.setLong(1, p.timestamp)
-          statement.setBytes(2, paymentResult.paymentPreimage.toArray)
+          statement.setString(2, paymentResult.paymentPreimage.toHex)
           statement.setLong(3, p.feesPaid.toLong)
           statement.setBytes(4, paymentRouteCodec.encode(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList).require.toByteArray)
           statement.setString(5, p.id.toString)
@@ -130,7 +153,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
         }).getOrElse(Nil),
         rs.getLong("completed_at")
       ))
-      case None => getNullableLong(rs, "completed_at") match {
+      case None => rs.getLongNullable("completed_at") match {
         // Otherwise if the payment was marked completed, it's a failure.
         case Some(completedAt) => result.copy(status = OutgoingPaymentStatus.Failed(
           rs.getBitVectorOpt("failures").map(b => paymentFailuresCodec.decode(b) match {
@@ -210,6 +233,22 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
       }
     }
 
+  def addIncomingPayment(payment: (ByteVector32,ByteVector32,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])): Unit = {
+    val (paymentHash,paymentPreimage,paymentRequest,received,createdAt,expireAt,receivedAt) = payment
+    withConnection { psql =>
+      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, paymentHash.toHex)
+        statement.setString(2, paymentPreimage.toHex)
+        statement.setString(3, PaymentRequest.write(paymentRequest))
+        received.fold(statement.setNull(4, java.sql.Types.BIGINT))(x => statement.setLong(4, x.toLong))
+        statement.setLong(5, createdAt)
+        statement.setLong(6, expireAt)
+        receivedAt.fold(statement.setNull(7, java.sql.Types.BIGINT))(statement.setLong(7, _))
+        statement.executeUpdate()
+      }
+    }
+  }
+
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
     withConnection { psql =>
       using(psql.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (?, ?) WHERE payment_hash = ?")) { statement =>
@@ -225,7 +264,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     val paymentRequest = PaymentRequest.read(rs.getString("payment_request"))
     val paymentPreimage = rs.getByteVector32FromHex("payment_preimage")
     val createdAt = rs.getLong("created_at")
-    val received = getNullableLong(rs, "received_msat").map(MilliSatoshi(_))
+    val received = rs.getLongNullable("received_msat").map(MilliSatoshi(_))
     received match {
       case Some(amount) => IncomingPayment(paymentRequest, paymentPreimage, createdAt, IncomingPaymentStatus.Received(amount, rs.getLong("received_at")))
       case None if paymentRequest.isExpired => IncomingPayment(paymentRequest, paymentPreimage, createdAt, IncomingPaymentStatus.Expired)

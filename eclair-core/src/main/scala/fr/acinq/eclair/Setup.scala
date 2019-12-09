@@ -19,7 +19,6 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
-import java.util.Properties
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
@@ -96,7 +95,7 @@ class Setup(datadir: File,
       val dbConfig = config.getConfig("db")
       dbConfig.getString("driver") match {
         case "sqlite" => Databases.sqliteJDBC(chaindir)
-        case "psql" => setupPsqlDatabases(dbConfig)
+        case "psql" => Databases.setupPsqlDatabases(dbConfig)
       }
   }
 
@@ -352,34 +351,6 @@ class Setup(datadir: File,
     } else {
       None
     }
-  }
-
-  private def setupPsqlDatabases(dbConfig: Config) = {
-    val database = dbConfig.getString("psql.database")
-    val host = dbConfig.getString("psql.host")
-    val port = dbConfig.getInt("psql.port")
-    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isBlank)
-      None
-    else
-      Some(dbConfig.getString("psql.username"))
-    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isBlank)
-      None
-    else
-      Some(dbConfig.getString("psql.password"))
-    val properties = {
-      val poolConfig = dbConfig.getConfig("psql.pool")
-      Map.empty
-        .updated("max-size", poolConfig.getInt("max-size").toLong)
-        .updated("connection-timeout", poolConfig.getDuration("connection-timeout").toMillis)
-        .updated("idle-timeout", poolConfig.getDuration("idle-timeout").toMillis)
-        .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
-
-    }
-
-    Databases.postgresJDBC(
-      database = database, host = host, port = port,
-      username = username, password = password, poolProperties = properties
-    )
   }
 }
 

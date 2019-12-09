@@ -19,14 +19,11 @@ package fr.acinq.eclair.db
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
 import java.sql.{Connection, DriverManager}
-import java.util.Properties
 
+import com.typesafe.config.Config
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 import javax.sql.DataSource
-
-import scala.sys.process.Process
-import scala.util.{Failure, Success, Try}
 
 trait Databases {
 
@@ -69,8 +66,7 @@ object Databases {
                    poolProperties: Map[String, Long] = Map()): Databases = {
     val url = s"jdbc:postgresql://${host}:${port}/${database}"
 
-    import com.zaxxer.hikari.HikariConfig
-    import com.zaxxer.hikari.HikariDataSource
+    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 
     val config = new HikariConfig()
     config.setJdbcUrl(url)
@@ -119,4 +115,33 @@ object Databases {
     override def backup(file: File): Unit = throw new RuntimeException("psql driver does not support channels backup")
     override val isBackupSupported: Boolean = false
   }
+
+  def setupPsqlDatabases(dbConfig: Config): Databases = {
+    val database = dbConfig.getString("psql.database")
+    val host = dbConfig.getString("psql.host")
+    val port = dbConfig.getInt("psql.port")
+    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isBlank)
+      None
+    else
+      Some(dbConfig.getString("psql.username"))
+    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isBlank)
+      None
+    else
+      Some(dbConfig.getString("psql.password"))
+    val properties = {
+      val poolConfig = dbConfig.getConfig("psql.pool")
+      Map.empty
+        .updated("max-size", poolConfig.getInt("max-size").toLong)
+        .updated("connection-timeout", poolConfig.getDuration("connection-timeout").toMillis)
+        .updated("idle-timeout", poolConfig.getDuration("idle-timeout").toMillis)
+        .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
+
+    }
+
+    Databases.postgresJDBC(
+      database = database, host = host, port = port,
+      username = username, password = password, poolProperties = properties
+    )
+  }
+
 }

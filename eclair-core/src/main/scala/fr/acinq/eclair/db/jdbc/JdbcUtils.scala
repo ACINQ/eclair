@@ -70,16 +70,6 @@ trait JdbcUtils {
     q
   }
 
-  /**
-   * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
-   * because `rs.getLong` would return `0` for a null value.
-   * It is used on Android only
-   */
-  def getNullableLong(rs: ResultSet, label: String): Option[Long] = {
-    val result = rs.getLong(label)
-    if (rs.wasNull()) None else Some(result)
-  }
-
   case class ExtendedResultSet(rs: ResultSet) {
 
     def getByteVectorFromHex(columnLabel: String): ByteVector = {
@@ -118,6 +108,16 @@ trait JdbcUtils {
 
     def getStringNullable(columnLabel: String): Option[String] = {
       val result = rs.getString(columnLabel)
+      if (rs.wasNull()) None else Some(result)
+    }
+
+    /**
+      * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
+      * because `rs.getLong` would return `0` for a null value.
+      * It is used on Android only
+      */
+    def getLongNullable(columnLabel: String): Option[Long] = {
+      val result = rs.getLong(columnLabel)
       if (rs.wasNull()) None else Some(result)
     }
 
