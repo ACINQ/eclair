@@ -18,17 +18,17 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import akka.actor.{ActorRef, Status}
+import akka.actor.{ActorRef, Props, Status}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
-import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPacket}
-import fr.acinq.eclair.payment.relay.{Origin, Relayer}
+import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.{Announcements, ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
@@ -52,9 +52,10 @@ class RelayerSpec extends TestkitBaseClass {
     within(30 seconds) {
       val nodeParams = TestConstants.Bob.nodeParams
       val register = TestProbe()
+      val commandBuffer = system.actorOf(Props(new CommandBuffer(nodeParams, register.ref)))
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
-      val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, paymentHandler.ref))
+      val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, commandBuffer, paymentHandler.ref))
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, register, paymentHandler, TestProbe())))
     }
   }
@@ -319,7 +320,8 @@ class RelayerSpec extends TestkitBaseClass {
     import f._
 
     val nodeParams = TestConstants.Bob.nodeParams.copy(enableTrampolinePayment = false)
-    val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, paymentHandler.ref))
+    val commandBuffer = system.actorOf(Props(new CommandBuffer(nodeParams, register.ref)))
+    val relayer = system.actorOf(Relayer.props(nodeParams, register.ref, commandBuffer, paymentHandler.ref))
 
     // we use this to build a valid trampoline onion inside a normal onion
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b) :: Nil
@@ -588,6 +590,74 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, GetOutgoingChannels())
     val OutgoingChannels(channels6) = sender.expectMsgType[OutgoingChannels]
     assert(channels6.size === 1)
+
+    // We should ignore faulty events that don't really change the shortChannelId:
+    relayer ! ShortChannelIdAssigned(null, channelId_ab, channelUpdate_ab.shortChannelId, Some(channelUpdate_ab.shortChannelId))
+    sender.send(relayer, GetOutgoingChannels())
+    val OutgoingChannels(channels7) = sender.expectMsgType[OutgoingChannels]
+    assert(channels7.size === 1)
+    assert(channels7.head.channelUpdate.shortChannelId === channelUpdate_ab.shortChannelId)
+
+    // Simulate a chain re-org that changes the shortChannelId:
+    relayer ! ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId))
+    sender.send(relayer, GetOutgoingChannels())
+    sender.expectMsg(OutgoingChannels(Nil))
+
+    // We should receive the updated channel update containing the new shortChannelId:
+    relayer ! LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat))
+    sender.send(relayer, GetOutgoingChannels())
+    val OutgoingChannels(channels8) = sender.expectMsgType[OutgoingChannels]
+    assert(channels8.size === 1)
+    assert(channels8.head.channelUpdate.shortChannelId === ShortChannelId(42))
+  }
+
+  test("replay pending commands after restart") { f =>
+    import f._
+
+    val channel = TestProbe()
+    val channelData = ChannelCodecsSpec.normal
+    val channelId = channelData.commitments.channelId
+    val remoteNodeId = channelData.commitments.remoteParams.nodeId
+    val (preimage1, preimage2) = (randomBytes32, randomBytes32)
+    val onionHash = randomBytes32
+
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, 1, CMD_FULFILL_HTLC(1, preimage1, commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, 100, CMD_FULFILL_HTLC(100, preimage2, commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, 101, CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure), commit = true))
+    nodeParams.db.pendingRelay.addPendingRelay(channelId, 102, CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001, commit = true))
+
+    // Channel comes online: we should replay pending commands.
+    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
+    val expected = Set(
+      CMD_FULFILL_HTLC(1, preimage1),
+      CMD_FULFILL_HTLC(100, preimage2),
+      CMD_FAIL_HTLC(101, Right(TemporaryNodeFailure)),
+      CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001)
+    )
+    val received = expected.map(_ => channel.expectMsgType[Command])
+    assert(received === expected)
+
+    channel.expectMsg(CMD_SIGN) // we should then ask to sign all the updates.
+    channel.expectNoMsg(100 millis)
+
+    // 3 of the 4 HTLCs were ack-ed (maybe the peer disconnected/reconnected again).
+    channel.send(relayer, CommandBuffer.CommandAck(channelId, 1))
+    channel.send(relayer, CommandBuffer.CommandAck(channelId, 100))
+    channel.send(relayer, CommandBuffer.CommandAck(channelId, 101))
+    // Once ack-ed, these commands should be removed from the DB.
+    awaitCond(nodeParams.db.pendingRelay.listPendingRelay(channelId).length === 1)
+
+    // The last failure wasn't ack-ed, so it's re-sent.
+    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, SYNCING, NORMAL, channelData))
+    channel.expectMsg(CMD_FAIL_MALFORMED_HTLC(102, onionHash, 0x4001))
+    channel.expectMsg(CMD_SIGN)
+    channel.expectNoMsg(100 millis)
+
+    channel.send(relayer, CommandBuffer.CommandAck(channelId, 102))
+    awaitCond(nodeParams.db.pendingRelay.listPendingRelay(channelId).isEmpty)
+
+    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, remoteNodeId, OFFLINE, NORMAL, channelData))
+    channel.expectNoMsg(100 millis)
   }
 
 }

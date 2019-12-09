@@ -46,7 +46,7 @@ import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.payment.Auditor
-import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -280,9 +280,10 @@ class Setup(datadir: File,
           if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
         ), "backuphandler", SupervisorStrategy.Resume))
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
-      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams), "payment-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
+      commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
+      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, commandBuffer), "payment-handler", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, commandBuffer, paymentHandler), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
@@ -295,6 +296,7 @@ class Setup(datadir: File,
         watcher = watcher,
         paymentHandler = paymentHandler,
         register = register,
+        commandBuffer = commandBuffer,
         relayer = relayer,
         router = router,
         switchboard = switchboard,
@@ -359,6 +361,7 @@ case class Kit(nodeParams: NodeParams,
                watcher: ActorRef,
                paymentHandler: ActorRef,
                register: ActorRef,
+               commandBuffer: ActorRef,
                relayer: ActorRef,
                router: ActorRef,
                switchboard: ActorRef,
