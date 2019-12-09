@@ -46,13 +46,20 @@ object LightningMessageCodecs {
   val pongCodec: Codec[Pong] =
     ("data" | varsizebinarydata).as[Pong]
 
+  // this magic is used because not all fields are length-protected when we store channel data :-/
+  // TODO: @pm47: we use a particular magic and encoding in order to have the same encoding as TLV and be future proof
+  val magic: Codec[Boolean] = recover(constant(hex"fe 47010000"))
+
+  // we have limited space for backup, largest message is commit_sig with 30 htlcs in each direction: 65535B - (32B + 64B + 2*30*64B) = 61599B ~= 60000B
+  val channeldataoptional: Codec[Option[ByteVector]] = choice(optional(magic, limitedSizeBytes( 60000, variableSizeBytesLong(varintoverflow, bytes))), provide(Option.empty[ByteVector]))
+
   val channelReestablishCodec: Codec[ChannelReestablish] = (
     ("channelId" | bytes32) ::
       ("nextLocalCommitmentNumber" | uint64overflow) ::
       ("nextRemoteRevocationNumber" | uint64overflow) ::
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey)) ::
-      ("channelData" | optional(bitsRemaining, varsizebinarydata))).as[ChannelReestablish]
+      ("channelData" | channeldataoptional)).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
@@ -96,12 +103,6 @@ object LightningMessageCodecs {
       ("fundingTxid" | bytes32) ::
       ("fundingOutputIndex" | uint16) ::
       ("signature" | bytes64)).as[FundingCreated]
-
-  // this magic is used because not all fields are length-protected when we store channel data :-/
-  val magic: Codec[Boolean] = recover(constant(hex"abcdef"))
-
-  // we have limited space for backup, largest message is commit_sig with 30 htlcs in each direction: 65535B - (32B + 64B + 2*30*64B) = 61599B ~= 60000B
-  val channeldataoptional: Codec[Option[ByteVector]] = choice(optional(magic, limitedSizeBytes( 60000, variableSizeBytes(uint16, bytes))), provide(Option.empty[ByteVector]))
 
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("channelId" | bytes32) ::

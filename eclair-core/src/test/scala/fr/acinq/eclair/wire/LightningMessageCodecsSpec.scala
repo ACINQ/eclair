@@ -56,9 +56,13 @@ class LightningMessageCodecsSpec extends FunSuite {
     // decoding empty data
     assert(channeldataoptional.decode(BitVector.empty).require === DecodeResult(None, BitVector.empty))
 
+    // decoding a zero-size channel data with a remainder
+    val zerodata = hex"fe47010000 00 deadbeef"
+    assert(channeldataoptional.decode(zerodata.bits).require === DecodeResult(Some(ByteVector.empty), hex"deadbeef".bits))
+
     // nominal case (roundtrip)
     val data = randomBytes(5000)
-    val bin = hex"abcdef 1388" ++ data
+    val bin = hex"fe47010000 fd1388" ++ data
     assert(channeldataoptional.encode(Some(data)).require.bytes === bin)
     assert(channeldataoptional.decode(bin.bits).require === DecodeResult(Some(data), BitVector.empty))
 
@@ -73,29 +77,50 @@ class LightningMessageCodecsSpec extends FunSuite {
     val signature = randomBytes64
     val key = randomKey
     val point = randomKey.publicKey
+    val randomData = randomBytes(42)
 
     val refs = Map(
       (hex"0023" ++ channelId ++ signature, hex"") -> FundingSigned(channelId, signature, None),
       (hex"0023" ++ channelId ++ signature, hex"deadbeef") -> FundingSigned(channelId, signature, None),
-      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0000", hex"") -> FundingSigned(channelId, signature, Some(ByteVector.empty)),
-      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0000", hex"deadbeef") -> FundingSigned(channelId, signature, Some(ByteVector.empty)),
-      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0007 cccccccccccccc", hex"") -> FundingSigned(channelId, signature, Some(hex"cccccccccccccc")),
-      (hex"0023" ++ channelId ++ signature ++ hex"abcdef 0007 cccccccccccccc", hex"deadbeef") -> FundingSigned(channelId, signature, Some(hex"cccccccccccccc")),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00", hex"") -> FundingSigned(channelId, signature, Some(ByteVector.empty)),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00", hex"deadbeef") -> FundingSigned(channelId, signature, Some(ByteVector.empty)),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> FundingSigned(channelId, signature, Some(hex"cccccccccccccc")),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"deadbeef") -> FundingSigned(channelId, signature, Some(hex"cccccccccccccc")),
+
       (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value, hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), None),
-      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"0000", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(ByteVector.empty)),
-      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"0007 bbbbbbbbbbbbbb", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(hex"bbbbbbbbbbbbbb")),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value, hex"deadbeef") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), None),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(ByteVector.empty)),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00", hex"deadbeef") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(ByteVector.empty)),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(hex"bbbbbbbbbbbbbb")),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb", hex"deadbeef") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, Some(key), Some(point), Some(hex"bbbbbbbbbbbbbb")),
+
       (hex"0084" ++ channelId ++ signature ++ hex"0000", hex"") -> CommitSig(channelId, signature, Nil, None),
       (hex"0084" ++ channelId ++ signature ++ hex"0000", hex"deadbeef") -> CommitSig(channelId, signature, Nil, None),
-      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0000", hex"") -> CommitSig(channelId, signature, Nil, Some(ByteVector.empty)),
-      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0000", hex"deadbeef") -> CommitSig(channelId, signature, Nil, Some(ByteVector.empty)),
-      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0007 cccccccccccccc", hex"") -> CommitSig(channelId, signature, Nil, Some(hex"cccccccccccccc")),
-      (hex"0084" ++ channelId ++ signature ++ hex"0000 abcdef 0007 cccccccccccccc", hex"deadbeef") -> CommitSig(channelId, signature, Nil, Some(hex"cccccccccccccc")),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00", hex"") -> CommitSig(channelId, signature, Nil, Some(ByteVector.empty)),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00", hex"deadbeef") -> CommitSig(channelId, signature, Nil, Some(ByteVector.empty)),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc", hex"") -> CommitSig(channelId, signature, Nil, Some(hex"cccccccccccccc")),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc", hex"deadbeef") -> CommitSig(channelId, signature, Nil, Some(hex"cccccccccccccc")),
+
       (hex"0085" ++ channelId ++ key.value ++ point.value, hex"") -> RevokeAndAck(channelId, key, point, None),
       (hex"0085" ++ channelId ++ key.value ++ point.value, hex"deadbeef") -> RevokeAndAck(channelId, key, point, None),
-      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0000", hex"") -> RevokeAndAck(channelId, key, point, Some(ByteVector.empty)),
-      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0000", hex"deadbeef") -> RevokeAndAck(channelId, key, point, Some(ByteVector.empty)),
-      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0007 cccccccccccccc", hex"") -> RevokeAndAck(channelId, key, point, Some(hex"cccccccccccccc")),
-      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" abcdef 0007 cccccccccccccc", hex"deadbeef") -> RevokeAndAck(channelId, key, point, Some(hex"cccccccccccccc"))
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 00", hex"") -> RevokeAndAck(channelId, key, point, Some(ByteVector.empty)),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 00", hex"deadbeef") -> RevokeAndAck(channelId, key, point, Some(ByteVector.empty)),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 07 cccccccccccccc", hex"") -> RevokeAndAck(channelId, key, point, Some(hex"cccccccccccccc")),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 07 cccccccccccccc", hex"deadbeef") -> RevokeAndAck(channelId, key, point, Some(hex"cccccccccccccc")),
+
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData, hex"") -> Shutdown(channelId, randomData, None),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData, hex"deadbeef") -> Shutdown(channelId, randomData, None),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 00", hex"") -> Shutdown(channelId, randomData, Some(ByteVector.empty)),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 00", hex"deadbeef") -> Shutdown(channelId, randomData, Some(ByteVector.empty)),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 07 cccccccccccccc", hex"") -> Shutdown(channelId, randomData, Some(hex"cccccccccccccc")),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 07 cccccccccccccc", hex"deadbeef") -> Shutdown(channelId, randomData, Some(hex"cccccccccccccc")),
+
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature, hex"") -> ClosingSigned(channelId, 123456789.sat, signature, None),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature, hex"deadbeef") -> ClosingSigned(channelId, 123456789.sat, signature, None),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 00", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, Some(ByteVector.empty)),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 00", hex"deadbeef") -> ClosingSigned(channelId, 123456789.sat, signature, Some(ByteVector.empty)),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, Some(hex"cccccccccccccc")),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"deadbeef") -> ClosingSigned(channelId, 123456789.sat, signature, Some(hex"cccccccccccccc"))
     )
 
     refs.foreach { case ((bin, remainder), init) =>

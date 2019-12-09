@@ -48,7 +48,8 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class
+NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
@@ -529,15 +530,26 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(commitSig.channelData.isEmpty)
   }
 
-  test("recv CMD_SIGN (channel backup, zero-reserve channel)", Tag("zero_reserve")) { f =>
+  test("recv CMD_SIGN (channel backup, zero-reserve channel, funder)", Tag("zero_reserve")) { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
+    addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
     val commitSig = alice2bob.expectMsgType[CommitSig]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
-    assert(Helpers.encrypt(alice.underlyingActor.nodeParams.privateKey.value, alice.stateData.asInstanceOf[DATA_NORMAL]) === commitSig.channelData.get)
+    assert(commitSig.channelData.isEmpty)
+  }
+
+  test("recv CMD_SIGN (channel backup, zero-reserve channel, fundee)", Tag("zero_reserve")) { f =>
+    import f._
+    val sender = TestProbe()
+    addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob)
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    val commitSig = bob2alice.expectMsgType[CommitSig]
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
+    assert(Helpers.encrypt(bob.underlyingActor.nodeParams.privateKey.value, bob.stateData.asInstanceOf[DATA_NORMAL]) === commitSig.channelData.get)
   }
 
   test("recv CMD_SIGN (two identical htlcs in each direction)") { f =>
@@ -932,10 +944,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localChanges.acked.size == 1)
   }
 
-  test("recv RevokeAndAck (channel backup, zero-reserve channel)", Tag("zero_reserve")) { f =>
+  test("recv RevokeAndAck (channel backup, zero-reserve channel, funder)", Tag("zero_reserve")) { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
+    addHtlc(MilliSatoshi(50000000), alice, bob, alice2bob, bob2alice)
 
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -948,7 +960,26 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     val revocation = alice2bob.expectMsgType[RevokeAndAck]
-    assert(Helpers.encrypt(alice.underlyingActor.nodeParams.privateKey.value, alice.stateData.asInstanceOf[DATA_NORMAL]) === revocation.channelData.get)
+    assert(revocation.channelData.isEmpty)
+  }
+
+  test("recv RevokeAndAck (channel backup, zero-reserve channel, fundee)", Tag("zero_reserve")) { f =>
+    import f._
+    val sender = TestProbe()
+    addHtlc(MilliSatoshi(50000000), bob, alice, bob2alice, alice2bob)
+
+    sender.send(bob, CMD_SIGN)
+    sender.expectMsg("ok")
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    // actual test begins
+    val revocation = bob2alice.expectMsgType[RevokeAndAck]
+    assert(Helpers.encrypt(bob.underlyingActor.nodeParams.privateKey.value, bob.stateData.asInstanceOf[DATA_NORMAL]) === revocation.channelData.get)
   }
 
   test("recv RevokeAndAck (one htlc received)") { f =>
@@ -977,6 +1008,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // now bob will forward the htlc downstream
     val forward = relayerB.expectMsgType[ForwardAdd]
     assert(forward.add === htlc)
+
   }
 
   test("recv RevokeAndAck (multiple htlcs in both directions)") { f =>

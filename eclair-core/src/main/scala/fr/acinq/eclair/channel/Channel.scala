@@ -2280,12 +2280,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       def isZeroReserve(d: HasCommitments) = d.commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
       val key = nodeParams.privateKey.value
       import Helpers.encrypt
+      // only Phoenix sends its channel data (zero-reserve + fundee)
       val msg1 = (msg, state.stateData) match {
-        case (f: FundingSigned, d: HasCommitments) if isZeroReserve(d) => f.copy(channelData = Some(encrypt(key, d)))
-        case (c: CommitSig, d: HasCommitments) if isZeroReserve(d) => c.copy(channelData = Some(encrypt(key, d)))
-        case (r: RevokeAndAck, d: HasCommitments) if isZeroReserve(d) => r.copy(channelData = Some(encrypt(key, d)))
-        case (s: Shutdown, d: HasCommitments) if isZeroReserve(d) => s.copy(channelData = Some(encrypt(key, d)))
-        case (c: ClosingSigned, d: HasCommitments) if isZeroReserve(d) => c.copy(channelData = Some(encrypt(key, d)))
+        case (f: FundingSigned, d: HasCommitments) if !d.commitments.localParams.isFunder && isZeroReserve(d) => f.copy(channelData = Some(encrypt(key, d)))
+        case (c: CommitSig, d: HasCommitments) if !d.commitments.localParams.isFunder && isZeroReserve(d) => c.copy(channelData = Some(encrypt(key, d)))
+        case (r: RevokeAndAck, d: HasCommitments) if !d.commitments.localParams.isFunder && isZeroReserve(d) => r.copy(channelData = Some(encrypt(key, d)))
+        case (s: Shutdown, d: HasCommitments) if !d.commitments.localParams.isFunder && isZeroReserve(d) => s.copy(channelData = Some(encrypt(key, d)))
+        case (c: ClosingSigned, d: HasCommitments) if !d.commitments.localParams.isFunder && isZeroReserve(d) => c.copy(channelData = Some(encrypt(key, d)))
         case _ => msg
       }
       forwarder ! msg1
