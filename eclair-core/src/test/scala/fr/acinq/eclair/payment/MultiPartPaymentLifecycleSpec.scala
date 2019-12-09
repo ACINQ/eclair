@@ -499,8 +499,6 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
       assert(remaining === 0.msat, fuzzParams)
       assert(payments.nonEmpty, fuzzParams)
       assert(payments.map(_.finalPayload.amount).sum === toSend, fuzzParams)
-      // Verify that we're not generating tiny HTLCs.
-      assert(payments.forall(_.finalPayload.amount > 50.msat), fuzzParams)
     }
   }
 
