@@ -17,7 +17,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{Block, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 
@@ -42,10 +42,10 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
     Future.successful(tx.txid.toString())
   }
 
-  override def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
+  override def getTxConfirmations(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
 
-  override def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] = ???
+  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = ???
 
-  override def getTransactionShortId(txId: String)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((400000, 42))
+  override def getTransactionShortId(txId: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((400000, 42))
 
 }
