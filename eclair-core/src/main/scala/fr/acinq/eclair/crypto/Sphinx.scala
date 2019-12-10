@@ -219,7 +219,7 @@ object Sphinx extends Logging {
 
       val (currentMac, currentPayload): (ByteVector32, ByteVector) = packet match {
         // Packet construction starts with an empty mac and payload.
-        case None => (ByteVector32.Zeroes, ByteVector.fill(PayloadLength)(0))
+        case None => (ByteVector32.Zeroes, generateStream(generateKey("pad", sharedSecret), PayloadLength))
         case Some(p) => (p.hmac, p.payload)
       }
 
