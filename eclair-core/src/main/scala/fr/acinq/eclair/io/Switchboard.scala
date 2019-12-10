@@ -208,18 +208,17 @@ object Switchboard {
    * That's why we need to periodically clean up the pending relay db.
    */
   def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb)(implicit log: LoggingAdapter): Int = {
-
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
-    val channel2Htlc: Seq[(ByteVector32, Long)] = for {
-      hasCommitments <- channels
-      DirectedHtlc(OUT, add) <- hasCommitments.commitments.remoteCommit.spec.htlcs
-    } yield (add.channelId, add.id)
+    val channel2Htlc: Set[(ByteVector32, Long)] =
+    channels
+      .flatMap(_.commitments.remoteCommit.spec.htlcs)
+      .filter(_.direction == OUT)
+      .map(htlc => (htlc.add.channelId, htlc.add.id))
+      .toSet
 
-    val pendingRelay: Set[(ByteVector32, Long)] = for {
-      (chanId, cmd) <- relayDb.listPendingRelay()
-    } yield (chanId, cmd.id)
+    val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
 
     val toClean = pendingRelay -- channel2Htlc
 
@@ -230,7 +229,6 @@ object Switchboard {
     }
     toClean.size
   }
-
 }
 
 class HtlcReaper extends Actor with ActorLogging {

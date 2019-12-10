@@ -65,13 +65,12 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
-  override def listPendingRelay(): Set[(ByteVector32, HasHtlcIdCommand)] = {
-    using(sqlite.prepareStatement("SELECT channel_id, data FROM pending_relay")) { statement =>
+  override def listPendingRelay(): Set[(ByteVector32, Long)] = {
+    using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
       val rs = statement.executeQuery()
-      var q: Queue[(ByteVector32, HasHtlcIdCommand)] = Queue()
+      var q: Queue[(ByteVector32, Long)] = Queue()
       while (rs.next()) {
-        val cmd = cmdCodec.decode(BitVector(rs.getBytes("data"))).require.value
-        q = q :+ (rs.getByteVector32("channel_id"), cmd)
+        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
       }
       q.toSet
     }

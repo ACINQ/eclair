@@ -20,13 +20,13 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.HasHtlcIdCommand
 
 /**
- * This database stores the preimages that we have received from downstream
+ * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream
  * (either directly via UpdateFulfillHtlc or by extracting the value from the
  * blockchain).
  *
  * This means that this database is only used in the context of *relaying* payments.
  *
- * We need to be sure that if downstream is able to pulls funds from us, we can always
+ * We need to be sure that if downstream is able to pull funds from us, we can always
  * do the same from upstream, otherwise we lose money. Hence the need for persistence
  * to handle all corner cases.
  *
@@ -39,6 +39,6 @@ trait PendingRelayDb {
 
   def listPendingRelay(channelId: ByteVector32): Seq[HasHtlcIdCommand]
 
-  def listPendingRelay(): Set[(ByteVector32, HasHtlcIdCommand)]
+  def listPendingRelay(): Set[(ByteVector32, Long)]
 
 }
