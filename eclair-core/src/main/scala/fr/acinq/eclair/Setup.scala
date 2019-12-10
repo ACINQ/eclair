@@ -94,30 +94,36 @@ class Setup(datadir: File,
 
   val database = db match {
     case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
+    case None =>
+      val dbConfig = config.getConfig("db")
+      dbConfig.getString("driver") match {
+        case "sqlite" => Databases.sqliteJDBC(chaindir)
+        case "psql" => Databases.setupPsqlDatabases(dbConfig)
+      }
   }
 
   /**
-   * This counter holds the current blockchain height.
-   * It is mainly used to calculate htlc expiries.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This counter holds the current blockchain height.
+    * It is mainly used to calculate htlc expiries.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val blockCount = new AtomicLong(0)
 
   /**
-   * This holds the current feerates, in satoshi-per-kilobytes.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kilobytes.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
 
   /**
-   * This holds the current feerates, in satoshi-per-kw.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kw.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
@@ -353,8 +359,11 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
+
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
+
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,

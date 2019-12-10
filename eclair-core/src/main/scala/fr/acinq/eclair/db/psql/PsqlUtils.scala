@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.sqlite
+package fr.acinq.eclair.db.psql
 
-import java.sql.{Connection, Statement}
+import java.sql.Statement
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 
-object SqliteUtils extends JdbcUtils {
+object PsqlUtils extends JdbcUtils {
 
   /**
    * Several logical databases (channels, network, peers) may be stored in the same physical sqlite database.
@@ -30,33 +30,20 @@ object SqliteUtils extends JdbcUtils {
   def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
     // if there was no version for the current db, then insert the current version
-    statement.executeUpdate(s"INSERT OR IGNORE INTO versions VALUES ('$db_name', $currentVersion)")
+    statement.executeUpdate(s"INSERT INTO versions VALUES ('$db_name', $currentVersion) ON CONFLICT DO NOTHING")
     // if there was a previous version installed, this will return a different value from current version
     val res = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
+    res.next()
     res.getInt("version")
   }
 
   /**
    * Updates the version for a particular logical database, it will overwrite the previous version.
    */
-  def setVersion(statement: Statement, db_name: String, newVersion: Int) = {
+  def setVersion(statement: Statement, db_name: String, newVersion: Int): Unit = {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
     // overwrite the existing version
     statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
-  }
-
-  /**
-   * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
-   * accesses the database file (see https://www.sqlite.org/pragma.html).
-   *
-   * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
-   */
-  def obtainExclusiveLock(sqlite: Connection) {
-    val statement = sqlite.createStatement()
-    statement.execute("PRAGMA locking_mode = EXCLUSIVE")
-    // we have to make a write to actually obtain the lock
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS dummy_table_for_locking (a INTEGER NOT NULL)")
-    statement.executeUpdate("INSERT INTO dummy_table_for_locking VALUES (42)")
   }
 
 }
