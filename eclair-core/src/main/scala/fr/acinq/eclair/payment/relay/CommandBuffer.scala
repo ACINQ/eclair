@@ -36,10 +36,10 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
   override def receive: Receive = {
 
-    case CommandSend(channelId, htlcId, cmd) =>
+    case CommandSend(channelId, cmd) =>
       register forward Register.Forward(channelId, cmd)
       // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
-      db.addPendingRelay(channelId, htlcId, cmd)
+      db.addPendingRelay(channelId, cmd)
 
     case CommandAck(channelId, htlcId) =>
       log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
@@ -62,7 +62,7 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
 object CommandBuffer {
 
-  case class CommandSend(channelId: ByteVector32, htlcId: Long, cmd: Command)
+  case class CommandSend(channelId: ByteVector32, cmd: HasHtlcIdCommand)
 
   case class CommandAck(channelId: ByteVector32, htlcId: Long)
 
