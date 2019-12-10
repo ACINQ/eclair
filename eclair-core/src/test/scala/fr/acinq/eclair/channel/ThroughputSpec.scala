@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.payment.Relayer
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.scalatest.FunSuite
 
@@ -65,8 +65,10 @@ class ThroughputSpec extends FunSuite {
     }), "payment-handler")
     val registerA = TestProbe()
     val registerB = TestProbe()
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandler))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, paymentHandler))
+    val commandBufferA = system.actorOf(Props(new CommandBuffer(Alice.nodeParams, registerA.ref)))
+    val commandBufferB = system.actorOf(Props(new CommandBuffer(Bob.nodeParams, registerB.ref)))
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, commandBufferA, paymentHandler))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, commandBufferB, paymentHandler))
     val wallet = new TestWallet
     val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, blockchain, ???, relayerA, None), "a")
     val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, blockchain, ???, relayerB, None), "b")

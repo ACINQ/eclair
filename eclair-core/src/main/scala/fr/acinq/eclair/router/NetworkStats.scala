@@ -30,7 +30,7 @@ import scala.collection.JavaConverters._
 case class Stats[T](median: T, percentile5: T, percentile10: T, percentile25: T, percentile75: T, percentile90: T, percentile95: T)
 
 object Stats {
-  def apply[T](values: Seq[Long], fromDouble: Double => T): Stats[T] = {
+  def apply[T](values: Iterable[Long], fromDouble: Double => T): Stats[T] = {
     require(values.nonEmpty, "can't compute stats on empty values")
     val stats = percentiles().indexes(5, 10, 25, 50, 75, 90, 95).compute(values.map(java.lang.Long.valueOf).asJavaCollection)
     Stats(fromDouble(stats.get(50)), fromDouble(stats.get(5)), fromDouble(stats.get(10)), fromDouble(stats.get(25)), fromDouble(stats.get(75)), fromDouble(stats.get(90)), fromDouble(stats.get(95)))
@@ -44,7 +44,7 @@ object NetworkStats {
    * Computes various network statistics (expensive).
    * Network statistics won't change noticeably very quickly, so this should not be re-computed too often.
    */
-  def apply(publicChannels: Seq[PublicChannel]): Option[NetworkStats] = {
+  def computeStats(publicChannels: Iterable[PublicChannel]): Option[NetworkStats] = {
     // We need at least one channel update to be able to compute stats.
     if (publicChannels.isEmpty || publicChannels.flatMap(pc => getChannelUpdateField(pc, _ => true)).isEmpty) {
       None

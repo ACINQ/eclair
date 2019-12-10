@@ -46,11 +46,11 @@ object SqliteUtils extends JdbcUtils {
   }
 
   /**
-    * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
-    * accesses the database file (see https://www.sqlite.org/pragma.html).
-    *
-    * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
-    */
+   * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
+   * accesses the database file (see https://www.sqlite.org/pragma.html).
+   *
+   * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
+   */
   def obtainExclusiveLock(sqlite: Connection) {
     val statement = sqlite.createStatement()
     statement.execute("PRAGMA locking_mode = EXCLUSIVE")

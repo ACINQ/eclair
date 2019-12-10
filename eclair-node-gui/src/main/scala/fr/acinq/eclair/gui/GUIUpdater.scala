@@ -94,7 +94,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       })
       context.become(main(m1))
 
-    case ShortChannelIdAssigned(channel, _, shortChannelId) if m.contains(channel) =>
+    case ShortChannelIdAssigned(channel, _, shortChannelId, _) if m.contains(channel) =>
       val channelPaneController = m(channel)
       runInGuiThread(() => channelPaneController.shortChannelId.setText(shortChannelId.toString))
 

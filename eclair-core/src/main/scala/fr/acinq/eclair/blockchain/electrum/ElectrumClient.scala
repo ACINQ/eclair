@@ -71,7 +71,12 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
           val sslParameters = handler.engine().getSSLParameters
           sslParameters.setEndpointIdentificationAlgorithm("HTTPS")
           handler.engine().setSSLParameters(sslParameters)
-          handler.engine().setEnabledProtocols(Array[String]("TLSv1.2", "TLSv1.3"))
+          val enabledProtocols = if (handler.engine().getSupportedProtocols.contains("TLSv1.3")) {
+            "TLSv1.2" :: "TLSv1.3" :: Nil
+          } else {
+            "TLSv1.2" :: Nil
+          }
+          handler.engine().setEnabledProtocols(enabledProtocols.toArray)
           ch.pipeline.addLast(handler)
         case SSL.LOOSE =>
           // INSECURE VERSION THAT DOESN'T CHECK CERTIFICATE

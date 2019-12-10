@@ -37,6 +37,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val watcher = TestProbe()
     val router = TestProbe()
     val relayer = TestProbe()
+    val paymentHandler = TestProbe()
     val wallet = new TestWallet()
     val probe = TestProbe()
 
@@ -48,7 +49,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // add a channel to the db
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
 
-    val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, paymentHandler.ref, wallet))
 
     probe.send(switchboard, 'peers)
     val List(peer) = probe.expectMsgType[Iterable[ActorRef]].toList
@@ -78,6 +79,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val watcher = TestProbe()
     val router = TestProbe()
     val relayer = TestProbe()
+    val paymentHandler = TestProbe()
     val wallet = new TestWallet()
     val probe = TestProbe()
 
@@ -86,7 +88,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0,0,0), "alias", List(NodeAddress.fromParts("127.0.0.1", 9735).get))
     )
 
-    val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, wallet))
+    val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, paymentHandler.ref, wallet))
 
     // send Peer.Connect to switchboard, it will forward to the Peer and the peer will look up the address on the db
     probe.send(switchboard, Peer.Connect(remoteNodeId, None))
