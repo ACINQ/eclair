@@ -22,12 +22,13 @@ import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
 import org.json4s.jackson.Serialization
 
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 16/11/2017.
   */
-class EarnDotComFeeProvider(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
+class EarnDotComFeeProvider(readTimeOut: Duration)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import EarnDotComFeeProvider._
 
@@ -38,7 +39,7 @@ class EarnDotComFeeProvider(implicit http: SttpBackend[Future, Nothing], ec: Exe
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      json <- sttp.get(uri)
+      json <- sttp.readTimeout(readTimeOut).get(uri)
         .response(asJson[JValue])
         .send()
       feeRanges = parseFeeRanges(json.unsafeBody)
