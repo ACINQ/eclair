@@ -34,30 +34,30 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
-  def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
+  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
+    rpcClient.invoke("getrawtransaction", txid, 1) // we choose verbose output to get the number of confirmations
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
-  def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
-    rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
-      .map(json => (json \ "blockhash").extractOpt[String])
+  def getTxBlockHash(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
+    rpcClient.invoke("getrawtransaction", txid, 1) // we choose verbose output to get the number of confirmations
+      .map(json => (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
-  def lookForSpendingTx(blockhash_opt: Option[String], txid: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
+  def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
     for {
       blockhash <- blockhash_opt match {
         case Some(b) => Future.successful(b)
-        case None => rpcClient.invoke("getbestblockhash") collect { case JString(b) => b }
+        case None => rpcClient.invoke("getbestblockhash") collect { case JString(b) => ByteVector32.fromValidHex(b) }
       }
       // with a verbosity of 0, getblock returns the raw serialized block
       block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
-      prevblockhash = block.header.hashPreviousBlock.reverse.toHex
-      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
+      prevblockhash = block.header.hashPreviousBlock.reverse
+      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
         case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
         case Some(tx) => Future.successful(tx)
       }
@@ -65,50 +65,50 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
-      txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]])
+      txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]].map(ByteVector32.fromValidHex))
       txs <- Future.sequence(txids.map(getTransaction(_)))
     } yield txs
 
   /**
-    * @param txId
+    * @param txid
     * @param ec
     * @return
     */
-  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("getrawtransaction", txId) collect {
+  def getRawTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[String] =
+    rpcClient.invoke("getrawtransaction", txid) collect {
       case JString(raw) => raw
     }
 
-  def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txId).map(raw => Transaction.read(raw))
+  def getTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
+    getRawTransaction(txid).map(raw => Transaction.read(raw))
 
-  def getTransactionMeta(txId: String)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
+  def getTransactionMeta(txid: ByteVector32)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
-      tx_opt <- getTransaction(txId) map(Some(_)) recover { case _ => None }
+      tx_opt <- getTransaction(txid) map(Some(_)) recover { case _ => None }
       blockchaininfo <- rpcClient.invoke("getblockchaininfo")
       JInt(timestamp) = blockchaininfo \ "mediantime"
-    } yield GetTxWithMetaResponse(txid = ByteVector32.fromValidHex(txId), tx_opt, timestamp.toLong)
+    } yield GetTxWithMetaResponse(txid = txid, tx_opt, timestamp.toLong)
 
-  def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+  def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
-      json <- rpcClient.invoke("gettxout", txId, outputIndex, includeMempool)
+      json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
     } yield json != JNull
 
   /**
     *
-    * @param txId transaction id
+    * @param txid transaction id
     * @param ec
     * @return a Future[height, index] where height is the height of the block where this transaction was published, and index is
     *         the index of the transaction in that block
     */
-  def getTransactionShortId(txId: String)(implicit ec: ExecutionContext): Future[(Int, Int)] = {
+  def getTransactionShortId(txid: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = {
     val future = for {
-      Some(blockHash) <- getTxBlockHash(txId)
+      Some(blockHash) <- getTxBlockHash(txid)
       json <- rpcClient.invoke("getblock", blockHash)
       JInt(height) = json \ "height"
       JString(hash) = json \ "hash"
       JArray(txs) = json \ "tx"
-      index = txs.indexOf(JString(txId))
+      index = txs.indexOf(JString(txid.toHex))
     } yield (height.toInt, index)
 
     future
@@ -133,7 +133,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         Future.successful(tx.txid.toString())
       case e@JsonRPCError(Error(-25, _)) =>
         // "missing inputs (code: -25)" it may be that the tx has already been published and its output spent
-        getRawTransaction(tx.txid.toString()).map { case _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
+        getRawTransaction(tx.txid).map { case _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
     }
 
   /**
@@ -154,14 +154,14 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       for {
         _ <- Future.successful(0)
         span0 = Kamon.spanBuilder("getblockhash").start()
-        blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
+        blockHash <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOpt[String].map(ByteVector32.fromValidHex).getOrElse(ByteVector32.Zeroes))
         _ = span0.finish()
         span1 = Kamon.spanBuilder("getblock").start()
-        txid: String <- rpcClient.invoke("getblock", blockHash).map {
+        txid: ByteVector32 <- rpcClient.invoke("getblock", blockHash).map {
           case json => Try {
             val JArray(txs) = json \ "tx"
-            txs(txIndex).extract[String]
-          } getOrElse ByteVector32.Zeroes.toHex
+            ByteVector32.fromValidHex(txs(txIndex).extract[String])
+          } getOrElse ByteVector32.Zeroes
         }
         _ = span1.finish()
         span2 = Kamon.spanBuilder("getrawtx").start()
