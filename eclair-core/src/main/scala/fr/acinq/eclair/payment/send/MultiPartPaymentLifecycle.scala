@@ -249,11 +249,11 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   def handleChildFailure(pf: PaymentFailed, d: PaymentProgress): Option[PaymentAborted] = {
-    val paymentTimedOut = pf.failures.exists {
-      case f: RemoteFailure => f.e.failureMessage == PaymentTimeout
+    val recipientFailure = pf.failures.exists {
+      case f: RemoteFailure => f.e.originNode == d.request.targetNodeId
       case _ => false
     }
-    if (paymentTimedOut) {
+    if (recipientFailure) {
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
       val failure = LocalFailure(RetryExhausted)
