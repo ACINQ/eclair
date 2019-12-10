@@ -29,8 +29,8 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypt
 import fr.acinq.eclair
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{NewTransaction, Watch, WatchAddressItem, WatchConfirmed}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCRequest, JsonRPCResponse}
+import fr.acinq.eclair.blockchain.{ NewTransaction, Watch, WatchAddressItem, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -52,12 +52,12 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JArray, JNull, JString, JValue}
+import org.json4s.JsonAST.{JArray, JBool, JInt, JNull, JObject, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
-import scala.concurrent.Await
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
@@ -1073,10 +1073,28 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // to recreate node-X we reuse its data directory
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-X")
+    var reconciledAddresses:Option[String] = None
+    var importMultiInvokations = 0
+    val spyBitcoinClient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort) {
+      override def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
+        if(requests.exists(_.method == "importmulti")){ // intercept 'importmulti' RPC calls and count its invocations
+          reconciledAddresses = (requests.head.params.head.asInstanceOf[JArray].arr.head \ "scriptPubKey" \ "address").extractOpt[String]
+          importMultiInvokations += 1
+        }
+        super.invoke(requests)
+      }
+
+    }
     val systemX = ActorSystem(s"system-X-new")
-    val setup = new Setup(datadir, db = Some(node1Db))(systemX)
+    val setup = new Setup(datadir, db = Some(node1Db))(systemX){
+      override val bitcoin = Bitcoind(spyBitcoinClient)
+    }
 
     Await.ready(setup.bootstrap, 10 seconds)
+
+    // assert the reconcile routione called importMulti with our channel address
+    assert(importMultiInvokations == 1)
+    assert(reconciledAddresses.contains(channelAddress))
 
     // when bootstrap is completed the address must have been imported
     bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)

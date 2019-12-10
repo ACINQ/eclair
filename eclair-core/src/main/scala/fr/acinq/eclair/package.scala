@@ -248,9 +248,9 @@ package object eclair {
     listImported(bitcoinClient).flatMap { importedAddresses =>
         logger.info(s"found ${importedAddresses.size} addresses already IMPORTED")
         val addressesWithInfo = databases.channels.listLocalChannels()
-          .map( data => (data, eclair.scriptPubKeyToAddress(data.commitments.commitInput.txOut.publicKeyScript))) // compute the address for each channel
-          .filterNot( el => importedAddresses.exists(_.address == el._2))                                         // discard already imported addresses
-          .map { case (channel, address) => (getRescanInfo(channel), address) }                                   // get rescan info for each address
+          .map( data => (data, eclair.scriptPubKeyToAddress(data.commitments.commitInput.txOut.publicKeyScript)) ) // compute the address of each channel funding
+          .filterNot( el => importedAddresses.exists(_.address == el._2) )                                         // discard already imported addresses
+          .map { case (channel, address) => (getRescanInfo(channel), address) }                                    // get rescan info for each address
 
         // convert rescan info into timestamp and each element in ImportMultiItem
         val importMultiInputF = Future.sequence(addressesWithInfo.map(addressToImportMultiItem(_, bitcoinClient)))
