@@ -215,7 +215,7 @@ package object eclair {
   }
 
   // extracts rescan info from each channel data
-  def getChannelAddressWithRescanInfo(channel: HasCommitments) = channel match {
+  def getRescanInfo(channel: HasCommitments) = channel match {
     case DATA_NORMAL(_, shortChannelId, _, _, _, _, _)             => Some(Left(shortChannelId))
     case DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, waitingSince, _, _) => Some(Right(waitingSince))
     case DATA_WAIT_FOR_FUNDING_LOCKED(_, shortChannelId, _)        => Some(Left(shortChannelId))
@@ -240,15 +240,17 @@ package object eclair {
     }
   }
 
+  /**
+    * Reconciliation function to import in the bitcoind wallet any missing address from our channels.
+    */
   def reconcileWatchAddresses(bitcoinClient: ExtendedBitcoinClient, databases: Databases)(implicit ec: ExecutionContext, logger: Logger): Future[Unit] = {
     // lookup existing imported addresses
     listImported(bitcoinClient).flatMap { importedAddresses =>
         logger.info(s"found ${importedAddresses.size} addresses already IMPORTED")
-        val addressesWithInfo: Seq[(Option[Either[ShortChannelId, Long]], String)] =
-          databases.channels.listLocalChannels()
+        val addressesWithInfo = databases.channels.listLocalChannels()
           .map( data => (data, eclair.scriptPubKeyToAddress(data.commitments.commitInput.txOut.publicKeyScript))) // compute the address for each channel
           .filterNot( el => importedAddresses.exists(_.address == el._2))                                         // discard already imported addresses
-          .map { case (channel, address) => (getChannelAddressWithRescanInfo(channel), address) }                 // get rescan info for each address
+          .map { case (channel, address) => (getRescanInfo(channel), address) }                                   // get rescan info for each address
 
         // convert rescan info into timestamp and each element in ImportMultiItem
         val importMultiInputF = Future.sequence(addressesWithInfo.map(addressToImportMultiItem(_, bitcoinClient)))
