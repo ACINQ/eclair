@@ -334,8 +334,11 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     f.sender.send(handler, GetPendingPayments)
     assert(f.sender.expectMsgType[PendingPayments].paymentHashes.nonEmpty)
 
-    f.commandBuffer.expectMsg(CommandBuffer.CommandSend(ByteVector32.One, 0, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)))
-    f.commandBuffer.expectMsg(CommandBuffer.CommandSend(ByteVector32.One, 1, CMD_FAIL_HTLC(1, Right(PaymentTimeout), commit = true)))
+    val commands = f.commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: f.commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: Nil
+    assert(commands.toSet === Set(
+      CommandBuffer.CommandSend(ByteVector32.One, 0, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)),
+      CommandBuffer.CommandSend(ByteVector32.One, 1, CMD_FAIL_HTLC(1, Right(PaymentTimeout), commit = true))
+    ))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
       f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
