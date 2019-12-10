@@ -81,7 +81,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         db.getIncomingPayment(p.add.paymentHash) match {
           case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
             case Some(cmdFail) =>
-              commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, p.add.id, cmdFail)
+              commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
             case None =>
               log.info(s"received payment for amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
               pendingPayments.get(p.add.paymentHash) match {
@@ -95,7 +95,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
           }
           case None =>
             val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
-            commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, p.add.id, cmdFail)
+            commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
         }
       }
 
@@ -103,7 +103,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         log.warning(s"payment with paidAmount=${parts.map(_.payment.amount).sum} failed ($failure)")
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
-        parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true)))
+        parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true)))
         pendingPayments = pendingPayments - paymentHash
       }
 
@@ -116,7 +116,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
-            parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true)))
+            parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true)))
         }
         ctx.system.eventStream.publish(received)
         pendingPayments = pendingPayments - paymentHash
@@ -126,11 +126,11 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
     case MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, p, failure) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         failure match {
-          case Some(failure) => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
+          case Some(failure) => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
           // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
           // expensive code path by fetching the preimage from DB.
           case None => db.getIncomingPayment(paymentHash).foreach(record => {
-            commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, p.htlcId, CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true))
+            commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true))
             db.receiveIncomingPayment(paymentHash, p.payment.amount, p.payment.timestamp)
             ctx.system.eventStream.publish(PaymentReceived(paymentHash, p.payment :: Nil))
           })
