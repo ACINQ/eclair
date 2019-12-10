@@ -19,20 +19,17 @@ package fr.acinq.eclair
 import java.sql.{Connection, DriverManager}
 import java.util.concurrent.atomic.AtomicLong
 
-import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.postgre.{PostgreHtlcInfosDb, PostgreLocalChannelsDb, PostgrePeersDb, PostgrePendingRelayDb}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
-import scala.concurrent.Await
 import scala.concurrent.duration._
 
 /**
@@ -46,23 +43,6 @@ object TestConstants {
   val pushMsat = 200000000L msat
   val feeratePerKw = 10000L
   val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
-  val postgreConfig = ConfigFactory.parseString("""eclair = {
-                                                  |    postgre = {
-                                                  |      connectionPool = "HikariCP"
-                                                  |      dataSourceClass = "org.postgresql.ds.PGSimpleDataSource"
-                                                  |      numThreads = 6
-                                                  |
-                                                  |      properties = {
-                                                  |        serverName = "localhost"
-                                                  |        portNumber = "5432"
-                                                  |        databaseName = "eclairtest"
-                                                  |        user = "postgres"
-                                                  |        password = "postgres"
-                                                  |      }
-                                                  |    }
-                                                  |  }""".stripMargin)
-  import slick.jdbc.PostgresProfile.api._
-  val postgreTestDb: slick.jdbc.PostgresProfile.backend.Database = Database.forConfig("eclair.postgre", postgreConfig)
 
   class TestFeeEstimator extends FeeEstimator {
     private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
@@ -79,20 +59,6 @@ object TestConstants {
   def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
-
-  def throwawayPostgreDb() = {
-    Await.result(postgreTestDb.run(DBIO.seq(
-      PostgreHtlcInfosDb.model.schema.dropIfExists,
-      PostgreLocalChannelsDb.model.schema.dropIfExists,
-      PostgrePeersDb.model.schema.dropIfExists,
-      PostgrePendingRelayDb.model.schema.dropIfExists,
-
-      PostgreLocalChannelsDb.model.schema.create,
-      PostgreHtlcInfosDb.model.schema.create,
-      PostgrePeersDb.model.schema.create,
-      PostgrePendingRelayDb.model.schema.create).transactionally), 10.seconds)
-    postgreTestDb
-  }
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
@@ -254,5 +220,4 @@ object TestConstants {
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )
   }
-
 }
