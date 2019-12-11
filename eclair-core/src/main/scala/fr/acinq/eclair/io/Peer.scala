@@ -74,15 +74,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           sender ! "no address found"
           stay
         case Some(address) =>
-          if (d.address_opt.contains(address)) {
-            // we already know this address, we'll reconnect automatically
-            sender ! "reconnection in progress"
-            stay
-          } else {
-            // we immediately process explicit connection requests to new addresses
-            context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
-            stay using d.copy(address_opt = Some(address))
-          }
+          // we immediately process explicit connection requests to new addresses
+          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+          stay using d.copy(address_opt = Some(address))
       }
 
     case Event(Reconnect, d: DisconnectedData) =>
