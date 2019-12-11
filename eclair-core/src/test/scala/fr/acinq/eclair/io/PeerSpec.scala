@@ -133,13 +133,21 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(peer.stateData.address_opt == Some(fakeIPAddress.socketAddress))
   }
 
-  test("ignore connect to same address") { f =>
+  test("connect forces reconnection even if there is already an address") { f =>
     import f._
     val probe = TestProbe()
-    val previouslyKnownAddress = new InetSocketAddress("1.2.3.4", 9735)
+    val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
+    val previouslyKnownAddress = new InetSocketAddress(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort)
+    awaitCond(peer.stateName == INSTANTIATING)
     probe.send(peer, Peer.Init(Some(previouslyKnownAddress), Set.empty))
-    probe.send(peer, Peer.Connect(NodeURI.parse("03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134@1.2.3.4:9735")))
-    probe.expectMsg("reconnection in progress")
+    awaitCond(peer.stateName == DISCONNECTED)
+    probe.send(peer, Peer.Connect(NodeURI.parse(s"${randomKey.publicKey}@${previouslyKnownAddress.getHostName}:${previouslyKnownAddress.getPort}")))
+
+    // assert the peer established a connection with the mock server and moved to CONNECTED state
+    within(30 seconds) {
+      mockServer.accept()
+      peer.stateName == CONNECTED
+    }
   }
 
   test("ignore reconnect (no known address)") { f =>
@@ -164,7 +172,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
-  val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
     val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     peer.underlyingActor.nodeParams.db.network.addNode(bobAnnouncement)
 
