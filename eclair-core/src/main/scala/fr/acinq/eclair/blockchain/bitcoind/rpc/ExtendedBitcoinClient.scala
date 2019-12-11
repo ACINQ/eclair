@@ -34,15 +34,15 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
-  def getTxConfirmations(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txId.toHex, 1) // we choose verbose output to get the number of confirmations
+  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
+    rpcClient.invoke("getrawtransaction", txid.toHex, 1) // we choose verbose output to get the number of confirmations
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
-  def getTxBlockHash(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
-    rpcClient.invoke("getrawtransaction", txId.toHex, 1) // we choose verbose output to get the number of confirmations
+  def getTxBlockHash(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
+    rpcClient.invoke("getrawtransaction", txid.toHex, 1) // we choose verbose output to get the number of confirmations
       .map(json => (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
@@ -70,45 +70,45 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } yield txs
 
   /**
-    * @param txId
+    * @param txid
     * @param ec
     * @return
     */
-  def getRawTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("getrawtransaction", txId.toHex) collect {
+  def getRawTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[String] =
+    rpcClient.invoke("getrawtransaction", txid.toHex) collect {
       case JString(raw) => raw
     }
 
-  def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txId).map(raw => Transaction.read(raw))
+  def getTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
+    getRawTransaction(txid).map(raw => Transaction.read(raw))
 
-  def getTransactionMeta(txId: ByteVector32)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
+  def getTransactionMeta(txid: ByteVector32)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
-      tx_opt <- getTransaction(txId) map(Some(_)) recover { case _ => None }
+      tx_opt <- getTransaction(txid) map(Some(_)) recover { case _ => None }
       blockchaininfo <- rpcClient.invoke("getblockchaininfo")
       JInt(timestamp) = blockchaininfo \ "mediantime"
-    } yield GetTxWithMetaResponse(txid = txId, tx_opt, timestamp.toLong)
+    } yield GetTxWithMetaResponse(txid = txid, tx_opt, timestamp.toLong)
 
-  def isTransactionOutputSpendable(txId: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+  def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
-      json <- rpcClient.invoke("gettxout", txId.toHex, outputIndex, includeMempool)
+      json <- rpcClient.invoke("gettxout", txid.toHex, outputIndex, includeMempool)
     } yield json != JNull
 
   /**
     *
-    * @param txId transaction id
+    * @param txid transaction id
     * @param ec
     * @return a Future[height, index] where height is the height of the block where this transaction was published, and index is
     *         the index of the transaction in that block
     */
-  def getTransactionShortId(txId: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = {
+  def getTransactionShortId(txid: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = {
     val future = for {
-      Some(blockHash) <- getTxBlockHash(txId)
+      Some(blockHash) <- getTxBlockHash(txid)
       json <- rpcClient.invoke("getblock", blockHash.toHex)
       JInt(height) = json \ "height"
       JString(hash) = json \ "hash"
       JArray(txs) = json \ "tx"
-      index = txs.indexOf(JString(txId.toHex))
+      index = txs.indexOf(JString(txid.toHex))
     } yield (height.toInt, index)
 
     future
