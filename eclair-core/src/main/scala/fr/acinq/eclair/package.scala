@@ -214,8 +214,8 @@ package object eclair {
     bitcoinClient.listReceivedByAddress(minConf = 1, includeEmpty = true, includeWatchOnly = true).map(_.filter(_.label == "IMPORTED"))
   }
 
-  // extracts rescan info from each channel data
-  def getRescanInfo(channel: HasCommitments) = channel match {
+  // extracts rescan info from channel data, if not empty it can be either the creation time (waitingSince) or the channel's short_id
+  def getRescanInfo(channel: HasCommitments): Option[Either[ShortChannelId, Long]] = channel match {
     case DATA_NORMAL(_, shortChannelId, _, _, _, _, _)             => Some(Left(shortChannelId))
     case DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, waitingSince, _, _) => Some(Right(waitingSince))
     case DATA_WAIT_FOR_FUNDING_LOCKED(_, shortChannelId, _)        => Some(Left(shortChannelId))
