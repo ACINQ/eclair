@@ -21,13 +21,16 @@ import java.util.{Properties, UUID}
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
+import akka.pattern.pipe
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCRequest, JsonRPCResponse}
+import fr.acinq.eclair.blockchain.{ NewTransaction, Watch, WatchAddressItem, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -47,15 +50,14 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestUtils, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
-import org.json4s.JsonAST.{JString, JValue}
+import org.json4s.JsonAST.{JArray, JBool, JInt, JNull, JObject, JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
-import scala.concurrent.Await
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
@@ -94,8 +96,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     "eclair.auto-reconnect" -> false,
     "eclair.to-remote-delay-blocks" -> 144,
     "eclair.multi-part-payment-expiry" -> "20 seconds"))
-
-  implicit val formats = DefaultFormats
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -549,19 +549,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
   }
 
-  /**
-   * We currently use p2pkh script Helpers.getFinalScriptPubKey
-   */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector) = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
-    case _ => ???
-  }
-
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
     val sender = TestProbe()
     // we subscribe to C's channel state transitions
@@ -939,20 +926,46 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     Transaction.correctlySpends(htlcTimeout, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // we then generate blocks to make the htlc timeout (nothing will happen in the channel because all of them have already been fulfilled)
     generateBlocks(bitcoincli, 20)
+
+    // wait until C is in sync
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("getblockchaininfo"))
+      (sender.expectMsgType[JValue] \ "blocks").extract[Long] == nodes("C").nodeParams.currentBlockHeight
+    })
+
     // then we publish F's revoked transactions
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", revokedCommitTx.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcSuccess.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("sendrawtransaction", htlcTimeout.toString()))
-    sender.expectMsgType[JValue](10000 seconds)
+    sender.expectMsgType[JValue](10 seconds)
+
+    // forward the transaction to C for quicker acknowledgement
+    nodes("C").watcher ! NewTransaction(revokedCommitTx)
+    nodes("C").watcher ! NewTransaction(htlcSuccess)
+    nodes("C").watcher ! NewTransaction(htlcTimeout)
+
+    // wait for C to start closing the channel
+    awaitCond(stateListener.expectMsgType[ChannelStateChanged](40 seconds).currentState == CLOSING, max = 40 seconds)
+
+    // assert the htlc transactions have been spent
+    awaitCond({
+      val client = new ExtendedBitcoinClient(bitcoinrpcclient)
+      val spentF = for {
+       successSpent <- client.isTransactionOutputSpendable(htlcSuccess.txid.toHex, 0, true)
+       timeoutSpent <- client.isTransactionOutputSpendable(htlcTimeout.txid.toHex, 0, true)
+      } yield successSpent && timeoutSpent
+      Await.result(spentF, 15 seconds)
+    }, max = 40 seconds, interval = 3 seconds)
+
     // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 6
-    }, max = 30 seconds, interval = 1 second)
+    }, max = 40 seconds, interval = 3 second)
     // we generate blocks to make tx confirm
     generateBlocks(bitcoincli, 2)
     // and we wait for C'channel to close
@@ -987,6 +1000,105 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  test("restart eclair with a new bitcoind wallet") {
+    val sender = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+
+    instantiateEclairNode("X", ConfigFactory.parseMap(Map("eclair.node-alias" -> "X", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    instantiateEclairNode("Y", ConfigFactory.parseMap(Map("eclair.node-alias" -> "Y", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    val node1 = nodes("X")
+    val node2 = nodes("Y")
+
+    // store a reference to node1 db for later reuse
+    val node1Db = node1.nodeParams.db
+
+    // connect node1 <--> node2
+    sender.send(node1.switchboard, Peer.Connect(
+      nodeId = node2.nodeParams.nodeId,
+      address_opt = Some(HostAndPort.fromParts(
+        node2.nodeParams.publicAddresses.head.socketAddress.getHostString,
+        node2.nodeParams.publicAddresses.head.socketAddress.getPort))
+    ))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+    // open channel node1 --> node2
+    sender.send(node1.switchboard, Peer.OpenChannel(
+      remoteNodeId = node2.nodeParams.nodeId,
+      fundingSatoshis = 5000000 sat,
+      pushMsat = 0 msat,
+      fundingTxFeeratePerKw_opt = None,
+      channelFlags = None,
+      timeout_opt = None))
+
+    val channelCreated = sender.expectMsgType[String](10 seconds)
+    assert(channelCreated.startsWith("created channel"))
+    val channelId = ByteVector32.fromValidHex(channelCreated.split(" ").last)
+
+    awaitCond({
+      sender.send(node1.register, 'channels)
+      val channelmap = sender.expectMsgType[Map[ByteVector32, ActorRef]]
+      channelmap.exists(_._1 == channelId)
+    })
+
+    // get actor handling the channel in node1
+    sender.send(node1.register, 'channels)
+    val Some(channel) = sender.expectMsgType[Map[ByteVector32, ActorRef]].get(channelId)
+
+    // compute the address of the channel funding
+    sender.send(channel, CMD_GETSTATEDATA)
+    val stateData = sender.expectMsgType[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+    val channelAddress = eclair.scriptPubKeyToAddress(stateData.commitments.commitInput.txOut.publicKeyScript)
+
+    // make the channel go to NORMAL state
+    generateBlocks(bitcoincli, 6)
+    awaitCond({
+      sender.send(channel, CMD_GETSTATE)
+      sender.expectMsgType[State] == NORMAL
+    })
+
+    // assert the address was imported in bitcoind
+    bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)
+    assert(sender.expectMsgType[List[WatchAddressItem]].exists(_.address == channelAddress))
+
+    // stop eclair node X
+    Await.result(node1.system.terminate(), 30 seconds)
+
+    // wipe out bitcoind wallet
+    ExternalWalletHelper.swapWallet()
+
+    // assert the address is currently NOT imported in bitcoind
+    bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)
+    assert(!sender.expectMsgType[List[WatchAddressItem]].exists(_.address == channelAddress))
+
+    // to recreate node-X we reuse its data directory
+    val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-X")
+    var reconciledAddresses:Option[String] = None
+    var importMultiInvokations = 0
+    val spyBitcoinClient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort) {
+      override def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
+        if(requests.exists(_.method == "importmulti")){ // intercept 'importmulti' RPC calls and count its invocations
+          reconciledAddresses = (requests.head.params.head.asInstanceOf[JArray].arr.head \ "scriptPubKey" \ "address").extractOpt[String]
+          importMultiInvokations += 1
+        }
+        super.invoke(requests)
+      }
+
+    }
+    val systemX = ActorSystem(s"system-X-new")
+    val setup = new Setup(datadir, db = Some(node1Db))(systemX){
+      override val bitcoin = Bitcoind(spyBitcoinClient)
+    }
+
+    Await.ready(setup.bootstrap, 10 seconds)
+
+    // assert the reconcile routione called importMulti with our channel address
+    assert(importMultiInvokations == 1)
+    assert(reconciledAddresses.contains(channelAddress))
+
+    // when bootstrap is completed the address must have been imported
+    bitcoinClient.listReceivedByAddress(minConf = 0, includeEmpty = true, includeWatchOnly = true).pipeTo(sender.ref)
+    sender.expectMsgType[List[WatchAddressItem]].exists(_.address == channelAddress)
   }
 
 }
