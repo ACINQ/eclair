@@ -44,14 +44,14 @@ class SqlitePendingRelayDbSpec extends FunSuite {
     val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes32, FailureMessageCodecs.BADONION)
 
     assert(db.listPendingRelay(channelId1).toSet === Set.empty)
-    db.addPendingRelay(channelId1, msg0.id, msg0)
-    db.addPendingRelay(channelId1, msg0.id, msg0) // duplicate
-    db.addPendingRelay(channelId1, msg1.id, msg1)
-    db.addPendingRelay(channelId1, msg2.id, msg2)
-    db.addPendingRelay(channelId1, msg3.id, msg3)
-    db.addPendingRelay(channelId1, msg4.id, msg4)
-    db.addPendingRelay(channelId2, msg0.id, msg0) // same messages but for different channel
-    db.addPendingRelay(channelId2, msg1.id, msg1)
+    db.addPendingRelay(channelId1, msg0)
+    db.addPendingRelay(channelId1, msg0) // duplicate
+    db.addPendingRelay(channelId1, msg1)
+    db.addPendingRelay(channelId1, msg2)
+    db.addPendingRelay(channelId1, msg3)
+    db.addPendingRelay(channelId1, msg4)
+    db.addPendingRelay(channelId2, msg0) // same messages but for different channel
+    db.addPendingRelay(channelId2, msg1)
     assert(db.listPendingRelay(channelId1).toSet === Set(msg0, msg1, msg2, msg3, msg4))
     assert(db.listPendingRelay(channelId2).toSet === Set(msg0, msg1))
     assert(db.listPendingRelay === Set((channelId1, msg0.id), (channelId1, msg1.id), (channelId1, msg2.id), (channelId1, msg3.id), (channelId1, msg4.id), (channelId2, msg0.id), (channelId2, msg1.id)))
