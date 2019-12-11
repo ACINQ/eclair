@@ -1638,6 +1638,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // we receive this when we send command to ourselves
     case Event("ok", _) => stay
 
+    // we receive this when we tell the peer to disconnect
+    case Event("disconnecting", _) => stay
+
     // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves which may result in this error being sent back to ourselves, this can be ignored
     case Event(Status.Failure(_: CannotAffordFees), _) => stay
 
