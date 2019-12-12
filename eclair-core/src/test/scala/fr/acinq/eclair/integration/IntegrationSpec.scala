@@ -146,8 +146,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     import collection.JavaConversions._
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082)).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083)).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.features" -> "018a8a")).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.features" -> "018a8a")).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
     instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085)).withFallback(commonConfig))
     instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086)).withFallback(commonConfig))
@@ -441,7 +441,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   test("send a multi-part payment B->D") {
     val sender = TestProbe()
     val amount = 1000000000L.msat
-    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill", allowMultiPart = true))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
@@ -473,7 +473,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // There is enough channel capacity to route this payment, but D doesn't have enough incoming capacity to receive it
     // (the link C->D has too much capacity on D's side).
     val amount = 2000000000L.msat
-    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "well that's an expensive restaurant bill", allowMultiPart = true))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "well that's an expensive restaurant bill"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
@@ -500,7 +500,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val sender = TestProbe()
     // This amount is greater than any channel capacity between D and C, so it should be split.
     val amount = 5100000000L.msat
-    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow some money", allowMultiPart = true))
+    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow some money"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
@@ -527,7 +527,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val sender = TestProbe()
     // This amount is greater than the current capacity between D and C.
     val amount = 10000000000L.msat
-    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow more money", allowMultiPart = true))
+    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow more money"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
