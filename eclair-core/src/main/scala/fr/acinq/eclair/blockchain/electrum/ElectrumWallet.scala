@@ -476,6 +476,8 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
 
+    case Event(GetCurrentAddressPubkey, data) => stay replying GetCurrentAddressPubkeyResponse(data.currentReceiveKey.publicKey)
+
     case Event(GetBalance, data) =>
       val (confirmed, unconfirmed) = data.balance
       stay replying GetBalanceResponse(confirmed, unconfirmed)
@@ -516,6 +518,9 @@ object ElectrumWallet {
 
   case object GetCurrentReceiveAddress extends Request
   case class GetCurrentReceiveAddressResponse(address: String) extends Response
+
+  case object GetCurrentAddressPubkey extends Request
+  case class GetCurrentAddressPubkeyResponse(publicKey: PublicKey) extends Response
 
   case object GetData extends Request
   case class GetDataResponse(state: Data) extends Response

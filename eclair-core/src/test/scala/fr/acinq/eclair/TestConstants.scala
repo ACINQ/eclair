@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -132,13 +133,17 @@ object TestConstants {
       enableTrampolinePayment = true
     )
 
-    def channelParams = Peer.makeChannelParams(
-      nodeParams = nodeParams,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      isFunder = true,
-      fundingSatoshis).copy(
-      channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
-    )
+    def channelParams = {
+      val key = PrivateKey(randomBytes32).publicKey
+      Peer.makeChannelParams(
+        nodeParams = nodeParams,
+        defaultFinalScriptPubkey = Script.write(Script.pay2wpkh(key)),
+        localPaymentBasepoint = Some(key),
+        isFunder = true,
+        fundingSatoshis).copy(
+        channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
+      )
+    }
   }
 
   object Bob {
@@ -212,12 +217,16 @@ object TestConstants {
       enableTrampolinePayment = true
     )
 
-    def channelParams = Peer.makeChannelParams(
-      nodeParams = nodeParams,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      isFunder = false,
-      fundingSatoshis).copy(
-      channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
-    )
+    def channelParams = {
+      val key = PrivateKey(randomBytes32).publicKey
+      Peer.makeChannelParams(
+        nodeParams = nodeParams,
+        defaultFinalScriptPubkey = Script.write(Script.pay2wpkh(key)),
+        localPaymentBasepoint = Some(key),
+        isFunder = false,
+        fundingSatoshis).copy(
+        channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
+      )
+    }
   }
 }
