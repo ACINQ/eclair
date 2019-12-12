@@ -83,6 +83,7 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.channelVersion == ChannelVersion.STATIC_REMOTEKEY)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelVersion == ChannelVersion.STATIC_REMOTEKEY)
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[WatchSpent]
