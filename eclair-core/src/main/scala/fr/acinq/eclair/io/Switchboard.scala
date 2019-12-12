@@ -30,7 +30,7 @@ import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPayme
 import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Rebroadcast
-import fr.acinq.eclair.transactions.{DirectedHtlc, IN, OUT}
+import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import scodec.bits.ByteVector
 
@@ -59,7 +59,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     })
     val peers = nodeParams.db.peers.listPeers()
 
-    checkBrokenHtlcsLink(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.globalFeatures) match {
+    checkBrokenHtlcsLink(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features) match {
       case Nil => ()
       case brokenHtlcs =>
         val brokenHtlcKiller = context.system.actorOf(Props[HtlcReaper], name = "htlc-reaper")
