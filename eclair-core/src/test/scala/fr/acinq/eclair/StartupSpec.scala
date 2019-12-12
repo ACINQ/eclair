@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import java.util.concurrent.atomic.AtomicLong
 
-import com.typesafe.config.{ConfigFactory, ConfigValue}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite
@@ -41,7 +41,6 @@ class StartupSpec extends FunSuite {
   }
 
   test("NodeParams should fail if the alias is illegal (over 32 bytes)") {
-
     val threeBytesUTFChar = '\u20AC' // €
     val baseUkraineAlias = "BitcoinLightningNodeUkraine"
 
@@ -63,6 +62,21 @@ class StartupSpec extends FunSuite {
     // try to create a NodeParams instance with a conf that contains an illegal alias
     val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator))
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
+  }
+
+  test("NodeParams should fail with deprecated global-features or local-features") {
+    val blockCount = new AtomicLong(0)
+    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val feeEstimator = new TestConstants.TestFeeEstimator
+    val db = TestConstants.inMemoryDb()
+
+    for (deprecated <- Seq("global-features", "local-features")) {
+      val illegalGlobalFeaturesConf = ConfigFactory.parseString(deprecated + " = \"0200\"")
+      val conf = illegalGlobalFeaturesConf.withFallback(ConfigFactory.parseResources("reference.conf").getConfig("eclair"))
+
+      val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, db, blockCount, feeEstimator))
+      assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains(deprecated))
+    }
   }
 
 }

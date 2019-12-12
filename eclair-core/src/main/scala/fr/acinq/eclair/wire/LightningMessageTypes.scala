@@ -45,11 +45,22 @@ sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
-case class Init(globalFeatures: ByteVector,
-                localFeatures: ByteVector) extends SetupMessage
+/** For historical reasons, features are divided into two feature bitmasks. We only use the second one in our messages, but we allow receiving in both. */
+case class Init(globalFeatures: ByteVector, localFeatures: ByteVector) extends SetupMessage {
+  val features = combineFeatures(globalFeatures, localFeatures)
 
-case class Error(channelId: ByteVector32,
-                 data: ByteVector) extends SetupMessage with HasChannelId {
+  private def combineFeatures(f1: ByteVector, f2: ByteVector): ByteVector = {
+    if (f1.length == f2.length) {
+      f1 | f2
+    } else if (f1.length > f2.length) {
+      f1 | f2.padLeft(f1.length)
+    } else {
+      f1.padLeft(f2.length) | f2
+    }
+  }
+}
+
+case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
   def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
 }
 
