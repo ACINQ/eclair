@@ -54,10 +54,15 @@ Pull requests should always be focused. For example, a pull request could add a 
 or refactor code; but not a mixture.
 Please also avoid super pull requests which attempt to do too much, are overly large, or overly
 complex as this makes review difficult.
+
 You should try your best to make reviewers' lives as easy as possible: a lot more time will be
 spent reading your code than the time you spent writing it.
 The quicker your changes are merged to master, the less time you will need to spend rebasing and
 otherwise trying to keep up with the master branch.
+
+Pull request should always include a clean, detailed description of what they fix/improve, why,
+and how.
+Even if you think that it is obvious, don't be shy and add explicit details and explanations.
 
 When fixing a bug, please start by adding a failing test that reproduces the issue.
 Create a first commit containing that test without the fix: this makes it easy to verify that the
@@ -116,6 +121,10 @@ Further paragraphs come after blank lines.
 
 We try to minimize our dependencies (libraries and tools). Introducing new dependencies increases
 package size, attack surface and cognitive overhead.
+
+Since Eclair is [running on Android](https://github.com/acinq/eclair-mobile), we have a requirement
+to be compatible with Java 7. This currently restricts the set of dependencies we can add and the
+language features we use.
 
 If your contribution is adding a new dependency, please detail:
 
