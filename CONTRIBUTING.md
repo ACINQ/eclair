@@ -31,6 +31,7 @@ You can also use Github issues for [feature requests](https://github.com/acinq/e
 - [Deployable Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf)
 - [Understanding the Lightning Network](https://bitcoinmagazine.com/articles/understanding-the-lightning-network-part-building-a-bidirectional-payment-channel-1464710791)
 - [Lightning Network Specification](https://github.com/lightningnetwork/lightning-rfc)
+- [High Level Lightning Network Specification](https://medium.com/@rusty_lightning/the-bitcoin-lightning-spec-part-1-8-a7720fb1b4da)
 
 ## Recommended Skillset
 
@@ -71,7 +72,9 @@ The reason for this is two fold: it makes it easier for the reviewer to see what
 made between versions (since Github doesn't easily show prior versions) and it makes it easier on
 the PR author as they can set it to auto-squash the fixup commits on rebase.
 
-### Code Style
+It's recommended to take great care in writing tests and ensuring the entire test suite has a
+stable successful outcome; eclair uses continuous integration techniques and having a stable build
+helps the reviewers with their job.
 
 We don't have hard rules around code style, but we do avoid having too many conflicting styles;
 look around and make sure you code fits well with the rest of the codebase.
