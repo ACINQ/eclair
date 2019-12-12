@@ -54,7 +54,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
   def onSuccess(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, allowMultiPart) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt) =>
       Try {
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
         val paymentHash = Crypto.sha256(paymentPreimage)
@@ -63,6 +63,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
           val f1 = Seq(Features.PAYMENT_SECRET_OPTIONAL)
+          val allowMultiPart = Features.hasFeature(nodeParams.features, Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) || Features.hasFeature(nodeParams.features, Features.BASIC_MULTI_PART_PAYMENT_MANDATORY)
           val f2 = if (allowMultiPart) Seq(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) else Nil
           val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TRAMPOLINE_PAYMENT_OPTIONAL) else Nil
           Some(PaymentRequest.Features(f1 ++ f2 ++ f3: _*))
@@ -162,15 +163,13 @@ object MultiPartHandler {
    * @param extraHops         routing hints to help the payer.
    * @param fallbackAddress   fallback Bitcoin address.
    * @param paymentPreimage   payment preimage.
-   * @param allowMultiPart    allow multi-part payments.
    */
   case class ReceivePayment(amount_opt: Option[MilliSatoshi],
                             description: String,
                             expirySeconds_opt: Option[Long] = None,
                             extraHops: List[List[ExtraHop]] = Nil,
                             fallbackAddress: Option[String] = None,
-                            paymentPreimage: Option[ByteVector32] = None,
-                            allowMultiPart: Boolean = false)
+                            paymentPreimage: Option[ByteVector32] = None)
 
   private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
