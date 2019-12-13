@@ -142,6 +142,8 @@ If you're using [IntelliJ](https://www.jetbrains.com/idea/), here are some usefu
 - Ctrl+Alt+L: format file (ensures consistency in the codebase)
 - Ctrl+Alt+o: optimize imports (removes unused imports)
 
+Note that we use IntelliJ's default formatting configuration for Scala to minimize conflicts.
+
 ### Contribution Checklist
 
 - The code being submitted is accompanied by tests which exercise both the positive and negative
