@@ -46,9 +46,8 @@ case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
-                      globalFeatures: ByteVector,
-                      localFeatures: ByteVector,
-                      overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)],
+                      features: ByteVector,
+                      overrideFeatures: Map[PublicKey, ByteVector],
                       syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
@@ -170,11 +169,10 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val overrideFeatures: Map[PublicKey, (ByteVector, ByteVector)] = config.getConfigList("override-features").map { e =>
+    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val gf = ByteVector.fromValidHex(e.getString("global-features"))
-      val lf = ByteVector.fromValidHex(e.getString("local-features"))
-      p -> (gf, lf)
+      val f = ByteVector.fromValidHex(e.getString("features"))
+      p -> f
     }.toMap
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
@@ -219,8 +217,7 @@ object NodeParams {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      globalFeatures = ByteVector.fromValidHex(config.getString("global-features")),
-      localFeatures = ByteVector.fromValidHex(config.getString("local-features")),
+      features = ByteVector.fromValidHex(config.getString("features")),
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
