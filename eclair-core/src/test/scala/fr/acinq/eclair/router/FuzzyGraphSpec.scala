@@ -1,45 +1,39 @@
 package fr.acinq.eclair.router
 
 import java.io._
-import java.nio.file.{Files, Paths}
+import java.nio.file.Paths
 import java.sql.DriverManager
-import java.util.zip.{GZIPInputStream, GZIPOutputStream, ZipEntry, ZipOutputStream}
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.api._
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAddress}
-import org.json4s.{FileInput, jackson}
+import fr.acinq.eclair.wire.ChannelCodecsSpec.JsonSupport._
+import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.{CltvExpiryDelta, ShortChannelId, _}
+import org.json4s.jackson
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
-import scala.util.{Failure, Random, Success}
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
+import scala.util.{Failure, Random, Success}
 
 class FuzzyGraphSpec extends FunSuite {
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer + new ColorSerializer + new RouteResponseSerializer + new ThrowableSerializer + new FailureMessageSerializer + new NodeAddressSerializer + new DirectionSerializer + new PaymentRequestSerializer
-  implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
-
-  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBaseMsat = 21000, maxFeePct = 0.5, routeMaxCltv = 3016, routeMaxLength = 10, ratios = Some(WeightRatios(
+  implicit val formats = org.json4s.DefaultFormats + new ByteVectorSerializer + new ByteVector32Serializer + new UInt64Serializer + new MilliSatoshiSerializer + new ShortChannelIdSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointSerializer + new OutPointKeySerializer + new InputInfoSerializer
+  lazy val initChannelUpdates = TreeMap(loadFromMockGZIPCsvFile("src/test/resources/mockNetwork.csv.gz").toArray: _*)
+  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBase = 21000 msat, maxFeePct = 0.5, routeMaxCltv = CltvExpiryDelta(3016), routeMaxLength = 10, ratios = Some(WeightRatios(
     cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5
   )))
+  val AMOUNT_TO_ROUTE = 1000 sat
 
-  val AMOUNT_TO_ROUTE = MilliSatoshi(1000000).toLong // 1000sat
-
-  lazy val initChannelUpdates = loadFromMockGZIPCsvFile("src/test/resources/mockNetwork.csv.gz")
-
-//  writeToCsvFile("src/test/resources/mockNetwork.csv.gz", initChannelUpdates)
+  //  writeToCsvFile("src/test/resources/mockNetwork.csv.gz", initChannelUpdates)
 
   test("find 500 paths between random nodes in the graph") {
-
     val g = DirectedGraph.makeGraph(initChannelUpdates)
     val nodes = g.vertexSet().toList
 
@@ -49,7 +43,7 @@ class FuzzyGraphSpec extends FunSuite {
       val fallbackRoute = connectNodes(randomSource, randomTarget, g, nodes, length = 8)
       val g1 = fallbackRoute.foldLeft(g)((acc, edge) => acc.addEdge(edge))
 
-      Router.findRoute(g1, randomSource, randomTarget, AMOUNT_TO_ROUTE, 0, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS) match {
+      Router.findRoute(g1, randomSource, randomTarget, AMOUNT_TO_ROUTE.toMilliSatoshi, 0, Set.empty, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS, 123) match {
         case Failure(exception) => throw exception
         case Success(_) =>
       }
@@ -80,7 +74,7 @@ class FuzzyGraphSpec extends FunSuite {
         capacityFactor = 1 - high
       )
 
-      Router.findRoute(g1, randomSource, randomTarget, 1000000, 0, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS.copy(ratios = Some(wr))) match {
+      Router.findRoute(g1, randomSource, randomTarget, 1000000 msat, 0, Set.empty, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS.copy(ratios = Some(wr)), 123) match {
         case Failure(exception) =>
           println(s"{$wr} $randomSource  -->  $randomTarget")
           throw exception
@@ -90,25 +84,101 @@ class FuzzyGraphSpec extends FunSuite {
     true
   }
 
-  // picks an arbitrary number of random nodes over a given list, guarantees there are no repetitions
-  def pickRandomNodes(nodes: Seq[PublicKey], number: Int): List[PublicKey] = {
-    val resultList = new mutable.MutableList[PublicKey]()
-    val size = nodes.size
+  // used to load the graph from a sqlite db file
+  def loadFromDB(location: String, maxNodes: Int): Map[ShortChannelId, PublicChannel] = {
+    val networkDbFile = Paths.get(location).toFile
+    val dbConnection = DriverManager.getConnection(s"jdbc:sqlite:$networkDbFile")
+    val db = new SqliteNetworkDb(dbConnection)
 
-    (0 until number).foreach { _ =>
-      var found = false
+    val channels = db.listChannels()
+    val networkNodes = (channels.map(_._2.ann.nodeId1).toSet ++ channels.map(_._2.ann.nodeId1).toSet).toSeq
+    val nodesAmountSize = networkNodes.size
+    val nodes = mutable.Set.empty[PublicKey]
 
-      while (!found) {
-        val r = Random.nextInt(size)
-        val node = nodes(r)
-        if (!resultList.contains(node)) {
-          resultList += node
-          found = true
-        }
-      }
+    // pick #maxNodes random nodes
+    for (_ <- 0 to maxNodes) {
+      val randomNode = Random.nextInt(nodesAmountSize)
+      nodes += networkNodes(randomNode)
     }
 
-    resultList.toList
+    val filtered = channels.filter { case (_, u) =>
+      nodes.contains(u.ann.nodeId1) || nodes.contains(u.ann.nodeId2)
+    }
+
+    filtered
+  }
+
+  /**
+    * Utils to read/write the mock network db, uses a custom encoding that strips signatures
+    * and writes a csv formatted output to a zip compressed file.
+    */
+  def writeToCsvFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
+    val mockFile = Paths.get(location).toFile
+    if (!mockFile.exists()) mockFile.createNewFile()
+    val out = new GZIPOutputStream(new FileOutputStream(mockFile)) // GZIPOutputStream is already buffered
+    println(s"Writing to $location '${updates.size}' updates")
+    val header = "shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat \n"
+    out.write(header.getBytes)
+    updates.foreach { case (desc, update) =>
+      val row = desc.shortChannelId + "," +
+        desc.a + "," +
+        desc.b + "," +
+        update.messageFlags + "," +
+        update.channelFlags + "," +
+        update.cltvExpiryDelta + "," +
+        update.htlcMinimumMsat + "," +
+        update.feeBaseMsat + "," +
+        update.feeProportionalMillionths + "," +
+        update.htlcMaximumMsat.getOrElse(-1) + "\n"
+
+      out.write(row.getBytes)
+    }
+    out.close()
+  }
+
+  def loadFromMockGZIPCsvFile(location: String): Map[ShortChannelId, PublicChannel] = {
+    val mockFile = Paths.get(location).toFile
+    val in = new GZIPInputStream(new FileInputStream(mockFile))
+    val lines = new String(in.readAllBytes()).split("\n")
+    println(s"loading ${lines.size} updates from '$location'")
+    lines.drop(1).map { row =>
+      val Array(shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat) = row.split(",")
+      val scId = ShortChannelId(shortChannelId)
+      val update = ChannelUpdate(
+        ByteVector64.Zeroes,
+        ByteVector32.Zeroes,
+        ShortChannelId(shortChannelId),
+        0,
+        messageFlags.trim.toByte,
+        channelFlags.trim.toByte,
+        CltvExpiryDelta(cltvExpiryDelta.trim.toInt),
+        htlcMinimumMsat.trim.toLong.msat,
+        feeBaseMsat.trim.toLong.msat,
+        feeProportionalMillionths.trim.toLong,
+        htlcMaximumMsat.trim.toLong match {
+          case -1 => None
+          case other => Some(other.msat)
+        }
+      )
+
+      val ann = Announcements.makeChannelAnnouncement(
+        Block.LivenetGenesisBlock.hash,
+        scId,
+        PublicKey(ByteVector.fromValidHex(a)),
+        PublicKey(ByteVector.fromValidHex(b)),
+        PublicKey(ByteVector.fromValidHex(a)),
+        PublicKey(ByteVector.fromValidHex(b)),
+        ByteVector64.Zeroes,
+        ByteVector64.Zeroes,
+        ByteVector64.Zeroes,
+        ByteVector64.Zeroes
+      )
+
+      val update1 = if (Announcements.isNode1(update.channelFlags)) Some(update) else None
+      val update2 = if (!Announcements.isNode1(update.channelFlags)) Some(update) else None
+
+      scId -> PublicChannel(ann, ByteVector32.One, 2000 sat, update1, update2)
+    }.toMap
   }
 
   /**
@@ -116,7 +186,6 @@ class FuzzyGraphSpec extends FunSuite {
     * high fee, low capacity, recent-aged and higher than average cltv
     */
   private def connectNodes(source: PublicKey, target: PublicKey, g: DirectedGraph, nodes: List[PublicKey], length: Int = 6): Seq[GraphEdge] = {
-
     // pick 'length' conjunctions and add source/target at the beginning/end
     val randomNodes = source +: pickRandomNodes(nodes, length - 2) :+ target
 
@@ -138,10 +207,10 @@ class FuzzyGraphSpec extends FunSuite {
         timestamp = 0,
         messageFlags = 1,
         channelFlags = 0,
-        cltvExpiryDelta = 244,
-        htlcMinimumMsat = 0,
-        htlcMaximumMsat = Some(AMOUNT_TO_ROUTE * 3),
-        feeBaseMsat = 2000,
+        cltvExpiryDelta = CltvExpiryDelta(244),
+        htlcMinimumMsat = 0 msat,
+        htlcMaximumMsat = Some(AMOUNT_TO_ROUTE * 3 toMilliSatoshi),
+        feeBaseMsat = 2000 msat,
         feeProportionalMillionths = 100
       )
 
@@ -149,96 +218,23 @@ class FuzzyGraphSpec extends FunSuite {
     }
   }
 
-  def loadFromDB(location: String, maxNodes: Int): Map[ChannelDesc, ChannelUpdate] = {
-    val networkDbFile = Paths.get(location).toFile
-    val dbConnection = DriverManager.getConnection(s"jdbc:sqlite:$networkDbFile")
-    val db = new SqliteNetworkDb(dbConnection)
-
-    val channels = db.listChannels()
-    val updates = db.listChannelUpdates()
-    val initChannels = channels.keys.foldLeft(TreeMap.empty[ShortChannelId, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
-    val initChannelUpdatesDB = updates.map { u =>
-      val desc = Router.getDesc(u, initChannels(u.shortChannelId))
-      desc -> u
-    }.toMap
-
-    val networkNodes = initChannelUpdatesDB.map(_._1.a).toSeq
-    val nodesAmountSize = networkNodes.size
-    val nodes = mutable.Set.empty[PublicKey]
-
-    // pick #maxNodes random nodes
-    for (_ <- 0 to maxNodes) {
-      val randomNode = Random.nextInt(nodesAmountSize)
-      nodes += networkNodes(randomNode)
-    }
-
-    val updatesFiltered = initChannelUpdatesDB.filter { case (d, u) =>
-      nodes.contains(d.a) || nodes.contains(d.b)
-    }
-
-    updatesFiltered
-  }
-
-  /**
-    * Utils to read/write the mock network db, uses a custom encoding that strips signatures
-    * and writes a csv formatted output to a zip compressed file.
-    */
-
-  def writeToCsvFile(location: String, updates: Map[ChannelDesc, ChannelUpdate]) = {
-
-    val mockFile = Paths.get(location).toFile
-    if (!mockFile.exists()) mockFile.createNewFile()
-
-    val out = new GZIPOutputStream(new FileOutputStream(mockFile)) // GZIPOutputStream is already buffered
-
-    println(s"Writing to $location '${updates.size}' updates")
-    val header = "shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat \n"
-    out.write(header.getBytes)
-
-    updates.foreach { case (desc, update) =>
-      val row = desc.shortChannelId + "," +
-        desc.a + "," +
-        desc.b + "," +
-        update.messageFlags + "," +
-        update.channelFlags + "," +
-        update.cltvExpiryDelta  + "," +
-        update.htlcMinimumMsat + "," +
-        update.feeBaseMsat + "," +
-        update.feeProportionalMillionths + "," +
-        update.htlcMaximumMsat.getOrElse(-1) + "\n"
-
-      out.write(row.getBytes)
-    }
-    out.close()
-  }
-
-  def loadFromMockGZIPCsvFile(location: String): Map[ChannelDesc, ChannelUpdate] = {
-    val mockFile = Paths.get(location).toFile
-    val in = new GZIPInputStream(new FileInputStream(mockFile))
-    val lines = new String(in.readAllBytes()).split("\n")
-    println(s"loading ${lines.size} updates from '$location'")
-    lines.drop(1).map { row =>
-      val Array(shortChannelId, a, b, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat) = row.split(",")
-      val desc = ChannelDesc(ShortChannelId(shortChannelId), PublicKey(ByteVector.fromValidHex(a)), PublicKey(ByteVector.fromValidHex(b)))
-      val update = ChannelUpdate(
-        ByteVector64.Zeroes,
-        ByteVector32.Zeroes,
-        ShortChannelId(shortChannelId),
-        0,
-        messageFlags.trim.toByte,
-        channelFlags.trim.toByte,
-        cltvExpiryDelta.trim.toInt,
-        htlcMinimumMsat.trim.toLong,
-        feeBaseMsat.trim.toLong,
-        feeProportionalMillionths.trim.toLong,
-        htlcMaximumMsat.trim.toLong match {
-          case -1 => None
-          case other => Some(other)
+  // picks an arbitrary number of random nodes over a given list, guarantees there are no repetitions
+  def pickRandomNodes(nodes: Seq[PublicKey], number: Int): List[PublicKey] = {
+    val resultList = new mutable.MutableList[PublicKey]()
+    val size = nodes.size
+    (0 until number).foreach { _ =>
+      var found = false
+      while (!found) {
+        val r = Random.nextInt(size)
+        val node = nodes(r)
+        if (!resultList.contains(node)) {
+          resultList += node
+          found = true
         }
-      )
-
-      desc -> update
-    }.toMap
+      }
+    }
+    resultList.toList
   }
+
 
 }
