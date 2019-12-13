@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 import scodec.bits.ByteVector
 
-import scala.collection.SortedMap
+import scala.collection.{Set, SortedMap}
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -39,9 +40,9 @@ import scala.util.Try
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
-  import ZmqWatcher.TickNewBlock
+  import ZmqWatcher._
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
@@ -50,17 +51,23 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
 
-  def receive: Receive = watching(Set(), SortedMap(), None)
+  def receive: Receive = watching(Set(), Map(), SortedMap(), None)
 
-  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
+  def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      //log.debug(s"analyzing txid=${tx.txid} tx=$tx")
-      watches.collect {
-        case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          self ! TriggerEvent(w, WatchEventSpentBasic(event))
-        case w@WatchSpent(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          self ! TriggerEvent(w, WatchEventSpent(event, tx))
+      KamonExt.time("watcher.newtx.checkwatch.time") {
+        log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+        tx.txIn
+          .map(_.outPoint)
+          .flatMap(watchedUtxos.get)
+          .flatten // List[Watch] -> Watch
+          .collect {
+            case w: WatchSpentBasic =>
+              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+            case w: WatchSpent =>
+              self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+          }
       }
 
     case NewBlock(block) =>
@@ -70,30 +77,37 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row
       val task = context.system.scheduler.scheduleOnce(2 seconds, self, TickNewBlock)
-      context become watching(watches, block2tx, Some(task))
+      context become watching(watches, watchedUtxos, block2tx, Some(task))
 
     case TickNewBlock =>
       client.getBlockCount.map {
         case count =>
           log.debug(s"setting blockCount=$count")
-          Globals.blockCount.set(count)
+          blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
-      watches.collect { case w: WatchConfirmed => checkConfirmed(w) }
-      context become (watching(watches, block2tx, None))
+      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+        Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
+      }
+      context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
       log.info(s"triggering $w")
       w.channel ! e
-      // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
-      // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
-      if (!w.isInstanceOf[WatchSpent]) context.become(watching(watches - w, block2tx, None))
+      w match {
+        case _: WatchSpent =>
+          // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
+          // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
+          ()
+        case _ =>
+          context become watching(watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, None)
+      }
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
       toPublish.values.flatten.map(tx => publish(tx))
-      context.become(watching(watches, block2tx -- toPublish.keys, None))
+      context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, None)
     }
 
     case w: Watch if !watches.contains(w) =>
@@ -139,10 +153,10 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
       log.debug(s"adding watch $w for $sender")
       context.watch(w.channel)
-      context.become(watching(watches + w, block2tx, nextTick))
+      context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
 
     case PublishAsap(tx) =>
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
@@ -154,26 +168,29 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
-        context.become(watching(watches, block2tx1, None))
+        context become watching(watches, watchedUtxos, block2tx1, None)
       } else publish(tx)
 
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _) =>
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
-      val blockCount = Globals.blockCount.get()
+      val blockCount = this.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
       if (absTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
-        context.become(watching(watches, block2tx1, None))
+        context become watching(watches, watchedUtxos, block2tx1, None)
       } else publish(tx)
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
 
+    case GetTxWithMeta(txid) => client.getTransactionMeta(txid.toString()).pipeTo(sender)
+
     case Terminated(channel) =>
       // we remove watches associated to dead actor
       val deprecatedWatches = watches.filter(_.channel == channel)
-      context.become(watching(watches -- deprecatedWatches, block2tx, None))
+      val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
+      context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
     case 'watches => sender ! watches
 
@@ -197,10 +214,15 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   def checkConfirmed(w: WatchConfirmed) = {
     log.debug(s"checking confirmations of txid=${w.txId}")
+    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
+    // matter because this only happens once, when the watched transaction has reached min_depth
     client.getTxConfirmations(w.txId.toString).map {
       case Some(confirmations) if confirmations >= w.minDepth =>
-        client.getTransactionShortId(w.txId.toString).map {
-          case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index))
+        client.getTransaction(w.txId.toString).map {
+          case tx =>
+            client.getTransactionShortId(w.txId.toString).map {
+              case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
+          }
         }
     }
   }
@@ -209,8 +231,39 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
 object ZmqWatcher {
 
-  def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(client)(ec))
+  def props(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(blockCount, client)(ec))
 
   case object TickNewBlock
+
+  def utxo(w: Watch): Option[OutPoint] =
+    w match {
+      case w: WatchSpent => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case w: WatchSpentBasic => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case _ => None
+    }
+
+  /**
+    * The resulting map allows checking spent txes in constant time wrt number of watchers
+    */
+  def addWatchedUtxos(m: Map[OutPoint, Set[Watch]], w: Watch): Map[OutPoint, Set[Watch]] = {
+    utxo(w) match {
+      case Some(utxo) =>  m.get(utxo) match {
+        case Some(watches) => m + (utxo -> (watches + w))
+        case None => m + (utxo -> Set(w))
+      }
+      case None => m
+    }
+  }
+
+  def removeWatchedUtxos(m: Map[OutPoint, Set[Watch]], w: Watch): Map[OutPoint, Set[Watch]] = {
+    utxo(w) match {
+      case Some(utxo) => m.get(utxo) match {
+        case Some(watches) if watches - w == Set.empty => m - utxo
+        case Some(watches) => m + (utxo -> (watches - w))
+        case None => m
+      }
+      case None => m
+    }
+  }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,14 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import fr.acinq.eclair.gui.Handlers
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, QRCodeUtils}
+import grizzled.slf4j.Logging
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.scene.image.ImageView
 import javafx.stage.Stage
-
-import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, QRCodeUtils}
-import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 

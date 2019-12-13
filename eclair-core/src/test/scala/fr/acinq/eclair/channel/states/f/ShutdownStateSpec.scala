@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,31 @@
 
 package fr.acinq.eclair.channel.states.f
 
+import java.util.UUID
+
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.payment.relay.Relayer._
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
+import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
@@ -52,9 +57,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
-      val amount1 = 300000000
-      val expiry1 = 400144
-      val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
+      val amount1 = 300000000 msat
+      val expiry1 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+      val cmd1 = OutgoingPacket.buildCommand(UUID.randomUUID, h1, ChannelHop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount1, expiry1))._1.copy(commit = false)
       sender.send(alice, cmd1)
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -62,9 +67,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: Nil)
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
-      val amount2 = 200000000
-      val expiry2 = 400144
-      val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil)._1.copy(commit = false)
+      val amount2 = 200000000 msat
+      val expiry2 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+      val cmd2 = OutgoingPacket.buildCommand(UUID.randomUUID, h2, ChannelHop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount2, expiry2))._1.copy(commit = false)
       sender.send(alice, cmd2)
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -101,10 +106,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000, r1, cltvExpiry = 300000)
+    val add = CMD_ADD_HTLC(500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), None, Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -136,6 +141,16 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CMD_FULFILL_HTLC(1, ByteVector32.Zeroes))
     sender.expectMsg(Failure(InvalidHtlcPreimage(channelId(bob), 1)))
     assert(initialState == bob.stateData)
+  }
+
+  test("recv CMD_FULFILL_HTLC (acknowledge in case of failure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+
+    sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32)) // this will fail
+    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
   test("recv UpdateFulfillHtlc") { f =>
@@ -201,6 +216,15 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_FAIL_HTLC (acknowledge in case of failure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+    sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
+    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
+  }
+
   test("recv CMD_FAIL_MALFORMED_HTLC") { f =>
     import f._
     val sender = TestProbe()
@@ -217,18 +241,27 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION))
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
-  test("recv CMD_FAIL_HTLC (invalid failure_code)") { f =>
+  test("recv CMD_FAIL_MALFORMED_HTLC (invalid failure_code)") { f =>
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42))
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, 42))
     sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
+  }
+
+  test("recv CMD_FAIL_MALFORMED_HTLC (acknowledge in case of failure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION)) // this will fail
+    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
   test("recv UpdateFailHtlc") { f =>
@@ -347,7 +380,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // signature is invalid but it doesn't matter
-    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -359,7 +392,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector.fill(64)(0), Nil))
+    sender.send(bob, CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -418,7 +451,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-    sender.send(bob, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(bob, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -433,7 +466,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
-    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, Scalar(randomBytes32), Scalar(randomBytes32).toPoint))
+    sender.send(alice, RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
@@ -547,11 +580,11 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
-    // we first update the global variable so that we don't trigger a 'fee too different' error
-    Globals.feeratesPerKw.set(FeeratesPerKw.single(fee.feeratePerKw))
+    // we first update the feerates so that we don't trigger a 'fee too different' error
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
+    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 72120000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
     //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
@@ -604,7 +637,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed 2
-  val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+    val watch = alice2blockchain.expectMsgType[WatchConfirmed]
     assert(watch.event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
   }
 
@@ -612,9 +645,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val event = CurrentFeerates(FeeratesPerKw.single(20000))
+    val event = CurrentFeerates(FeeratesPerKw(100, 200, 600, 1200, 3600, 7200, 14400))
     sender.send(alice, event)
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.blocks_2))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(alice.feeTargets.commitmentBlockTarget)))
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
@@ -662,7 +695,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       claimHtlcTx.txOut(0).amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
-    assert(amountClaimed == Satoshi(774010))
+    assert(amountClaimed === 774040.sat)
 
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0)))
@@ -709,7 +742,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       claimHtlcTx.txOut(0).amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
-    assert(amountClaimed == Satoshi(481190))
+    assert(amountClaimed === 481210.sat)
 
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0)))
@@ -755,10 +788,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut(0).amount == Satoshi(284930))
-    assert(mainPenaltyTx.txOut(0).amount == Satoshi(195150))
-    assert(htlc1PenaltyTx.txOut(0).amount == Satoshi(194530))
-    assert(htlc2PenaltyTx.txOut(0).amount == Satoshi(294530))
+    assert(mainTx.txOut(0).amount === 284940.sat)
+    assert(mainPenaltyTx.txOut(0).amount === 195160.sat)
+    assert(htlc1PenaltyTx.txOut(0).amount === 194540.sat)
+    assert(htlc2PenaltyTx.txOut(0).amount === 294540.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

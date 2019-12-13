@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@
 package fr.acinq.eclair
 
 import java.io.File
+import java.net.ServerSocket
+
+import akka.event.DiagnosticLoggingAdapter
 
 object TestUtils {
 
@@ -27,5 +30,30 @@ object TestUtils {
     .props
     .get("buildDirectory") // this is defined if we run from maven
     .getOrElse(new File(sys.props("user.dir"), "target").getAbsolutePath) // otherwise we probably are in intellij, so we build it manually assuming that user.dir == path to the module
+
+  def availablePort: Int = synchronized {
+    var serverSocket: ServerSocket = null
+    try {
+      serverSocket = new ServerSocket(0)
+      serverSocket.getLocalPort
+    } finally {
+      if (serverSocket != null) {
+        serverSocket.close()
+      }
+    }
+  }
+
+  object NoLoggingDiagnostics extends DiagnosticLoggingAdapter {
+    override def isErrorEnabled: Boolean = false
+    override def isWarningEnabled: Boolean = false
+    override def isInfoEnabled: Boolean = false
+    override def isDebugEnabled: Boolean = false
+
+    override protected def notifyError(message: String): Unit = ()
+    override protected def notifyError(cause: Throwable, message: String): Unit = ()
+    override protected def notifyWarning(message: String): Unit = ()
+    override protected def notifyInfo(message: String): Unit = ()
+    override protected def notifyDebug(message: String): Unit = ()
+  }
 
 }

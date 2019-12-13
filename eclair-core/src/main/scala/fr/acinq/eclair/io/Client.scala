@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.io.Client.ConnectionFailed
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected, Socks5Error}
 import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
@@ -51,7 +52,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
           log.info(s"connecting to ${str(remoteAddress)}")
           (remoteAddress, None)
       }
-      IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(50 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
+      IO(Tcp) ! Tcp.Connect(peerOrProxyAddress, timeout = Some(20 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
       context become connecting(proxyParams_opt)
   }
 
@@ -101,16 +102,16 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, remoteAddress: Ine
   // we should not restart a failing socks client
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false) {
     case t =>
-      Logs.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+      Logs.withMdc(log)(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         t match {
           case Socks5Error(msg) => log.info(s"SOCKS5 error: $msg")
           case _ => log.error(t, "")
         }
-      }(log)
+      }
       SupervisorStrategy.Stop
   }
 
-  override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
+  override def mdc(currentMessage: Any): MDC = Logs.mdc(Some(LogCategory.CONNECTION), remoteNodeId_opt = Some(remoteNodeId))
 
   private def str(address: InetSocketAddress): String = s"${address.getHostString}:${address.getPort}"
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,20 @@
 
 package fr.acinq.eclair.channel
 
+import java.util.UUID
+
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
-import scodec.bits.ByteVector
-
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import scodec.bits.{BitVector, ByteVector}
 
 /**
-  * Created by PM on 20/05/2016.
-  */
+ * Created by PM on 20/05/2016.
+ */
 
 // @formatter:off
 
@@ -61,7 +61,6 @@ case object OFFLINE extends State
 case object SYNCING extends State
 case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends State
 case object ERR_FUNDING_LOST extends State
-case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
 
 /*
@@ -75,7 +74,7 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte)
+case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte, channelVersion: ChannelVersion)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
@@ -105,19 +104,30 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
        "Y8888P"   "Y88888P"  888       888 888       888 d88P     888 888    Y888 8888888P"   "Y8888P"
  */
 
+sealed trait Upstream
+object Upstream {
+  /** Our node is the origin of the payment. */
+  final case class Local(id: UUID) extends Upstream
+  /** Our node forwarded a single incoming HTLC to an outgoing channel. */
+  final case class Relayed(add: UpdateAddHtlc) extends Upstream
+}
+
 sealed trait Command
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: ByteVector32, cltvExpiry: Long, onion: ByteVector = Sphinx.LAST_PACKET.serialize, upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false, redirected: Boolean = false) extends Command
-final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command
-final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command
-final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command
+sealed trait HasHtlcIdCommand extends Command {
+  def id: Long
+}
+final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends HasHtlcIdCommand
+final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends HasHtlcIdCommand
+final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends HasHtlcIdCommand
+final case class CMD_ADD_HTLC(amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Upstream, commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
-final case object CMD_SIGN extends Command
+case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends Command
-final case class CMD_UPDATE_RELAY_FEE(feeBaseMsat: Long, feeProportionalMillionths: Long) extends Command
-final case object CMD_FORCECLOSE extends Command
-final case object CMD_GETSTATE extends Command
-final case object CMD_GETSTATEDATA extends Command
-final case object CMD_GETINFO extends Command
+final case class CMD_UPDATE_RELAY_FEE(feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends Command
+case object CMD_FORCECLOSE extends Command
+case object CMD_GETSTATE extends Command
+case object CMD_GETSTATEDATA extends Command
+case object CMD_GETINFO extends Command
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data)
 
 /*
@@ -148,12 +158,12 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: PublicKey, channelVersion: ChannelVersion, lastSent: OpenChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: PublicKey, channelFlags: Byte, channelVersion: ChannelVersion, lastSent: AcceptChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, channelVersion: ChannelVersion, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
-                                                 waitingSince: Long,
+                                                 waitingSince: Long, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[FundingLocked],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends Data with HasCommitments
@@ -170,10 +180,12 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
-  require(!closingTxProposed.isEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+  require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
+  require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
+                              fundingTx: Option[Transaction], // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
+                              waitingSince: Long, // how long since we initiated the closing
                               mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
@@ -182,18 +194,18 @@ final case class DATA_CLOSING(commitments: Commitments,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
   val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
-  require(spendingTxes.size > 0, "there must be at least one tx published in this state")
+  require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
-                             channelKeyPath: DeterministicWallet.KeyPath,
-                             dustLimitSatoshis: Long,
-                             maxHtlcValueInFlightMsat: UInt64,
-                             channelReserveSatoshis: Long,
-                             htlcMinimumMsat: Long,
-                             toSelfDelay: Int,
+                             fundingKeyPath: DeterministicWallet.KeyPath,
+                             dustLimit: Satoshi,
+                             maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                             channelReserve: Satoshi,
+                             htlcMinimum: MilliSatoshi,
+                             toSelfDelay: CltvExpiryDelta,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
@@ -201,22 +213,44 @@ final case class LocalParams(nodeId: PublicKey,
                              localFeatures: ByteVector)
 
 final case class RemoteParams(nodeId: PublicKey,
-                              dustLimitSatoshis: Long,
-                              maxHtlcValueInFlightMsat: UInt64,
-                              channelReserveSatoshis: Long,
-                              htlcMinimumMsat: Long,
-                              toSelfDelay: Int,
+                              dustLimit: Satoshi,
+                              maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                              channelReserve: Satoshi,
+                              htlcMinimum: MilliSatoshi,
+                              toSelfDelay: CltvExpiryDelta,
                               maxAcceptedHtlcs: Int,
                               fundingPubKey: PublicKey,
-                              revocationBasepoint: Point,
-                              paymentBasepoint: Point,
-                              delayedPaymentBasepoint: Point,
-                              htlcBasepoint: Point,
+                              revocationBasepoint: PublicKey,
+                              paymentBasepoint: PublicKey,
+                              delayedPaymentBasepoint: PublicKey,
+                              htlcBasepoint: PublicKey,
                               globalFeatures: ByteVector,
                               localFeatures: ByteVector)
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte
   val Empty = 0x00.toByte
+}
+
+case class ChannelVersion(bits: BitVector) {
+  require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
+
+  def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
+  def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
+  def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
+  def isSet(bit: Int) = bits.reverse.get(bit)
+}
+
+object ChannelVersion {
+  import scodec.bits._
+  val LENGTH_BITS = 4 * 8
+  val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
+  val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+
+  def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
+  val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
+
+  val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
 }
 // @formatter:on

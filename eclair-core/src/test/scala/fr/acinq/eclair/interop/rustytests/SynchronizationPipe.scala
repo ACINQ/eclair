@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,18 @@
 package fr.acinq.eclair.interop.rustytests
 
 import java.io.{BufferedWriter, File, FileWriter}
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{IN, OUT}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}
 
 /**
-  * Created by PM on 30/05/2016.
-  */
+ * Created by PM on 30/05/2016.
+ */
 
 
 /*
@@ -56,7 +57,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
 
     script match {
       case offer(x, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(amount.toInt, ByteVector32.fromValidHex(rhash), 144)
+        resolve(x) ! CMD_ADD_HTLC(MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r))
@@ -133,15 +134,15 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         s" Commit ${d.commitments.localCommit.index}:",
         s"  Offered htlcs: ${localCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
         s"  Received htlcs: ${localCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${localCommit.spec.toLocalMsat}",
-        s"  Balance them: ${localCommit.spec.toRemoteMsat}",
+        s"  Balance us: ${localCommit.spec.toLocal}",
+        s"  Balance them: ${localCommit.spec.toRemote}",
         s"  Fee rate: ${localCommit.spec.feeratePerKw}",
         "REMOTE COMMITS:",
         s" Commit ${remoteCommit.index}:",
         s"  Offered htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
         s"  Received htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${remoteCommit.spec.toLocalMsat}",
-        s"  Balance them: ${remoteCommit.spec.toRemoteMsat}",
+        s"  Balance us: ${remoteCommit.spec.toLocal}",
+        s"  Balance them: ${remoteCommit.spec.toRemote}",
         s"  Fee rate: ${remoteCommit.spec.feeratePerKw}")
         .foreach(s => {
           fout.write(rtrim(s))

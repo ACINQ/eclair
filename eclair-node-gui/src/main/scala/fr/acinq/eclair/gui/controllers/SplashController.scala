@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.gui.controllers
 
+import grizzled.slf4j.Logging
 import javafx.animation._
 import javafx.application.HostServices
 import javafx.fxml.FXML
@@ -23,8 +24,6 @@ import javafx.scene.control.{Button, Label}
 import javafx.scene.image.ImageView
 import javafx.scene.layout.{Pane, VBox}
 import javafx.util.Duration
-
-import grizzled.slf4j.Logging
 
 /**
   * Created by DPA on 22/09/2016.

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
   }
 
   override def addHeaders(startHeight: Int, headers: Seq[BlockHeader]): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)"), disableAutoCommit = true) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO headers VALUES (?, ?, ?)"), inTransaction = true) { statement =>
       var height = startHeight
       headers.foreach(header => {
         statement.setInt(1, height)
@@ -136,7 +136,7 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 object SqliteWalletDb {
 
   import fr.acinq.eclair.wire.ChannelCodecs._
-  import fr.acinq.eclair.wire.LightningMessageCodecs._
+  import fr.acinq.eclair.wire.CommonCodecs._
   import scodec.Codec
   import scodec.bits.BitVector
   import scodec.codecs._
@@ -145,7 +145,8 @@ object SqliteWalletDb {
     ("txid" | bytes32) ::
       ("merkle" | listOfN(uint16, bytes32)) ::
       ("block_height" | uint24) ::
-      ("pos" | uint24)).as[GetMerkleResponse]
+      ("pos" | uint24) ::
+      ("context_opt" | provide(Option.empty[Any]))).as[GetMerkleResponse]
 
   def serializeMerkleProof(proof: GetMerkleResponse): Array[Byte] = proofCodec.encode(proof).require.toByteArray
 
@@ -211,7 +212,7 @@ object SqliteWalletDb {
       ("history" | historyCodec) ::
       ("proofs" | proofsCodec) ::
       ("pendingTransactions" | listOfN(uint16, txCodec)) ::
-      ("locks" | setCodec(txCodec))).as[PersistentData]
+      ("locks" | provide(Set.empty[Transaction]))).as[PersistentData]
 
   def serialize(data: PersistentData): Array[Byte] = persistentDataCodec.encode(data).require.toByteArray
 

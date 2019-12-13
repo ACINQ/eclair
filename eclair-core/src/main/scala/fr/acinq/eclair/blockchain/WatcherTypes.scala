@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ final case class WatchLost(channel: ActorRef, txId: ByteVector32, minDepth: Long
 trait WatchEvent {
   def event: BitcoinEvent
 }
-final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIndex: Int) extends WatchEvent
+final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchEvent
 final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends WatchEvent
 final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
 final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
@@ -84,5 +84,8 @@ object UtxoStatus {
   case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus
 }
 final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
+
+final case class GetTxWithMeta(txid: ByteVector32)
+final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: Long)
 
 // @formatter:on

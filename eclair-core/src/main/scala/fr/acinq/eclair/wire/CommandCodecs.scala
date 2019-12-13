@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, Command}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, HasHtlcIdCommand}
+import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
-import fr.acinq.eclair.wire.LightningMessageCodecs._
 import scodec.Codec
 import scodec.codecs._
 
@@ -40,9 +40,8 @@ object CommandCodecs {
       ("failureCode" | uint16) ::
       ("commit" | provide(false))).as[CMD_FAIL_MALFORMED_HTLC]
 
-  val cmdCodec: Codec[Command] = discriminated[Command].by(uint16)
+  val cmdCodec: Codec[HasHtlcIdCommand] = discriminated[HasHtlcIdCommand].by(uint16)
     .typecase(0, cmdFulfillCodec)
     .typecase(1, cmdFailCodec)
     .typecase(2, cmdFailMalformedCodec)
-
 }

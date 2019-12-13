@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import scodec.bits.{ByteVector, _}
   * Created by fabrice on 12/12/16.
   */
 object NoiseDemo extends App {
-  implicit val system = ActorSystem("mySystem")
+  implicit val system = ActorSystem("test")
 
   class NoiseHandler(keyPair: KeyPair, rs: Option[ByteVector], them: ActorRef, isWriter: Boolean, listenerFactory: => ActorRef) extends Actor with Stash {
     // initiator must know pubkey (i.e long-term ID) of responder

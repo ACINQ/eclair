@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
-import org.scalatest.FunSuite
+import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi}
+import org.scalatest.{FunSuite, ParallelTestExecution}
 
-
-class CoinUtilsSpec  extends FunSuite {
+class CoinUtilsSpec  extends FunSuite with ParallelTestExecution {
 
   test("Convert string amount to the correct BtcAmount") {
     val am_btc: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1", BtcUnit.code)

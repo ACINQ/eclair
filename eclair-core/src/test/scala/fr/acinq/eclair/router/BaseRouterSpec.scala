@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,45 +20,47 @@ import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
 import org.scalatest.Outcome
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 
 /**
-  * Base class for router testing.
-  * It is re-used in payment FSM tests
-  * Created by PM on 29/08/2016.
-  */
+ * Base class for router testing.
+ * It is re-used in payment FSM tests
+ * Created by PM on 29/08/2016.
+ */
 
 abstract class BaseRouterSpec extends TestkitBaseClass {
 
   case class FixtureParam(router: ActorRef, watcher: TestProbe)
 
-  val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1)), compressed = true).publicKey
+  val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
-  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
-  val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
+  val seed = ByteVector32(ByteVector.fill(32)(2))
+  val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (testKeyManager.nodeKey.privateKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (a, b, c, d, e, f) = (testKeyManager.nodeId, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
 
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
-  //val DUMMY_SIG = hex"3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201"
-
-  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil)
-  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil)
-  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil)
-  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil)
-  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil)
-  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil)
+  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, hex"0200")
+  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, hex"")
+  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200")
+  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, hex"00")
+  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, hex"00")
+  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, hex"00")
 
   val channelId_ab = ShortChannelId(420000, 1, 0)
   val channelId_bc = ShortChannelId(420000, 2, 0)
@@ -76,14 +78,14 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
-  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L)
-  val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, cltvExpiryDelta = 7, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000L)
-  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 5, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000L)
-  val channelUpdate_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, cltvExpiryDelta = 5, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000L)
-  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L)
-  val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, cltvExpiryDelta = 3, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000L)
-  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
-  val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, cltvExpiryDelta = 9, htlcMinimumMsat = 0, feeBaseMsat = 10, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000L)
+  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
+  val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
 
   override def withFixture(test: OneArgTest): Outcome = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
@@ -127,10 +129,10 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       watcher.expectMsg(ValidateRequest(chan_cd))
       watcher.expectMsg(ValidateRequest(chan_ef))
       // and answers with valid scripts
-      watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_cd, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_ef, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_cd, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_ef, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       // watcher receives watch-spent request
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]

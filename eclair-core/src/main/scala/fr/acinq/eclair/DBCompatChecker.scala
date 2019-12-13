@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ object DBCompatChecker extends Logging {
     * @param nodeParams
     */
   def checkDBCompatibility(nodeParams: NodeParams): Unit =
-    Try(nodeParams.channelsDb.listChannels()) match {
+    Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleDBException
     }
@@ -39,7 +39,7 @@ object DBCompatChecker extends Logging {
     * @param nodeParams
     */
   def checkNetworkDBCompatibility(nodeParams: NodeParams): Unit =
-    Try(nodeParams.networkDb.listChannels(), nodeParams.networkDb.listNodes(), nodeParams.networkDb.listChannelUpdates()) match {
+    Try(nodeParams.db.network.listChannels(), nodeParams.db.network.listNodes()) match {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleNetworkDBException
     }

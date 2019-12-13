@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,8 +42,8 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     "eclair.chain" -> "regtest",
     "eclair.spv" -> false,
     "eclair.server.public-ips.1" -> "localhost",
-    "eclair.bitcoind.port" -> 28333,
-    "eclair.bitcoind.rpcport" -> 28332,
+    "eclair.bitcoind.port" -> bitcoindPort,
+    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false))
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
@@ -88,7 +88,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       port = config.getInt("bitcoind.rpcport"))
 
     // the regtest client doesn't have enough data to estimate fees yet, so it's suppose to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6))
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6, 7))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
@@ -99,7 +99,8 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       6 -> 1300,
       12 -> 1200,
       36 -> 1100,
-      72 -> 1000
+      72 -> 1000,
+      144 -> 900
     )
 
     val ref = FeeratesPerKB(
@@ -108,7 +109,8 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       blocks_6 = fees(6),
       blocks_12 = fees(12),
       blocks_36 = fees(36),
-      blocks_72 = fees(72))
+      blocks_72 = fees(72),
+      blocks_144 = fees(144))
 
     val mockBitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
@@ -118,13 +120,13 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
-          val feerate = satoshi2btc(Satoshi(fees(blocks))).amount
+          val feerate = satoshi2btc(Satoshi(fees(blocks))).toBigDecimal
           Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
       }
     }
 
-    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6))
+    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6, 7))
     mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }

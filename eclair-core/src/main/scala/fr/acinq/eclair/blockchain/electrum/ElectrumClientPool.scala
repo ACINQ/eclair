@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 ACINQ SAS
+ * Copyright 2019 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.io.InputStream
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
@@ -32,7 +32,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
+class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
   import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
@@ -88,15 +88,18 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
       stay
 
     case Event(Terminated(actor), d: ConnectedData) =>
-      log.info("lost connection to {}", addresses(actor))
+      val address = addresses(actor)
       addresses -= actor
       context.system.scheduler.scheduleOnce(5 seconds, self, Connect)
       val tips1 = d.tips - actor
       if (tips1.isEmpty) {
+        log.info("lost connection to {}, no active connections left", address)
         goto(Disconnected) using DisconnectedData // no more connections
       } else if (d.master != actor) {
+        log.info("lost connection to {}, we still have our master server", address)
         stay using d.copy(tips = tips1) // we don't care, this wasn't our master
       } else {
+        log.info("lost connection to our master server {}", address)
         // we choose next best candidate as master
         val tips1 = d.tips - actor
         val (bestClient, bestTip) = tips1.toSeq.maxBy(_._2._1)
@@ -106,7 +109,7 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
 
   whenUnhandled {
     case Event(Connect, _) =>
-      Random.shuffle(serverAddresses.toSeq diff addresses.values.toSeq).headOption match {
+      pickAddress(serverAddresses, addresses.values.toSet) match {
         case Some(ElectrumServerAddress(address, ssl)) =>
           val resolved = new InetSocketAddress(address.getHostName, address.getPort)
           val client = context.actorOf(Props(new ElectrumClient(resolved, ssl)))
@@ -163,10 +166,10 @@ class ElectrumClientPool(serverAddresses: Set[ElectrumServerAddress])(implicit v
 
   private def updateBlockCount(blockCount: Long): Unit = {
     // when synchronizing we don't want to advertise previous blocks
-    if (Globals.blockCount.get() < blockCount) {
+    if (this.blockCount.get() < blockCount) {
       log.debug("current blockchain height={}", blockCount)
       context.system.eventStream.publish(CurrentBlockCount(blockCount))
-      Globals.blockCount.set(blockCount)
+      this.blockCount.set(blockCount)
     }
   }
 }
@@ -209,6 +212,16 @@ object ElectrumClientPool {
     addresses.toSet
   } finally {
     stream.close()
+  }
+
+  /**
+    *
+    * @param serverAddresses all addresses to choose from
+    * @param usedAddresses current connections
+    * @return a random address that we're not connected to yet
+    */
+  def pickAddress(serverAddresses: Set[ElectrumServerAddress], usedAddresses: Set[InetSocketAddress]): Option[ElectrumServerAddress] = {
+    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress)).toSeq).headOption
   }
 
   // @formatter:off
