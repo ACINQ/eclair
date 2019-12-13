@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing._
 import org.scalatest.FunSuite
@@ -28,7 +29,7 @@ class HelpersSpec extends FunSuite {
 
   test("compute refresh delay") {
     import org.scalatest.Matchers._
-    implicit val log = akka.event.NoLogging
+    implicit val log = NoLoggingDiagnostics
     Helpers.nextChannelUpdateRefresh(1544400000).toSeconds should equal(0)
     Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)

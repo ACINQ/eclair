@@ -25,8 +25,8 @@ import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet, Satoshi, Transactio
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.{ChannelFlags, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
@@ -101,7 +101,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     router.send(payFsm, GetNetworkStatsResponse(Some(emptyStats)))
     relayer.expectMsg(GetOutgoingChannels())
     awaitCond(payFsm.stateName === WAIT_FOR_CHANNEL_BALANCES)
-    assert(payFsm.stateData.asInstanceOf[PaymentProgress].networkStats === Some(emptyStats))
+    assert(payFsm.stateData.asInstanceOf[WaitingForChannelBalances].networkStats === Some(emptyStats))
   }
 
   test("get network statistics not available") { f =>
@@ -118,7 +118,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     router.expectMsg(TickComputeNetworkStats)
     relayer.expectMsg(GetOutgoingChannels())
     awaitCond(payFsm.stateName === WAIT_FOR_CHANNEL_BALANCES)
-    assert(payFsm.stateData.asInstanceOf[PaymentProgress].networkStats === None)
+    assert(payFsm.stateData.asInstanceOf[WaitingForChannelBalances].networkStats === None)
 
     relayer.send(payFsm, localChannels())
     awaitCond(payFsm.stateName === PAYMENT_IN_PROGRESS)
@@ -129,14 +129,22 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
 
   test("send to peer node via multiple channels") { f =>
     import f._
-    val payment = SendMultiPartPayment(paymentHash, randomBytes32, b, 2000 * 1000 msat, expiry, 1)
+    val payment = SendMultiPartPayment(paymentHash, randomBytes32, b, 2000 * 1000 msat, expiry, 3)
+    // When sending to a peer node, we should not filter out unannounced channels.
+    val channels = OutgoingChannels(Seq(
+      OutgoingChannel(c, channelUpdate_ac_2, makeCommitments(1000 * 1000 msat, 0)),
+      OutgoingChannel(c, channelUpdate_ac_3, makeCommitments(1500 * 1000 msat, 0)),
+      OutgoingChannel(b, channelUpdate_ab_1.copy(channelFlags = ChannelFlags.Empty), makeCommitments(1000 * 1000 msat, 0, announceChannel = false)),
+      OutgoingChannel(b, channelUpdate_ab_2.copy(channelFlags = ChannelFlags.Empty), makeCommitments(1500 * 1000 msat, 0, announceChannel = false)),
+      OutgoingChannel(d, channelUpdate_ad_1, makeCommitments(1000 * 1000 msat, 0))))
     // Network statistics should be ignored when sending to peer.
-    initPayment(f, payment, emptyStats, localChannels(0))
+    initPayment(f, payment, emptyStats, channels)
 
     // The payment should be split in two, using direct channels with b.
+    // MaxAttempts should be set to 1 when using direct channels to the destination.
     childPayFsm.expectMsgAllOf(
-      SendPayment(paymentHash, b, Onion.createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_1))),
-      SendPayment(paymentHash, b, Onion.createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_2)))
+      SendPayment(paymentHash, b, Onion.createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_1.copy(channelFlags = ChannelFlags.Empty)))),
+      SendPayment(paymentHash, b, Onion.createMultiPartPayload(1000 * 1000 msat, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_2.copy(channelFlags = ChannelFlags.Empty))))
     )
     childPayFsm.expectNoMsg(50 millis)
     val childIds = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.toSeq
@@ -302,6 +310,23 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.amount === payment.totalAmount)
   }
 
+  test("skip unannounced channels when sending to remote node") { f =>
+    import f._
+
+    // The channels to b are not announced: they should be ignored so the payment should fail.
+    val channels = OutgoingChannels(Seq(
+      OutgoingChannel(b, channelUpdate_ab_1.copy(channelFlags = ChannelFlags.Empty), makeCommitments(1000 * 1000 msat, 10, announceChannel = false)),
+      OutgoingChannel(b, channelUpdate_ab_2.copy(channelFlags = ChannelFlags.Empty), makeCommitments(1500 * 1000 msat, 10, announceChannel = false)),
+      OutgoingChannel(c, channelUpdate_ac_1, makeCommitments(500 * 1000 msat, 10))
+    ))
+    val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 1200 * 1000 msat, expiry, 3)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), channels)
+
+    val result = sender.expectMsgType[PaymentFailed]
+    assert(result.id === paymentId)
+    assert(result.paymentHash === paymentHash)
+  }
+
   test("retry after error") { f =>
     import f._
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 3)
@@ -310,20 +335,29 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), testChannels)
     waitUntilAmountSent(f, payment.totalAmount)
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
-    val childIds = pending.keys.toSeq
     assert(pending.size > 2)
 
-    // Simulate two failures.
-    val failures = Seq(LocalFailure(new RuntimeException("418 I'm a teapot")), UnreadableRemoteFailure(Nil))
-    childPayFsm.send(payFsm, PaymentFailed(childIds.head, paymentHash, failures.slice(0, 1)))
-    childPayFsm.send(payFsm, PaymentFailed(childIds(1), paymentHash, failures.slice(1, 2)))
+    // Simulate a local channel failure and a remote failure.
+    val faultyLocalChannelId = getFirstHopShortChannelId(pending.head._2)
+    val faultyLocalPayments = pending.filter { case (_, p) => getFirstHopShortChannelId(p) == faultyLocalChannelId }
+    val faultyRemotePayment = pending.filter { case (_, p) => getFirstHopShortChannelId(p) != faultyLocalChannelId }.head
+    faultyLocalPayments.keys.foreach(id => {
+      childPayFsm.send(payFsm, PaymentFailed(id, paymentHash, LocalFailure(RouteNotFound) :: Nil))
+    })
+    childPayFsm.send(payFsm, PaymentFailed(faultyRemotePayment._1, paymentHash, UnreadableRemoteFailure(Nil) :: Nil))
+
     // We should ask for updated balance to take into account pending payments.
     relayer.expectMsg(GetOutgoingChannels())
     relayer.send(payFsm, testChannels.copy(channels = testChannels.channels.dropRight(2)))
 
+    // The channel that lead to a RouteNotFound should be ignored.
+    assert(payFsm.stateData.asInstanceOf[PaymentProgress].ignoreChannels === Set(faultyLocalChannelId))
+
     // New payments should be sent that match the failed amount.
-    waitUntilAmountSent(f, pending(childIds.head).finalPayload.amount + pending(childIds(1)).finalPayload.amount)
-    assert(payFsm.stateData.asInstanceOf[PaymentProgress].failures.toSet === failures.toSet)
+    waitUntilAmountSent(f, faultyRemotePayment._2.finalPayload.amount + faultyLocalPayments.values.map(_.finalPayload.amount).sum)
+    val stateData = payFsm.stateData.asInstanceOf[PaymentProgress]
+    assert(stateData.failures.toSet === Set(LocalFailure(RouteNotFound), UnreadableRemoteFailure(Nil)))
+    assert(stateData.pending.values.forall(p => getFirstHopShortChannelId(p) != faultyLocalChannelId))
   }
 
   test("cannot send (not enough capacity on local channels)") { f =>
@@ -338,7 +372,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.id === paymentId)
     assert(result.paymentHash === paymentHash)
     assert(result.failures.length === 1)
-    assert(result.failures.head.asInstanceOf[LocalFailure].t.getMessage === "balance is too low")
+    assert(result.failures.head.asInstanceOf[LocalFailure].t === BalanceTooLow)
   }
 
   test("cannot send (fee rate too high)") { f =>
@@ -353,7 +387,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.id === paymentId)
     assert(result.paymentHash === paymentHash)
     assert(result.failures.length === 1)
-    assert(result.failures.head.asInstanceOf[LocalFailure].t.getMessage === "balance is too low")
+    assert(result.failures.head.asInstanceOf[LocalFailure].t === BalanceTooLow)
   }
 
   test("payment timeout") { f =>
@@ -365,6 +399,19 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
 
     // If we receive a timeout failure, we directly abort the payment instead of retrying.
     childPayFsm.send(payFsm, PaymentFailed(childId1, paymentHash, RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(e, PaymentTimeout)) :: Nil))
+    relayer.expectNoMsg(50 millis)
+    awaitCond(payFsm.stateName === PAYMENT_ABORTED)
+  }
+
+  test("failure received from final recipient") { f =>
+    import f._
+    val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 5)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    waitUntilAmountSent(f, payment.totalAmount)
+    val (childId1, _) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
+
+    // If we receive a failure from the final node, we directly abort the payment instead of retrying.
+    childPayFsm.send(payFsm, PaymentFailed(childId1, paymentHash, RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(e, IncorrectOrUnknownPaymentDetails(3000 * 1000 msat, 42))) :: Nil))
     relayer.expectNoMsg(50 millis)
     awaitCond(payFsm.stateName === PAYMENT_ABORTED)
   }
@@ -396,7 +443,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.paymentHash === paymentHash)
     assert(result.failures.length === 3)
     assert(result.failures.slice(0, 2) === failures)
-    assert(result.failures.last.asInstanceOf[LocalFailure].t.getMessage === "payment attempts exhausted without success")
+    assert(result.failures.last.asInstanceOf[LocalFailure].t === RetryExhausted)
   }
 
   test("receive partial failure after success (recipient spec violation)") { f =>
@@ -465,8 +512,6 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
       assert(remaining === 0.msat, fuzzParams)
       assert(payments.nonEmpty, fuzzParams)
       assert(payments.map(_.finalPayload.amount).sum === toSend, fuzzParams)
-      // Verify that we're not generating tiny HTLCs.
-      assert(payments.forall(_.finalPayload.amount > 50.msat), fuzzParams)
     }
   }
 
@@ -495,7 +540,7 @@ object MultiPartPaymentLifecycleSpec {
   val channelId_ac_2 = ShortChannelId(12)
   val channelId_ac_3 = ShortChannelId(13)
   val channelId_ad_1 = ShortChannelId(21)
-  val defaultChannelUpdate = ChannelUpdate(randomBytes64, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, 0, CltvExpiryDelta(12), 1 msat, 0 msat, 0, Some(2000 * 1000 msat))
+  val defaultChannelUpdate = ChannelUpdate(randomBytes64, Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0, 1, ChannelFlags.AnnounceChannel, CltvExpiryDelta(12), 1 msat, 0 msat, 0, Some(2000 * 1000 msat))
   val channelUpdate_ab_1 = defaultChannelUpdate.copy(shortChannelId = channelId_ab_1, cltvExpiryDelta = CltvExpiryDelta(4), feeBaseMsat = 100 msat, feeProportionalMillionths = 70)
   val channelUpdate_ab_2 = defaultChannelUpdate.copy(shortChannelId = channelId_ab_2, cltvExpiryDelta = CltvExpiryDelta(4), feeBaseMsat = 100 msat, feeProportionalMillionths = 70)
   val channelUpdate_ac_1 = defaultChannelUpdate.copy(shortChannelId = channelId_ac_1, cltvExpiryDelta = CltvExpiryDelta(5), feeBaseMsat = 150 msat, feeProportionalMillionths = 40)
@@ -518,7 +563,7 @@ object MultiPartPaymentLifecycleSpec {
 
   val emptyStats = NetworkStats(0, 0, Stats(Seq(0), d => Satoshi(d.toLong)), Stats(Seq(0), d => CltvExpiryDelta(d.toInt)), Stats(Seq(0), d => MilliSatoshi(d.toLong)), Stats(Seq(0), d => d.toLong))
 
-  def makeCommitments(canSend: MilliSatoshi, feeRatePerKw: Long): Commitments = {
+  def makeCommitments(canSend: MilliSatoshi, feeRatePerKw: Long, announceChannel: Boolean = true): Commitments = {
     import fr.acinq.eclair.channel._
     import fr.acinq.eclair.crypto.ShaChain
     // We are only interested in availableBalanceForSend so we can put dummy values in most places.
@@ -529,7 +574,7 @@ object MultiPartPaymentLifecycleSpec {
       ChannelVersion.STANDARD,
       localParams,
       remoteParams,
-      channelFlags = 0x01.toByte,
+      channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
       LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, canSend, 0 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
       RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, 0 msat, canSend), randomBytes32, randomKey.publicKey),
       LocalChanges(Nil, Nil, Nil),

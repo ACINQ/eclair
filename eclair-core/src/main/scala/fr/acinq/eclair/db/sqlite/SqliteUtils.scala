@@ -17,8 +17,10 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet, Statement}
+import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.MilliSatoshi
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 
@@ -84,22 +86,12 @@ object SqliteUtils {
   }
 
   /**
-   * This helper retrieves the value from a nullable integer column and interprets it as an option. This is needed
-   * because `rs.getLong` would return `0` for a null value.
-   * It is used on Android only
-   */
-  def getNullableLong(rs: ResultSet, label: String): Option[Long] = {
-    val result = rs.getLong(label)
-    if (rs.wasNull()) None else Some(result)
-  }
-
-  /**
    * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
    * accesses the database file (see https://www.sqlite.org/pragma.html).
    *
    * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
    */
-  def obtainExclusiveLock(sqlite: Connection) {
+  def obtainExclusiveLock(sqlite: Connection) = synchronized {
     val statement = sqlite.createStatement()
     statement.execute("PRAGMA locking_mode = EXCLUSIVE")
     // we have to make a write to actually obtain the lock
@@ -128,6 +120,21 @@ object SqliteUtils {
     def getStringNullable(columnLabel: String): Option[String] = {
       val result = rs.getString(columnLabel)
       if (rs.wasNull()) None else Some(result)
+    }
+
+    def getLongNullable(columnLabel: String): Option[Long] = {
+      val result = rs.getLong(columnLabel)
+      if (rs.wasNull()) None else Some(result)
+    }
+
+    def getUUIDNullable(label: String): Option[UUID] = {
+      val result = rs.getString(label)
+      if (rs.wasNull()) None else Some(UUID.fromString(result))
+    }
+
+    def getMilliSatoshiNullable(label: String): Option[MilliSatoshi] = {
+      val result = rs.getLong(label)
+      if (rs.wasNull()) None else Some(MilliSatoshi(result))
     }
 
   }
