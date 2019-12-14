@@ -28,6 +28,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         override val payments: PaymentsDb = Alice.nodeParams.db.payments
         override val pendingRelay: PendingRelayDb = Alice.nodeParams.db.pendingRelay
         override def backup(file: File): Unit = ()
+        override val isBackupSupported: Boolean = false
       }
     )
 
@@ -69,6 +70,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         override val payments: PaymentsDb = Alice.nodeParams.db.payments
         override val pendingRelay: PendingRelayDb = Alice.nodeParams.db.pendingRelay
         override def backup(file: File): Unit = ()
+        override val isBackupSupported: Boolean = false
       }
     )
 
