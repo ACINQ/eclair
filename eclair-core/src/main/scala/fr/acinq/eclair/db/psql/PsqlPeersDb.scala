@@ -81,5 +81,4 @@ class PsqlPeersDb(implicit ds: DataSource) extends PeersDb {
     }
   }
 
-  override def close(): Unit = ()
 }

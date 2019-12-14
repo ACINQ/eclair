@@ -67,9 +67,9 @@ object SqliteToPgsql extends App {
     psql.peers.addOrUpdatePeer(nodeId, nodeAddress)
   }
 
-  sqlite.pendingRelay.listPendingRelay().foreach { case (channelId, htlcId) =>
+  sqlite.pendingRelay.listPendingRelay().map(_._1).foreach { channelId =>
     sqlite.pendingRelay.listPendingRelay(channelId).foreach { cmd =>
-      psql.pendingRelay.addPendingRelay(channelId, htlcId, cmd)
+      psql.pendingRelay.addPendingRelay(channelId, cmd)
     }
   }
 

@@ -51,7 +51,7 @@ object SqliteUtils extends JdbcUtils {
    *
    * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
    */
-  def obtainExclusiveLock(sqlite: Connection) {
+  def obtainExclusiveLock(sqlite: Connection) = synchronized {
     val statement = sqlite.createStatement()
     statement.execute("PRAGMA locking_mode = EXCLUSIVE")
     // we have to make a write to actually obtain the lock

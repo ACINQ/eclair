@@ -24,6 +24,8 @@ import com.typesafe.config.Config
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 import javax.sql.DataSource
+import grizzled.slf4j.Logging
+import org.sqlite.SQLiteException
 
 trait Databases {
 
@@ -44,42 +46,63 @@ trait Databases {
   val isBackupSupported: Boolean
 }
 
-object Databases {
+object Databases extends Logging {
 
   /**
     * Given a parent folder it creates or loads all the databases from a JDBC connection
+    *
     * @param dbdir
     * @return
     */
   def sqliteJDBC(dbdir: File): Databases = {
     dbdir.mkdir()
-    val sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
-    val sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
-    SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-
-    sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    var sqliteEclair: Connection = null
+    var sqliteNetwork: Connection = null
+    var sqliteAudit: Connection = null
+    try {
+      sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
+      sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
+      sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
+      SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
+      logger.info("successful lock on eclair.sqlite")
+      sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+    } catch {
+      case t: Throwable => {
+        logger.error("could not create connection to sqlite databases: ", t)
+        if (sqliteEclair != null) sqliteEclair.close()
+        if (sqliteNetwork != null) sqliteNetwork.close()
+        if (sqliteAudit != null) sqliteAudit.close()
+        throw t
+      }
+    }
   }
 
   def postgresJDBC(database: String = "eclair", host: String = "localhost", port: Int = 5432,
                    username: Option[String] = None, password: Option[String] = None,
                    poolProperties: Map[String, Long] = Map()): Databases = {
-    val url = s"jdbc:postgresql://${host}:${port}/${database}"
+    try {
+      val url = s"jdbc:postgresql://${host}:${port}/${database}"
 
-    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+      import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 
-    val config = new HikariConfig()
-    config.setJdbcUrl(url)
-    username.foreach(config.setUsername)
-    password.foreach(config.setPassword)
-    poolProperties.get("max-size").foreach(x => config.setMaximumPoolSize(x.toInt))
-    poolProperties.get("connection-timeout").foreach(config.setConnectionTimeout)
-    poolProperties.get("idle-timeout").foreach(config.setIdleTimeout)
-    poolProperties.get("max-life-time").foreach(config.setMaxLifetime)
+      val config = new HikariConfig()
+      config.setJdbcUrl(url)
+      username.foreach(config.setUsername)
+      password.foreach(config.setPassword)
+      poolProperties.get("max-size").foreach(x => config.setMaximumPoolSize(x.toInt))
+      poolProperties.get("connection-timeout").foreach(config.setConnectionTimeout)
+      poolProperties.get("idle-timeout").foreach(config.setIdleTimeout)
+      poolProperties.get("max-life-time").foreach(config.setMaxLifetime)
 
-    val ds = new HikariDataSource(config)
+      val ds = new HikariDataSource(config)
 
-    psqlDatabaseByConnections(ds)
+      psqlDatabaseByConnections(ds)
+    } catch {
+      case t: Throwable => {
+        logger.error("could not create connection to psql database: ", t)
+        throw t
+      }
+    }
   }
 
   def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases {

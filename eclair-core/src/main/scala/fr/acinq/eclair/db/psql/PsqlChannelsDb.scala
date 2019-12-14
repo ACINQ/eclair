@@ -120,5 +120,4 @@ class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
     }
   }
 
-  override def close(): Unit = ()
 }

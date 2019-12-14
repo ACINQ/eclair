@@ -273,5 +273,4 @@ object TestConstants {
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )
   }
-
 }
