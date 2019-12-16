@@ -40,10 +40,6 @@ object InitTlvCodecs {
 
   import InitTlv._
 
-  // TODO:
-  //  * Send the chainHash from nodeParams when creating Init
-  //  * Add logic to Peer.scala to fail connections to others that don't offer my chainHash
-
   private val networks: Codec[Networks] = variableSizeBytesLong(varintoverflow, list(bytes32)).as[Networks]
 
   val initTlvCodec = TlvCodecs.tlvStream(discriminated[InitTlv].by(varint)

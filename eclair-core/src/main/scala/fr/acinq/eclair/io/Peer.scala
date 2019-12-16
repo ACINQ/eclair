@@ -101,8 +101,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some(f) => wire.Init(ByteVector.empty, f)
-        case None => wire.Init(ByteVector.empty, nodeParams.features)
+        case Some(f) => wire.Init(ByteVector.empty, f, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
+        case None => wire.Init(ByteVector.empty, nodeParams.features, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       }
       log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
       transport ! localInit
@@ -134,21 +134,27 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
+      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin}, localFeatures=${remoteInit.localFeatures.toBin}, network=${remoteInit.networks}")
 
-      if (Features.areSupported(remoteInit.features)) {
+      if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(nodeParams.chainHash)) {
+        log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+        d.transport ! PoisonPill
+        stay
+      } else if (!Features.areSupported(remoteInit.features)) {
+        log.warning("incompatible features, disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+        d.transport ! PoisonPill
+        stay
+      } else {
         d.origin_opt.foreach(origin => origin ! "connected")
 
         import Features._
-
         def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.features, bit)
-
         def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.features, bit)
 
         val canUseChannelRangeQueries = (hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY))
-
         val canUseChannelRangeQueriesEx = (hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY))
-
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -171,11 +177,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
         log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
         goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
-      } else {
-        log.warning(s"incompatible features, disconnecting")
-        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        d.transport ! PoisonPill
-        stay
       }
 
     case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
