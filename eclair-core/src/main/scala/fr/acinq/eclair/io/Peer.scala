@@ -23,12 +23,11 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -38,7 +37,7 @@ import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.Random
 
 /**
  * Created by PM on 26/08/2016.
@@ -102,8 +101,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
-        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+        case Some(f) => wire.Init(ByteVector.empty, f, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
+        case None => wire.Init(ByteVector.empty, nodeParams.features, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       }
       log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
       transport ! localInit
@@ -135,21 +134,27 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
+      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin}, localFeatures=${remoteInit.localFeatures.toBin}, network=${remoteInit.networks}")
 
-      if (Features.areSupported(remoteInit.localFeatures)) {
+      if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(nodeParams.chainHash)) {
+        log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+        d.transport ! PoisonPill
+        stay
+      } else if (!Features.areSupported(remoteInit.features)) {
+        log.warning("incompatible features, disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+        d.transport ! PoisonPill
+        stay
+      } else {
         d.origin_opt.foreach(origin => origin ! "connected")
 
         import Features._
-
-        def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.localFeatures, bit)
-
-        def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.localFeatures, bit)
+        def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.features, bit)
+        def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.features, bit)
 
         val canUseChannelRangeQueries = (hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY))
-
         val canUseChannelRangeQueriesEx = (hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY))
-
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -172,11 +177,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
         log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
         goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
-      } else {
-        log.warning(s"incompatible features, disconnecting")
-        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        d.transport ! PoisonPill
-        stay
       }
 
     case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
@@ -548,7 +548,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   onTermination {
-    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+    case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
       Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
@@ -685,8 +685,8 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
-      globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
+      globalFeatures = ByteVector.empty,
+      localFeatures = nodeParams.features)
   }
 
   /**

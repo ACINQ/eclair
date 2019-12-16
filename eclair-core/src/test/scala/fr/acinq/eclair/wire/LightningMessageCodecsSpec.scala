@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import org.scalatest.FunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -42,6 +42,38 @@ class LightningMessageCodecsSpec extends FunSuite {
   def point(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
+
+  test("encode/decode init message") {
+    val chainHash1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
+    val chainHash2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
+    val testCases = Seq(
+      (hex"0000 0000", hex"", Nil, true), // no features
+      (hex"0000 0002088a", hex"088a", Nil, true), // no global features
+      (hex"00020200 0000", hex"0200", Nil, true), // no local features
+      (hex"00020200 0002088a", hex"0a8a", Nil, true), // local and global - no conflict - same size
+      (hex"00020200 0003020002", hex"020202", Nil, true), // local and global - no conflict - different sizes
+      (hex"00020a02 0002088a", hex"0a8a", Nil, true), // local and global - conflict - same size
+      (hex"00022200 000302aaa2", hex"02aaa2", Nil, true), // local and global - conflict - different sizes
+      (hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, true), // unknown odd records
+      (hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, false), // unknown even records
+      (hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, false), // invalid tlv stream
+      (hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), true), // single network
+      (hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), true), // multiple networks
+      (hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010103012a", hex"088a", List(chainHash1), true), // network and unknown odd records
+      (hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a", hex"088a", Nil, false) // network and unknown even records
+    )
+
+    for ((bin, features, networks, valid) <- testCases) {
+      if (valid) {
+        val init = initCodec.decode(bin.bits).require.value
+        assert(init.features === features)
+        assert(init.networks === networks)
+        assert(initCodec.encode(init).require.bytes === bin)
+      } else {
+        assert(initCodec.decode(bin.bits).isFailure)
+      }
+    }
+  }
 
   test("encode/decode live node_announcements") {
     val ann = hex"a58338c9660d135fd7d087eb62afd24a33562c54507a9334e79f0dc4f17d407e6d7c61f0e2f3d0d38599502f61704cf1ae93608df027014ade7ff592f27ce2690001025acdf50702d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec00841122116c6e302e646563656e7465722e776f726c64000000000000000000000000000000130200000000000000000000ffffae8a0b082607"
@@ -77,7 +109,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
       100000,
       1500,
-      TlvStream(QueryChannelRangeTlv.QueryFlags((QueryChannelRangeTlv.QueryFlags.WANT_ALL)) :: Nil, unknownTlv :: Nil))
+      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
@@ -127,7 +159,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_channel_range_timestamps_checksums = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
       35000,
       100,
-      TlvStream(QueryChannelRangeTlv.QueryFlags((QueryChannelRangeTlv.QueryFlags.WANT_ALL))))
+      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 756230, 1500, 1,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None, None)
     val reply_channel_range_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 1600, 110, 1,
@@ -144,8 +176,6 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_short_channel_id_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(4564), ShortChannelId(178622), ShortChannelId(4564676))), TlvStream.empty)
     val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
     val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
-
-
 
     val refs = Map(
       query_channel_range -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",
