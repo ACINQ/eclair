@@ -43,10 +43,10 @@ import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
-import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.payment.Auditor
+import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -92,15 +92,7 @@ class Setup(datadir: File,
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
-  val database = db match {
-    case Some(d) => d
-    case None =>
-      val dbConfig = config.getConfig("db")
-      dbConfig.getString("driver") match {
-        case "sqlite" => Databases.sqliteJDBC(chaindir)
-        case "psql" => Databases.setupPsqlDatabases(dbConfig)
-      }
-  }
+  val database = initDatabase(config.getConfig("db"))
 
   /**
     * This counter holds the current blockchain height.
@@ -353,6 +345,34 @@ class Setup(datadir: File,
       Some(torAddress)
     } else {
       None
+    }
+  }
+
+  private def initDatabase(dbConfig: Config): Databases = {
+    try {
+      val database = db match {
+        case Some(d) => d
+        case None =>
+          dbConfig.getString("driver") match {
+            case "sqlite" => Databases.sqliteJDBC(chaindir)
+            case "psql" => Databases.setupPsqlDatabases(dbConfig)
+          }
+      }
+      val dbLockAcquireInterval = FiniteDuration(dbConfig.getDuration("lock.acquire-interval").toSeconds, TimeUnit.SECONDS)
+      system.scheduler.schedule(dbLockAcquireInterval, dbLockAcquireInterval) {
+        try {
+          database.obtainExclusiveLock()
+        } catch {
+          case e: Throwable =>
+            logger.error("Cannot lock database. Exiting...", e)
+            sys.exit(-2)
+        }
+      }
+      database
+    } catch {
+      case e: Throwable =>
+        logger.error("Cannot initialize database. Exiting...", e)
+        sys.exit(-1)
     }
   }
 }

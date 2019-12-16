@@ -16,10 +16,9 @@
 
 package fr.acinq.eclair
 
-import java.io.{File, PrintWriter}
 import java.sql.{Connection, DriverManager, Statement}
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import java.util.logging.Logger
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
@@ -27,12 +26,11 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.psql.{PsqlAuditDb, PsqlChannelsDb, PsqlNetworkDb, PsqlPaymentsDb, PsqlPeersDb, PsqlPendingRelayDb, PsqlUtils}
-import fr.acinq.eclair.db.sqlite.{SqliteAuditDb, SqliteChannelsDb, SqliteNetworkDb, SqlitePaymentsDb, SqlitePeersDb, SqlitePendingRelayDb, SqliteUtils}
+import fr.acinq.eclair.db.psql._
+import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
-import javax.sql.DataSource
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
@@ -70,6 +68,7 @@ object TestConstants {
     def payments(): PaymentsDb
     def pendingRelay(): PendingRelayDb
     def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
+    def obtainLock(): Unit
   }
 
   case class TestSqliteDatabases(connection: Connection = sqliteInMemory()) extends TestDatabases {
@@ -80,13 +79,13 @@ object TestConstants {
     override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
     override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
+    override def obtainLock(): Unit = ()
   }
 
   case object TestPsqlDatabases extends TestDatabases {
     override val connection: Connection = psql()
 
-    import com.zaxxer.hikari.HikariConfig
-    import com.zaxxer.hikari.HikariDataSource
+    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 
     val config = new HikariConfig
     config.setJdbcUrl("jdbc:postgresql://localhost:5432/eclair")
@@ -100,6 +99,7 @@ object TestConstants {
     override def payments(): PaymentsDb = new PsqlPaymentsDb()
     override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb()
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
+    override def obtainLock(): Unit = PsqlUtils.obtainExclusiveLock("test_instance", FiniteDuration(1, TimeUnit.MINUTES))(ds)
   }
 
   def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
