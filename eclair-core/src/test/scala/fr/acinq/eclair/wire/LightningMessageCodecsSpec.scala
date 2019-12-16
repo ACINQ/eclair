@@ -44,21 +44,36 @@ class LightningMessageCodecsSpec extends FunSuite {
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode init message") {
+    val chainHash1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
+    val chainHash2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val testCases = Seq(
-      (hex"0000 0000", hex"", hex"0000 0000"), // no features
-      (hex"0000 0002088a", hex"088a", hex"0000 0002088a"), // no global features
-      (hex"00020200 0000", hex"0200", hex"0000 00020200"), // no local features
-      (hex"00020200 0002088a", hex"0a8a", hex"0000 00020a8a"), // local and global - no conflict - same size
-      (hex"00020200 0003020002", hex"020202", hex"0000 0003020202"), // local and global - no conflict - different sizes
-      (hex"00020a02 0002088a", hex"0a8a", hex"0000 00020a8a"), // local and global - conflict - same size
-      (hex"00022200 000302aaa2", hex"02aaa2", hex"0000 000302aaa2") // local and global - conflict - different sizes
+      (hex"0000 0000", hex"", Nil, true, None), // no features
+      (hex"0000 0002088a", hex"088a", Nil, true, None), // no global features
+      (hex"00020200 0000", hex"0200", Nil, true, Some(hex"0000 00020200")), // no local features
+      (hex"00020200 0002088a", hex"0a8a", Nil, true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
+      (hex"00020200 0003020002", hex"020202", Nil, true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
+      (hex"00020a02 0002088a", hex"0a8a", Nil, true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
+      (hex"00022200 000302aaa2", hex"02aaa2", Nil, true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
+      (hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, true, None), // unknown odd records
+      (hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, false, None), // unknown even records
+      (hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, false, None), // invalid tlv stream
+      (hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), true, None), // single network
+      (hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), true, None), // multiple networks
+      (hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010103012a", hex"088a", List(chainHash1), true, None), // network and unknown odd records
+      (hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a", hex"088a", Nil, false, None) // network and unknown even records
     )
 
-    for ((bin, features, encoded) <- testCases) {
-      val init = initCodec.decode(bin.bits).require.value
-      assert(init.features === features)
-      assert(initCodec.encode(init).require.bytes === encoded)
-      assert(initCodec.decode(encoded.bits).require.value === init)
+    for ((bin, features, networks, valid, encodedOverride) <- testCases) {
+      if (valid) {
+        val init = initCodec.decode(bin.bits).require.value
+        assert(init.features === features)
+        assert(init.networks === networks)
+        val encoded = initCodec.encode(init).require
+        assert(encoded.bytes === encodedOverride.getOrElse(bin))
+        assert(initCodec.decode(encoded).require.value === init)
+      } else {
+        assert(initCodec.decode(bin.bits).isFailure)
+      }
     }
   }
 
