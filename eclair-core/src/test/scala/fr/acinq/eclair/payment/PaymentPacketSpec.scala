@@ -34,7 +34,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import scodec.Attempt
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 /**
  * Created by PM on 31/05/2016.
@@ -378,7 +378,9 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
 
 object PaymentPacketSpec {
 
-  val variableLengthOnionFeature = hex"0200"
+  import fr.acinq.eclair.Features.VARIABLE_LENGTH_ONION_OPTIONAL
+
+  val variableLengthOnionFeature = ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)
 
   /** Build onion from arbitrary tlv stream (potentially invalid). */
   def buildTlvOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[TlvStream[OnionTlv]], associatedData: ByteVector32): OnionRoutingPacket = {

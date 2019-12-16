@@ -129,11 +129,15 @@ object NodeParams {
   }
 
   def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
-    // check configuration for keys that have been renamed in v0.3.2
+    // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
+      // v0.3.2
       "default-feerates" -> "on-chain-fees.default-feerates",
       "max-feerate-mismatch" -> "on-chain-fees.max-feerate-mismatch",
-      "update-fee_min-diff-ratio" -> "on-chain-fees.update-fee-min-diff-ratio"
+      "update-fee_min-diff-ratio" -> "on-chain-fees.update-fee-min-diff-ratio",
+      // v0.3.3
+      "global-features" -> "features",
+      "local-features" -> "features"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
