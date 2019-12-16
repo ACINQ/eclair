@@ -31,7 +31,8 @@ object LightningMessageCodecs {
 
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[Init]
+      ("localFeatures" | varsizebinarydata) ::
+      ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::

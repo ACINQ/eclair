@@ -46,8 +46,9 @@ sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
 /** For historical reasons, features are divided into two feature bitmasks. We only use the second one in our messages, but we allow receiving in both. */
-case class Init(globalFeatures: ByteVector, localFeatures: ByteVector) extends SetupMessage {
+case class Init(globalFeatures: ByteVector, localFeatures: ByteVector, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val features = combineFeatures(globalFeatures, localFeatures)
+  val networks = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
 
   private def combineFeatures(f1: ByteVector, f2: ByteVector): ByteVector = {
     if (f1.length == f2.length) {

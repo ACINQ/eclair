@@ -40,22 +40,14 @@ object InitTlvCodecs {
 
   import InitTlv._
 
-  // TODO: wire test-cases:
-  //  * Init not containing any tlv stream
-  //  * Init containing tlv stream without networks (other odd records)
-  //  * Init containing tlv stream without networks (other even records)
-  //  * Init containing tlv stream with networks only
-  //  * Init containing tlv stream with networks and other odd records)
-  //  * Init containing tlv stream with networks and other even records)
-
   // TODO:
-  //  * Add to the Init message after flat features merged
   //  * Send the chainHash from nodeParams when creating Init
   //  * Add logic to Peer.scala to fail connections to others that don't offer my chainHash
 
   private val networks: Codec[Networks] = variableSizeBytesLong(varintoverflow, list(bytes32)).as[Networks]
 
-  val initTlvCodec = discriminated[InitTlv].by(varint)
+  val initTlvCodec = TlvCodecs.tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
+  )
 
 }
