@@ -173,6 +173,9 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
+    val features = ByteVector.fromValidHex(config.getString("features"))
+    Features.validateFeatureGraph(features).foreach(e => throw e)
+
     val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = ByteVector.fromValidHex(e.getString("features"))
@@ -221,7 +224,7 @@ object NodeParams {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      features = ByteVector.fromValidHex(config.getString("features")),
+      features = features,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,

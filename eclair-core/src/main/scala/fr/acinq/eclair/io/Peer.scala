@@ -139,16 +139,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       if (Features.areSupported(remoteInit.features)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        import Features._
+        def hasLocalFeature(f: Feature) = Features.hasFeature(d.localInit.features, f, None)
 
-        def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.features, bit)
+        def hasRemoteFeature(f: Feature) = Features.hasFeature(remoteInit.features, f, None)
 
-        def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.features, bit)
-
-        val canUseChannelRangeQueries = (hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY))
-
-        val canUseChannelRangeQueriesEx = (hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY))
-
+        val canUseChannelRangeQueries = hasLocalFeature(Features.ChannelRangeQueries) && hasRemoteFeature(Features.ChannelRangeQueries)
+        val canUseChannelRangeQueriesEx = hasLocalFeature(Features.ChannelRangeQueriesExtended) && hasRemoteFeature(Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -159,7 +155,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           } else {
             log.info("not syncing with this peer")
           }
-        } else if (hasRemoteFeature(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
+        } else if (hasRemoteFeature(Features.InitialRoutingSync)) {
           // "old" nodes, do as before
           log.info("peer requested a full routing table dump")
           router ! GetRoutingState
