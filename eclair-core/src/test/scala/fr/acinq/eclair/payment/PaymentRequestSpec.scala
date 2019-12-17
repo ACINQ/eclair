@@ -20,7 +20,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
-import fr.acinq.eclair.Features._
+import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
 import org.scalatest.FunSuite
@@ -312,11 +312,11 @@ class PaymentRequestSpec extends FunSuite {
 
     val featureBits = Map(
       Features(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00011000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00101000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00010100000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      Features(bin"               00011000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00101000000000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00010100001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      Features(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
       Features(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       Features(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       Features(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
@@ -340,7 +340,7 @@ class PaymentRequestSpec extends FunSuite {
   test("payment secret") {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(pr.paymentSecret.isDefined)
-    assert(pr.features === Features(PAYMENT_SECRET_OPTIONAL))
+    assert(pr.features === Features(PaymentSecret.optional, VariableLengthOnion.optional))
     assert(!pr.features.requirePaymentSecret)
 
     val pr1 = PaymentRequest.read(PaymentRequest.write(pr))
@@ -352,12 +352,12 @@ class PaymentRequestSpec extends FunSuite {
 
     // An invoice that sets the payment secret feature bit must provide a payment secret.
     assertThrows[IllegalArgumentException](
-      PaymentRequest.read("lntb15u1pwahg4kpp56hhnss8tshz2qz539a0u69yjlcq4vpm7776tuqqv53mqn8eeslpsdq4xysyymr0vd4kzcmrd9hx7cqp29qy9qqq6t3lep4wkqeuj4y58fwxj6lqykzqdaa7a7cak4elywptgft0mcfnl0k243870ek8dwnnqww67wrak5kxpfw428rgu58z66er76sh5zsqw0zvns")
+      PaymentRequest.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7")
     )
 
     // A multi-part invoice must use a payment secret.
     assertThrows[IllegalArgumentException](
-      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", features = Some(Features(BasicMultiPartPayment.optional, VariableLengthOnion.optional)))
     )
   }
 
@@ -365,11 +365,11 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(!pr.features.allowTrampoline)
 
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_OPTIONAL)))
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(TRAMPOLINE_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL, PAYMENT_SECRET_OPTIONAL)))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 
