@@ -45,6 +45,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
+      log.warning(s"multi-part payment timed out (received ${d.paidAmount} expected $totalAmount)")
       goto(PAYMENT_FAILED) using PaymentFailed(wire.PaymentTimeout, d.parts)
 
     case Event(MultiPartHtlc(totalAmount2, htlc), d: WaitingForHtlc) =>
@@ -77,6 +78,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // The LocalPaymentHandler will create a new instance of MultiPartPaymentHandler to handle a new attempt.
     case Event(MultiPartHtlc(_, htlc), PaymentFailed(failure, _)) =>
       require(htlc.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${htlc.paymentHash}")
+      log.info(s"received extraneous htlc for payment hash $paymentHash")
       parent ! ExtraHtlcReceived(paymentHash, PendingPayment(htlc.id, PartialPayment(htlc.amountMsat, htlc.channelId)), Some(failure))
       stay
   }

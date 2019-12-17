@@ -71,7 +71,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       val send = SendPayment(c.paymentHash, c.hops.last, c.finalPayload, maxAttempts = 1)
       router ! FinalizeRoute(c.hops)
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, c.finalPayload.amount, cfg.targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        val targetNodeId = cfg.trampolineData.map(_.paymentRequest.nodeId).getOrElse(cfg.targetNodeId)
+        val finalAmount = c.finalPayload.amount - cfg.trampolineData.map(_.trampolineFees).getOrElse(0 msat)
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, finalAmount, targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
@@ -89,7 +91,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams, ignoreNodes = ignoredNodes)
       }
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, c.finalPayload.amount, cfg.targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        val targetNodeId = cfg.trampolineData.map(_.paymentRequest.nodeId).getOrElse(cfg.targetNodeId)
+        val finalAmount = c.finalPayload.amount - cfg.trampolineData.map(_.trampolineFees).getOrElse(0 msat)
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, finalAmount, targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
@@ -99,7 +103,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       val hops = c.routePrefix ++ routeHops
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
       val firstHop = hops.head
-      val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(id, c.paymentHash, hops, c.finalPayload)
+      val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(cfg.upstream, c.paymentHash, hops, c.finalPayload)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
@@ -112,7 +116,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event("ok", _) => stay
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
-      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.channelId, Some(route))
+      val trampolineFees = cfg.trampolineData.map(_.trampolineFees).getOrElse(0 msat)
+      val p = PartialPayment(id, c.finalPayload.amount - trampolineFees, cmd.amount - c.finalPayload.amount + trampolineFees, fulfill.channelId, Some(route))
       onSuccess(s, PaymentSent(id, c.paymentHash, fulfill.paymentPreimage, p :: Nil))
       myStop()
 
