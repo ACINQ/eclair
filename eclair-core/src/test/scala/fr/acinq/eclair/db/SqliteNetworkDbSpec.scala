@@ -223,8 +223,6 @@ class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfter {
         }
         q
       }
-      println(txids.toSet.size)
-      println(check.toSet.size)
       assert(txids.toSet == check.toSet)
 
 
