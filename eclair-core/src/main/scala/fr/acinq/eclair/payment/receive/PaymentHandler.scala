@@ -17,18 +17,19 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
-import akka.event.LoggingAdapter
-import fr.acinq.eclair.NodeParams
+import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props}
+import akka.event.DiagnosticLoggingAdapter
+import akka.event.Logging.MDC
+import fr.acinq.eclair.{Logs, NodeParams}
 
 trait ReceiveHandler {
-  def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive
+  def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive
 }
 
 /**
  * Generic payment handler that delegates handling of incoming messages to a list of handlers.
  */
-class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Actor with ActorLogging {
+class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Actor with DiagnosticActorLogging {
 
   // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
   private val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments, commandBuffer)
@@ -41,6 +42,8 @@ class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Ac
       // NB: the last handler that was added will be the first called
       context become normal(handler.handle(context, log) orElse handle)
   }
+
+  override def mdc(currentMessage: Any): MDC = Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT))
 }
 
 object PaymentHandler {

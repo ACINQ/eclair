@@ -403,6 +403,19 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     awaitCond(payFsm.stateName === PAYMENT_ABORTED)
   }
 
+  test("failure received from final recipient") { f =>
+    import f._
+    val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 5)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    waitUntilAmountSent(f, payment.totalAmount)
+    val (childId1, _) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
+
+    // If we receive a failure from the final node, we directly abort the payment instead of retrying.
+    childPayFsm.send(payFsm, PaymentFailed(childId1, paymentHash, RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(e, IncorrectOrUnknownPaymentDetails(3000 * 1000 msat, 42))) :: Nil))
+    relayer.expectNoMsg(50 millis)
+    awaitCond(payFsm.stateName === PAYMENT_ABORTED)
+  }
+
   test("fail after too many attempts") { f =>
     import f._
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 2)
@@ -499,8 +512,6 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
       assert(remaining === 0.msat, fuzzParams)
       assert(payments.nonEmpty, fuzzParams)
       assert(payments.map(_.finalPayload.amount).sum === toSend, fuzzParams)
-      // Verify that we're not generating tiny HTLCs.
-      assert(payments.forall(_.finalPayload.amount > 50.msat), fuzzParams)
     }
   }
 

@@ -285,3 +285,21 @@ object ReplyChannelRange {
 case class GossipTimestampFilter(chainHash: ByteVector32,
                                  firstTimestamp: Long,
                                  timestampRange: Long) extends RoutingMessage with HasChainHash
+
+// NB: blank lines to minimize merge conflicts
+
+//
+
+//
+
+//
+
+//
+
+//
+
+//
+
+//
+
+//

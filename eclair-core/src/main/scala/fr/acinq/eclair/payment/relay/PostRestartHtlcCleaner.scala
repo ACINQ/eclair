@@ -132,7 +132,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
             log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${origins.length} HTLCs upstream")
             origins.foreach { case (channelId, htlcId) =>
-              commandBuffer ! CommandBuffer.CommandSend(channelId, htlcId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
+              commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
             }
           }
           val relayedOut1 = relayedOut diff Seq((fulfilledHtlc.channelId, fulfilledHtlc.id))
@@ -177,7 +177,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
                 origins.foreach { case (channelId, htlcId) =>
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  commandBuffer ! CommandBuffer.CommandSend(channelId, htlcId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+                  commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
                 }
               case _: Origin.Relayed =>
                 log.error(s"unsupported origin: ${origin.getClass.getSimpleName}")

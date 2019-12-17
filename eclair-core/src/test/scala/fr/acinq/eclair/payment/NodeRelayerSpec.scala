@@ -76,7 +76,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.PendingPayment(i.add.id, PaymentReceived.PartialPayment(i.add.amountMsat, i.add.channelId)))
     sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
 
-    incomingMultiPart.dropRight(1).foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
+    incomingMultiPart.dropRight(1).foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
     sender.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -88,7 +88,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val partial = MultiPartPaymentFSM.PendingPayment(15, PaymentReceived.PartialPayment(100 msat, randomBytes32))
     sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, partial, Some(InvalidRealm)))
 
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.payment.fromChannelId, partial.htlcId, CMD_FAIL_HTLC(partial.htlcId, Right(InvalidRealm), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.payment.fromChannelId, CMD_FAIL_HTLC(partial.htlcId, Right(InvalidRealm), commit = true)))
     sender.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -102,7 +102,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     relayer.send(nodeRelayer, p)
 
     val failure = IncorrectOrUnknownPaymentDetails(2000000 msat, nodeParams.currentBlockHeight)
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
     outgoingPayFSM.expectNoMsg(100 millis)
   }
 
@@ -117,7 +117,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     relayer.send(nodeRelayer, p2)
 
     val failure = IncorrectOrUnknownPaymentDetails(1000000 msat, nodeParams.currentBlockHeight)
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(p2.add.channelId, p2.add.id, CMD_FAIL_HTLC(p2.add.id, Right(failure), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(p2.add.channelId, CMD_FAIL_HTLC(p2.add.id, Right(failure), commit = true)))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -132,7 +132,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
     // TODO: @t-bast: should be an Expiry failure
     val failure = IncorrectOrUnknownPaymentDetails(2000000 msat, nodeParams.currentBlockHeight)
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -151,7 +151,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
     // TODO: @t-bast: should be an Expiry failure
     val failure = IncorrectOrUnknownPaymentDetails(3000000 msat, nodeParams.currentBlockHeight)
-    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true))))
+    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -164,7 +164,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
     // TODO: @t-bast: should be a Fee failure
     val failure = IncorrectOrUnknownPaymentDetails(2000000 msat, nodeParams.currentBlockHeight)
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -180,7 +180,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
     // TODO: @t-bast: should be a Fee failure
     val failure = IncorrectOrUnknownPaymentDetails(3000000 msat, nodeParams.currentBlockHeight)
-    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true))))
+    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -194,7 +194,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
     outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, Nil))
-    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(incomingAmount, nodeParams.currentBlockHeight)), commit = true))))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(incomingAmount, nodeParams.currentBlockHeight)), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
   }
@@ -225,7 +225,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     validateOutgoingPayment(outgoingPayment)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.fromChannelIds.toSet === incomingMultiPart.map(_.add.channelId).toSet)
@@ -246,7 +246,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
     val incomingAdd = incomingSinglePart.add
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(incomingAdd.channelId, incomingAdd.id, CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(incomingAdd.channelId, CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true)))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.fromChannelIds === Seq(incomingSinglePart.add.channelId))
@@ -277,7 +277,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.assistedRoutes === hints)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.fromChannelIds === incomingMultiPart.map(_.add.channelId))
@@ -307,7 +307,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.assistedRoutes === hints)
 
     outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
-    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, p.add.id, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.fromChannelIds === incomingMultiPart.map(_.add.channelId))

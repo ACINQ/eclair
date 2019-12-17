@@ -165,7 +165,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
   private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    commandBuffer ! CommandBuffer.CommandSend(channelId, htlcId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
+    commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
   }
 
   private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage] = None): Unit =
@@ -173,7 +173,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
   private def fulfillPayment(upstream: Upstream.TrampolineRelayed, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFulfill)
+    commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFulfill)
   })
 
 }

@@ -500,6 +500,47 @@ object PaymentRequest {
     )
   }
 
+  private def readBoltData(input: String): Bolt11Data = {
+    val lowercaseInput = input.toLowerCase
+    val separatorIndex = lowercaseInput.lastIndexOf('1')
+    val hrp = lowercaseInput.take(separatorIndex)
+    val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
+    Codecs.bolt11DataCodec.decode(data).require.value
+  }
+
+  /**
+   * Extracts the description from a serialized payment request that is **expected to be valid**.
+   * Throws an error if the payment request is not valid.
+   *
+   * @param input valid serialized payment request
+   * @return description as a String. If the description is a hash, returns the hash value as a String.
+   */
+  def fastReadDescription(input: String): String = {
+    readBoltData(input).taggedFields.collectFirst {
+      case PaymentRequest.Description(d) => d
+      case PaymentRequest.DescriptionHash(h) => h.toString()
+    }.get
+  }
+
+  /**
+   * Checks if a serialized payment request is expired. Timestamp is compared to the System's current time.
+   *
+   * @param input valid serialized payment request
+   * @return true if the payment request has expired, false otherwise.
+   */
+  def fastHasExpired(input: String): Boolean = {
+    val bolt11Data = readBoltData(input)
+    val expiry_opt = bolt11Data.taggedFields.collectFirst {
+      case p: PaymentRequest.Expiry => p
+    }
+    val timestamp = bolt11Data.timestamp
+    expiry_opt match {
+      case Some(expiry) => timestamp + expiry.toLong <= Platform.currentTime.milliseconds.toSeconds
+      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+    }
+  }
+
   /**
    * @param pr payment request
    * @return a bech32-encoded payment request

@@ -285,7 +285,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
     val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
@@ -297,7 +297,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
     commandBuffer.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.head)
 
     commandBuffer.expectNoMsg(100 millis)
@@ -315,7 +315,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
     val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
+      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
@@ -324,7 +324,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     // This payment has 3 downstream HTLCs, but we should fulfill upstream as soon as we receive the preimage.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_1, testCase.upstream_2, preimage2))
     commandBuffer.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
@@ -344,7 +344,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
     commandBuffer.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, htlcId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
