@@ -214,7 +214,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     // a -> b -> c      d -> e
 
     val routingHints = List(List(PaymentRequest.ExtraHop(randomKey.publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
-    val invoiceFeatures = Features(PAYMENT_SECRET_OPTIONAL, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
+    val invoiceFeatures = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)
     val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, "#reckless", None, None, routingHints, features = Some(invoiceFeatures))
     val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalLegacyPayload(finalAmount, finalExpiry))
     assert(amount_ac === amount_bc)
@@ -378,9 +378,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
 
 object PaymentPacketSpec {
 
-  import fr.acinq.eclair.Features.VARIABLE_LENGTH_ONION_OPTIONAL
-
-  val variableLengthOnionFeature = ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)
+  val variableLengthOnionFeature = ByteVector.fromLong(1L << VariableLengthOnion.optional)
 
   /** Build onion from arbitrary tlv stream (potentially invalid). */
   def buildTlvOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[TlvStream[OnionTlv]], associatedData: ByteVector32): OnionRoutingPacket = {
