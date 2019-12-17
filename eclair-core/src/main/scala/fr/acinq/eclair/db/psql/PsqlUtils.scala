@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db.psql
 
 import java.sql.{Connection, Statement, Timestamp}
+import java.time.Instant
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 import grizzled.slf4j.Logging
@@ -53,7 +54,7 @@ object PsqlUtils extends JdbcUtils with Logging {
 
   val LockTable = "lock_leases"
 
-  case class LockLease(time: Timestamp, instance: String, expired: Boolean)
+  case class LockLease(expiresAt: Timestamp, instance: String, expired: Boolean)
 
   class TooManyLockAttempts(msg: String) extends RuntimeException(msg)
 
@@ -61,26 +62,26 @@ object PsqlUtils extends JdbcUtils with Logging {
 
   class DatabaseLocked(msg: String) extends RuntimeException(msg)
 
-  def obtainExclusiveLock(instanceId: String, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
-    logger.info(s"Trying to obtain a database lock (attempt #$attempt)")
+  def obtainExclusiveLock(instanceId: String, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
+    logger.info(s"Trying to acquire a database lock (attempt #$attempt) instance ID=$instanceId")
 
-    if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to obtain a database lock")
+    if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire a database lock")
 
     try {
       withConnection { implicit connection =>
         val autocommit = connection.getAutoCommit
         try {
           connection.setAutoCommit(false)
-          acquireExclusiveTableLock
+          acquireExclusiveTableLock(lockTimeout)
           val lease = currentLease
           if (lease.instance == instanceId) {
             updateLease(instanceId, leaseDuration)
           } else if (lease.expired)
             updateLease(instanceId, leaseDuration, startNew = true)
           else
-            throw new DatabaseLocked(s"The database is locked by ${lease.instance}")
+            throw new DatabaseLocked(s"The database is locked by instance ID=${lease.instance}")
           connection.commit()
-          logger.info("Database lock was successfully aquired.")
+          logger.info("Database lock was successfully acquired.")
         } catch {
           case e: Throwable =>
             connection.rollback()
@@ -92,47 +93,44 @@ object PsqlUtils extends JdbcUtils with Logging {
     } catch {
       case e: PSQLException if (e.getServerErrorMessage != null && e.getServerErrorMessage.getSQLState == "42P01") =>
         withConnection { connection =>
-          logger.warn(s"${LockTable} does not exist, trying to recreate it...")
+          logger.warn(s"Table ${LockTable} does not exist, trying to recreate it...")
           initializeLocksTable(connection)
-          obtainExclusiveLock(instanceId, leaseDuration, attempt + 1)
+          obtainExclusiveLock(instanceId, leaseDuration, lockTimeout, attempt + 1)
         }
     }
   }
 
   private def initializeLocksTable(implicit connection: Connection): Unit = {
     using(connection.createStatement()) { statement =>
-      statement.executeUpdate(s"CREATE TABLE $LockTable (time TIMESTAMP, instance VARCHAR)")
-      // insert a dummy lock
-      statement.executeUpdate(s"INSERT INTO $LockTable (time) VALUES (now())")
-      Thread.sleep(100) // make sure that the dummy lock has expired
+      statement.executeUpdate(s"CREATE TABLE $LockTable (expires_at TIMESTAMP NOT NULL UNIQUE, instance VARCHAR NOT NULL UNIQUE)")
     }
   }
 
-  private def acquireExclusiveTableLock(implicit connection: Connection): Unit = {
+  private def acquireExclusiveTableLock(lockTimeout: FiniteDuration)(implicit connection: Connection): Unit = {
     using(connection.createStatement()) { statement =>
+      statement.executeUpdate(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
       statement.executeUpdate(s"LOCK TABLE $LockTable IN ACCESS EXCLUSIVE MODE")
     }
   }
 
   private def currentLease(implicit connection: Connection): LockLease = {
     using(connection.createStatement()) { statement =>
-      val rs = statement.executeQuery(s"SELECT time, instance, CASE WHEN time IS NULL THEN true ELSE now() > time END AS expired FROM $LockTable ORDER BY time DESC LIMIT 1")
+      val rs = statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $LockTable ORDER BY expires_at DESC LIMIT 1")
       if (rs.next())
         LockLease(
-          time = rs.getTimestamp("time"),
+          expiresAt = rs.getTimestamp("expires_at"),
           instance = rs.getString("instance"),
-          expired = rs.getBoolean("expired")
-        )
+          expired = rs.getBoolean("expired"))
       else
-        throw new UninitializedLockTable("The lock table seems to be empty. Do not know what to do.")
+        LockLease(expiresAt = Timestamp.from(Instant.now()), instance = "", expired = true)
     }
   }
 
   private def updateLease(instanceId: String, leaseDuration: FiniteDuration, startNew: Boolean = false)(implicit connection: Connection): Unit = {
     val sql = if (startNew)
-      s"INSERT INTO $LockTable (time, instance) VALUES (now() + ?, ?)"
+      s"INSERT INTO $LockTable (expires_at, instance) VALUES (now() + ?, ?)"
     else
-      s"UPDATE $LockTable SET time = now() + ? WHERE instance = ?"
+      s"UPDATE $LockTable SET expires_at = now() + ? WHERE instance = ?"
     using(connection.prepareStatement(sql)) { statement =>
       statement.setObject(1, new PGInterval(s"${leaseDuration.toSeconds} seconds"))
       statement.setString(2, instanceId)

@@ -358,8 +358,8 @@ class Setup(datadir: File,
             case "psql" => Databases.setupPsqlDatabases(dbConfig)
           }
       }
-      val dbLockAcquireInterval = FiniteDuration(dbConfig.getDuration("lock.acquire-interval").toSeconds, TimeUnit.SECONDS)
-      system.scheduler.schedule(dbLockAcquireInterval, dbLockAcquireInterval) {
+      val dbLockLeaseRenewInterval = dbConfig.getDuration("lock.lease-renew-interval").toSeconds.seconds
+      system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
         try {
           database.obtainExclusiveLock()
         } catch {

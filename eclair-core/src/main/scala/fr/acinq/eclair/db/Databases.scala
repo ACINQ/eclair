@@ -28,7 +28,7 @@ import fr.acinq.eclair.db.sqlite._
 import grizzled.slf4j.Logging
 import javax.sql.DataSource
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 
 trait Databases {
 
@@ -85,7 +85,8 @@ object Databases extends Logging {
                    username: Option[String] = None, password: Option[String] = None,
                    poolProperties: Map[String, Long] = Map(),
                    instanceId: String = ManagementFactory.getRuntimeMXBean().getName(),
-                   lockLeaseInterval: FiniteDuration = FiniteDuration(5, TimeUnit.MINUTES)): Databases = {
+                   lockLeaseInterval: FiniteDuration = 5.minutes,
+                   lockTimeout: FiniteDuration = 5.seconds): Databases = {
     try {
       val url = s"jdbc:postgresql://${host}:${port}/${database}"
 
@@ -102,7 +103,7 @@ object Databases extends Logging {
 
       implicit val ds: DataSource = new HikariDataSource(config)
 
-      PsqlUtils.obtainExclusiveLock(instanceId, lockLeaseInterval)
+      PsqlUtils.obtainExclusiveLock(instanceId, lockLeaseInterval, lockTimeout)
 
       new Databases {
         override val network = new PsqlNetworkDb()
@@ -113,7 +114,7 @@ object Databases extends Logging {
         override val pendingRelay = new PsqlPendingRelayDb()
         override def backup(file: File): Unit = throw new RuntimeException("psql driver does not support channels backup")
         override val isBackupSupported: Boolean = false
-        override def obtainExclusiveLock(): Unit = PsqlUtils.obtainExclusiveLock(instanceId, lockLeaseInterval)
+        override def obtainExclusiveLock(): Unit = PsqlUtils.obtainExclusiveLock(instanceId, lockLeaseInterval, lockTimeout)
       }
     } catch {
       case t: Throwable => {
@@ -169,12 +170,14 @@ object Databases extends Logging {
         .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
 
     }
-    val lockLeaseInterval = FiniteDuration(dbConfig.getDuration("lock.lease-interval").toSeconds, TimeUnit.SECONDS)
+    val lockLeaseInterval = dbConfig.getDuration("lock.lease-interval").toSeconds.seconds
+    val lockTimeout = dbConfig.getDuration("lock.lock-timeout").toSeconds.seconds
 
     Databases.postgresJDBC(
       database = database, host = host, port = port,
       username = username, password = password,
-      poolProperties = properties, lockLeaseInterval = lockLeaseInterval
+      poolProperties = properties,
+      lockLeaseInterval = lockLeaseInterval, lockTimeout = lockTimeout
     )
   }
 

@@ -99,7 +99,7 @@ object TestConstants {
     override def payments(): PaymentsDb = new PsqlPaymentsDb()
     override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb()
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
-    override def obtainLock(): Unit = PsqlUtils.obtainExclusiveLock("test_instance", FiniteDuration(1, TimeUnit.MINUTES))(ds)
+    override def obtainLock(): Unit = PsqlUtils.obtainExclusiveLock("test_instance", 1.minute, 1.second)(ds)
   }
 
   def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
