@@ -41,6 +41,4 @@ trait PendingRelayDb {
 
   def listPendingRelay(): Set[(ByteVector32, Long)]
 
-  def close(): Unit
-
 }

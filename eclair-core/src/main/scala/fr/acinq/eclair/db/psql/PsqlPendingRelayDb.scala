@@ -85,6 +85,4 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
       }
     }
   }
-
-  override def close(): Unit = ()
 }

@@ -356,6 +356,7 @@ class Setup(datadir: File,
           dbConfig.getString("driver") match {
             case "sqlite" => Databases.sqliteJDBC(chaindir)
             case "psql" => Databases.setupPsqlDatabases(dbConfig)
+            case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
           }
       }
       val dbLockLeaseRenewInterval = dbConfig.getDuration("lock.lease-renew-interval").toSeconds.seconds
