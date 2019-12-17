@@ -62,10 +62,10 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
-          val f1 = Seq(Features.PAYMENT_SECRET_OPTIONAL)
-          val allowMultiPart = Features.hasFeature(nodeParams.features, Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) || Features.hasFeature(nodeParams.features, Features.BASIC_MULTI_PART_PAYMENT_MANDATORY)
-          val f2 = if (allowMultiPart) Seq(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) else Nil
-          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TRAMPOLINE_PAYMENT_OPTIONAL) else Nil
+          val f1 = Seq(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+          val allowMultiPart = Features.hasFeature(nodeParams.features, Features.BasicMultiPartPayment, None)
+          val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
+          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
           Some(PaymentRequest.Features(f1 ++ f2 ++ f3: _*))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)

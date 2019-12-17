@@ -18,9 +18,9 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.Features._
+import fr.acinq.eclair.Features.{PaymentSecret => PaymentSecretF, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
@@ -45,9 +45,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  if (features.allowMultiPart) {
-    require(features.allowPaymentSecret, "there must be a payment secret when using multi-part")
-  }
+  validateFeatureGraph(features.bitmask).foreach(e => throw e)
   if (features.allowPaymentSecret) {
     require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
   }
@@ -130,7 +128,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[Features] = Some(Features(PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
+            features: Option[Features] = Some(Features(VariableLengthOnion.optional, PaymentSecretF.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
@@ -330,10 +328,10 @@ object PaymentRequest {
    */
   case class Features(bitmask: BitVector) extends TaggedField {
     lazy val supported: Boolean = areSupported(bitmask)
-    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
-    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY) || hasFeature(bitmask, PAYMENT_SECRET_OPTIONAL)
-    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
-    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
+    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment, None)
+    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, None)
+    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(FeatureSupport.Mandatory))
+    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment, None)
 
     override def toString: String = s"Features(${bitmask.toBin})"
 
