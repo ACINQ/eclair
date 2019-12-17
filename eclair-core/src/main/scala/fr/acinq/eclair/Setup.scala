@@ -43,10 +43,10 @@ import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
-import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.payment.Auditor
+import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -92,32 +92,30 @@ class Setup(datadir: File,
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
-  val database = db match {
-    case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
-  }
+  val database = initDatabase(config.getConfig("db"))
 
   /**
-   * This counter holds the current blockchain height.
-   * It is mainly used to calculate htlc expiries.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This counter holds the current blockchain height.
+    * It is mainly used to calculate htlc expiries.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val blockCount = new AtomicLong(0)
 
   /**
-   * This holds the current feerates, in satoshi-per-kilobytes.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kilobytes.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
 
   /**
-   * This holds the current feerates, in satoshi-per-kw.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kw.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
@@ -349,12 +347,44 @@ class Setup(datadir: File,
       None
     }
   }
+
+  private def initDatabase(dbConfig: Config): Databases = {
+    try {
+      val database = db match {
+        case Some(d) => d
+        case None =>
+          dbConfig.getString("driver") match {
+            case "sqlite" => Databases.sqliteJDBC(chaindir)
+            case "psql" => Databases.setupPsqlDatabases(dbConfig)
+            case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
+          }
+      }
+      val dbLockLeaseRenewInterval = dbConfig.getDuration("lock.lease-renew-interval").toSeconds.seconds
+      system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
+        try {
+          database.obtainExclusiveLock()
+        } catch {
+          case e: Throwable =>
+            logger.error("Cannot lock database. Exiting...", e)
+            sys.exit(-2)
+        }
+      }
+      database
+    } catch {
+      case e: Throwable =>
+        logger.error("Cannot initialize database. Exiting...", e)
+        sys.exit(-1)
+    }
+  }
 }
 
 // @formatter:off
 sealed trait Bitcoin
+
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
+
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,
