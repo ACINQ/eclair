@@ -5,7 +5,7 @@ FROM adoptopenjdk/openjdk11:jdk-11.0.3_7-alpine as BUILD
 # this was meant to make the image smaller, but we use multi-stage build so we don't care
 RUN apk add --no-cache curl tar bash
 
-ARG MAVEN_VERSION=3.6.2
+ARG MAVEN_VERSION=3.6.3
 ARG USER_HOME_DIR="/root"
 ARG SHA=3fbc92d1961482d6fbd57fbf3dd6d27a4de70778528ee3fb44aa7d27eb32dfdc
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
