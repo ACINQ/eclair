@@ -271,7 +271,7 @@ object Onion {
 
   /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
   def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload = {
-    val tlvs = Seq[OnionTlv](AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(targetNodeId), InvoiceFeatures(invoice.features.bitmask.bytes), InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
+    val tlvs = Seq[OnionTlv](AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(targetNodeId), InvoiceFeatures(invoice.features.toByteVector), InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
     val tlvs2 = invoice.paymentSecret.map(s => tlvs :+ PaymentData(s, totalAmount)).getOrElse(tlvs)
     NodeRelayPayload(TlvStream(tlvs2))
   }
