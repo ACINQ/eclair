@@ -195,7 +195,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     assert(trampolinePayload.outgoingCltv.toLong === currentBlockCount + 9 + 1)
     assert(trampolinePayload.outgoingNodeId === c)
     assert(trampolinePayload.paymentSecret === pr.paymentSecret)
-    assert(trampolinePayload.invoiceFeatures === Some(hex"8000")) // PAYMENT_SECRET_OPTIONAL
+    assert(trampolinePayload.invoiceFeatures === Some(hex"8200")) // var_onion_optin, payment_secret
   }
 
   test("reject trampoline to legacy payment for 0-value invoice") { f =>
