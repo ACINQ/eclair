@@ -23,12 +23,11 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -38,7 +37,7 @@ import scodec.bits.ByteVector
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.Random
 
 /**
  * Created by PM on 26/08/2016.
@@ -102,8 +101,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
-        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+        case Some(f) => wire.Init(ByteVector.empty, f)
+        case None => wire.Init(ByteVector.empty, nodeParams.features)
       }
       log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
       transport ! localInit
@@ -137,19 +136,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
       log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
 
-      if (Features.areSupported(remoteInit.localFeatures)) {
+      if (Features.areSupported(remoteInit.features)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        import Features._
+        def hasLocalFeature(f: Feature) = Features.hasFeature(d.localInit.features, f, None)
 
-        def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.localFeatures, bit)
+        def hasRemoteFeature(f: Feature) = Features.hasFeature(remoteInit.features, f, None)
 
-        def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.localFeatures, bit)
-
-        val canUseChannelRangeQueries = (hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY))
-
-        val canUseChannelRangeQueriesEx = (hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY))
-
+        val canUseChannelRangeQueries = hasLocalFeature(Features.ChannelRangeQueries) && hasRemoteFeature(Features.ChannelRangeQueries)
+        val canUseChannelRangeQueriesEx = hasLocalFeature(Features.ChannelRangeQueriesExtended) && hasRemoteFeature(Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -160,7 +155,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           } else {
             log.info("not syncing with this peer")
           }
-        } else if (hasRemoteFeature(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
+        } else if (hasRemoteFeature(Features.InitialRoutingSync)) {
           // "old" nodes, do as before
           log.info("peer requested a full routing table dump")
           router ! GetRoutingState
@@ -548,7 +543,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   onTermination {
-    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+    case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
       Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
@@ -685,8 +680,8 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
-      globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
+      globalFeatures = ByteVector.empty,
+      localFeatures = nodeParams.features)
   }
 
   /**
