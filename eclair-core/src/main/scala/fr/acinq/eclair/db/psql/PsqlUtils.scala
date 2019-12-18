@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db.psql
 
 import java.sql.{Connection, Statement, Timestamp}
-import java.time.Instant
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 import grizzled.slf4j.Logging
