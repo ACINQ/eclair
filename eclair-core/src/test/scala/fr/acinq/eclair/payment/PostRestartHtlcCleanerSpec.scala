@@ -283,7 +283,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
 
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
-    val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: Nil
+    val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FAIL_HTLC]] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FAIL_HTLC]] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
       case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.toSet)
@@ -313,7 +313,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
 
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
-    val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend] :: Nil
+    val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FULFILL_HTLC]] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FULFILL_HTLC]] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
       case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
     }.toSet)
