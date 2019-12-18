@@ -255,7 +255,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_d.outgoingNodeId === e)
     assert(inner_d.totalAmount === finalAmount)
     assert(inner_d.paymentSecret === invoice.paymentSecret)
-    assert(inner_d.invoiceFeatures === Some(hex"028000")) // PAYMENT_SECRET_OPTIONAL, BASIC_MULTI_PART_PAYMENT_OPTIONAL
+    assert(inner_d.invoiceFeatures === Some(hex"028200")) // var_onion_optin, payment_secret, basic_mpp
     assert(inner_d.invoiceRoutingInfo === Some(routingHints))
   }
 

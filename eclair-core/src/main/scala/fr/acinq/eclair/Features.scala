@@ -32,9 +32,9 @@ object FeatureSupport {
 // @formatter:on
 
 sealed trait Feature {
-  val rfcName: String
-  val mandatory: Int
-  val optional: Int
+  def rfcName: String
+  def mandatory: Int
+  def optional: Int = mandatory + 1
 
   override def toString = rfcName
 }
@@ -44,44 +44,37 @@ object Features {
   case object OptionDataLossProtect extends Feature {
     val rfcName = "option_data_loss_protect"
     val mandatory = 0
-    val optional = 1
   }
 
   case object InitialRoutingSync extends Feature {
     val rfcName = "initial_routing_sync"
     // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
     val mandatory = 2
-    val optional = 3
   }
 
   case object ChannelRangeQueries extends Feature {
     val rfcName = "gossip_queries"
     val mandatory = 6
-    val optional = 7
   }
 
   case object VariableLengthOnion extends Feature {
     val rfcName = "var_onion_optin"
     val mandatory = 8
-    val optional = 9
   }
 
   case object ChannelRangeQueriesExtended extends Feature {
     val rfcName = "gossip_queries_ex"
     val mandatory = 10
-    val optional = 11
   }
 
   case object PaymentSecret extends Feature {
     val rfcName = "payment_secret"
     val mandatory = 14
-    val optional = 15
   }
 
   case object BasicMultiPartPayment extends Feature {
     val rfcName = "basic_mpp"
     val mandatory = 16
-    val optional = 17
   }
 
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
@@ -90,7 +83,6 @@ object Features {
   case object TrampolinePayment extends Feature {
     val rfcName = "trampoline_payment"
     val mandatory = 50
-    val optional = 51
   }
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -105,7 +97,7 @@ object Features {
 
   def validateFeatureGraph(features: BitVector): Option[FeatureException] = featuresDependency.collectFirst {
     case (feature, dependencies) if hasFeature(features, feature, None) && dependencies.exists(d => !hasFeature(features, d, None)) =>
-      FeatureException(s"${features.toBin} sets $feature but is missing a dependency (${dependencies.mkString(" or ")})")
+      FeatureException(s"${features.toBin} sets $feature but is missing a dependency (${dependencies.filter(d => !hasFeature(features, d, None)).mkString(" and ")})")
   }
 
   def validateFeatureGraph(features: ByteVector): Option[FeatureException] = validateFeatureGraph(features.bits)

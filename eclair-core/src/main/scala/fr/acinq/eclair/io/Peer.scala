@@ -139,12 +139,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       if (Features.areSupported(remoteInit.features)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        def hasLocalFeature(f: Feature) = Features.hasFeature(d.localInit.features, f, None)
+        def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f, None)
 
-        def hasRemoteFeature(f: Feature) = Features.hasFeature(remoteInit.features, f, None)
+        def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f, None)
 
-        val canUseChannelRangeQueries = hasLocalFeature(Features.ChannelRangeQueries) && hasRemoteFeature(Features.ChannelRangeQueries)
-        val canUseChannelRangeQueriesEx = hasLocalFeature(Features.ChannelRangeQueriesExtended) && hasRemoteFeature(Features.ChannelRangeQueriesExtended)
+        val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
+        val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -155,7 +155,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           } else {
             log.info("not syncing with this peer")
           }
-        } else if (hasRemoteFeature(Features.InitialRoutingSync)) {
+        } else if (remoteHasFeature(Features.InitialRoutingSync)) {
           // "old" nodes, do as before
           log.info("peer requested a full routing table dump")
           router ! GetRoutingState

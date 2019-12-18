@@ -21,7 +21,6 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.Features.{BASIC_MULTI_PART_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
@@ -141,7 +140,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       case Some(invoiceFeatures) =>
         log.debug("relaying trampoline payment to non-trampoline recipient")
         val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
-        val allowMultiPart = Features.hasFeature(invoiceFeatures, BASIC_MULTI_PART_PAYMENT_OPTIONAL) || Features.hasFeature(invoiceFeatures, BASIC_MULTI_PART_PAYMENT_MANDATORY)
+        val allowMultiPart = Features.hasFeature(invoiceFeatures, Features.BasicMultiPartPayment, None)
         val payFSM = spawnOutgoingPayFSM(paymentCfg, allowMultiPart)
         if (allowMultiPart) {
           if (payloadOut.paymentSecret.isEmpty) {

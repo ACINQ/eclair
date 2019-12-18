@@ -83,6 +83,7 @@ case class NodeParams(keyManager: KeyManager,
                       enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+
   def currentBlockHeight: Long = blockCount.get
 }
 
@@ -174,7 +175,8 @@ object NodeParams {
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
     val features = ByteVector.fromValidHex(config.getString("features"))
-    Features.validateFeatureGraph(features).foreach(e => throw e)
+    val featuresErr = Features.validateFeatureGraph(features)
+    require(featuresErr.isEmpty, featuresErr.map(_.message))
 
     val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
