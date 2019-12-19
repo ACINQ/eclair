@@ -34,9 +34,9 @@ class RecoverySpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  def aliceInit = Init(ByteVector.empty, TestConstants.Alice.nodeParams.features)
+  def aliceInit = Init(TestConstants.Alice.nodeParams.features)
 
-  def bobInit = Init(ByteVector.empty, TestConstants.Bob.nodeParams.features)
+  def bobInit = Init(TestConstants.Bob.nodeParams.features)
 
   test("use funding pubkeys from publish commitment to spend our output") { f =>
     import f._

@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec, SendChannelQuery}
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, LightningMessageCodecs, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, _}
 
@@ -75,7 +75,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)))
   }
 
-  def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(ByteVector.empty, Bob.nodeParams.features), expectSync: Boolean = false): Unit = {
+  def connect(remoteNodeId: PublicKey, authenticator: TestProbe, watcher: TestProbe, router: TestProbe, relayer: TestProbe, connection: TestProbe, transport: TestProbe, peer: ActorRef, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features), expectSync: Boolean = false): Unit = {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peer, Peer.Init(None, channels))
@@ -213,7 +213,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
-    transport.send(peer, wire.Init(ByteVector.empty, bin"01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00".bytes))
+    transport.send(peer, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
   }
@@ -226,7 +226,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
-    transport.send(peer, wire.Init(bin"01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00".bytes, ByteVector.empty))
+    transport.send(peer, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
   }
@@ -276,19 +276,19 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("sync if no whitelist is defined") { f =>
     import f._
-    val remoteInit = wire.Init(ByteVector.empty, bin"10000000".bytes) // bob supports channel range queries
+    val remoteInit = wire.Init(bin"10000000".bytes) // bob supports channel range queries
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = true)
   }
 
   test("sync if whitelist contains peer", Tag("sync-whitelist-bob")) { f =>
     import f._
-    val remoteInit = wire.Init(hex"0200", bin"10000000".bytes) // bob supports channel range queries and variable length onion
+    val remoteInit = wire.Init(bin"0000001010000000".bytes) // bob supports channel range queries and variable length onion
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = true)
   }
 
   test("don't sync if whitelist doesn't contain peer", Tag("sync-whitelist-random")) { f =>
     import f._
-    val remoteInit = wire.Init(ByteVector.empty, bin"10000000".bytes) // bob supports channel range queries
+    val remoteInit = wire.Init(bin"0000001010000000".bytes) // bob supports channel range queries
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, Set.empty, remoteInit, expectSync = false)
   }
 

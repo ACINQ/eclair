@@ -101,10 +101,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some(f) => wire.Init(ByteVector.empty, f)
-        case None => wire.Init(ByteVector.empty, nodeParams.features)
+        case Some(f) => wire.Init(f)
+        case None => wire.Init(nodeParams.features)
       }
-      log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
+      log.info(s"using features=${localInit.features.toBin}")
       transport ! localInit
 
       val address_opt = if (outgoing) {
@@ -134,7 +134,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
+      log.info(s"peer is using features=${remoteInit.features.toBin}")
 
       if (Features.areSupported(remoteInit.features)) {
         d.origin_opt.foreach(origin => origin ! "connected")
@@ -680,8 +680,7 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
-      globalFeatures = ByteVector.empty,
-      localFeatures = nodeParams.features)
+      features = nodeParams.features)
   }
 
   /**

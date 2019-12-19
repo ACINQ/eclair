@@ -60,9 +60,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  def aliceInit = Init(ByteVector.empty, TestConstants.Alice.nodeParams.features)
+  def aliceInit = Init(TestConstants.Alice.nodeParams.features)
 
-  def bobInit = Init(ByteVector.empty, TestConstants.Bob.nodeParams.features)
+  def bobInit = Init(TestConstants.Bob.nodeParams.features)
 
   /**
    * This test checks the case where a disconnection occurs *right before* the counterparty receives a new sig

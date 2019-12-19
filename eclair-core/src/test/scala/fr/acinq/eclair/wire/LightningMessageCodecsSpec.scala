@@ -45,19 +45,19 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   test("encode/decode init message") {
     val testCases = Seq(
-      (hex"0000 0000", hex""), // no features
-      (hex"0000 0002088a", hex"088a"), // no global features
-      (hex"00020200 0000", hex"0200"), // no local features
-      (hex"00020200 0002088a", hex"0a8a"), // local and global - no conflict - same size
-      (hex"00020200 0003020002", hex"020202"), // local and global - no conflict - different sizes
-      (hex"00020a02 0002088a", hex"0a8a"), // local and global - conflict - same size
-      (hex"00022200 000302aaa2", hex"02aaa2") // local and global - conflict - different sizes
+      (hex"0000 0000", hex"", hex"0000 0000"), // no features
+      (hex"0000 0002088a", hex"088a", hex"0000 0002088a"), // no global features
+      (hex"00020200 0000", hex"0200", hex"0000 00020200"), // no local features
+      (hex"00020200 0002088a", hex"0a8a", hex"0000 00020a8a"), // local and global - no conflict - same size
+      (hex"00020200 0003020002", hex"020202", hex"0000 0003020202"), // local and global - no conflict - different sizes
+      (hex"00020a02 0002088a", hex"0a8a", hex"0000 00020a8a"), // local and global - conflict - same size
+      (hex"00022200 000302aaa2", hex"02aaa2", hex"0000 000302aaa2") // local and global - conflict - different sizes
     )
 
-    for ((bin, features) <- testCases) {
+    for ((bin, features, encoded) <- testCases) {
       val init = initCodec.decode(bin.bits).require.value
       assert(init.features === features)
-      assert(initCodec.encode(init).require.bytes === bin)
+      assert(initCodec.encode(init).require.bytes === encoded)
     }
   }
 
