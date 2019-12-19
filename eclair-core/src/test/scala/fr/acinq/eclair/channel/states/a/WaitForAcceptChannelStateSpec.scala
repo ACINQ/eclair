@@ -51,8 +51,8 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     import setup._
     val channelVersion = ChannelVersion.STANDARD
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
-    val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
-    val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
+    val aliceInit = Init(aliceParams.features)
+    val bobInit = Init(bobParams.features)
     within(30 seconds) {
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
