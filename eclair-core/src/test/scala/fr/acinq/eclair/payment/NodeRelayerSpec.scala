@@ -27,9 +27,10 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.relay.{CommandBuffer, NodeRelayer}
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{BalanceTooLow, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
+import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, TestkitBaseClass, nodeFee, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome
@@ -130,9 +131,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, expiryIn, 1000000 msat, expiryOut)
     relayer.send(nodeRelayer, p)
 
-    // TODO: @t-bast: should be an Expiry failure
-    val failure = IncorrectOrUnknownPaymentDetails(2000000 msat, nodeParams.currentBlockHeight)
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TrampolineExpiryTooSoon), commit = true)))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -144,14 +143,12 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val expiryIn2 = CltvExpiry(500000) // not ok (delta = 100)
     val expiryOut = CltvExpiry(499900)
     val p = Seq(
-      createValidIncomingPacket(2000000 msat, 3000000 msat, expiryIn1, 2500000 msat, expiryOut),
-      createValidIncomingPacket(1000000 msat, 3000000 msat, expiryIn2, 2500000 msat, expiryOut)
+      createValidIncomingPacket(2000000 msat, 3000000 msat, expiryIn1, 2100000 msat, expiryOut),
+      createValidIncomingPacket(1000000 msat, 3000000 msat, expiryIn2, 2100000 msat, expiryOut)
     )
     p.foreach(p => relayer.send(nodeRelayer, p))
 
-    // TODO: @t-bast: should be an Expiry failure
-    val failure = IncorrectOrUnknownPaymentDetails(3000000 msat, nodeParams.currentBlockHeight)
-    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true))))
+    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TrampolineExpiryTooSoon), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -162,9 +159,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, CltvExpiry(500000), 1999000 msat, CltvExpiry(490000))
     relayer.send(nodeRelayer, p)
 
-    // TODO: @t-bast: should be a Fee failure
-    val failure = IncorrectOrUnknownPaymentDetails(2000000 msat, nodeParams.currentBlockHeight)
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TrampolineFeeInsufficient), commit = true)))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -178,11 +173,39 @@ class NodeRelayerSpec extends TestkitBaseClass {
     )
     p.foreach(p => relayer.send(nodeRelayer, p))
 
-    // TODO: @t-bast: should be a Fee failure
-    val failure = IncorrectOrUnknownPaymentDetails(3000000 msat, nodeParams.currentBlockHeight)
-    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(failure), commit = true))))
+    p.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TrampolineFeeInsufficient), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
+  }
+
+  test("fail to relay because outgoing balance isn't sufficient") { f =>
+    import f._
+
+    // Receive an upstream multi-part payment.
+    incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
+    val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
+    outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+
+    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(BalanceTooLow) :: Nil))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
+    commandBuffer.expectNoMsg(100 millis)
+    eventListener.expectNoMsg(100 millis)
+  }
+
+  test("fail to relay because incoming fee isn't enough to find routes downstream") { f =>
+    import f._
+
+    // Receive an upstream multi-part payment.
+    incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
+    val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
+    outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+
+    // If we're having a hard time finding routes, raising the fee/cltv will likely help.
+    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(RouteNotFound) :: Nil
+    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, failures))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TrampolineFeeInsufficient), commit = true))))
+    commandBuffer.expectNoMsg(100 millis)
+    eventListener.expectNoMsg(100 millis)
   }
 
   test("fail to relay because of downstream failures") { f =>
@@ -193,8 +216,9 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
     outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
-    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, Nil))
-    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(incomingAmount, nodeParams.currentBlockHeight)), commit = true))))
+    val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: LocalFailure(RouteNotFound) :: Nil
+    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, failures))
+    incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectHtlcAmount(42 msat)), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
   }
