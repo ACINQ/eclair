@@ -67,8 +67,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayerB))
     within(30 seconds) {
-      val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-      val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+      val aliceInit = Init(Alice.channelParams.features)
+      val bobInit = Init(Bob.channelParams.features)
       registerA ! alice
       registerB ! bob
       // no announcements
