@@ -16,22 +16,38 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.{KamonExt, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{KamonExt, wire}
 import kamon.Kamon
 import kamon.tag.TagSet
-import scodec.bits.BitVector
-import scodec.{Attempt, Codec}
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
+import scodec.{Attempt, Codec}
+import shapeless.HNil
 
 /**
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
 
-  val initCodec: Codec[Init] = (
-    ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[Init]
+  /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
+  val combinedFeaturesCodec: Codec[ByteVector] = (("globalFeatures" | varsizebinarydata) :: ("localFeatures" | varsizebinarydata)).exmap[ByteVector](
+    features => {
+      val f1 = features.head
+      val f2 = features.tail.head
+      val combinedFeatures = if (f1.length == f2.length) {
+        f1 | f2
+      } else if (f1.length > f2.length) {
+        f1 | f2.padLeft(f1.length)
+      } else {
+        f1.padLeft(f2.length) | f2
+      }
+      Attempt.Successful(combinedFeatures)
+    },
+    features => Attempt.Successful(ByteVector.empty :: features :: HNil)
+  )
+
+  val initCodec: Codec[Init] = combinedFeaturesCodec.as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::
@@ -239,10 +255,10 @@ object LightningMessageCodecs {
         ("firstBlockNum" | uint32) ::
         ("numberOfBlocks" | uint32) ::
         ("tlvStream" | QueryChannelRangeTlv.codec)
-      ).as[QueryChannelRange]
+    ).as[QueryChannelRange]
   }
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] = {
     Codec(
       ("chainHash" | bytes32) ::
         ("firstBlockNum" | uint32) ::
@@ -250,7 +266,7 @@ object LightningMessageCodecs {
         ("complete" | byte) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
         ("tlvStream" | ReplyChannelRangeTlv.codec)
-      ).as[ReplyChannelRange]
+    ).as[ReplyChannelRange]
   }
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (

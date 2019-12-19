@@ -12,10 +12,11 @@ import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, InputInfo
 import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, _}
 import org.scalatest.Outcome
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
-class RecoverySpec  extends TestkitBaseClass with StateTestsHelperMethods {
+class RecoverySpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
@@ -33,9 +34,9 @@ class RecoverySpec  extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  def aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
+  def aliceInit = Init(TestConstants.Alice.nodeParams.features)
 
-  def bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
+  def bobInit = Init(TestConstants.Bob.nodeParams.features)
 
   test("use funding pubkeys from publish commitment to spend our output") { f =>
     import f._
