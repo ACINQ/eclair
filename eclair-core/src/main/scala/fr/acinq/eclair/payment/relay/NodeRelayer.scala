@@ -21,15 +21,16 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Features.{BASIC_MULTI_PART_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
-import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent, TrampolinePaymentRelayed}
-import fr.acinq.eclair.router.{RouteParams, Router}
+import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
@@ -45,9 +46,6 @@ import scala.collection.immutable.Queue
  * router to find a route to the remote node and potentially splitting the payment using multi-part).
  */
 class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
-
-  // TODO: @t-bast: if fees/cltv insufficient (could not find route) send special error (sender should retry with higher fees/cltv)?
-  // TODO: @t-bast: add Kamon counters to monitor the size of pendingIncoming/Outgoing?
 
   import NodeRelayer._
 
@@ -113,12 +111,9 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       }
       context become main(pendingIncoming, pendingOutgoing - id)
 
-    case PaymentFailed(id, _, _, _) =>
-      // TODO: @t-bast: try to extract the most meaningful error to return upstream (from the downstream failures)
-      //  - if local failure because balance too low: we should send a TEMPORARY failure upstream (they should retry when we have more balance available)
-      //  - if local failure because route not found: sender probably need to raise fees/cltv?
+    case PaymentFailed(id, _, failures, _) =>
       log.debug("trampoline payment failed")
-      pendingOutgoing.get(id).foreach { case PendingResult(upstream, _) => rejectPayment(upstream) }
+      pendingOutgoing.get(id).foreach { case PendingResult(upstream, nextPayload) => rejectPayment(upstream, translateError(failures, nextPayload.outgoingNodeId)) }
       context become main(pendingIncoming, pendingOutgoing - id)
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
@@ -216,21 +211,19 @@ object NodeRelayer {
    */
   case class PendingResult(upstream: Upstream.TrampolineRelayed, nextPayload: Onion.NodeRelayPayload)
 
-  def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
+  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
-      // TODO: @t-bast: should be a TrampolineFeeInsufficient(upstream.amountIn, myLatestNodeUpdate)
-      Some(IncorrectOrUnknownPaymentDetails(upstream.amountIn, nodeParams.currentBlockHeight))
+      Some(TrampolineFeeInsufficient)
     } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDeltaBlocks) {
-      // TODO: @t-bast: should be a TrampolineExpiryTooSoon(myLatestNodeUpdate)
-      Some(IncorrectOrUnknownPaymentDetails(upstream.amountIn, nodeParams.currentBlockHeight))
+      Some(TrampolineExpiryTooSoon)
     } else {
       None
     }
   }
 
   /** Compute route params that honor our fee and cltv requirements. */
-  def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
+  private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDeltaBlocks
     val routeMaxFee = amountIn - amountOut - nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, amountOut)
     Router.getDefaultRouteParams(nodeParams.routerConf).copy(
@@ -238,6 +231,29 @@ object NodeRelayer {
       routeMaxCltv = routeMaxCltv,
       maxFeePct = 0 // we disable percent-based max fee calculation, we're only interested in collecting our node fee
     )
+  }
+
+  /**
+   * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
+   * should return upstream.
+   */
+  private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
+    def tooManyRouteNotFound(failures: Seq[PaymentFailure]): Boolean = {
+      val routeNotFoundCount = failures.count(f => f == LocalFailure(RouteNotFound))
+      routeNotFoundCount > failures.length / 2
+    }
+
+    failures match {
+      case Nil => None
+      case LocalFailure(MultiPartPaymentLifecycle.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case _ if tooManyRouteNotFound(failures) => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
+      case _ =>
+        // Otherwise, we try to find a downstream error that we could decrypt.
+        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == outgoingNodeId => e.failureMessage }
+        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, e) => e.failureMessage }
+        val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure))
+        Some(failure)
+    }
   }
 
 }
