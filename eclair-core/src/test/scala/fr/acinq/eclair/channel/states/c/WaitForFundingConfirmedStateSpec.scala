@@ -41,8 +41,8 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val aliceInit = Init(Alice.channelParams.features)
+    val bobInit = Init(Bob.channelParams.features)
     within(30 seconds) {
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
@@ -84,7 +84,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
   test("recv BITCOIN_FUNDING_DEPTHOK (bad funding pubkey script)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    val badOutputScript = fundingTx.txOut(0).copy(publicKeyScript = Script.write(multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
@@ -93,7 +93,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
   test("recv BITCOIN_FUNDING_DEPTHOK (bad funding amount)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    val badOutputAmount = fundingTx.txOut(0).copy(amount = 1234567.sat)
+    val badOutputAmount = fundingTx.txOut.head.copy(amount = 1234567.sat)
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputAmount))
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)

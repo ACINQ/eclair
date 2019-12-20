@@ -61,7 +61,7 @@ class SqliteAuditDbSpec extends FunSuite {
     val e10 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
     val e11 = TrampolinePaymentRelayed(42000 msat, 40000 msat, randomBytes32, randomKey.publicKey, Seq(randomBytes32), Seq(randomBytes32))
     // TrampolinePaymentRelayed events are converted to ChannelPaymentRelayed events for now. We need to udpate the DB schema to fix this.
-    val e11bis = ChannelPaymentRelayed(42000 msat, 40000 msat, e11.paymentHash, e11.fromChannelIds.head, e11.toChannelIds.head)
+    val e11bis = ChannelPaymentRelayed(42000 msat, 40000 msat, e11.paymentHash, e11.fromChannelIds.head, e11.toChannelIds.head, e11.timestamp)
 
     db.add(e1)
     db.add(e2)

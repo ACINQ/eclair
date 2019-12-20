@@ -103,7 +103,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward multi-part payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL, PAYMENT_SECRET_OPTIONAL)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -113,7 +113,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward multi-part payment with pre-defined route") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(BASIC_MULTI_PART_PAYMENT_OPTIONAL, PAYMENT_SECRET_OPTIONAL)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
     val req = SendPaymentRequest(finalAmount / 2, paymentHash, c, 1, paymentRequest = Some(pr), predefinedRoute = Seq(a, b, c))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -128,7 +128,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward trampoline payment") { f =>
     import f._
-    val features = Features(PAYMENT_SECRET_OPTIONAL, BASIC_MULTI_PART_PAYMENT_OPTIONAL, TRAMPOLINE_PAYMENT_OPTIONAL)
+    val features = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
     val ignoredRoutingHints = List(List(ExtraHop(b, channelUpdate_bc.shortChannelId, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features), extraHops = ignoredRoutingHints)
     val trampolineFees = 21000 msat
@@ -195,14 +195,14 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     assert(trampolinePayload.outgoingCltv.toLong === currentBlockCount + 9 + 1)
     assert(trampolinePayload.outgoingNodeId === c)
     assert(trampolinePayload.paymentSecret === pr.paymentSecret)
-    assert(trampolinePayload.invoiceFeatures === Some(hex"8000")) // PAYMENT_SECRET_OPTIONAL
+    assert(trampolinePayload.invoiceFeatures === Some(hex"8200")) // var_onion_optin, payment_secret
   }
 
   test("reject trampoline to legacy payment for 0-value invoice") { f =>
     import f._
     // This is disabled because it would let the trampoline node steal the whole payment (if malicious).
     val routingHints = List(List(PaymentRequest.ExtraHop(b, channelUpdate_bc.shortChannelId, 10 msat, 100, CltvExpiryDelta(144))))
-    val features = Features(PAYMENT_SECRET_OPTIONAL, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
+    val features = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)
     val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, "#abittooreckless", None, None, routingHints, features = Some(features))
     val trampolineFees = 21000 msat
     val req = SendTrampolinePaymentRequest(finalAmount, trampolineFees, pr, b, CltvExpiryDelta(9), CltvExpiryDelta(12))
