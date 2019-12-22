@@ -42,6 +42,7 @@ import scala.util.{Failure, Success, Try}
  */
 
 object Helpers {
+  case class Commitment(spec: CommitmentSpec, tx: CommitTx, info: CommitTxInfo)
 
   /**
    * Depending on the state, returns the current temporaryChannelId or channelId
@@ -252,9 +253,9 @@ object Helpers {
      * @param fundingTxHash
      * @param fundingTxOutputIndex
      * @param remoteFirstPerCommitmentPoint
-     * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
+     * @return (local, remote)
      */
-    def makeFirstCommitTxs(keyManager: KeyManager, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(keyManager: KeyManager, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey, maxFeerateMismatch: Double): (Commitment, Commitment) = {
       val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
 
@@ -275,10 +276,10 @@ object Helpers {
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
-      val (localCommitTx, _, _) = Commitments.makeLocalTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val (localCommitTx, localInfo, _, _) = Commitments.makeLocalTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, remoteInfo, _, _) = Commitments.makeRemoteTxs(keyManager, channelVersion, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
-      (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
+      (Commitment(localSpec, localCommitTx, localInfo), Commitment(remoteSpec, remoteCommitTx, remoteInfo))
     }
 
   }
@@ -459,7 +460,7 @@ object Helpers {
       // TODO: check that
       val dustLimitSatoshis = localParams.dustLimit.max(remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
-      val localClosingSig = keyManager.sign(closingTx,  keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+      val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
       val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)
       log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
       log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
@@ -574,7 +575,7 @@ object Helpers {
     def claimRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       import commitments.{channelVersion, commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, channelVersion, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+      val (remoteCommitTx, _, _, _) = Commitments.makeRemoteTxs(keyManager, channelVersion, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)

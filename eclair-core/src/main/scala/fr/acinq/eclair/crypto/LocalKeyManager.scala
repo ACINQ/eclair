@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import fr.acinq.eclair.transactions.Transactions.{CommitTxInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{ShortChannelId, secureRandom}
 import scodec.bits.ByteVector
 
@@ -101,7 +101,22 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long) = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   /**
-    *
+    * Sign commitment transaction
+    * @param tx        input transaction
+    * @param txInfo    additional transaction info for validation
+    * @param publicKey extended public key
+    * @return a signature generated with the private key that matches the input
+    *         extended public key
+    */
+  def sign(tx: TransactionWithInputInfo, txInfo: CommitTxInfo, publicKey: ExtendedPublicKey): ByteVector64 = {
+    require(tx.tx.txOut.size == txInfo.outputRedeemScripts.size)
+    val privateKey = privateKeys.get(publicKey.path)
+    Transactions.sign(tx, privateKey.privateKey)
+  }
+
+
+  /**
+    * Sign closing transaction
     * @param tx        input transaction
     * @param publicKey extended public key
     * @return a signature generated with the private key that matches the input

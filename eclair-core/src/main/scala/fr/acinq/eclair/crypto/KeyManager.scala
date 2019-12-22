@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import fr.acinq.eclair.transactions.Transactions.{CommitTxInfo, TransactionWithInputInfo}
 import scodec.bits.ByteVector
 
 trait KeyManager {
@@ -64,7 +64,17 @@ trait KeyManager {
   def newFundingKeyPath(isFunder: Boolean) : DeterministicWallet.KeyPath
 
   /**
-    *
+    * Sign a commitment transaction
+    * @param tx        input transaction
+    * @param txInfo    additional transaction info for validation
+    * @param publicKey extended public key
+    * @return a signature generated with the private key that matches the input
+    *         extended public key
+    */
+  def sign(tx: TransactionWithInputInfo, txInfo: CommitTxInfo, publicKey: ExtendedPublicKey): ByteVector64
+
+    /**
+    * Sign a closing transaction
     * @param tx        input transaction
     * @param publicKey extended public key
     * @return a signature generated with the private key that matches the input
