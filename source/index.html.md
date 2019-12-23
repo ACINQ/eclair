@@ -13,9 +13,9 @@ includes:
 search: true
 ---
 
-# Introduction 
+# Introduction
 
-Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API. 
+Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API.
 Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair). The API
 uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON encoded object or simple strings if no object
 is being returned, all errors are handled with a JSON response more info [here](#errors). All monetary values are in millisatoshi unless stated otherwise.
@@ -828,6 +828,7 @@ curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://l
 # with eclair-cli
 eclair-cli parseinvoice --invoice=<some_bolt11invoice>
 ```
+
 > The above command returns:
 
 ```json
@@ -862,15 +863,16 @@ curl -u :<eclair_api_password> -X POST -F invoice=<some_invoice> "http://localho
 # with eclair-cli
 eclair-cli payinvoice --invoice=<some_invoice>
 ```
+
 > The above command returns:
 
 ```json
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Pays a **BOLT11** invoice, in case of failure the payment will be retried up to `maxAttempts` times, 
-default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where 
-the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an 
+Pays a **BOLT11** invoice, in case of failure the payment will be retried up to `maxAttempts` times,
+default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
+the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an
 extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 ### HTTP Request
@@ -892,20 +894,21 @@ externalId | Extra payment identifier specified by the caller | Yes | String
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
-	-F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode"
+  -F amountMsat=<amount> -F paymentHash=<some_hash> "http://localhost:8080/sendtonode"
 
 # with eclair-cli
 eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<some_hash>
 ```
+
 > The above command returns:
 
 ```json
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Sends money to a node, in case of failure the payment will be retried up to `maxAttempts` times, 
-default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where 
-the unique identifier for this payment attempt is immediately returned to the caller.It's possible to add an 
+Sends money to a node, in case of failure the payment will be retried up to `maxAttempts` times,
+default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where
+the unique identifier for this payment attempt is immediately returned to the caller.It's possible to add an
 extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 ### HTTP Request
@@ -924,16 +927,16 @@ feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satos
 maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
 externalId | Extra payment identifier specified by the caller | Yes | String
 
-
 ## SendToRoute
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F route=node1,node2 \
-	-F amountMsat=<amount> -F paymentHash=<some_hash> -F finalCltvExpiry=<some_value> "http://localhost:8080/sendtoroute"
+  -F amountMsat=<amount> -F paymentHash=<some_hash> -F finalCltvExpiry=<some_value> "http://localhost:8080/sendtoroute"
 
 # with eclair-cli
 eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value>
 ```
+
 > The above command returns:
 
 ```json
@@ -960,7 +963,6 @@ paymentHash | The payment hash for this payment | No | 32bytes-HexString (String
 finalCltvExpiry | The total CLTV expiry value for this payment | No | Integer
 externalId | Extra payment identifier specified by the caller | Yes | String
 
-
 ## GetSentInfo
 
 ```shell
@@ -969,6 +971,7 @@ curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localh
 # with eclair-cli
 eclair-cli getsentinfo --paymentHash=<some_hash>
 ```
+
 > The above command returns:
 
 ```json
@@ -1068,6 +1071,7 @@ curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localh
 # with eclair-cli
 eclair-cli getreceivedinfo --paymentHash=<some_hash>
 ```
+
 > The above command returns:
 
 ```json
@@ -1485,7 +1489,6 @@ Retrieves information about the available balance of local channels.
 
 `POST http://localhost:8080/usablebalances`
 
-
 # Websocket
 
 ## WS
@@ -1509,10 +1512,19 @@ Retrieves information about the available balance of local channels.
 ```json
 {
    "type":"payment-received",
-   "amount":21,
    "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
-   "fromChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
-   "timestamp":1553784963659
+   "parts":[
+     {
+       "amount":21,
+       "fromChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
+       "timestamp":1553784963659
+     },
+     {
+       "amount":24,
+       "fromChannelId":"0200000000000000000000000000000000000000000000000000000000000000",
+       "timestamp":1553784963873
+     }
+   ]
 }
 ```
 
@@ -1521,8 +1533,10 @@ Retrieves information about the available balance of local channels.
 ```json
 {
    "type":"payment-failed",
+   "id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
    "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
-   "failures":[ ]
+   "failures":[],
+   "timestamp":1553784963659
 }
 ```
 
@@ -1531,12 +1545,25 @@ Retrieves information about the available balance of local channels.
 ```json
 {
    "type":"payment-sent",
-   "amount":21,
-   "feesPaid":1,
+   "id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
    "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
    "paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000",
-   "toChannelId":"0000000000000000000000000000000000000000000000000000000000000000",
-   "timestamp":1553784337711
+   "parts":[
+     {
+       "id":"b8799834-8db9-460b-b754-2942f20e3500",
+       "amount":21,
+       "feesPaid":1,
+       "toChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
+       "timestamp":1553784337711
+     },
+     {
+       "id":"ab348eb7-b0ed-46ff-9274-28cfdbdaae8d",
+       "amount":24,
+       "feesPaid":3,
+       "toChannelId":"0200000000000000000000000000000000000000000000000000000000000000",
+       "timestamp":1553784337735
+     }
+   ]
 }
 ```
 
@@ -1556,10 +1583,10 @@ several types covering all the possible outcomes. All monetary values are expres
 
 ### Response types
 
-Type | Description 
+Type | Description
 --------- | -----------
 payment-received | A payment has been received  
-payment-relayed | A payment has been successfully relayed 
+payment-relayed | A payment has been successfully relayed
 payment-sent | A payment has been successfully sent
 payment-settling-onchain | A payment wasn't fulfilled and its HTLC is being redeemed on-chain
 payment-failed | A payment failed
