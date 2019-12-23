@@ -63,7 +63,8 @@ class EarnDotComFeeProviderSpec extends FunSuite with Logging {
       blocks_6 = 230 * 1000,
       blocks_12 = 140 * 1000,
       blocks_36 = 60 * 1000,
-      blocks_72 = 40 * 1000)
+      blocks_72 = 40 * 1000,
+      blocks_144 = 10 * 1000)
     assert(feerates === ref)
   }
 
@@ -72,8 +73,18 @@ class EarnDotComFeeProviderSpec extends FunSuite with Logging {
     import scala.concurrent.duration._
     implicit val sttpBackend  = OkHttpFutureBackend()
     implicit val timeout = Timeout(30 seconds)
-    val provider = new EarnDotComFeeProvider()
+    val provider = new EarnDotComFeeProvider(5 seconds)
     logger.info("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))
   }
 
+  test("check that read timeout is enforced") {
+    import scala.concurrent.ExecutionContext.Implicits.global
+    import scala.concurrent.duration._
+    implicit val sttpBackend  = OkHttpFutureBackend()
+    implicit val timeout = Timeout(5 second)
+    val provider = new EarnDotComFeeProvider(1 millisecond)
+    intercept[Exception] {
+      Await.result(provider.getFeerates, timeout.duration)
+    }
+  }
 }

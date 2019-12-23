@@ -1,19 +1,18 @@
-FROM openjdk:8u171-jdk-alpine as BUILD
+FROM adoptopenjdk/openjdk11:jdk-11.0.3_7-alpine as BUILD
 
 # Setup maven, we don't use https://hub.docker.com/_/maven/ as it declare .m2 as volume, we loose all mvn cache
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
 # this was meant to make the image smaller, but we use multi-stage build so we don't care
-
 RUN apk add --no-cache curl tar bash
 
-ARG MAVEN_VERSION=3.6.0
+ARG MAVEN_VERSION=3.6.3
 ARG USER_HOME_DIR="/root"
-ARG SHA=6a1b346af36a1f1a491c1c1a141667c5de69b42e6611d3687df26868bc0f4637
+ARG SHA=c35a1803a6e70a126e80b2b3ae33eed961f83ed74d18fcd16909b2d44d7dada3203f1ffe726c17ef8dcca2dcaa9fca676987befeadc9b9f759967a8cb77181c0
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
   && curl -fsSL -o /tmp/apache-maven.tar.gz ${BASE_URL}/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
-  && echo "${SHA}  /tmp/apache-maven.tar.gz" | sha256sum -c - \
+  && echo "${SHA}  /tmp/apache-maven.tar.gz" | sha512sum -c - \
   && tar -xzf /tmp/apache-maven.tar.gz -C /usr/share/maven --strip-components=1 \
   && rm -f /tmp/apache-maven.tar.gz \
   && ln -s /usr/share/maven/bin/mvn /usr/bin/mvn
@@ -42,7 +41,7 @@ RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.comm
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
 # We currently use a debian image for runtime because of some jni-related issue with sqlite
-FROM openjdk:8u181-jre-slim
+FROM openjdk:11.0.4-jre-slim
 WORKDIR /app
 
 # install jq for eclair-cli

@@ -18,20 +18,20 @@ package fr.acinq.eclair.gui.controllers
 
 import akka.actor.ActorRef
 import com.google.common.base.Strings
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, Commitments}
 import fr.acinq.eclair.gui.FxApp
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
+import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
+import javafx.scene.control.Alert.AlertType
 import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.VBox
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
-import grizzled.slf4j.Logging
-import javafx.event.{ActionEvent, EventHandler}
-import javafx.scene.control.Alert.AlertType
 
 /**
   * Created by DPA on 23/09/2016.
@@ -129,13 +129,13 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
   }
 
   def updateBalance(commitments: Commitments) {
-    balance = MilliSatoshi(commitments.localCommit.spec.toLocalMsat)
-    capacity = MilliSatoshi(commitments.localCommit.spec.totalFunds)
+    balance = commitments.localCommit.spec.toLocal
+    capacity = commitments.localCommit.spec.totalFunds
   }
 
   def refreshBalance(): Unit = {
-    amountUs.setText(s"${CoinUtils.formatAmountInUnit(balance, FxApp.getUnit)} / ${CoinUtils.formatAmountInUnit(capacity, FxApp.getUnit, withUnit = true)}")
-    balanceBar.setProgress(balance.amount.toDouble / capacity.amount)
+    amountUs.setText(s"${CoinUtils.formatAmountInUnit(balance, FxApp.getUnit, false)} / ${CoinUtils.formatAmountInUnit(capacity, FxApp.getUnit, withUnit = true)}")
+    balanceBar.setProgress(balance.toLong.toDouble / capacity.toLong)
   }
 
   def getBalance: MilliSatoshi = balance

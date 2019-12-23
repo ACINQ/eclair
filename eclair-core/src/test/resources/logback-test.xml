@@ -20,7 +20,7 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0} %X{nodeId}%X{channelId} - %msg%ex{12}%n</pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -46,6 +46,8 @@
     <logger name="fr.acinq.eclair.router" level="WARN"/>
     <logger name="fr.acinq.eclair.channel" level="WARN"/>
     <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/>
+    <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="OFF"/>
+    <logger name="fr.acinq.eclair.db.BackupHandler" level="OFF"/>
 
     <root level="INFO">
         <!--appender-ref ref="FILE"/>

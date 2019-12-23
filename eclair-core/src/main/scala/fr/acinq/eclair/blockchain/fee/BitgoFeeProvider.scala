@@ -23,9 +23,10 @@ import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.jackson.Serialization
 
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(chainHash: ByteVector32)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: ByteVector32, readTimeOut: Duration)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 
@@ -39,7 +40,7 @@ class BitgoFeeProvider(chainHash: ByteVector32)(implicit http: SttpBackend[Futur
 
   override def getFeerates: Future[FeeratesPerKB] =
     for {
-      res <- sttp.get(uri)
+      res <- sttp.readTimeout(readTimeOut).get(uri)
         .response(asJson[JValue])
         .send()
       feeRanges = parseFeeRanges(res.unsafeBody)
@@ -72,6 +73,7 @@ object BitgoFeeProvider {
       blocks_6 = extractFeerate(feeRanges, 6),
       blocks_12 = extractFeerate(feeRanges, 12),
       blocks_36 = extractFeerate(feeRanges, 36),
-      blocks_72 = extractFeerate(feeRanges, 72))
+      blocks_72 = extractFeerate(feeRanges, 72),
+      blocks_144 = extractFeerate(feeRanges, 144))
 
 }

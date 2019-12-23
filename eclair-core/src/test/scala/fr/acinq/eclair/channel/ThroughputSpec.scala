@@ -27,19 +27,19 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.payment.Relayer
+import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.scalatest.FunSuite
 
 import scala.concurrent.duration._
 import scala.util.Random
 
-
 class ThroughputSpec extends FunSuite {
   ignore("throughput") {
-    implicit val system = ActorSystem()
+    implicit val system = ActorSystem("test")
     val pipe = system.actorOf(Props[Pipe], "pipe")
-    val blockchain = system.actorOf(ZmqWatcher.props(new TestBitcoinClient()), "blockchain")
+    val blockCount = new AtomicLong()
+    val blockchain = system.actorOf(ZmqWatcher.props(blockCount, new TestBitcoinClient()), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = new Random()
 
@@ -51,7 +51,7 @@ class ThroughputSpec extends FunSuite {
         case ('add, tgt: ActorRef) =>
           val r = randomBytes32
           val h = Crypto.sha256(r)
-          tgt ! CMD_ADD_HTLC(1, h, 1, upstream = Left(UUID.randomUUID()))
+          tgt ! CMD_ADD_HTLC(1 msat, h, CltvExpiry(1), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
           context.become(run(h2r + (h -> r)))
 
         case ('sig, tgt: ActorRef) => tgt ! CMD_SIGN
@@ -64,14 +64,16 @@ class ThroughputSpec extends FunSuite {
     }), "payment-handler")
     val registerA = TestProbe()
     val registerB = TestProbe()
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandler))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, paymentHandler))
+    val commandBufferA = system.actorOf(Props(new CommandBuffer(Alice.nodeParams, registerA.ref)))
+    val commandBufferB = system.actorOf(Props(new CommandBuffer(Bob.nodeParams, registerB.ref)))
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, TestProbe().ref, registerA.ref, commandBufferA, paymentHandler))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, TestProbe().ref, registerB.ref, commandBufferB, paymentHandler))
     val wallet = new TestWallet
     val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, blockchain, ???, relayerA, None), "a")
     val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, blockchain, ???, relayerB, None), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
 
     val latch = new CountDownLatch(2)

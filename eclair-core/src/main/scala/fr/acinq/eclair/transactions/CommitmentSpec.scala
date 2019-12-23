@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.wire._
 
 /**
-  * Created by PM on 07/12/2016.
-  */
+ * Created by PM on 07/12/2016.
+ */
 
 // @formatter:off
 sealed trait Direction { def opposite: Direction }
@@ -30,39 +31,39 @@ case object OUT extends Direction { def opposite = IN }
 
 case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
-final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
-  val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
+  val totalFunds = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
 object CommitmentSpec {
-  def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot(_ match {
-    case u: UpdateAddHtlc if u.id == id => true
+  def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot {
+    case u: UpdateAddHtlc => u.id == id
     case _ => false
-  })
+  }
 
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
     val htlc = DirectedHtlc(direction, update)
     direction match {
-      case OUT => spec.copy(toLocalMsat = spec.toLocalMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
-      case IN => spec.copy(toRemoteMsat = spec.toRemoteMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
+      case OUT => spec.copy(toLocal = spec.toLocal - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
+      case IN => spec.copy(toRemote = spec.toRemote - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
     }
   }
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, htlcId: Long): CommitmentSpec = {
     spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == htlcId) match {
-      case Some(htlc) if direction == OUT => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${htlcId}")
+      case Some(htlc) if direction == OUT => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == IN => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 
   // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
   def failHtlc(spec: CommitmentSpec, direction: Direction, htlcId: Long): CommitmentSpec = {
     spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == htlcId) match {
-      case Some(htlc) if direction == OUT => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${htlcId}")
+      case Some(htlc) if direction == OUT => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == IN => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 

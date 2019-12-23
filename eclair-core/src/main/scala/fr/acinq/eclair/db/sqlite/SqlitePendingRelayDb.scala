@@ -19,7 +19,7 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.Command
+import fr.acinq.eclair.channel.{Command, HasHtlcId}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
@@ -33,16 +33,16 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 1
 
-  using(sqlite.createStatement()) { statement =>
+  using(sqlite.createStatement(), inTransaction = true) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
     // note: should we use a foreign key to local_channels table here?
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
   }
 
-  override def addPendingRelay(channelId: ByteVector32, htlcId: Long, cmd: Command): Unit = {
+  override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_relay VALUES (?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
-      statement.setLong(2, htlcId)
+      statement.setLong(2, cmd.id)
       statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
       statement.executeUpdate()
     }
@@ -56,8 +56,8 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[Command] = {
-    using(sqlite.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
+  override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = {
+    using(sqlite.prepareStatement("SELECT data FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       val rs = statement.executeQuery()
       codecSequence(rs, cmdCodec)
@@ -74,6 +74,4 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
       q.toSet
     }
   }
-
-  override def close(): Unit = sqlite.close()
 }
