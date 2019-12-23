@@ -85,7 +85,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
     case Event(Reconnect, d: DisconnectedData) =>
       d.address_opt.orElse(getPeerAddressFromNodeAnnouncement) match {
-        case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
+        // Phoenix special case: reconnect to peer even if there are no channels with this peer
         case None => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
@@ -119,12 +119,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       val channels1 = d.channels -- h
-      if (channels1.isEmpty) {
-        // we have no existing channels, we can forget about this peer
-        stopPeer()
-      } else {
-        stay using d.copy(channels = channels1)
-      }
+      // Phoenix special case: do not forget peer even if there are no channels with it
+      stay using d.copy(channels = channels1)
 
     case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
@@ -193,12 +189,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       val channels1 = d.channels -- h
-      if (channels1.isEmpty) {
-        // we have no existing channels, we can forget about this peer
-        stopPeer()
-      } else {
-        stay using d.copy(channels = channels1)
-      }
+      // Phoenix special case: do not forget peer even if there are no channels with it
+      stay using d.copy(channels = channels1)
 
     case Event(Disconnect(nodeId), d: InitializingData) if nodeId == remoteNodeId =>
       log.info("disconnecting")
@@ -529,13 +521,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
     case Event(Terminated(actor), d: ConnectedData) if actor == d.transport =>
       log.info(s"lost connection to $remoteNodeId")
-      if (d.channels.isEmpty) {
-        // we have no existing channels, we can forget about this peer
-        stopPeer()
-      } else {
-        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
-      }
+      // Phoenix special case: do not forget peer even if there are no channels with it
+      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+      goto(DISCONNECTED) using DisconnectedData(d.address_opt, d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
