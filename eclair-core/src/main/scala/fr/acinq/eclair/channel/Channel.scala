@@ -92,6 +92,21 @@ object Channel {
   case class RemoteError(e: Error) extends ChannelError
   // @formatter:on
 
+  def ackPendingFailsAndFulfills(updates: List[UpdateMessage], relayer: ActorRef): Unit = updates.collect {
+    case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+    case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+    case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+  }
+
+  def failPending(adds: Traversable[UpdateAddHtlc], chanException: (Origin, UpdateAddHtlc) => ChannelException, onFound: (Origin, UpdateAddHtlc) => Unit, onNotFound: UpdateAddHtlc => Unit, relayer: ActorRef, commits: Commitments): Unit =
+    adds.foreach { add =>
+      commits.originChannels.get(add.id) match {
+        case Some(origin) =>
+          onFound(origin, add)
+          relayer ! Status.Failure(chanException(origin, add))
+        case None => onNotFound(add) // same as for fulfilling the htlc (no big deal)
+      }
+    }
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -707,11 +722,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
-              commitments1.localChanges.signed.collect {
-                case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-              }
+              ackPendingFailsAndFulfills(commitments1.localChanges.signed, relayer)
               val nextRemoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
@@ -1058,11 +1069,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
-              commitments1.localChanges.signed.collect {
-                case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-                case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
-              }
+              ackPendingFailsAndFulfills(commitments1.localChanges.signed, relayer)
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
@@ -1302,28 +1309,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         Closing.timedoutHtlcs(d.commitments.localCommit, d.commitments.localParams.dustLimit, tx) ++
           Closing.timedoutHtlcs(d.commitments.remoteCommit, d.commitments.remoteParams.dustLimit, tx) ++
           d.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutHtlcs(r.nextRemoteCommit, d.commitments.remoteParams.dustLimit, tx))
-      timedoutHtlcs.foreach { add =>
-        d.commitments.originChannels.get(add.id) match {
-          case Some(origin) =>
-            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId, Set(add)), origin, None, None))
-          case None =>
-            // same as for fulfilling the htlc (no big deal)
-            log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
-        }
-      }
+      failPending(timedoutHtlcs, (origin, add) => AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId, Set(add)), origin, None, None), (origin, add) => log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out"), add => log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)"), relayer, d.commitments)
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
       val overridenHtlcs = Closing.overriddenOutgoingHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
-      overridenHtlcs.foreach { add =>
-        d.commitments.originChannels.get(add.id) match {
-          case Some(origin) =>
-            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overriden by local commit")
-            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverridenByLocalCommit(d.channelId), origin, None, None))
-          case None =>
-            // same as for fulfilling the htlc (no big deal)
-            log.info(s"cannot fail overriden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
-        }
-      }
+      failPending(overridenHtlcs, (origin, add) => AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverridenByLocalCommit(d.channelId), origin, None, None), (origin, add) => log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overriden by local commit"), add => log.info(s"cannot fail overriden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)"), relayer, d.commitments)
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
         .onchainOutgoingHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
