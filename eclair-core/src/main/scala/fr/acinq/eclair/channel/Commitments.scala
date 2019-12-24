@@ -143,7 +143,7 @@ object Commitments {
   private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
 
-  def alreadyProposed(bag: List[UpdateMessage], id: Long): Boolean = bag.exists {
+  def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
     case u: UpdateFulfillHtlc => id == u.id
     case u: UpdateFailHtlc => id == u.id
     case u: UpdateFailMalformedHtlc => id == u.id
