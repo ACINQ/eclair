@@ -32,6 +32,9 @@ case object OUT extends Direction { def opposite = IN }
 case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
+
+  def findHtlcById(id: Long, direction: Direction): Option[DirectedHtlc] = htlcs.find(htlc => htlc.add.id == id && htlc.direction == direction)
+
   val totalFunds = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
@@ -51,7 +54,7 @@ object CommitmentSpec {
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, htlcId: Long): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == htlcId) match {
+    spec.findHtlcById(htlcId, direction.opposite) match {
       case Some(htlc) if direction == OUT => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
@@ -60,7 +63,7 @@ object CommitmentSpec {
 
   // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
   def failHtlc(spec: CommitmentSpec, direction: Direction, htlcId: Long): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == htlcId) match {
+    spec.findHtlcById(htlcId, direction.opposite) match {
       case Some(htlc) if direction == OUT => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
