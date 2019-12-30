@@ -815,8 +815,8 @@ Create a **BOLT11** payment invoice.
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 description | A description for the invoice | No | String
-amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (integer)
-expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (integer)
+amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (Integer)
+expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (Integer)
 fallbackAddress | An on-chain fallback address to receive the payment | Yes | Bitcoin address (String)
 paymentPreimage | A user defined input for the generation of the paymentHash | Yes | 32bytes-HexString (String)
 
@@ -884,10 +884,10 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 invoice | The invoice you want to pay | No | String
-amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisatoshi (integer)
+amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisatoshi (Integer)
 maxAttempts | Max number of retries | Yes | Integer
-feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (integer)
-maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
+feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (Integer)
+maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Double
 externalId | Extra payment identifier specified by the caller | Yes | String
 
 ## SendToNode
@@ -920,11 +920,11 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 nodeId | The recipient of this payment | No | 33bytes-HexString (String)
-amountMsat | Amount in to pay | No | Millisatoshi (integer)
+amountMsat | Amount in to pay | No | Millisatoshi (Integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 maxAttempts | Max number of retries | Yes | Integer
-feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (integer)
-maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Integer
+feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (Integer)
+maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Double
 externalId | Extra payment identifier specified by the caller | Yes | String
 
 ## SendToRoute
@@ -958,7 +958,7 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 Parameter | Description | Optional | Type
 --------- | ----------- | --------- | ---------
 route | A list of nodeIds from source to destination of the payment | No | List of nodeIds
-amountMsat | Amount in to pay | No | Millisatoshi (integer)
+amountMsat | Amount in to pay | No | Millisatoshi (Integer)
 paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
 finalCltvExpiry | The total CLTV expiry value for this payment | No | Integer
 externalId | Extra payment identifier specified by the caller | Yes | String
