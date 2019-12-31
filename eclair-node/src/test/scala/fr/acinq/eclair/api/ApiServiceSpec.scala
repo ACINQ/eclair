@@ -355,7 +355,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
   }
 
   test("'getsentinfo'") {
-    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, 42 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, 42 msat, 50 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val pending = UUID.randomUUID()
     eclair.sentInfo(Left(pending))(any) returns Future.successful(Seq(defaultPayment))
@@ -437,11 +437,11 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
   }
 
   test("'networkstats' response should return expected statistics") {
-    val capStat=Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
-    val cltvStat=Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
-    val feeBaseStat=Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat=Stats(32l, 11l, 13l, 22l, 42l, 51l, 53l)
-    val networkStats=new NetworkStats(1,2,capStat,cltvStat,feeBaseStat,feePropStat)
+    val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
+    val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
+    val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
+    val feePropStat = Stats(32l, 11l, 13l, 22l, 42l, 51l, 53l)
+    val networkStats = new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat)
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
@@ -474,17 +474,24 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(fixedUUID, ByteVector32.Zeroes, ByteVector32.One, Seq(PaymentSent.PartialPayment(fixedUUID, 21 msat, 1 msat, ByteVector32.Zeroes, None, 1553784337711L)))
-        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}]}"""
+        val ps = PaymentSent(fixedUUID, ByteVector32.Zeroes, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(fixedUUID, 21 msat, 1 msat, ByteVector32.Zeroes, None, 1553784337711L)))
+        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","finalAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784337711}]}"""
         assert(serialization.write(ps) === expectedSerializedPs)
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
 
-        val prel = ChannelPaymentRelayed(amountIn = 21 msat, amountOut = 20 msat, paymentHash = ByteVector32.Zeroes, fromChannelId = ByteVector32.Zeroes, ByteVector32.One, timestamp = 1553784963659L)
+        val prel = ChannelPaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, ByteVector32.Zeroes, ByteVector32.One, 1553784963659L)
         val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}"""
         assert(serialization.write(prel) === expectedSerializedPrel)
         system.eventStream.publish(prel)
         wsClient.expectMessage(expectedSerializedPrel)
+
+        val recipient = PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9")
+        val ptrel = TrampolinePaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, recipient, Seq(ByteVector32.Zeroes), Seq(ByteVector32.Zeroes, ByteVector32.One), 1553784963659L)
+        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","toNodeId":"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9","fromChannelIds":["0000000000000000000000000000000000000000000000000000000000000000"],"toChannelIds":["0000000000000000000000000000000000000000000000000000000000000000","0100000000000000000000000000000000000000000000000000000000000000"],"timestamp":1553784963659}"""
+        assert(serialization.write(ptrel) === expectedSerializedPtrel)
+        system.eventStream.publish(ptrel)
+        wsClient.expectMessage(expectedSerializedPtrel)
 
         val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentReceived.PartialPayment(21 msat, ByteVector32.Zeroes, 1553784963659L)))
         val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"amount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":1553784963659}]}"""
@@ -492,7 +499,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)
 
-        val pset = PaymentSettlingOnChain(fixedUUID, amount = 21 msat, paymentHash = ByteVector32.One, timestamp = 1553785442676L)
+        val pset = PaymentSettlingOnChain(fixedUUID, 21 msat, ByteVector32.One, timestamp = 1553785442676L)
         val expectedSerializedPset = """{"type":"payment-settling-onchain","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":1553785442676}"""
         assert(serialization.write(pset) === expectedSerializedPset)
         system.eventStream.publish(pset)

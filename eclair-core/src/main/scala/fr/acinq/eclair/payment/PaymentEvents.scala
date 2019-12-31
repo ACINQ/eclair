@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.Hop
 
 import scala.compat.Platform
 
@@ -35,19 +35,41 @@ sealed trait PaymentEvent {
   val timestamp: Long
 }
 
-case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
-  require(parts.nonEmpty, "must have at least one subpayment")
-  val amount: MilliSatoshi = parts.map(_.amount).sum
-  val feesPaid: MilliSatoshi = parts.map(_.feesPaid).sum
+/**
+ * A payment was successfully sent and fulfilled.
+ *
+ * @param id              id of the whole payment attempt (if using multi-part, there will be multiple parts, each with
+ *                        a different id).
+ * @param paymentHash     payment hash.
+ * @param paymentPreimage payment preimage (proof of payment).
+ * @param finalAmount     amount that has been received by the final recipient.
+ * @param recipientNodeId id of the final recipient.
+ * @param parts           child payments (actual outgoing HTLCs).
+ */
+case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, finalAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
+  require(parts.nonEmpty, "must have at least one sub-payment")
+  val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum
+  val feesPaid: MilliSatoshi = amountWithFees - finalAmount
+  val trampolineFees: MilliSatoshi = parts.map(_.amount).sum - finalAmount
+  val nonTrampolineFees: MilliSatoshi = parts.map(_.feesPaid).sum
   val timestamp: Long = parts.map(_.timestamp).min // we use min here because we receive the proof of payment as soon as the first partial payment is fulfilled
 }
 
-// TODO: @t-bast: the route fields should be a Seq[Hop], not Seq[ChannelHop]
-
 object PaymentSent {
 
-  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[ChannelHop]], timestamp: Long = Platform.currentTime) {
+  /**
+   * A successfully sent partial payment (single outgoing HTLC).
+   *
+   * @param id          id of the outgoing payment.
+   * @param amount      amount received by the target node.
+   * @param feesPaid    fees paid to route to the target node.
+   * @param toChannelId id of the channel used.
+   * @param route       payment route used.
+   * @param timestamp   absolute time in milli-seconds since UNIX epoch when the payment was fulfilled.
+   */
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: Long = Platform.currentTime) {
     require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
+    val amountWithFees: MilliSatoshi = amount + feesPaid
   }
 
 }
@@ -64,7 +86,7 @@ case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi
 case class TrampolinePaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, toNodeId: PublicKey, fromChannelIds: Seq[ByteVector32], toChannelIds: Seq[ByteVector32], timestamp: Long = Platform.currentTime) extends PaymentRelayed
 
 case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
-  require(parts.nonEmpty, "must have at least one subpayment")
+  require(parts.nonEmpty, "must have at least one sub-payment")
   val amount: MilliSatoshi = parts.map(_.amount).sum
   val timestamp: Long = parts.map(_.timestamp).max // we use max here because we fulfill the payment only once we received all the parts
 }
@@ -83,14 +105,13 @@ sealed trait PaymentFailure
 case class LocalFailure(t: Throwable) extends PaymentFailure
 
 /** A remote node failed the payment and we were able to decrypt the onion failure packet. */
-case class RemoteFailure(route: Seq[ChannelHop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
+case class RemoteFailure(route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(route: Seq[ChannelHop]) extends PaymentFailure
+case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
 
 object PaymentFailure {
 
-  import fr.acinq.bitcoin.Crypto.PublicKey
   import fr.acinq.eclair.channel.AddHtlcFailed
   import fr.acinq.eclair.router.RouteNotFound
   import fr.acinq.eclair.wire.Update

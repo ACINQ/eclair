@@ -293,10 +293,9 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayed(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
-    assert(outgoingPayment.paymentHash === paymentHash)
     assert(outgoingPayment.paymentSecret === pr.paymentSecret.get) // we should use the provided secret
     assert(outgoingPayment.totalAmount === outgoingAmount)
-    assert(outgoingPayment.finalExpiry === outgoingExpiry)
+    assert(outgoingPayment.targetExpiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
     assert(outgoingPayment.additionalTlvs === Nil)
     assert(outgoingPayment.routeParams.isDefined)
@@ -324,7 +323,6 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayed(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendPayment]
-    assert(outgoingPayment.paymentHash === paymentHash)
     assert(outgoingPayment.routePrefix === Nil)
     assert(outgoingPayment.finalPayload.amount === outgoingAmount)
     assert(outgoingPayment.finalPayload.expiry === outgoingExpiry)
@@ -346,15 +344,15 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(!outgoingCfg.storeInDb)
     assert(outgoingCfg.paymentHash === paymentHash)
     assert(outgoingCfg.paymentRequest === None)
-    assert(outgoingCfg.targetNodeId === outgoingNodeId)
+    assert(outgoingCfg.finalAmount === outgoingAmount)
+    assert(outgoingCfg.recipientNodeId === outgoingNodeId)
     assert(outgoingCfg.upstream === upstream)
   }
 
   def validateOutgoingPayment(outgoingPayment: SendMultiPartPayment): Unit = {
-    assert(outgoingPayment.paymentHash === paymentHash)
     assert(outgoingPayment.paymentSecret !== incomingSecret) // we should generate a new outgoing secret
     assert(outgoingPayment.totalAmount === outgoingAmount)
-    assert(outgoingPayment.finalExpiry === outgoingExpiry)
+    assert(outgoingPayment.targetExpiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
     assert(outgoingPayment.additionalTlvs === Seq(OnionTlv.TrampolineOnion(nextTrampolinePacket)))
     assert(outgoingPayment.routeParams.isDefined)
@@ -394,7 +392,7 @@ object NodeRelayerSpec {
     createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
 
   def createSuccessEvent(id: UUID): PaymentSent =
-    PaymentSent(id, paymentHash, paymentPreimage, Seq(PaymentSent.PartialPayment(id, outgoingAmount, 10 msat, randomBytes32, None)))
+    PaymentSent(id, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(id, outgoingAmount, 10 msat, randomBytes32, None)))
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, totalAmountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): IncomingPacket.NodeRelayPacket = {
     val outerPayload = if (amountIn == totalAmountIn) {
