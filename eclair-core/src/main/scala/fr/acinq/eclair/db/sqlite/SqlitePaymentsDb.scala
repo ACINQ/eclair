@@ -401,4 +401,48 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  def listIncomingPayments(): Seq[(ByteVector32,ByteVector32,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])] = {
+    using(sqlite.prepareStatement("SELECT * FROM received_payments ORDER BY created_at")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[(ByteVector32,ByteVector32,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])] = Queue()
+      while (rs.next()) {
+        val paymentHash: ByteVector32 = rs.getByteVector32("payment_hash")
+        val paymentPreimage: ByteVector32 = rs.getByteVector32("payment_preimage")
+        val paymentRequest: PaymentRequest = PaymentRequest.read(rs.getString("payment_request"))
+        val received: Option[MilliSatoshi] = rs.getLongNullable("received_msat").map(MilliSatoshi(_))
+        val createdAt: Long = rs.getLong("created_at")
+        val expireAt: Long = rs.getLong("expire_at")
+        val receivedAt: Option[Long] = rs.getLongNullable("received_at")
+        q = q :+ (paymentHash,paymentPreimage,paymentRequest,received,createdAt,expireAt,receivedAt)
+      }
+      q
+    }
+  }
+
+  def listOutgoingPayments(): Seq[(UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector])] = {
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments ORDER BY created_at")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[(UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector])] = Queue()
+      while (rs.next()) {
+        val id: UUID = UUID.fromString(rs.getString("id"))
+        val parentId: UUID = UUID.fromString(rs.getString("parent_id"))
+        val external_id: Option[String] =  rs.getStringNullable("external_id")
+        val payment_hash: ByteVector32 = rs.getByteVector32("payment_hash")
+        val amount_msat: MilliSatoshi = MilliSatoshi(rs.getLong("amount_msat"))
+        val target_node_id: PublicKey = PublicKey(rs.getByteVector("target_node_id"))
+        val created_at: Long = rs.getLong("created_at")
+        val payment_request: Option[PaymentRequest] = rs.getStringNullable("payment_request").map(PaymentRequest.read)
+        val completed_at: Option[Long] = rs.getLongNullable("completed_at")
+        val payment_preimage: Option[ByteVector32] = rs.getByteVector32Nullable("payment_preimage")
+        val fees_msat: Option[MilliSatoshi] = rs.getLongNullable("fees_msat").map(MilliSatoshi.apply)
+        val route: Option[BitVector] = rs.getBitVectorOpt("payment_route")
+        val failures: Option[BitVector] = rs.getBitVectorOpt("failures")
+
+        q = q :+ (id, parentId,external_id,payment_hash,amount_msat,target_node_id,created_at,payment_request,completed_at,payment_preimage, fees_msat, route, failures)
+      }
+      q
+    }
+
+  }
+
 }
