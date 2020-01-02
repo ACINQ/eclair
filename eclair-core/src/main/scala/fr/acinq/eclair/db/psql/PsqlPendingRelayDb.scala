@@ -16,10 +16,9 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.Connection
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.{Command, HasHtlcIdCommand}
+import fr.acinq.eclair.channel.{Command, HasHtlcId}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 import javax.sql.DataSource
@@ -42,7 +41,7 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
     }
   }
 
-  override def addPendingRelay(channelId: ByteVector32, cmd: HasHtlcIdCommand): Unit = {
+  override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
     withConnection { psql =>
       using(psql.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -63,7 +62,7 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[HasHtlcIdCommand] = {
+  override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = {
     withConnection { psql =>
       using(psql.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)

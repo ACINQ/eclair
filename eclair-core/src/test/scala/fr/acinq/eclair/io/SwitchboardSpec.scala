@@ -9,7 +9,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire._
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.FunSuiteLike
 import scodec.bits._
@@ -17,7 +17,6 @@ import scodec.bits._
 class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with IdiomaticMockito {
 
   test("on initialization create peers and send Reconnect to them") {
-
     val mockNetworkDb = mock[NetworkDb]
     val nodeParams = Alice.nodeParams.copy(
       db = new Databases {
@@ -27,6 +26,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         override val peers: PeersDb = Alice.nodeParams.db.peers
         override val payments: PaymentsDb = Alice.nodeParams.db.payments
         override val pendingRelay: PendingRelayDb = Alice.nodeParams.db.pendingRelay
+
         override def backup(file: File): Unit = ()
         override val isBackupSupported: Boolean = false
         override def obtainExclusiveLock(): Unit = ()
@@ -44,7 +44,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     // mock the call that will be done by the peer once it receives Peer.Reconnect
     mockNetworkDb.getNode(remoteNodeId) returns Some(
-      NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0,0,0), "alias", List(NodeAddress.fromParts("127.0.0.1", 9735).get))
+      NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0, 0, 0), "alias", List(NodeAddress.fromParts("127.0.0.1", 9735).get))
     )
 
     // add a channel to the db
@@ -70,6 +70,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         override val peers: PeersDb = Alice.nodeParams.db.peers
         override val payments: PaymentsDb = Alice.nodeParams.db.payments
         override val pendingRelay: PendingRelayDb = Alice.nodeParams.db.pendingRelay
+
         override def backup(file: File): Unit = ()
         override val isBackupSupported: Boolean = false
         override def obtainExclusiveLock(): Unit = ()
@@ -87,7 +88,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     // mock the call that will be done by the peer once it receives Peer.Connect(remoteNodeId)
     mockNetworkDb.getNode(remoteNodeId) returns Some(
-      NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0,0,0), "alias", List(NodeAddress.fromParts("127.0.0.1", 9735).get))
+      NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0, 0, 0), "alias", List(NodeAddress.fromParts("127.0.0.1", 9735).get))
     )
 
     val switchboard = system.actorOf(Switchboard.props(nodeParams, authenticator.ref, watcher.ref, router.ref, relayer.ref, paymentHandler.ref, wallet))
@@ -98,4 +99,5 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // assert that the peer called `networkDb.getNode` - because it received a Peer.Connect(remoteNodeId, None)
     awaitAssert(mockNetworkDb.getNode(remoteNodeId).wasCalled(once))
   }
+
 }

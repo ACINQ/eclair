@@ -114,6 +114,27 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       )))
   }
 
+  test("recv CMD_ADD_HTLC (trampoline relayed htlc)") { f =>
+    import f._
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val sender = TestProbe()
+    val h = randomBytes32
+    val originHtlc1 = UpdateAddHtlc(randomBytes32, 47, 30000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket)
+    val originHtlc2 = UpdateAddHtlc(randomBytes32, 32, 20000000 msat, h, CltvExpiryDelta(160).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket)
+    val upstream = Upstream.TrampolineRelayed(originHtlc1 :: originHtlc2 :: Nil)
+    val cmd = CMD_ADD_HTLC(originHtlc1.amountMsat + originHtlc2.amountMsat - 10000.msat, h, originHtlc2.cltvExpiry - CltvExpiryDelta(7), TestConstants.emptyOnionPacket, upstream)
+    sender.send(alice, cmd)
+    sender.expectMsg("ok")
+    val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
+    assert(htlc.id == 0 && htlc.paymentHash == h)
+    awaitCond(alice.stateData == initialState.copy(
+      commitments = initialState.commitments.copy(
+        localNextHtlcId = 1,
+        localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
+        originChannels = Map(0L -> Origin.TrampolineRelayed((originHtlc1.channelId, originHtlc1.id) :: (originHtlc2.channelId, originHtlc2.id) :: Nil, Some(sender.ref)))
+      )))
+  }
+
   test("recv CMD_ADD_HTLC (expiry too small)") { f =>
     import f._
     val sender = TestProbe()
@@ -887,7 +908,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // now bob will forward the htlc downstream
     val forward = relayerB.expectMsgType[ForwardAdd]
     assert(forward.add === htlc)
-
   }
 
   test("recv RevokeAndAck (multiple htlcs in both directions)") { f =>

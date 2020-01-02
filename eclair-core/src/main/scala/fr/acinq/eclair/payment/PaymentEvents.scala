@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.ChannelHop
@@ -53,7 +54,14 @@ object PaymentSent {
 
 case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: Long = Platform.currentTime) extends PaymentEvent
 
-case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentEvent
+sealed trait PaymentRelayed extends PaymentEvent {
+  val amountIn: MilliSatoshi
+  val amountOut: MilliSatoshi
+}
+
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentRelayed
+
+case class TrampolinePaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, toNodeId: PublicKey, fromChannelIds: Seq[ByteVector32], toChannelIds: Seq[ByteVector32], timestamp: Long = Platform.currentTime) extends PaymentRelayed
 
 case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one subpayment")
