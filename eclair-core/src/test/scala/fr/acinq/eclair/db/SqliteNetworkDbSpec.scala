@@ -19,33 +19,20 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TestConstants.{TestDatabases, TestPsqlDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.db.jdbc.JdbcUtils._
 import fr.acinq.eclair.router.{Announcements, PublicChannel}
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.FunSuite
 import scodec.bits.HexStringSyntax
-import fr.acinq.eclair.db.jdbc.JdbcUtils._
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfter {
+class SqliteNetworkDbSpec extends FunSuite {
 
   import TestConstants.forAllDbs
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
-
-  after {
-    forAllDbs { dbs =>
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DROP TABLE IF EXISTS nodes")
-        statement.executeUpdate("DROP TABLE IF EXISTS channel_updates")
-        statement.executeUpdate("DROP TABLE IF EXISTS channels")
-        statement.executeUpdate("DROP TABLE IF EXISTS pruned")
-        statement.executeUpdate("DROP TABLE IF EXISTS versions")
-        statement.executeUpdate("DROP TABLE IF EXISTS test")
-      }
-    }
-  }
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>
@@ -56,7 +43,7 @@ class SqliteNetworkDbSpec extends FunSuite with BeforeAndAfter {
 
   test("migration test 1->2") {
     forAllDbs {
-      case TestPsqlDatabases => // no migration
+      case _: TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
 
       using(dbs.connection.createStatement()) { statement =>

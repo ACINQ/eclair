@@ -16,24 +16,14 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import fr.acinq.eclair.{TestConstants, randomKey}
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.FunSuite
 
 
-class SqlitePeersDbSpec extends FunSuite with BeforeAndAfter {
+class SqlitePeersDbSpec extends FunSuite {
 
   import TestConstants.forAllDbs
-
-  after {
-    forAllDbs { dbs =>
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DROP TABLE IF EXISTS peers")
-        statement.executeUpdate("DROP TABLE IF EXISTS versions")
-      }
-    }
-  }
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>

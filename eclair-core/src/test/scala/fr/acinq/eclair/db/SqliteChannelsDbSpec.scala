@@ -24,23 +24,12 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{CltvExpiry, TestConstants}
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
-class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfter {
+class SqliteChannelsDbSpec extends FunSuite {
 
   import TestConstants.forAllDbs
-
-  after {
-    forAllDbs { dbs =>
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DROP TABLE IF EXISTS htlc_infos")
-        statement.executeUpdate("DROP TABLE IF EXISTS local_channels")
-        statement.executeUpdate("DROP TABLE IF EXISTS pending_relay")
-        statement.executeUpdate("DROP TABLE IF EXISTS versions")
-      }
-    }
-  }
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>
@@ -83,7 +72,7 @@ class SqliteChannelsDbSpec extends FunSuite with BeforeAndAfter {
 
   test("migrate channel database v1 -> v2") {
     forAllDbs {
-      case TestPsqlDatabases => // no migration
+      case _: TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
 
         // create a v1 channels database

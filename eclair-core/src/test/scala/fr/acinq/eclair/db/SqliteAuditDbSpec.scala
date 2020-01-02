@@ -26,31 +26,15 @@ import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccurred, N
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.{ChannelCodecs, ChannelCodecsSpec}
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.FunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
 
-class SqliteAuditDbSpec extends FunSuite with BeforeAndAfter {
+class SqliteAuditDbSpec extends FunSuite {
 
   import TestConstants.forAllDbs
-
-  after {
-    forAllDbs { dbs =>
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DROP TABLE IF EXISTS balance_updated")
-        statement.executeUpdate("DROP TABLE IF EXISTS channel_errors")
-        statement.executeUpdate("DROP TABLE IF EXISTS channel_events")
-        statement.executeUpdate("DROP TABLE IF EXISTS network_fees")
-        statement.executeUpdate("DROP TABLE IF EXISTS received")
-        statement.executeUpdate("DROP TABLE IF EXISTS relayed")
-        statement.executeUpdate("DROP TABLE IF EXISTS sent")
-        statement.executeUpdate("DROP TABLE IF EXISTS versions")
-      }
-    }
-  }
-
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>
@@ -134,7 +118,7 @@ class SqliteAuditDbSpec extends FunSuite with BeforeAndAfter {
   test("handle migration version 1 -> 3") {
 
     forAllDbs {
-      case TestPsqlDatabases => // no migration
+      case _: TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         // simulate existing previous version db
         using(dbs.connection.createStatement()) { statement =>
@@ -208,7 +192,7 @@ class SqliteAuditDbSpec extends FunSuite with BeforeAndAfter {
   test("handle migration version 2 -> 3") {
 
     forAllDbs {
-      case TestPsqlDatabases => // no migration
+      case _: TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 

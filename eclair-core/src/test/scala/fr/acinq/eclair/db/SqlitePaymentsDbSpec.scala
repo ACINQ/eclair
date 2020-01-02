@@ -28,26 +28,15 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.FunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfter {
+class SqlitePaymentsDbSpec extends FunSuite {
 
   import SqlitePaymentsDbSpec._
   import TestConstants.forAllDbs
-
-  after {
-    forAllDbs { dbs =>
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DROP TABLE IF EXISTS payments")
-        statement.executeUpdate("DROP TABLE IF EXISTS received_payments")
-        statement.executeUpdate("DROP TABLE IF EXISTS sent_payments")
-        statement.executeUpdate("DROP TABLE IF EXISTS versions")
-      }
-    }
-  }
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>
@@ -58,7 +47,7 @@ class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfter {
 
   test("handle version migration 1->3") {
     forAllDbs {
-      case TestPsqlDatabases => // no migration
+      case _: TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 
@@ -115,7 +104,7 @@ class SqlitePaymentsDbSpec extends FunSuite with BeforeAndAfter {
 
   test("handle version migration 2->3") {
     forAllDbs {
-      case TestPsqlDatabases => // no migration
+      case _: TestPsqlDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 

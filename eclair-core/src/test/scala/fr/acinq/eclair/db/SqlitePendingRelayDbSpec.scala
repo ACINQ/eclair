@@ -17,24 +17,14 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.db.jdbc.JdbcUtils.using
-import fr.acinq.eclair.{TestConstants, randomBytes32}
 import fr.acinq.eclair.wire.FailureMessageCodecs
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import fr.acinq.eclair.{TestConstants, randomBytes32}
+import org.scalatest.FunSuite
 
 
-class SqlitePendingRelayDbSpec extends FunSuite with BeforeAndAfter {
+class SqlitePendingRelayDbSpec extends FunSuite {
 
   import TestConstants.forAllDbs
-
-  after {
-    forAllDbs { dbs =>
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DROP TABLE IF EXISTS pending_relay")
-        statement.executeUpdate("DROP TABLE IF EXISTS versions")
-      }
-    }
-  }
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>

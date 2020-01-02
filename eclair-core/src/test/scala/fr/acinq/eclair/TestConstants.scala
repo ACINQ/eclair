@@ -17,9 +17,9 @@
 package fr.acinq.eclair
 
 import java.sql.{Connection, DriverManager, Statement}
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
+import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
@@ -69,6 +69,7 @@ object TestConstants {
     def pendingRelay(): PendingRelayDb
     def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
     def obtainLock(): Unit
+    def close(): Unit
   }
 
   case class TestSqliteDatabases(connection: Connection = sqliteInMemory()) extends TestDatabases {
@@ -80,15 +81,18 @@ object TestConstants {
     override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
     override def obtainLock(): Unit = ()
+    override def close(): Unit = ()
   }
 
-  case object TestPsqlDatabases extends TestDatabases {
-    override val connection: Connection = psql()
+  case class TestPsqlDatabases() extends TestDatabases {
+    private val pg = EmbeddedPostgres.start()
+
+    override val connection: Connection = pg.getPostgresDatabase.getConnection
 
     import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 
     val config = new HikariConfig
-    config.setJdbcUrl("jdbc:postgresql://localhost:5432/eclair")
+    config.setDataSource(pg.getPostgresDatabase)
 
     implicit val ds = new HikariDataSource(config)
 
@@ -100,15 +104,15 @@ object TestConstants {
     override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb()
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
     override def obtainLock(): Unit = PsqlUtils.obtainExclusiveLock("test_instance", 1.minute, 1.second)(ds)
+    override def close(): Unit = pg.close()
   }
 
   def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
-  def psql(): Connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/eclair")
-
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {
-    f(TestSqliteDatabases())
-    f(TestPsqlDatabases)
+    def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
+    using(TestSqliteDatabases())(f)
+    using(TestPsqlDatabases())(f)
   }
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
