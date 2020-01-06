@@ -112,7 +112,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("serialize Commitments") {
-    val commitments = ChannelCodecsSpec.commitments
+    val commitments = ChannelCodecsSpec.normal.commitments
     logger.info(write(commitments))
   }
 

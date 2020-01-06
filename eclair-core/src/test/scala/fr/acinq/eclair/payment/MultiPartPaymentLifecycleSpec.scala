@@ -26,7 +26,7 @@ import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.{ChannelFlags, Commitments}
+import fr.acinq.eclair.channel.{ChannelFlags, Commitments, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
@@ -63,12 +63,12 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
 
   override def withFixture(test: OneArgTest): Outcome = {
     val id = UUID.randomUUID()
-    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, b, None, storeInDb = true, publishEvent = true)
+    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, b, Upstream.Local(id), None, storeInDb = true, publishEvent = true)
     val nodeParams = TestConstants.Alice.nodeParams
     nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(500))
     val (childPayFsm, router, relayer, sender, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     class TestMultiPartPaymentLifecycle extends MultiPartPaymentLifecycle(nodeParams, cfg, relayer.ref, router.ref, TestProbe().ref) {
-      override def spawnChildPaymentFsm(childId: UUID): ActorRef = childPayFsm.ref
+      override def spawnChildPaymentFsm(childId: UUID, includeTrampolineFees: Boolean): ActorRef = childPayFsm.ref
     }
     val paymentHandler = TestFSMRef(new TestMultiPartPaymentLifecycle().asInstanceOf[MultiPartPaymentLifecycle])
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
@@ -403,6 +403,19 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     awaitCond(payFsm.stateName === PAYMENT_ABORTED)
   }
 
+  test("failure received from final recipient") { f =>
+    import f._
+    val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 5)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    waitUntilAmountSent(f, payment.totalAmount)
+    val (childId1, _) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
+
+    // If we receive a failure from the final node, we directly abort the payment instead of retrying.
+    childPayFsm.send(payFsm, PaymentFailed(childId1, paymentHash, RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(e, IncorrectOrUnknownPaymentDetails(3000 * 1000 msat, 42))) :: Nil))
+    relayer.expectNoMsg(50 millis)
+    awaitCond(payFsm.stateName === PAYMENT_ABORTED)
+  }
+
   test("fail after too many attempts") { f =>
     import f._
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 2)
@@ -499,8 +512,6 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
       assert(remaining === 0.msat, fuzzParams)
       assert(payments.nonEmpty, fuzzParams)
       assert(payments.map(_.finalPayload.amount).sum === toSend, fuzzParams)
-      // Verify that we're not generating tiny HTLCs.
-      assert(payments.forall(_.finalPayload.amount > 50.msat), fuzzParams)
     }
   }
 

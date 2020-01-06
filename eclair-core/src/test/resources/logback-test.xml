@@ -20,28 +20,27 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n
-            </pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 
-    <!--<appender name="CONSOLEWARN" class="ch.qos.logback.core.ConsoleAppender">
+    <!--appender name="CONSOLEWARN" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>WARN</level>
         </filter>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>-->
+    </appender-->
 
-    <!--<appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <!--appender name="FILE" class="ch.qos.logback.core.FileAppender">
         <file>eclair.log</file>
         <append>false</append>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{nodeId}%X{channelId}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>-->
+    </appender-->
 
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
     <logger name="fr.acinq.eclair.router" level="WARN"/>
@@ -50,9 +49,9 @@
     <logger name="fr.acinq.eclair.db.BackupHandler" level="OFF"/>
 
     <root level="INFO">
-        <!--<appender-ref ref="FILE"/>
+        <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/>
-        <appender-ref ref="CONSOLE"/>-->
+        <appender-ref ref="CONSOLE"/-->
     </root>
 
 </configuration>

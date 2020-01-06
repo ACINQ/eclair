@@ -81,14 +81,20 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
       db.add(e)
 
     case e: PaymentRelayed =>
+      val relayType = e match {
+        case _: ChannelPaymentRelayed => "channel"
+        case _: TrampolinePaymentRelayed => "trampoline"
+      }
       Kamon
         .histogram("payment.hist")
         .withTag("direction", "relayed")
+        .withTag("relay", relayType)
         .withTag("type", "total")
         .record(e.amountIn.truncateToSatoshi.toLong)
       Kamon
         .histogram("payment.hist")
         .withTag("direction", "relayed")
+        .withTag("relay", relayType)
         .withTag("type", "fee")
         .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
       db.add(e)

@@ -22,7 +22,7 @@ import akka.actor.{ActorRef, FSM, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.Commitments
+import fr.acinq.eclair.channel.{Commitments, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -94,7 +94,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val pending = setFees(d.request.routeParams, payments, payments.size)
         Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
           Kamon.runWithSpan(span, finishSpan = true) {
-            pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
+            pending.headOption.foreach { case (childId, payment) => spawnChildPaymentFsm(childId, includeTrampolineFees = true) ! payment }
+            pending.tail.foreach { case (childId, payment) => spawnChildPaymentFsm(childId, includeTrampolineFees = false) ! payment }
           }
         }
         goto(PAYMENT_IN_PROGRESS) using PaymentProgress(d.sender, d.request, d.networkStats, channels.length, 0 msat, d.request.maxAttempts - 1, pending, Set.empty, Nil)
@@ -150,7 +151,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
-        pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
+        pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId, includeTrampolineFees = false) ! payment }
         goto(PAYMENT_IN_PROGRESS) using d.copy(toSend = 0 msat, remainingAttempts = d.remainingAttempts - 1, pending = d.pending ++ pending, channelsCount = channels.length)
       }
 
@@ -224,8 +225,17 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     }
   }
 
-  def spawnChildPaymentFsm(childId: UUID): ActorRef = {
-    val childCfg = cfg.copy(id = childId, publishEvent = false)
+  def spawnChildPaymentFsm(childId: UUID, includeTrampolineFees: Boolean): ActorRef = {
+    val upstream = cfg.upstream match {
+      case Upstream.Local(_) => Upstream.Local(childId)
+      case _ => cfg.upstream
+    }
+    // We attach the trampoline fees to the first child in order to account for them in the DB.
+    // This is hackish and won't work if the first child payment fails and is retried, but it's okay-ish for an MVP.
+    // We will update the DB schema to contain accurate Trampoline reporting, which will fix that in the future.
+    // TODO: @t-bast: fix that once the DB schema is updated
+    val trampolineData = if (includeTrampolineFees) cfg.trampolineData else cfg.trampolineData.map(_.copy(trampolineFees = 0 msat))
+    val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream, trampolineData = trampolineData)
     context.actorOf(PaymentLifecycle.props(nodeParams, childCfg, router, register))
   }
 
@@ -249,11 +259,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   def handleChildFailure(pf: PaymentFailed, d: PaymentProgress): Option[PaymentAborted] = {
-    val paymentTimedOut = pf.failures.exists {
-      case f: RemoteFailure => f.e.failureMessage == PaymentTimeout
-      case _ => false
-    }
-    if (paymentTimedOut) {
+    val isFromFinalRecipient = pf.failures.collectFirst { case f: RemoteFailure if f.e.originNode == d.request.targetNodeId => true }.isDefined
+    if (isFromFinalRecipient) {
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
       val failure = LocalFailure(RetryExhausted)
@@ -264,7 +271,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id))
+    Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id), paymentHash_opt = Some(cfg.paymentHash))
   }
 
   initialize()

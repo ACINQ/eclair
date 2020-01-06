@@ -55,7 +55,7 @@ case class Commitments(channelVersion: ChannelVersion,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
+                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
@@ -142,6 +142,13 @@ object Commitments {
 
   private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
+
+  def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
+    case u: UpdateFulfillHtlc => id == u.id
+    case u: UpdateFailHtlc => id == u.id
+    case u: UpdateFailMalformedHtlc => id == u.id
+    case _ => false
+  }
 
   /**
    *
@@ -256,12 +263,7 @@ object Commitments {
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
@@ -281,12 +283,7 @@ object Commitments {
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
@@ -311,12 +308,7 @@ object Commitments {
       throw InvalidFailureCode(commitments.channelId)
     }
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(_) =>

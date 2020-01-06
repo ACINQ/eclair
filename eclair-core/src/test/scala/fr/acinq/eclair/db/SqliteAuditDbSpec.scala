@@ -48,17 +48,20 @@ class SqliteAuditDbSpec extends FunSuite {
     val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32)
     val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32)
     val e2 = PaymentReceived(randomBytes32, pp2a :: pp2b :: Nil)
-    val e3 = PaymentRelayed(42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32)
+    val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32, randomBytes32, randomBytes32)
     val e4 = NetworkFeePaid(null, randomKey.publicKey, randomBytes32, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
     val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = 0)
     val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32, None, timestamp = 1)
     val e5 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, pp5a :: pp5b :: Nil)
     val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
     val e6 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, pp6 :: Nil)
-    val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000 msat, ChannelCodecsSpec.commitments)
+    val e7 = AvailableBalanceChanged(null, randomBytes32, ShortChannelId(500000, 42, 1), 456123000 msat, ChannelCodecsSpec.normal.commitments)
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, isFunder = true, isPrivate = false, "mutual")
     val e9 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
     val e10 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
+    val e11 = TrampolinePaymentRelayed(42000 msat, 40000 msat, randomBytes32, randomKey.publicKey, Seq(randomBytes32), Seq(randomBytes32))
+    // TrampolinePaymentRelayed events are converted to ChannelPaymentRelayed events for now. We need to udpate the DB schema to fix this.
+    val e11bis = ChannelPaymentRelayed(42000 msat, 40000 msat, e11.paymentHash, e11.fromChannelIds.head, e11.toChannelIds.head)
 
     db.add(e1)
     db.add(e2)
@@ -70,11 +73,12 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e8)
     db.add(e9)
     db.add(e10)
+    db.add(e11)
 
     assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toMillis).toSet === Set(e1, e5.copy(id = pp5a.id, parts = pp5a :: Nil), e5.copy(id = pp5b.id, parts = pp5b :: Nil), e6.copy(id = pp6.id)))
     assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e1))
     assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e2.copy(parts = pp2a :: Nil), e2.copy(parts = pp2b :: Nil)))
-    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3))
+    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3, e11bis))
     assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).size === 1)
     assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).head.txType === "mutual")
   }
@@ -91,10 +95,10 @@ class SqliteAuditDbSpec extends FunSuite {
     val c2 = randomBytes32
     val c3 = randomBytes32
 
-    db.add(PaymentRelayed(46000 msat, 44000 msat, randomBytes32, randomBytes32, c1))
-    db.add(PaymentRelayed(41000 msat, 40000 msat, randomBytes32, randomBytes32, c1))
-    db.add(PaymentRelayed(43000 msat, 42000 msat, randomBytes32, randomBytes32, c1))
-    db.add(PaymentRelayed(42000 msat, 40000 msat, randomBytes32, randomBytes32, c2))
+    db.add(ChannelPaymentRelayed(46000 msat, 44000 msat, randomBytes32, randomBytes32, c1))
+    db.add(ChannelPaymentRelayed(41000 msat, 40000 msat, randomBytes32, randomBytes32, c1))
+    db.add(ChannelPaymentRelayed(43000 msat, 42000 msat, randomBytes32, randomBytes32, c1))
+    db.add(ChannelPaymentRelayed(42000 msat, 40000 msat, randomBytes32, randomBytes32, c2))
 
     db.add(NetworkFeePaid(null, n1, c1, Transaction(0, Seq.empty, Seq.empty, 0), 100 sat, "funding"))
     db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), 200 sat, "funding"))
