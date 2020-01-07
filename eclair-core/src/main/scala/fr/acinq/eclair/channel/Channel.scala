@@ -33,6 +33,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
+import scala.collection.immutable.Queue
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -1458,6 +1459,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
+      var sendQueue = Queue.empty[LightningMessage]
       val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
       channelReestablish match {
         case ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), _) if !Helpers.checkLocalCommit(d, nextRemoteRevocationNumber) =>
@@ -1490,16 +1492,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             log.debug(s"re-sending fundingLocked")
             val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
             val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
-            forwarder ! fundingLocked
+            sendQueue = sendQueue :+ fundingLocked
           }
 
-          val commitments1 = handleSync(channelReestablish, d)
+          val (commitments1, sendQueue1) = handleSync(channelReestablish, d)
+          sendQueue = sendQueue ++ sendQueue1
 
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           d.localShutdown.foreach {
             localShutdown =>
               log.debug(s"re-sending localShutdown")
-              forwarder ! localShutdown
+              sendQueue = sendQueue :+ localShutdown
           }
 
           if (!d.buried) {
@@ -1515,7 +1518,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               case None =>
                 // BOLT 7: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
                 val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
-                forwarder ! localAnnSigs
+                sendQueue = sendQueue :+ localAnnSigs
               case Some(_) =>
                 // channel was already announced, nothing to do
                 ()
@@ -1524,15 +1527,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
           setTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds, repeat = false)
 
-          goto(NORMAL) using d.copy(commitments = commitments1)
+          goto(NORMAL) using d.copy(commitments = commitments1) sending sendQueue
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
-      val commitments1 = handleSync(channelReestablish, d)
+      var sendQueue = Queue.empty[LightningMessage]
+      val (commitments1, sendQueue1) = handleSync(channelReestablish, d)
+      sendQueue = sendQueue ++ sendQueue1 :+ d.localShutdown
       // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-      goto(SHUTDOWN) using d.copy(commitments = commitments1) sending d.localShutdown
+      goto(SHUTDOWN) using d.copy(commitments = commitments1) sending sendQueue
 
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING) =>
       // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
@@ -2138,7 +2143,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(ERR_INFORMATION_LEAK) calling(doPublish(localCommitPublished)) sending error
   }
 
-  def handleSync(channelReestablish: ChannelReestablish, d: HasCommitments): Commitments = {
+  def handleSync(channelReestablish: ChannelReestablish, d: HasCommitments): (Commitments, Queue[LightningMessage]) = {
+    var sendQueue = Queue.empty[LightningMessage]
     // first we clean up unacknowledged updates
     log.debug(s"discarding proposed OUT: ${d.commitments.localChanges.proposed.map(Commitments.msg2String(_)).mkString(",")}")
     log.debug(s"discarding proposed IN: ${d.commitments.remoteChanges.proposed.map(Commitments.msg2String(_)).mkString(",")}")
@@ -2165,7 +2171,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           perCommitmentSecret = localPerCommitmentSecret,
           nextPerCommitmentPoint = localNextPerCommitmentPoint
         )
-        forwarder ! revocation
+        sendQueue = sendQueue :+ revocation
       } else throw RevocationSyncError(d.channelId)
     }
 
@@ -2186,9 +2192,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         if (!revWasSentLast) resendRevocation()
 
         log.debug(s"re-sending previously local signed changes: ${commitments1.localChanges.signed.map(Commitments.msg2String(_)).mkString(",")}")
-        commitments1.localChanges.signed.foreach(forwarder ! _)
+        commitments1.localChanges.signed.foreach(revocation => sendQueue = sendQueue :+ revocation)
         log.debug(s"re-sending the exact same previous sig")
-        forwarder ! waitingForRevocation.sent
+        sendQueue = sendQueue :+ waitingForRevocation.sent
 
         if (revWasSentLast) resendRevocation()
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
@@ -2209,7 +2215,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       self ! CMD_SIGN
     }
 
-    commitments1
+    (commitments1, sendQueue)
   }
 
   /**
