@@ -21,7 +21,6 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.Features.{BASIC_MULTI_PART_PAYMENT_MANDATORY, BASIC_MULTI_PART_PAYMENT_OPTIONAL}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
@@ -31,7 +30,7 @@ import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent, TrampolinePaymentRelayed}
 import fr.acinq.eclair.router.{RouteParams, Router}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
 import scala.collection.immutable.Queue
 
@@ -138,22 +137,14 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     payloadOut.invoiceFeatures match {
-      case Some(invoiceFeatures) =>
+      case Some(_) =>
         log.debug("relaying trampoline payment to non-trampoline recipient")
         val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
-        val allowMultiPart = Features.hasFeature(invoiceFeatures, BASIC_MULTI_PART_PAYMENT_OPTIONAL) || Features.hasFeature(invoiceFeatures, BASIC_MULTI_PART_PAYMENT_MANDATORY)
-        val payFSM = spawnOutgoingPayFSM(paymentCfg, allowMultiPart)
-        if (allowMultiPart) {
-          if (payloadOut.paymentSecret.isEmpty) {
-            log.warning("payment relay to non-trampoline node will likely fail: sender didn't include the invoice payment secret")
-          }
-          val payment = SendMultiPartPayment(paymentHash, payloadOut.paymentSecret.getOrElse(randomBytes32), payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-          payFSM ! payment
-        } else {
-          val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-          val payment = SendPayment(paymentHash, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-          payFSM ! payment
-        }
+        // TODO: @t-bast: MPP is disabled for trampoline to non-trampoline payments until we improve the splitting algorithm for nodes with a lot of channels.
+        val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = false)
+        val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
+        val payment = SendPayment(paymentHash, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+        payFSM ! payment
       case None =>
         log.debug("relaying trampoline payment to next trampoline node")
         val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = true)
