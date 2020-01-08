@@ -1,6 +1,7 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions._
@@ -15,9 +16,18 @@ import scala.util.Random
 class JsonSerializersSpec extends FunSuite with Logging {
   import JsonSerializers._
 
+  val tx1 = Transaction(version = 2,
+    txIn = TxIn(OutPoint(ByteVector32.fromValidHex("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+    txOut = TxOut(Satoshi(1500), Script.pay2wpkh(PrivateKey(ByteVector32.fromValidHex("01" * 32)).publicKey)) :: Nil,
+    lockTime = 0)
+  val tx2 = Transaction(version = 2,
+    txIn = TxIn(OutPoint(ByteVector32.fromValidHex("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+    txOut = TxOut(Satoshi(1500), Script.pay2wpkh(PrivateKey(ByteVector32.fromValidHex("02" * 32)).publicKey)) :: Nil,
+    lockTime = 0)
+
   test("deserialize Map[OutPoint, BinaryData]") {
-    val output1 = OutPoint(ByteVector32.fromValidHex("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
-    val output2 = OutPoint(ByteVector32.fromValidHex("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
+    val output1 = OutPoint(tx1, 0)
+    val output2 = OutPoint(tx2, 1)
 
 
     val map = Map(
@@ -25,7 +35,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
       output2 -> ByteVector.fromValidHex("beef")
     )
     val json = write(map)
-    assert(json === s"""[["${output1.hash}:0","dead"],["${output2.hash}:1","beef"]]""")
+    assert(json === s"""[["${tx1.txid}:0","dead"],["${tx2.txid}:1","beef"]]""")
   }
 
   test("NodeAddress serialization") {

@@ -17,7 +17,7 @@ object JsonSerializers {
   import upickle.default._
 
   implicit val txReadWrite: ReadWriter[Transaction] = readwriter[String].bimap[Transaction](_.toString(), Transaction.read(_))
-  implicit val outpointReadWrite: ReadWriter[OutPoint] = readwriter[String].bimap[OutPoint](op => s"${op.hash}:${op.index}", s => ???)
+  implicit val outpointReadWrite: ReadWriter[OutPoint] = readwriter[String].bimap[OutPoint](op => s"${op.txid}:${op.index}", s => ???)
   implicit val publicKeyReadWriter: ReadWriter[PublicKey] = readwriter[String].bimap[PublicKey](_.toString(), s => PublicKey(ByteVector.fromValidHex(s)))
   implicit val keyPathReadWriter: ReadWriter[DeterministicWallet.KeyPath] = readwriter[String].bimap[DeterministicWallet.KeyPath](_.toString(), _ => DeterministicWallet.KeyPath(0L :: Nil))
   implicit val bytevectorReadWriter: ReadWriter[ByteVector] = readwriter[String].bimap[ByteVector](_.toHex, s => ByteVector.fromValidHex(s))
