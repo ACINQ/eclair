@@ -104,15 +104,19 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
+  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
+    Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, paymentHandler, wallet),
+    name = peerActorName(remoteNodeId))
+
   /**
    * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
    */
-  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
+  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]): ActorRef = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${context.children.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, paymentHandler, wallet), name = peerActorName(remoteNodeId))
+        val peer = createPeer(remoteNodeId)
         peer ! Peer.Init(previousKnownAddress, offlineChannels)
         peer
     }
