@@ -23,7 +23,6 @@ import kamon.tag.TagSet
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-import shapeless.HNil
 
 /**
  * Created by PM on 15/11/2016.
@@ -31,21 +30,14 @@ import shapeless.HNil
 object LightningMessageCodecs {
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
-  val combinedFeaturesCodec: Codec[ByteVector] = (("globalFeatures" | varsizebinarydata) :: ("localFeatures" | varsizebinarydata)).exmap[ByteVector](
-    features => {
-      val f1 = features.head
-      val f2 = features.tail.head
-      val combinedFeatures = if (f1.length == f2.length) {
-        f1 | f2
-      } else if (f1.length > f2.length) {
-        f1 | f2.padLeft(f1.length)
-      } else {
-        f1.padLeft(f2.length) | f2
-      }
-      Attempt.Successful(combinedFeatures)
+  val combinedFeaturesCodec: Codec[ByteVector] = (
+    ("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[ByteVector](
+    { case (gf, lf) =>
+      val length = gf.length.max(lf.length)
+      gf.padLeft(length) | lf.padLeft(length)
     },
-    features => Attempt.Successful(ByteVector.empty :: features :: HNil)
-  )
+    { features => (ByteVector.empty, features) })
 
   val initCodec: Codec[Init] = combinedFeaturesCodec.as[Init]
 

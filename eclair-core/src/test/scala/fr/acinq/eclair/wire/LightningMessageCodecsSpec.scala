@@ -58,6 +58,7 @@ class LightningMessageCodecsSpec extends FunSuite {
       val init = initCodec.decode(bin.bits).require.value
       assert(init.features === features)
       assert(initCodec.encode(init).require.bytes === encoded)
+      assert(initCodec.decode(encoded.bits).require.value === init)
     }
   }
 

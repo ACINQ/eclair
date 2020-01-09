@@ -33,7 +33,9 @@ object FeatureSupport {
 
 sealed trait Feature {
   def rfcName: String
+
   def mandatory: Int
+
   def optional: Int = mandatory + 1
 
   override def toString = rfcName
@@ -105,13 +107,15 @@ object Features {
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
 
-  private def hasFeature(features: BitVector, bit: Int): Boolean = if (features.sizeLessThanOrEqual(bit)) false else features.reverse.get(bit)
+  private def hasFeature(features: BitVector, bit: Int): Boolean = features.sizeGreaterThan(bit) && features.reverse.get(bit)
 
-  def hasFeature(features: BitVector, feature: Feature, support: Option[FeatureSupport]): Boolean = support match {
+  def hasFeature(features: BitVector, feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(FeatureSupport.Mandatory) => hasFeature(features, feature.mandatory)
     case Some(FeatureSupport.Optional) => hasFeature(features, feature.optional)
     case None => hasFeature(features, feature.optional) || hasFeature(features, feature.mandatory)
   }
+
+  def hasFeature(features: ByteVector, feature: Feature): Boolean = hasFeature(features.bits, feature, None)
 
   def hasFeature(features: ByteVector, feature: Feature, support: Option[FeatureSupport]): Boolean = hasFeature(features.bits, feature, support)
 
