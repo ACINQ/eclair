@@ -98,8 +98,8 @@ object Features {
   case class FeatureException(message: String) extends IllegalArgumentException(message)
 
   def validateFeatureGraph(features: BitVector): Option[FeatureException] = featuresDependency.collectFirst {
-    case (feature, dependencies) if hasFeature(features, feature, None) && dependencies.exists(d => !hasFeature(features, d, None)) =>
-      FeatureException(s"${features.toBin} sets $feature but is missing a dependency (${dependencies.filter(d => !hasFeature(features, d, None)).mkString(" and ")})")
+    case (feature, dependencies) if hasFeature(features, feature) && dependencies.exists(d => !hasFeature(features, d)) =>
+      FeatureException(s"${features.toBin} sets $feature but is missing a dependency (${dependencies.filter(d => !hasFeature(features, d)).mkString(" and ")})")
   }
 
   def validateFeatureGraph(features: ByteVector): Option[FeatureException] = validateFeatureGraph(features.bits)
@@ -115,7 +115,7 @@ object Features {
     case None => hasFeature(features, feature.optional) || hasFeature(features, feature.mandatory)
   }
 
-  def hasFeature(features: ByteVector, feature: Feature): Boolean = hasFeature(features.bits, feature, None)
+  def hasFeature(features: ByteVector, feature: Feature): Boolean = hasFeature(features.bits, feature)
 
   def hasFeature(features: ByteVector, feature: Feature, support: Option[FeatureSupport]): Boolean = hasFeature(features.bits, feature, support)
 

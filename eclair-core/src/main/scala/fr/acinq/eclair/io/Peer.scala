@@ -139,9 +139,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       if (Features.areSupported(remoteInit.features)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f, None)
+        def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
 
-        def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f, None)
+        def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
 
         val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
         val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)

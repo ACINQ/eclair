@@ -329,10 +329,10 @@ object PaymentRequest {
    */
   case class Features(bitmask: BitVector) extends TaggedField {
     lazy val supported: Boolean = areSupported(bitmask)
-    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment, None)
-    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, None)
+    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment)
+    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF)
     lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(FeatureSupport.Mandatory))
-    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment, None)
+    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment)
 
     override def toString: String = s"Features(${bitmask.toBin})"
 
