@@ -17,12 +17,13 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.router.Router.ShortChannelIdsChunk
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
-import fr.acinq.eclair.{LongToBtcAmount, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
-import scala.collection.immutable.SortedMap
+import scala.collection.immutable.{SortedMap, SortedSet}
 import scala.compat.Platform
 
 
@@ -126,5 +127,23 @@ class ChannelRangeQueriesSpec extends FunSuite {
     // unknown channel: we ask everything
     assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
     assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+  }
+
+  test("split short channel ids correctly ") {
+    def makeShortChannelIds(height: Int, count: Int): SortedSet[ShortChannelId] = SortedSet.empty[ShortChannelId] ++ (0 until count).map(c => ShortChannelId(height, c, 0))
+
+    val ids = makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(46, 120)
+
+    // check that chunks do not overlap
+    def validate(chunks: List[ShortChannelIdsChunk]) : Boolean = chunks match {
+      case Nil => true
+      case a :: b :: tail if b.firstBlock < a.firstBlock + a.numBlocks => false
+      case _ => validate(chunks.tail)
+    }
+
+    assert(validate(Router.split(ids, 100)))
+    assert(validate(Router.split(ids, 50)))
+    assert(validate(Router.split(ids, 20)))
+    assert(validate(Router.split(ids, 1000)))
   }
 }
