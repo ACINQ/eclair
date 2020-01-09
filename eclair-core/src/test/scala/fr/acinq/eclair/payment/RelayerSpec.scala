@@ -493,8 +493,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.channelId === origin.originChannelId)
     assert(fwd.message.id === origin.originHtlcId)
 
-    val paymentRelayed = eventListener.expectMsgType[PaymentRelayed]
-    assert(paymentRelayed.copy(timestamp = 0) === PaymentRelayed(origin.amountIn, origin.amountOut, add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
+    val paymentRelayed = eventListener.expectMsgType[ChannelPaymentRelayed]
+    assert(paymentRelayed.copy(timestamp = 0) === ChannelPaymentRelayed(origin.amountIn, origin.amountOut, add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
   }
 
   test("relay a trampoline htlc-fulfill") { f =>

@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef}
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.{NodeParams, _}
 import fr.acinq.eclair.db.{IncomingPayment, PaymentsDb}
@@ -35,7 +35,7 @@ class PayToOpenHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends 
   // NB: this is safe because this handler will be called from within an actor
   private var pendingPayToOpenReqs: Map[ByteVector32, List[PayToOpenRequest]] = Map.empty
 
-  override def handle(implicit ctx: ActorContext, log: LoggingAdapter): Receive = {
+  override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case payToOpenRequest: PayToOpenRequest => nodeParams.db.payments.getIncomingPayment(payToOpenRequest.paymentHash) match {
       case Some(record@IncomingPayment(paymentRequest, _, _, _)) if paymentRequest.features.allowMultiPart && paymentRequest.amount.isDefined && payToOpenRequest.amountMsat < paymentRequest.amount.get =>
         // this is a chunk for a multipart payment, do we already have the rest?

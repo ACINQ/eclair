@@ -1008,7 +1008,6 @@ NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // now bob will forward the htlc downstream
     val forward = relayerB.expectMsgType[ForwardAdd]
     assert(forward.add === htlc)
-
   }
 
   test("recv RevokeAndAck (multiple htlcs in both directions)") { f =>

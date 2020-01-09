@@ -23,6 +23,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -698,10 +699,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     }
   }
 
-  override def mdc(currentMessage: Any): MDC = currentMessage match {
-    case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-    case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))
-    case _ => akka.event.Logging.emptyMDC
+  override def mdc(currentMessage: Any): MDC = {
+    val category_opt = LogCategory(currentMessage)
+    currentMessage match {
+      case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
+      case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
+      case LocalChannelUpdate(_, _, _, remoteNodeId, _, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
+      case _ => Logs.mdc(category_opt)
+    }
   }
 }
 

@@ -199,11 +199,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, channels = Set(ChannelCodecsSpec.normal))
     probe.send(transport.ref, PoisonPill)
     awaitCond(peer.stateName === DISCONNECTED)
-    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (10 seconds))
+    val initialReconnectDelay = peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay
+    assert(initialReconnectDelay <= (10 seconds))
     probe.send(peer, Reconnect)
-    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (20 seconds))
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (initialReconnectDelay * 2))
     probe.send(peer, Reconnect)
-    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (40 seconds))
+    assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (initialReconnectDelay * 4))
   }
 
   test("disconnect if incompatible features") { f =>

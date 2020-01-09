@@ -32,6 +32,4 @@ trait ChannelsDb {
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]
 
-  def close(): Unit
-
 }
