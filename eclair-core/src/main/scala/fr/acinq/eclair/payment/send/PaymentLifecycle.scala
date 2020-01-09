@@ -72,7 +72,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       router ! FinalizeRoute(c.hops)
       if (cfg.storeInDb) {
         val targetNodeId = cfg.trampolineData.map(_.paymentRequest.nodeId).getOrElse(cfg.targetNodeId)
-        val finalAmount = c.finalPayload.amount - cfg.trampolineData.map(_.trampolineFees).getOrElse(0 msat)
+        val finalAmount = c.finalPayload.amount - cfg.trampolineData.map(_.trampolineAttempts.headOption.map(_._1).getOrElse(0 msat)).getOrElse(0 msat)
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, finalAmount, targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
@@ -92,7 +92,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
       if (cfg.storeInDb) {
         val targetNodeId = cfg.trampolineData.map(_.paymentRequest.nodeId).getOrElse(cfg.targetNodeId)
-        val finalAmount = c.finalPayload.amount - cfg.trampolineData.map(_.trampolineFees).getOrElse(0 msat)
+        val finalAmount = c.finalPayload.amount - cfg.trampolineData.map(_.trampolineAttempts.headOption.map(_._1).getOrElse(0 msat)).getOrElse(0 msat)
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, cfg.paymentHash, finalAmount, targetNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
@@ -116,7 +116,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event("ok", _) => stay
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
-      val trampolineFees = cfg.trampolineData.map(_.trampolineFees).getOrElse(0 msat)
+      val trampolineFees = cfg.trampolineData.map(_.trampolineAttempts.headOption.map(_._1).getOrElse(0 msat)).getOrElse(0 msat)
       val p = PartialPayment(id, c.finalPayload.amount - trampolineFees, cmd.amount - c.finalPayload.amount + trampolineFees, fulfill.channelId, Some(route))
       onSuccess(s, PaymentSent(id, c.paymentHash, fulfill.paymentPreimage, p :: Nil))
       myStop()
