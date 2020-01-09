@@ -248,7 +248,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def sendToTrampoline(invoice: PaymentRequest, trampolineId: PublicKey, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta)(implicit timeout: Timeout): Future[UUID] = {
     val defaultRouteParams = Router.getDefaultRouteParams(appKit.nodeParams.routerConf)
-    val sendPayment = SendTrampolinePaymentRequest(invoice.amount.get, trampolineFees, invoice, trampolineId, invoice.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA), trampolineExpiryDelta, Some(defaultRouteParams))
+    val sendPayment = SendTrampolinePaymentRequest(invoice.amount.get, invoice, trampolineId, Seq((trampolineFees, trampolineExpiryDelta)), invoice.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA), Some(defaultRouteParams))
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 

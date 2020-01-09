@@ -91,6 +91,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
           case Some(failure) =>
             log.warning(s"rejecting trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length} reason=$failure)")
             rejectPayment(upstream, Some(failure))
+            context become main(pendingIncoming - paymentHash, pendingOutgoing)
           case None =>
             log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length})")
             val paymentId = relay(paymentHash, upstream, nextPayload, nextPacket)
