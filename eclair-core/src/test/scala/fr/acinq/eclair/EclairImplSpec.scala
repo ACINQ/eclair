@@ -57,6 +57,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val switchboard = TestProbe()
     val paymentInitiator = TestProbe()
     val server = TestProbe()
+    val authenticator = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,

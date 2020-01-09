@@ -41,7 +41,8 @@ import scala.concurrent.duration.FiniteDuration
 /**
  * Created by PM on 26/02/2017.
  */
-case class NodeParams(keyManager: KeyManager,
+case class NodeParams(config: Config,
+                      keyManager: KeyManager,
                       private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
@@ -214,6 +215,7 @@ object NodeParams {
     }
 
     NodeParams(
+      config = config,
       keyManager = keyManager,
       blockCount = blockCount,
       alias = nodeAlias,

@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -68,7 +68,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   }
 
   def reachNormal(setup: SetupFixture,
-                  tags: Set[String] = Set.empty): Unit = {
+                  tags: Set[String] = Set.empty): Transaction = {
     import setup._
     val channelVersion = ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
@@ -108,6 +108,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    fundingTx
   }
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
