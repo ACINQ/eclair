@@ -63,7 +63,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
     // Closed channels will be removed, other channels will be restored.
     val channels = nodeParams.db.channels.listLocalChannels().filter(c => Closing.isClosed(c, None).isEmpty)
     cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.globalFeatures)
+    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features)
   }
 
   override def receive: Receive = main(brokenHtlcs)

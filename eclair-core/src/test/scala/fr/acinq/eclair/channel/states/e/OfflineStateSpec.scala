@@ -34,6 +34,7 @@ import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -59,9 +60,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  def aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
+  def aliceInit = Init(TestConstants.Alice.nodeParams.features)
 
-  def bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
+  def bobInit = Init(TestConstants.Bob.nodeParams.features)
 
   /**
    * This test checks the case where a disconnection occurs *right before* the counterparty receives a new sig
@@ -504,8 +505,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == OFFLINE)
 
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
-
     val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
     val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
     val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
