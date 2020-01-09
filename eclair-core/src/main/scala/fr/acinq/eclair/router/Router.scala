@@ -1206,20 +1206,53 @@ object Router {
    * there could be several reply_channel_range messages for a single query
    */
   def split(shortChannelIds: SortedSet[ShortChannelId], channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
-    // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
-    // and a different set of short_channel_ids) but it doesn't matter
     if (shortChannelIds.isEmpty) {
       List(ShortChannelIdsChunk(0, 0, List.empty))
     } else {
-      shortChannelIds
-        .grouped(channelRangeChunkSize)
-        .toList
-        .map { group =>
-          // NB: group is never empty
-          val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-          val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
-          ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
+      // group short channel ids by block height, with one list per block height
+      // we use iterators here to be as efficient as possible
+      @tailrec
+      def loop(it: Iterator[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
+        if (it.hasNext) {
+          val current = it.next()
+          val height = ShortChannelId.coordinates(current).blockHeight
+          val (it1, rest) = it.span(id => ShortChannelId.coordinates(id).blockHeight == height)
+          val chunk = current +: it1.toList
+          val acc1 = ShortChannelIdsChunk(height, 1, chunk) :: acc
+          if (rest.hasNext) {
+            loop(rest, acc1)
+          } else acc1.reverse
+        } else acc.reverse
+      }
+
+      // merge 2 chunks of channel ids together
+      // we assume that chunks are sorted, with the ones with the smallest block heights first
+      def merge(a: ShortChannelIdsChunk, b: ShortChannelIdsChunk): ShortChannelIdsChunk = {
+        if (a.shortChannelIds.isEmpty) b else if (b.shortChannelIds.isEmpty) a else {
+          require(a.firstBlock < b.firstBlock)
+          val merged = a.shortChannelIds ++ b.shortChannelIds
+          ShortChannelIdsChunk(ShortChannelId.coordinates(merged.head).blockHeight, ShortChannelId.coordinates(merged.last).blockHeight - ShortChannelId.coordinates(merged.head).blockHeight + 1, merged)
         }
+      }
+
+      // merge chunks of channel ids together
+      // we assume that this function is called with the result of the above function i.e all short ids for the same
+      // block height have been grouped together
+      // merging is done at the chunk level so we're sure that ids for the same block height cannot be spread over different chunks
+      @tailrec
+      def mergeChunks(input: List[ShortChannelIdsChunk], output: List[ShortChannelIdsChunk], chunkSize: Int): List[ShortChannelIdsChunk] = input match {
+        case Nil => output.reverse
+        case a :: b :: tail if a.shortChannelIds.size + b.shortChannelIds.size <= chunkSize => // can we merge the first 2 chunks
+          mergeChunks(merge(a, b) :: tail, output, chunkSize)
+        case a :: tail => output match {
+          case b :: tail1 if a.shortChannelIds.size + b.shortChannelIds.size <= chunkSize => // can we add the first chunk to the last chunk that we merged ?
+            mergeChunks(tail, merge(a, b) :: tail1, chunkSize)
+          case _ => mergeChunks(tail, a :: output, chunkSize)
+        }
+      }
+
+      val chunks = loop(shortChannelIds.iterator, Nil)
+      mergeChunks(chunks, Nil, channelRangeChunkSize)
     }
   }
 
