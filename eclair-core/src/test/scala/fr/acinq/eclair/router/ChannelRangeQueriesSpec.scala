@@ -132,7 +132,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
   test("split short channel ids correctly ") {
     def makeShortChannelIds(height: Int, count: Int): SortedSet[ShortChannelId] = SortedSet.empty[ShortChannelId] ++ (0 until count).map(c => ShortChannelId(height, c, 0))
 
-    val ids = makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(46, 120)
+    val ids = makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
 
     // check that chunks do not overlap
     def validate(chunks: List[ShortChannelIdsChunk]) : Boolean = chunks match {
@@ -141,9 +141,10 @@ class ChannelRangeQueriesSpec extends FunSuite {
       case _ => validate(chunks.tail)
     }
 
-    assert(validate(Router.split(ids, 100)))
-    assert(validate(Router.split(ids, 50)))
+    assert(validate(Router.split(ids, 1)))
     assert(validate(Router.split(ids, 20)))
+    assert(validate(Router.split(ids, 50)))
+    assert(validate(Router.split(ids, 100)))
     assert(validate(Router.split(ids, 1000)))
   }
 }
