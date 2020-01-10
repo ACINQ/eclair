@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
@@ -26,7 +27,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
 
-trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
