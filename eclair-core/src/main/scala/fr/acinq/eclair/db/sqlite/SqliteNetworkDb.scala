@@ -165,5 +165,6 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
+  // used by mobile apps
   override def close(): Unit = sqlite.close
 }

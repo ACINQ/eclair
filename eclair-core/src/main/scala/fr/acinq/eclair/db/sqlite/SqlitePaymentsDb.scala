@@ -401,4 +401,6 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  // used by mobile apps
+  override def close(): Unit = sqlite.close()
 }
