@@ -33,7 +33,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import kamon.Kamon
 import scodec.Attempt
-import scodec.bits.ByteVector
+import scodec.bits.{BinStringSyntax, ByteVector}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -102,7 +102,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
         case Some(f) => wire.Init(f)
-        case None => wire.Init(nodeParams.features)
+        case None =>
+          // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
+          // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
+          // We use a long enough mask to account for future features.
+          // TODO: remove that once eclair-mobile is patched.
+          val featureMask = bin"111111111111111111111111111111000011111111111111".bytes
+          val maskedFeatures = (nodeParams.features.padLeft(featureMask.length) & featureMask).dropWhile(_ == 0)
+          wire.Init(maskedFeatures)
       }
       log.info(s"using features=${localInit.features.toBin}")
       transport ! localInit
