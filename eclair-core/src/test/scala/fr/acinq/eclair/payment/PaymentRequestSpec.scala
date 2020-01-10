@@ -372,10 +372,12 @@ class PaymentRequestSpec extends FunSuite {
       PaymentRequest.read("lnbc1230p1pwljzn3pp5qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdq52dhk6efqd9h8vmmfvdjs9qypqsqylvwhf7xlpy6xpecsnpcjjuuslmzzgeyv90mh7k7vs88k2dkxgrkt75qyfjv5ckygw206re7spga5zfd4agtdvtktxh5pkjzhn9dq2cqz9upw7")
     )
 
+    // Phoenix special case: ignore payment secret invoice validation
+    // todo: reinstate this assert once legacy 1.0.1 Phoenix wallet have been upgraded
     // A multi-part invoice must use a payment secret.
-    assertThrows[IllegalArgumentException](
-      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", features = Some(Features(BasicMultiPartPayment.optional, VariableLengthOnion.optional)))
-    )
+    // assertThrows[IllegalArgumentException](
+    //   PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", features = Some(Features(BasicMultiPartPayment.optional, VariableLengthOnion.optional)))
+    // )
   }
 
   test("trampoline") {
