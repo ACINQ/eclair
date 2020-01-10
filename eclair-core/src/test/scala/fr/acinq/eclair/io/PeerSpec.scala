@@ -231,6 +231,31 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.expectTerminated(transport.ref)
   }
 
+  test("masks off MPP and PaymentSecret features") { f =>
+    import f._
+    val wallet = new TestWallet
+    val probe = TestProbe()
+
+    val testCases = Seq(
+      (bin"                00000010", bin"                00000010"), // option_data_loss_protect
+      (bin"        0000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex
+      (bin"        1000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
+      (bin"        0100101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
+      (bin"000000101000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp
+      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and 19
+    )
+
+    for ((configuredFeatures, sentFeatures) <- testCases) {
+      val nodeParams = TestConstants.Alice.nodeParams.copy(features = configuredFeatures.bytes)
+      val peer = TestFSMRef(new Peer(nodeParams, remoteNodeId, authenticator.ref, watcher.ref, router.ref, relayer.ref, TestProbe().ref, wallet))
+      probe.send(peer, Peer.Init(None, Set.empty))
+      authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
+      transport.expectMsgType[TransportHandler.Listener]
+      val init = transport.expectMsgType[wire.Init]
+      assert(init.features === sentFeatures.bytes)
+    }
+  }
+
   test("handle disconnect in status INITIALIZING") { f =>
     import f._
 
