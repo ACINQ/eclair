@@ -215,10 +215,16 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
-    discriminated[EncodedShortChannelIds].by(byte)
+  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] = {
+    val innerCodec = discriminated[EncodedShortChannelIds].by(byte)
       .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
       .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+    Codec[EncodedShortChannelIds]({
+        // if the list of channel id is empty, we don't encode anything (as opposed as indicating an encoding type without any data)
+      case e if e.array.isEmpty => Attempt.successful(BitVector.empty)
+      case e => innerCodec.encode(e)
+    }, bits => innerCodec.decode(bits))
+  }
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(
