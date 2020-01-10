@@ -17,12 +17,14 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.router.Router.ShortChannelIdsChunk
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
-import fr.acinq.eclair.{LongToBtcAmount, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
 
-import scala.collection.immutable.SortedMap
+import scala.annotation.tailrec
+import scala.collection.immutable.{SortedMap, SortedSet}
 import scala.compat.Platform
 
 
@@ -126,5 +128,59 @@ class ChannelRangeQueriesSpec extends FunSuite {
     // unknown channel: we ask everything
     assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
     assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+  }
+
+  def makeShortChannelIds(height: Int, count: Int): List[ShortChannelId] = (0 until count).map(c => ShortChannelId(height, c, 0)).toList
+
+  test("split short channel ids correctly (basic tests") {
+    assert(Router.split(SortedSet.empty[ShortChannelId], 100) == ShortChannelIdsChunk(0, 0, Nil) :: Nil)
+    assert(Router.split(SortedSet(ShortChannelId(1000, 0, 0)), 100) == ShortChannelIdsChunk(1000, 1, ShortChannelId(1000, 0, 0) :: Nil) :: Nil)
+
+    // all ids in different blocks, but they all fit in a single chunk
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, ids.size)
+      assert(chunks == ShortChannelIdsChunk(1000, ids.size, ids) :: Nil)
+    }
+
+    // all ids in different blocks, chunk size == 2
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, 2)
+      assert(chunks == ShortChannelIdsChunk(1000, 2, List(ids(0), ids(1))) :: ShortChannelIdsChunk(1002, 2, List(ids(2), ids(3))) :: ShortChannelIdsChunk(1004, 2, List(ids(4), ids(5))) :: Nil)
+    }
+
+    // all ids in the same block
+    {
+      val ids = makeShortChannelIds(1000, 100)
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, 10)
+      assert(chunks == ShortChannelIdsChunk(1000, 1, ids) :: Nil)
+    }
+  }
+
+  test("split short channel ids correctly ") {
+
+    val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
+
+    // check that chunks do not overlap and contain exactly the ids they were built from
+    def validate(ids: SortedSet[ShortChannelId], chunks: List[ShortChannelIdsChunk]) : Boolean = {
+
+      @tailrec
+      def noOverloap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
+        case Nil => true
+        case a :: b :: _ if b.firstBlock < a.firstBlock + a.numBlocks => false
+        case _ => noOverloap(chunks.tail)
+      }
+
+      // aggregate ids from all chunks, to check that they match our input ids exactly
+      val chunkIds = SortedSet.empty[ShortChannelId] ++ chunks.map(_.shortChannelIds).flatten.toSet
+      chunkIds == ids && noOverloap(chunks)
+    }
+
+    assert(validate(ids, Router.split(ids, 1)))
+    assert(validate(ids, Router.split(ids, 20)))
+    assert(validate(ids, Router.split(ids, 50)))
+    assert(validate(ids, Router.split(ids, 100)))
+    assert(validate(ids, Router.split(ids, 1000)))
   }
 }

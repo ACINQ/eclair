@@ -199,6 +199,7 @@ case object NORMAL extends State
 case object TickBroadcast
 case object TickPruneStaleChannels
 case object TickComputeNetworkStats
+
 // @formatter:on
 
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
@@ -1206,20 +1207,35 @@ object Router {
    * there could be several reply_channel_range messages for a single query
    */
   def split(shortChannelIds: SortedSet[ShortChannelId], channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
-    // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
-    // and a different set of short_channel_ids) but it doesn't matter
     if (shortChannelIds.isEmpty) {
       List(ShortChannelIdsChunk(0, 0, List.empty))
     } else {
-      shortChannelIds
-        .grouped(channelRangeChunkSize)
-        .toList
-        .map { group =>
-          // NB: group is never empty
-          val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-          val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
-          ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
+
+      // we use an iterator for efficiency
+      val it = shortChannelIds.iterator
+
+      // we want to split ids in different chunks, with the following rules by order of priority
+      // ids that have the same block height must be grouped in the same chunk
+      // chunk should contain `channelRangeChunkSize` ids
+      @tailrec
+      def loop(currentChunk: List[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
+        if (it.hasNext) {
+          val id = it.next()
+          val currentHeight = currentChunk.head.blockHeight
+          if (id.blockHeight == currentHeight)
+            loop(id :: currentChunk, acc) // same height => always add to the current chunk
+          else if (currentChunk.size < channelRangeChunkSize) // different height but we're under the size target => add to the current chunk
+            loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
+          else {
+            // we always prepend because it's more efficient so we have to reverse the current chunk
+            loop(id :: Nil, ShortChannelIdsChunk(currentChunk.last.blockHeight, currentChunk.head.blockHeight - currentChunk.last.blockHeight + 1, currentChunk.reverse) :: acc)
+          }
         }
+        else (ShortChannelIdsChunk(currentChunk.last.blockHeight, currentChunk.head.blockHeight - currentChunk.last.blockHeight + 1, currentChunk.reverse) :: acc).reverse
+      }
+
+      val first = it.next()
+      loop(first :: Nil, Nil)
     }
   }
 
