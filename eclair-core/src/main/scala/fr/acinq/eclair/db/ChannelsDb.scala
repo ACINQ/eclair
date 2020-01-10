@@ -16,11 +16,13 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
+
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 
-trait ChannelsDb {
+trait ChannelsDb extends Closeable {
 
   def addOrUpdateChannel(state: HasCommitments)
 
