@@ -205,5 +205,6 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
     }
   }
 
+  // used by mobile apps
   override def close(): Unit = sqlite.close
 }
