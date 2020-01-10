@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
+
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{Command, HasHtlcId}
 
@@ -31,7 +33,7 @@ import fr.acinq.eclair.channel.{Command, HasHtlcId}
  * to handle all corner cases.
  *
  */
-trait PendingRelayDb {
+trait PendingRelayDb extends Closeable {
 
   def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId)
 
@@ -41,5 +43,4 @@ trait PendingRelayDb {
 
   def listPendingRelay(): Set[(ByteVector32, Long)]
 
-  def close(): Unit
 }
