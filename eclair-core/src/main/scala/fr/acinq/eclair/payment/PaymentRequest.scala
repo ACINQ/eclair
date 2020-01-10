@@ -45,8 +45,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  private val featuresErr = validateFeatureGraph(features.bitmask)
-  require(featuresErr.isEmpty, featuresErr.map(_.message))
+  // Phoenix special case: we do not check the graph to be able to pay legacy 1.0.1 Phoenix wallets.
+  // todo: add the check back once most 1.0.1 phoenix wallet have been upgraded
   if (features.allowPaymentSecret) {
     require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
   }
