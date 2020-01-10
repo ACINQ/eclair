@@ -71,7 +71,6 @@ case class RouterConf(randomizeRouteSelection: Boolean,
 
 // @formatter:off
 case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
-
 case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
   update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
@@ -82,7 +81,6 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
-
 case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
 
@@ -92,7 +90,6 @@ case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, updat
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
 }
-
 // @formatter:on
 
 case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
@@ -161,9 +158,7 @@ case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ign
 // @formatter:off
 /** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */
 case class ExcludeChannel(desc: ChannelDesc)
-
 case class LiftChannelExclusion(desc: ChannelDesc)
-
 // @formatter:on
 
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
@@ -199,13 +194,10 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
 
 // @formatter:off
 sealed trait State
-
 case object NORMAL extends State
 
 case object TickBroadcast
-
 case object TickPruneStaleChannels
-
 case object TickComputeNetworkStats
 
 // @formatter:on
@@ -1226,23 +1218,24 @@ object Router {
       // ids that have the same block height must be grouped in the same chunk
       // chunk should contain `channelRangeChunkSize` ids
       @tailrec
-      def loop(currentHeight: Int, currentChunk: List[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
+      def loop(currentChunk: List[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
         if (it.hasNext) {
           val id = it.next()
+          val currentHeight = currentChunk.head.blockHeight
           if (id.blockHeight == currentHeight)
-            loop(currentHeight, id :: currentChunk, acc) // same height => always add to the current chunk
+            loop(id :: currentChunk, acc) // same height => always add to the current chunk
           else if (currentChunk.size < channelRangeChunkSize) // different height but we're under the size target => add to the current chunk
-            loop(id.blockHeight, id :: currentChunk, acc) // different height and over the size target => start a new chunk
+            loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
           else {
             // we always prepend because it's more efficient so we have to reverse the current chunk
-            loop(id.blockHeight, id :: Nil, ShortChannelIdsChunk(currentChunk.last.blockHeight, currentChunk.head.blockHeight - currentChunk.last.blockHeight + 1, currentChunk.reverse) :: acc)
+            loop(id :: Nil, ShortChannelIdsChunk(currentChunk.last.blockHeight, currentChunk.head.blockHeight - currentChunk.last.blockHeight + 1, currentChunk.reverse) :: acc)
           }
         }
         else (ShortChannelIdsChunk(currentChunk.last.blockHeight, currentChunk.head.blockHeight - currentChunk.last.blockHeight + 1, currentChunk.reverse) :: acc).reverse
       }
 
       val first = it.next()
-      loop(ShortChannelId.coordinates(first).blockHeight, first :: Nil, Nil)
+      loop(first :: Nil, Nil)
     }
   }
 
