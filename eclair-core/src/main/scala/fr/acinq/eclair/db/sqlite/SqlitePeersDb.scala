@@ -71,4 +71,7 @@ import SqliteUtils.ExtendedResultSet._
       m
     }
   }
+
+  // used by mobile apps
+  override def close(): Unit = sqlite.close()
 }
