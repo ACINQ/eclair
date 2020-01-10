@@ -27,4 +27,5 @@ trait PeersDb {
 
   def listPeers(): Map[PublicKey, NodeAddress]
 
+  def close(): Unit
 }
