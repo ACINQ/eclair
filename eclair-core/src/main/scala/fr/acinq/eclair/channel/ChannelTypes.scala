@@ -212,8 +212,7 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
-                             globalFeatures: ByteVector,
-                             localFeatures: ByteVector)
+                             features: ByteVector)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
@@ -227,8 +226,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               paymentBasepoint: PublicKey,
                               delayedPaymentBasepoint: PublicKey,
                               htlcBasepoint: PublicKey,
-                              globalFeatures: ByteVector,
-                              localFeatures: ByteVector)
+                              features: ByteVector)
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte

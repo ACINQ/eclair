@@ -75,8 +75,8 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = (Alice.channelParams.modify(_.channelReserve).setToIf(channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT))(0.sat), Bob.channelParams)
-    val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
-    val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
+    val aliceInit = Init(aliceParams.features)
+    val bobInit = Init(bobParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]

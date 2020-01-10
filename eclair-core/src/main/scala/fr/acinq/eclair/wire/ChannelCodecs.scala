@@ -70,8 +70,7 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[LocalParams]
+      ("features" | combinedFeaturesCodec)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
@@ -86,8 +85,7 @@ object ChannelCodecs extends Logging {
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
-      ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[RemoteParams]
+      ("features" | combinedFeaturesCodec)).as[RemoteParams]
 
   val directionCodec: Codec[Direction] = Codec[Direction](
     (dir: Direction) => bool.encode(dir == IN),

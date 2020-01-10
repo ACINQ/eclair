@@ -44,8 +44,8 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
     }
     val setup = init(wallet = noopWallet)
     import setup._
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val aliceInit = Init(Alice.channelParams.features)
+    val bobInit = Init(Bob.channelParams.features)
     within(30 seconds) {
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)

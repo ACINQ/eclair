@@ -65,8 +65,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     if (unconfirmedFundingTx) {
       within(30 seconds) {
-        val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-        val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+        val aliceInit = Init(Alice.channelParams.features)
+        val bobInit = Init(Bob.channelParams.features)
         alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
         bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
         alice2bob.expectMsgType[OpenChannel]
@@ -558,8 +558,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then we manually replace alice's state with an older one
     alice.setState(OFFLINE, oldStateData)
     // then we reconnect them
-    val aliceInit = Init(TestConstants.Alice.nodeParams.globalFeatures, TestConstants.Alice.nodeParams.localFeatures)
-    val bobInit = Init(TestConstants.Bob.nodeParams.globalFeatures, TestConstants.Bob.nodeParams.localFeatures)
+    val aliceInit = Init(TestConstants.Alice.nodeParams.features)
+    val bobInit = Init(TestConstants.Bob.nodeParams.features)
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
     sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
     // peers exchange channel_reestablish messages

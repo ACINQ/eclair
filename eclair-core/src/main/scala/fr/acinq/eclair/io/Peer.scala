@@ -101,10 +101,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       transport ! TransportHandler.Listener(self)
       context watch transport
       val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
-        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+        case Some(f) => wire.Init(f)
+        case None => wire.Init(nodeParams.features)
       }
-      log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
+      log.info(s"using features=${localInit.features.toBin}")
       transport ! localInit
 
       val address_opt = if (outgoing) {
@@ -130,21 +130,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
+      log.info(s"peer is using features=${remoteInit.features.toBin}")
 
-      if (Features.areSupported(remoteInit.localFeatures)) {
+      if (Features.areSupported(remoteInit.features)) {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        import Features._
+        def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
 
-        def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.localFeatures, bit)
+        def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
 
-        def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.localFeatures, bit)
-
-        val canUseChannelRangeQueries = (hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY))
-
-        val canUseChannelRangeQueriesEx = (hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY))
-
+        val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
+        val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -155,7 +151,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           } else {
             log.info("not syncing with this peer")
           }
-        } else if (hasRemoteFeature(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
+        } else if (remoteHasFeature(Features.InitialRoutingSync)) {
           // "old" nodes, do as before
           log.info("peer requested a full routing table dump")
           router ! GetRoutingState
@@ -618,7 +614,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   onTermination {
-    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+    case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
       Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
@@ -775,8 +771,7 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
-      globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
+      features = nodeParams.features)
   }
 
   /**
