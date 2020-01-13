@@ -169,7 +169,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size, max = 60 seconds)
-    assert(BasicSyncResult(ranges = 3, queries = 12, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 3, queries = 13, channels = fakeRoutingInfo.size, updates = 2 * fakeRoutingInfo.size, nodes = 2 * fakeRoutingInfo.size) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
   }
 
@@ -218,7 +218,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(sender.ref, charlieId, na2))
     }
     awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size,  max = 60 seconds)
-    assert(BasicSyncResult(ranges = 3, queries = 10, channels = fakeRoutingInfo.size - 10, updates = 2 * (fakeRoutingInfo.size - 10), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 10) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
+    assert(BasicSyncResult(ranges = 3, queries = 11, channels = fakeRoutingInfo.size - 10, updates = 2 * (fakeRoutingInfo.size - 10), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 10) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
 
     // bump random channel_updates
