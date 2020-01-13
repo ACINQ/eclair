@@ -39,7 +39,7 @@ object LightningMessageCodecs {
     },
     { features => (ByteVector.empty, features) })
 
-  val initCodec: Codec[Init] = combinedFeaturesCodec.as[Init]
+  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::
