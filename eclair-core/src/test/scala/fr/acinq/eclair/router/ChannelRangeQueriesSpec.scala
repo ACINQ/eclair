@@ -132,55 +132,160 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
   def makeShortChannelIds(height: Int, count: Int): List[ShortChannelId] = (0 until count).map(c => ShortChannelId(height, c, 0)).toList
 
+  def validate(chunk: ShortChannelIdsChunk) = {
+    require(!chunk.shortChannelIds.exists(!Router.keep(chunk.firstBlock, chunk.numBlocks, _)))
+  }
+
+  // check that chunks do not overlap and contain exactly the ids they were built from
+  def validate(ids: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, chunks: List[ShortChannelIdsChunk]): Unit = {
+
+    @tailrec
+    def noOverloap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
+      case Nil => true
+      case a :: b :: _ if b.firstBlock < a.firstBlock + a.numBlocks => false
+      case _ => noOverloap(chunks.tail)
+    }
+
+    // aggregate ids from all chunks, to check that they match our input ids exactly
+    val chunkIds = SortedSet.empty[ShortChannelId] ++ chunks.map(_.shortChannelIds).flatten.toSet
+    val expected = ids.filter(Router.keep(firstBlockNum, numberOfBlocks, _))
+
+    if (expected.isEmpty) require(chunks == List(ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil)))
+    chunks.foreach(validate)
+    require(chunks.head.firstBlock == firstBlockNum)
+    require(chunks.last.firstBlock + chunks.last.numBlocks == firstBlockNum + numberOfBlocks)
+    require(chunkIds == expected)
+    require(noOverloap(chunks))
+  }
+
   test("split short channel ids correctly (basic tests") {
-    assert(Router.split(SortedSet.empty[ShortChannelId], 100) == ShortChannelIdsChunk(0, 0, Nil) :: Nil)
-    assert(Router.split(SortedSet(ShortChannelId(1000, 0, 0)), 100) == ShortChannelIdsChunk(1000, 1, ShortChannelId(1000, 0, 0) :: Nil) :: Nil)
+    // no ids to split
+    {
+      val ids = Nil
+      val firstBlockNum = 10
+      val numberOfBlocks = 100
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
+    }
+    assert(Router.split(SortedSet.empty[ShortChannelId], 100, 1000, 100) == ShortChannelIdsChunk(100, 1000, Nil) :: Nil)
+
+    // ids are all before the requested range
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val firstBlockNum = 10
+      val numberOfBlocks = 100
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
+    }
+
+    // ids are all after the requested range
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val firstBlockNum = 1100
+      val numberOfBlocks = 100
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
+    }
 
     // all ids in different blocks, but they all fit in a single chunk
     {
       val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, ids.size)
-      assert(chunks == ShortChannelIdsChunk(1000, ids.size, ids) :: Nil)
+      val firstBlockNum = 900
+      val numberOfBlocks = 200
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, ids) :: Nil)
+    }
+
+    // all ids in the same block, chunk size == 2
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1000, 1, 0), ShortChannelId(1000, 2, 0), ShortChannelId(1000, 3, 0), ShortChannelId(1000, 4, 0), ShortChannelId(1000, 5, 0))
+      val firstBlockNum = 900
+      val numberOfBlocks = 200
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, ids) :: Nil)
     }
 
     // all ids in different blocks, chunk size == 2
     {
       val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, 2)
-      assert(chunks == ShortChannelIdsChunk(1000, 2, List(ids(0), ids(1))) :: ShortChannelIdsChunk(1002, 2, List(ids(2), ids(3))) :: ShortChannelIdsChunk(1004, 2, List(ids(4), ids(5))) :: Nil)
+      val firstBlockNum = 900
+      val numberOfBlocks = 200
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      assert(chunks == List(
+        ShortChannelIdsChunk(firstBlockNum, 100 + 2, List(ids(0), ids(1))),
+        ShortChannelIdsChunk(1002, 2, List(ids(2), ids(3))),
+        ShortChannelIdsChunk(1004, numberOfBlocks - 1004 + firstBlockNum, List(ids(4), ids(5)))
+      ))
+    }
+
+    // all ids in different blocks, chunk size == 2, first id outside of range
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val firstBlockNum = 1001
+      val numberOfBlocks = 200
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      assert(chunks == List(
+        ShortChannelIdsChunk(firstBlockNum, 2, List(ids(1), ids(2))),
+        ShortChannelIdsChunk(1003, 2, List(ids(3), ids(4))),
+        ShortChannelIdsChunk(1005, numberOfBlocks - 1005 + firstBlockNum, List(ids(5)))
+      ))
+    }
+
+    // all ids in different blocks, chunk size == 2, last id outside of range
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val firstBlockNum = 900
+      val numberOfBlocks = 105
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      assert(chunks == List(
+        ShortChannelIdsChunk(firstBlockNum, 100 + 2, List(ids(0), ids(1))),
+        ShortChannelIdsChunk(1002, 2, List(ids(2), ids(3))),
+        ShortChannelIdsChunk(1004, numberOfBlocks - 1004 + firstBlockNum, List(ids(4)))
+      ))
+   }
+
+    // all ids in different blocks, chunk size == 2, first and last id outside of range
+    {
+      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val firstBlockNum = 1001
+      val numberOfBlocks = 4
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      assert(chunks == List(
+        ShortChannelIdsChunk(firstBlockNum, 2, List(ids(1), ids(2))),
+        ShortChannelIdsChunk(1003, 2, List(ids(3), ids(4)))
+      ))
     }
 
     // all ids in the same block
     {
       val ids = makeShortChannelIds(1000, 100)
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, 10)
-      assert(chunks == ShortChannelIdsChunk(1000, 1, ids) :: Nil)
+      val firstBlockNum = 900
+      val numberOfBlocks = 200
+      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 10)
+      assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, ids) :: Nil)
     }
   }
 
   test("split short channel ids correctly ") {
-
     val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
+    val firstBlockNum = 0
+    val numberOfBlocks = 1000
 
-    // check that chunks do not overlap and contain exactly the ids they were built from
-    def validate(ids: SortedSet[ShortChannelId], chunks: List[ShortChannelIdsChunk]) : Boolean = {
+    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 1))
+    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 20))
+    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 50))
+    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 100))
+    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 1000))
+  }
 
-      @tailrec
-      def noOverloap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
-        case Nil => true
-        case a :: b :: _ if b.firstBlock < a.firstBlock + a.numBlocks => false
-        case _ => noOverloap(chunks.tail)
+  test("fuzzy test") {
+    val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
+    for (firstBlockNum <- 0 to 60) {
+      for (numberOfBlocks <- 1 to 60) {
+        for (chunkSize <- 1 :: 2 :: 20 :: 50 :: 100 :: 1000 :: Nil) {
+          validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, chunkSize))
+        }
       }
-
-      // aggregate ids from all chunks, to check that they match our input ids exactly
-      val chunkIds = SortedSet.empty[ShortChannelId] ++ chunks.map(_.shortChannelIds).flatten.toSet
-      chunkIds == ids && noOverloap(chunks)
     }
-
-    assert(validate(ids, Router.split(ids, 1)))
-    assert(validate(ids, Router.split(ids, 20)))
-    assert(validate(ids, Router.split(ids, 50)))
-    assert(validate(ids, Router.split(ids, 100)))
-    assert(validate(ids, Router.split(ids, 1000)))
   }
 }
