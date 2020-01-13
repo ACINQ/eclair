@@ -22,9 +22,46 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
 import org.scalatest.FunSuite
-import scodec.bits.ByteVector
+import scodec.bits._
 
 class ExtendedQueriesCodecsSpec extends FunSuite {
+
+  test("encode a list of short channel ids") {
+    {
+      // encode/decode with encoding 'uncompressed'
+      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+
+    {
+      // encode/decode with encoding 'zlib'
+      val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+
+    {
+      // encode/decode empty list with encoding 'uncompressed'
+      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty)
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      assert(encoded.bytes === hex"00")
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+
+    {
+      // encode/decode empty list with encoding 'zlib'
+      val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List.empty)
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      assert(encoded.bytes === hex"00") // NB: empty list is always encoded with encoding type 'uncompressed'
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty))
+    }
+  }
+
   test("encode query_short_channel_ids (no optional data)") {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,
