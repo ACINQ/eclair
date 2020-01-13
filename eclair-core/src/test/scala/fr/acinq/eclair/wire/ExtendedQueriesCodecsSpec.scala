@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
 import org.scalatest.FunSuite
-import scodec.bits.{ByteVector, _}
+import scodec.bits._
 
 class ExtendedQueriesCodecsSpec extends FunSuite {
 
