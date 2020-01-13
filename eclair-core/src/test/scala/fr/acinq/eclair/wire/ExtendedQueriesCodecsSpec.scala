@@ -27,8 +27,25 @@ import scodec.bits.{ByteVector, _}
 class ExtendedQueriesCodecsSpec extends FunSuite {
 
   test("encode a list of short channel ids") {
+
     {
-      // empty list
+      // encode/decode with encoding 'uncompressed'
+      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+
+    {
+      // encode/decode with encoding 'zlib'
+      val ids = EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+
+    {
+      // empty list with no encoding
       val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty)
       val encoded = encodedShortChannelIdsCodec.encode(ids).require
       assert(encoded.bytes === hex"")
@@ -37,12 +54,19 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
     }
 
     {
-      // encoded as uncompressed
-      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
-      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      // decode empty list with encoding 'uncompressed'
+      val encoded = hex"00".bits
       val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
-      assert(decoded === ids)
+      assert(decoded === EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty))
     }
+
+    {
+      // decode empty list with encoding 'zlib'
+      val encoded = hex"01".bits
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List.empty))
+    }
+
   }
 
   test("encode query_short_channel_ids (no optional data)") {
