@@ -26,6 +26,7 @@ import scodec.bits.ByteVector
 import scala.annotation.tailrec
 import scala.collection.immutable.{SortedMap, SortedSet}
 import scala.compat.Platform
+import scala.util.Random
 
 
 class ChannelRangeQueriesSpec extends FunSuite {
@@ -140,10 +141,10 @@ class ChannelRangeQueriesSpec extends FunSuite {
   def validate(ids: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, chunks: List[ShortChannelIdsChunk]): Unit = {
 
     @tailrec
-    def noOverloap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
+    def noOverlap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
       case Nil => true
       case a :: b :: _ if b.firstBlock < a.firstBlock + a.numBlocks => false
-      case _ => noOverloap(chunks.tail)
+      case _ => noOverlap(chunks.tail)
     }
 
     // aggregate ids from all chunks, to check that they match our input ids exactly
@@ -155,10 +156,13 @@ class ChannelRangeQueriesSpec extends FunSuite {
     require(chunks.head.firstBlock == firstBlockNum)
     require(chunks.last.firstBlock + chunks.last.numBlocks == firstBlockNum + numberOfBlocks)
     require(chunkIds == expected)
-    require(noOverloap(chunks))
+    require(noOverlap(chunks))
   }
 
   test("split short channel ids correctly (basic tests") {
+
+    def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = ShortChannelId(blockHeight, txIndex, outputIndex)
+
     // no ids to split
     {
       val ids = Nil
@@ -169,18 +173,18 @@ class ChannelRangeQueriesSpec extends FunSuite {
     }
     assert(Router.split(SortedSet.empty[ShortChannelId], 100, 1000, 100) == ShortChannelIdsChunk(100, 1000, Nil) :: Nil)
 
-    // ids are all before the requested range
+    // ids are all atfer the requested range
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 10
       val numberOfBlocks = 100
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
     }
 
-    // ids are all after the requested range
+    // ids are all before the requested range
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 1100
       val numberOfBlocks = 100
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
@@ -189,7 +193,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // all ids in different blocks, but they all fit in a single chunk
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 900
       val numberOfBlocks = 200
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
@@ -197,8 +201,9 @@ class ChannelRangeQueriesSpec extends FunSuite {
     }
 
     // all ids in the same block, chunk size == 2
+    // chunk size will not be enforced and a single chunk should be created
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1000, 1, 0), ShortChannelId(1000, 2, 0), ShortChannelId(1000, 3, 0), ShortChannelId(1000, 4, 0), ShortChannelId(1000, 5, 0))
+      val ids = List(id(1000, 0), id(1000, 1), id(1000, 2), id(1000, 3), id(1000, 4), id(1000, 5))
       val firstBlockNum = 900
       val numberOfBlocks = 200
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
@@ -207,7 +212,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // all ids in different blocks, chunk size == 2
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 900
       val numberOfBlocks = 200
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
@@ -220,7 +225,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // all ids in different blocks, chunk size == 2, first id outside of range
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 1001
       val numberOfBlocks = 200
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
@@ -233,7 +238,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // all ids in different blocks, chunk size == 2, last id outside of range
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 900
       val numberOfBlocks = 105
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
@@ -246,7 +251,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // all ids in different blocks, chunk size == 2, first and last id outside of range
     {
-      val ids = List(ShortChannelId(1000, 0, 0), ShortChannelId(1001, 0, 0), ShortChannelId(1002, 0, 0), ShortChannelId(1003, 0, 0), ShortChannelId(1004, 0, 0), ShortChannelId(1005, 0, 0))
+      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 1001
       val numberOfBlocks = 4
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
@@ -266,7 +271,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     }
   }
 
-  test("split short channel ids correctly ") {
+  test("split short channel ids correctly") {
     val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
     val firstBlockNum = 0
     val numberOfBlocks = 1000
@@ -278,7 +283,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 1000))
   }
 
-  test("fuzzy test") {
+  test("split short channel ids correctly (comprehensive tests)") {
     val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
     for (firstBlockNum <- 0 to 60) {
       for (numberOfBlocks <- 1 to 60) {
@@ -286,6 +291,52 @@ class ChannelRangeQueriesSpec extends FunSuite {
           validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, chunkSize))
         }
       }
+    }
+  }
+
+  test("enforce maximum size of short channel lists") {
+
+    def makeChunk(startBlock: Int, count : Int) = ShortChannelIdsChunk(startBlock, count, makeShortChannelIds(startBlock, count))
+
+    def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk, keepFirst: => Boolean) = {
+      val expected = if (keepFirst) before.shortChannelIds.take(Router.MAXIMUM_CHUNK_SIZE) else before.shortChannelIds.takeRight(Router.MAXIMUM_CHUNK_SIZE)
+      require(after.shortChannelIds == expected)
+    }
+
+    def validateChunks(before: List[ShortChannelIdsChunk], after: List[ShortChannelIdsChunk], keepFirst: => Boolean): Unit = {
+      before.zip(after).foreach { case (b, a) => validate(b, a, keepFirst)}
+    }
+
+    // empty chunk
+    {
+      val chunks = makeChunk(0, 0) :: Nil
+      assert(Router.enforceMaximumSize(chunks, true) == chunks)
+      assert(Router.enforceMaximumSize(chunks, false) == chunks)
+    }
+
+    // chunks are just below the limit
+    {
+      val chunks = makeChunk(0, Router.MAXIMUM_CHUNK_SIZE) :: makeChunk(Router.MAXIMUM_CHUNK_SIZE, Router.MAXIMUM_CHUNK_SIZE) :: Nil
+      assert(Router.enforceMaximumSize(chunks, true) == chunks)
+      assert(Router.enforceMaximumSize(chunks, false) == chunks)
+    }
+
+
+    // fuzzy tests
+    {
+      val chunks = collection.mutable.ArrayBuffer.empty[ShortChannelIdsChunk]
+      // we select parameters to make sure that some chunks will have too many ids
+      for (i <- 0 until 100) chunks += makeChunk(0, Router.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
+      val randomBools = chunks.map(_ => Random.nextBoolean())
+      var count = 0
+      def keepFirst() : Boolean = {
+        val result = randomBools(count)
+        count = count + 1
+        result
+      }
+      val pruned = Router.enforceMaximumSize(chunks.toList, keepFirst)
+      count = 0
+      validateChunks(chunks.toList, pruned, keepFirst)
     }
   }
 }
