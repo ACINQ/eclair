@@ -25,6 +25,7 @@ import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.collection.immutable.{SortedMap, SortedSet}
+import scala.collection.mutable.ArrayBuffer
 import scala.compat.Platform
 import scala.util.Random
 
@@ -131,7 +132,21 @@ class ChannelRangeQueriesSpec extends FunSuite {
     assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
   }
 
-  def makeShortChannelIds(height: Int, count: Int): List[ShortChannelId] = (0 until count).map(c => ShortChannelId(height, c, 0)).toList
+  def makeShortChannelIds(height: Int, count: Int): List[ShortChannelId] = {
+    val output = ArrayBuffer.empty[ShortChannelId]
+    var txIndex = 0
+    var outputIndex = 0
+    while (output.size < count) {
+      if (Random.nextBoolean()) {
+        txIndex = txIndex + 1
+        outputIndex = 0
+      } else {
+        outputIndex = outputIndex + 1
+      }
+      output += ShortChannelId(height, txIndex, outputIndex)
+    }
+    output.toList
+  }
 
   def validate(chunk: ShortChannelIdsChunk) = {
     require(!chunk.shortChannelIds.exists(!Router.keep(chunk.firstBlock, chunk.numBlocks, _)))
