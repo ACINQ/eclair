@@ -22,9 +22,29 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
 import org.scalatest.FunSuite
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, _}
 
 class ExtendedQueriesCodecsSpec extends FunSuite {
+
+  test("encode a list of short channel ids") {
+    {
+      // empty list
+      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty)
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      assert(encoded.bytes === hex"")
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+
+    {
+      // encoded as uncompressed
+      val ids = EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676)))
+      val encoded = encodedShortChannelIdsCodec.encode(ids).require
+      val decoded = encodedShortChannelIdsCodec.decode(encoded).require.value
+      assert(decoded === ids)
+    }
+  }
+
   test("encode query_short_channel_ids (no optional data)") {
     val query_short_channel_id = QueryShortChannelIds(
       Block.RegtestGenesisBlock.blockId,

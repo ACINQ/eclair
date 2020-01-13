@@ -22,7 +22,7 @@ import kamon.Kamon
 import kamon.tag.TagSet
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, DecodeResult}
 
 /**
  * Created by PM on 15/11/2016.
@@ -223,10 +223,20 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
-    discriminated[EncodedShortChannelIds].by(byte)
+  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] = {
+    val innerCodec = discriminated[EncodedShortChannelIds].by(byte)
       .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
       .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+    Codec[EncodedShortChannelIds](
+      (e: EncodedShortChannelIds) =>
+        // if the list of channel id is empty, we don't encode anything (as opposed as indicating an encoding type without any data)
+        if (e.array.isEmpty) Attempt.successful(BitVector.empty) else innerCodec.encode(e)
+      ,
+      (bits: BitVector) =>
+        // if data is empty, then we assume an empty list with a default encoding
+        if (bits.isEmpty) Attempt.successful(DecodeResult(EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List.empty), BitVector.empty)) else innerCodec.decode(bits)
+    )
+  }
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(
