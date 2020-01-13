@@ -186,7 +186,6 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
     }
-    assert(Router.split(SortedSet.empty[ShortChannelId], 100, 1000, 100) == ShortChannelIdsChunk(100, 1000, Nil) :: Nil)
 
     // ids are all atfer the requested range
     {
