@@ -225,8 +225,14 @@ object LightningMessageCodecs {
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
-      .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
-      .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      .\(0) {
+        case a@EncodedShortChannelIds(_, Nil) => a
+        case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
+      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      .\(1) {
+        case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
+      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(
