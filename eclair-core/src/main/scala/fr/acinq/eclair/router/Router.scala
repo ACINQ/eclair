@@ -642,8 +642,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
           log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
           val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
-            split(shortChannelIds, nodeParams.routerConf.channelRangeChunkSize)
+            split(shortChannelIds, firstBlockNum, numberOfBlocks, nodeParams.routerConf.channelRangeChunkSize)
           }
+
+          // we make sure that our replies cover the range specified in their queries
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
               val (timestamps, checksums) = routingMessage.queryFlags_opt match {
@@ -1014,7 +1016,7 @@ object Router {
    */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
     val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
-    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+    height >= firstBlockNum && height < (firstBlockNum + numberOfBlocks)
   }
 
   def shouldRequestUpdate(ourTimestamp: Long, ourChecksum: Long, theirTimestamp_opt: Option[Long], theirChecksum_opt: Option[Long]): Boolean = {
@@ -1205,21 +1207,41 @@ object Router {
    * Have to split ids because otherwise message could be too big
    * there could be several reply_channel_range messages for a single query
    */
-  def split(shortChannelIds: SortedSet[ShortChannelId], channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
-    // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
-    // and a different set of short_channel_ids) but it doesn't matter
-    if (shortChannelIds.isEmpty) {
-      List(ShortChannelIdsChunk(0, 0, List.empty))
+  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
+    val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlockNum).takeWhile(_.blockHeight < firstBlockNum + numberOfBlocks)
+    if (it.isEmpty) {
+      List(ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, List.empty))
     } else {
-      shortChannelIds
-        .grouped(channelRangeChunkSize)
-        .toList
-        .map { group =>
-          // NB: group is never empty
-          val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-          val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
-          ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
+      // we want to split ids in different chunks, with the following rules by order of priority
+      // ids that have the same block height must be grouped in the same chunk
+      // chunk should contain `channelRangeChunkSize` ids
+      @tailrec
+      def loop(currentChunk: List[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
+        if (it.hasNext) {
+          val id = it.next()
+          val currentHeight = currentChunk.head.blockHeight
+          if (id.blockHeight == currentHeight)
+            loop(id :: currentChunk, acc) // same height => always add to the current chunk
+          else if (currentChunk.size < channelRangeChunkSize) // different height but we're under the size target => add to the current chunk
+            loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
+          else {
+            // we always prepend because it's more efficient so we have to reverse the current chunk
+            // for the first chunk, we make sure that we start at the request first block
+            val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+            val count = currentChunk.head.blockHeight - first + 1
+            loop(id :: Nil, ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc)
+          }
         }
+        else {
+          // for the last chunk, we make sure that we cover the request block range
+          val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+          val count = numberOfBlocks - first + firstBlockNum
+          (ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc).reverse
+        }
+      }
+
+      val first = it.next()
+      loop(first :: Nil, Nil)
     }
   }
 
