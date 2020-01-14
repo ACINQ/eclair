@@ -41,7 +41,7 @@ import scodec.bits.ByteVector
 import shapeless.HNil
 
 import scala.annotation.tailrec
-import scala.collection.immutable.SortedMap
+import scala.collection.immutable.{Queue, SortedMap}
 import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -642,8 +642,11 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
           log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
           val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
-            split(shortChannelIds, nodeParams.routerConf.channelRangeChunkSize)
+            enforceMaximumSize(
+              split(shortChannelIds, firstBlockNum, numberOfBlocks, nodeParams.routerConf.channelRangeChunkSize),
+              Random.nextBoolean())
           }
+
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
               val (timestamps, checksums) = routingMessage.queryFlags_opt match {
@@ -942,6 +945,13 @@ object Router {
   val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
   val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
 
+  // maximum number of ids we can keep in a single chunk and still have an encoded reply that is smaller than 65Kb
+  // please note that:
+  // - this is based on the worst case scenario where peer want timestamps and checksums and the reply is not compressed
+  // - the maximum number of public channels in a single block so far is less than 300, and the maximum number of tx per block
+  // almost never exceeds 2800 so this is not a real limitation yet
+  val MAXIMUM_CHUNK_SIZE = 3200
+
   def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
@@ -1013,8 +1023,8 @@ object Router {
    * Filters channels that we want to send to nodes asking for a channel range
    */
   def keep(firstBlockNum: Long, numberOfBlocks: Long, id: ShortChannelId): Boolean = {
-    val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
-    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+    val height = id.blockHeight
+    height >= firstBlockNum && height < (firstBlockNum + numberOfBlocks)
   }
 
   def shouldRequestUpdate(ourTimestamp: Long, ourChecksum: Long, theirTimestamp_opt: Option[Long], theirChecksum_opt: Option[Long]): Boolean = {
@@ -1199,29 +1209,76 @@ object Router {
     crc32c(data)
   }
 
-  case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId])
-
-  /**
-   * Have to split ids because otherwise message could be too big
-   * there could be several reply_channel_range messages for a single query
-   */
-  def split(shortChannelIds: SortedSet[ShortChannelId], channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
-    // this algorithm can split blocks (meaning that we can in theory generate several replies with the same first_block/num_blocks
-    // and a different set of short_channel_ids) but it doesn't matter
-    if (shortChannelIds.isEmpty) {
-      List(ShortChannelIdsChunk(0, 0, List.empty))
-    } else {
-      shortChannelIds
-        .grouped(channelRangeChunkSize)
-        .toList
-        .map { group =>
-          // NB: group is never empty
-          val firstBlock: Long = ShortChannelId.coordinates(group.head).blockHeight.toLong
-          val numBlocks: Long = ShortChannelId.coordinates(group.last).blockHeight.toLong - firstBlock + 1
-          ShortChannelIdsChunk(firstBlock, numBlocks, group.toList)
-        }
+  case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId]) {
+    /**
+     *
+     * @param maximumSize maximum size of the short channel ids list
+     * @param keepFirst if true, keep the first elements, otherwise keep the last ones
+     * @return a chunk with at most `maximumSize` ids
+     */
+    def enforceMaximumSize(maximumSize: Int, keepFirst: Boolean) = {
+      if (shortChannelIds.size <= maximumSize) this else this.copy(shortChannelIds = if (keepFirst) this.shortChannelIds.take(maximumSize) else this.shortChannelIds.takeRight(maximumSize))
     }
   }
+
+  /**
+   * Split short channel ids into chunks, because otherwise message could be too big
+   * there could be several reply_channel_range messages for a single query, but we make sure that the returned
+   * chunks fully covers the [firstBlockNum, numberOfBlocks] range that was requested
+   *
+   * @param shortChannelIds list of short channel ids to split
+   * @param firstBlockNum first block height requested by our peers
+   * @param numberOfBlocks number of blocks requested by our peer
+   * @param channelRangeChunkSize target chunk size. All ids that have the same block height will be grouped together, so
+   *                              returned chunks may still contain more than `channelRangeChunkSize` elements
+   * @return a list of short channel id chunks
+   */
+  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
+    // see BOLT7: MUST encode a short_channel_id for every open channel it knows in blocks first_blocknum to first_blocknum plus number_of_blocks minus one
+    val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlockNum).takeWhile(_.blockHeight < firstBlockNum + numberOfBlocks)
+    if (it.isEmpty) {
+      List(ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, List.empty))
+    } else {
+      // we want to split ids in different chunks, with the following rules by order of priority
+      // ids that have the same block height must be grouped in the same chunk
+      // chunk should contain `channelRangeChunkSize` ids
+      @tailrec
+      def loop(currentChunk: List[ShortChannelId], acc: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = {
+        if (it.hasNext) {
+          val id = it.next()
+          val currentHeight = currentChunk.head.blockHeight
+          if (id.blockHeight == currentHeight)
+            loop(id :: currentChunk, acc) // same height => always add to the current chunk
+          else if (currentChunk.size < channelRangeChunkSize) // different height but we're under the size target => add to the current chunk
+            loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
+          else {
+            // we always prepend because it's more efficient so we have to reverse the current chunk
+            // for the first chunk, we make sure that we start at the request first block
+            val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+            val count = currentChunk.head.blockHeight - first + 1
+            loop(id :: Nil, ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc)
+          }
+        }
+        else {
+          // for the last chunk, we make sure that we cover the request block range
+          val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+          val count = numberOfBlocks - first + firstBlockNum
+          (ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc).reverse
+        }
+      }
+
+      val first = it.next()
+      loop(first :: Nil, Nil)
+    }
+  }
+
+  /**
+   * Enforce max-size constraints for each chunk
+   * @param chunks list of short channel id chunks
+   * @param keepFirst flags that specifies whether to keep first of last ids when there are too many of them
+   * @return a processed list of chunks
+   */
+  def enforceMaximumSize(chunks: List[ShortChannelIdsChunk], keepFirst: => Boolean) : List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE, keepFirst))
 
   def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
     pending match {
