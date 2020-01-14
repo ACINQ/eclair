@@ -26,6 +26,8 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   def toLong: Long = id
 
+  def blockHeight = ShortChannelId.blockHeight(this)
+
   override def toString: String = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = ShortChannelId.coordinates(this)
     s"${blockHeight}x${txIndex}x${outputIndex}"
@@ -46,7 +48,16 @@ object ShortChannelId {
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
-  def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(((shortChannelId.id >> 40) & 0xFFFFFF).toInt, ((shortChannelId.id >> 16) & 0xFFFFFF).toInt, (shortChannelId.id & 0xFFFF).toInt)
+  @inline
+  def blockHeight(shortChannelId: ShortChannelId) = ((shortChannelId.id >> 40) & 0xFFFFFF).toInt
+
+  @inline
+  def txIndex(shortChannelId: ShortChannelId) = ((shortChannelId.id >> 16) & 0xFFFFFF).toInt
+
+  @inline
+  def outputIndex(shortChannelId: ShortChannelId) = (shortChannelId.id & 0xFFFF).toInt
+
+  def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(blockHeight(shortChannelId), txIndex(shortChannelId), outputIndex(shortChannelId))
 }
 
 case class TxCoordinates(blockHeight: Int, txIndex: Int, outputIndex: Int)
