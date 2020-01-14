@@ -23,6 +23,7 @@ import java.sql.{Connection, DriverManager}
 import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.Config
+import fr.acinq.eclair.db.psql.PsqlUtils.LockType.LockType
 import fr.acinq.eclair.db.psql.PsqlUtils._
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
@@ -88,13 +89,14 @@ object Databases extends Logging {
                    instanceId: String = ManagementFactory.getRuntimeMXBean().getName(),
                    databaseLeaseInterval: FiniteDuration = 5.minutes,
                    lockTimeout: FiniteDuration = 5.seconds,
-                   lockExceptionHandler: LockExceptionHandler = {_ => ()}, lockType: String): Databases = {
+                   lockExceptionHandler: LockExceptionHandler = {_ => ()},
+                   lockType: LockType = LockType.NONE): Databases = {
     try {
       val dataVersion = new AtomicLong(0L)
       implicit val lock: DatabaseLock = lockType match {
-        case "none" => NoLock
-        case "optimistic" => OptimisticLock(dataVersion, lockExceptionHandler)
-        case "exclusive" => ExclusiveLock(instanceId, databaseLeaseInterval, lockTimeout, lockExceptionHandler)
+        case LockType.NONE => NoLock
+        case LockType.OPTIMISTIC => OptimisticLock(dataVersion, lockExceptionHandler)
+        case LockType.EXCLUSIVE => ExclusiveLock(instanceId, databaseLeaseInterval, lockTimeout, lockExceptionHandler)
         case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
       }
 
@@ -179,7 +181,7 @@ object Databases extends Logging {
         .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
 
     }
-    val lockType = dbConfig.getString("psql.lock-type")
+    val lockType = LockType(dbConfig.getString("psql.lock-type"))
     val leaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
     val lockTimeout = dbConfig.getDuration("psql.ownership-lease.lock-timeout").toSeconds.seconds
 

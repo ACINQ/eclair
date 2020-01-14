@@ -41,6 +41,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.psql.PsqlUtils.LockType
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment.Auditor
@@ -364,14 +365,16 @@ class Setup(datadir: File,
                 logger.error("Cannot obtain lock on the database. Exiting...", ex)
                 sys.exit(-3)
               })
-              val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
-              system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
-                try {
-                  database.obtainExclusiveLock()
-                } catch {
-                  case e: Throwable =>
-                    logger.error("Cannot obtain ownership on the database. Exiting...", e)
-                    sys.exit(-2)
+              if (LockType(dbConfig.getString("psql.lock-type")) == LockType.EXCLUSIVE) {
+                val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
+                system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
+                  try {
+                    database.obtainExclusiveLock()
+                  } catch {
+                    case e: Throwable =>
+                      logger.error("Cannot obtain ownership on the database. Exiting...", e)
+                      sys.exit(-2)
+                  }
                 }
               }
               psql

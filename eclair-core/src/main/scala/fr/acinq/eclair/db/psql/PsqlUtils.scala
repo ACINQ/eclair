@@ -33,6 +33,19 @@ object PsqlUtils extends JdbcUtils with Logging {
 
   val OwnershipTable = "lease"
 
+  object LockType extends Enumeration {
+    type LockType = Value
+
+    val NONE, EXCLUSIVE, OPTIMISTIC = Value
+
+    def apply(s: String): LockType = s match {
+      case "none" => NONE
+      case "exclusive" => EXCLUSIVE
+      case "optimistic" => OPTIMISTIC
+      case _ => throw new RuntimeException(s"Unknown psql lock type: `$s`")
+    }
+  }
+
   case class LockLease(expiresAt: Timestamp, instanceId: String, expired: Boolean)
 
   class TooManyLockAttempts(msg: String) extends RuntimeException(msg)
@@ -75,9 +88,11 @@ object PsqlUtils extends JdbcUtils with Logging {
       synchronized(inTransaction(c => dataVersion.set(getDataVersion(c))))
 
     override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
-      val res = inTransaction(f(_))
-      synchronized(inTransaction(incrementDataVersion(dataVersion)(_, lockExceptionHandler)))
-      res
+      synchronized { inTransaction { connection =>
+        val res = f(connection)
+        incrementDataVersion(connection, dataVersion, lockExceptionHandler)
+        res
+      }}
     }
   }
 
@@ -127,7 +142,7 @@ object PsqlUtils extends JdbcUtils with Logging {
     statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
   }
 
-  private def incrementDataVersion(dataVersion: AtomicLong)(implicit connection: Connection, lockExceptionHandler: LockExceptionHandler): Long = synchronized {
+  private def incrementDataVersion(connection: Connection, dataVersion: AtomicLong, lockExceptionHandler: LockExceptionHandler): Long = {
     using(connection.prepareStatement(s"UPDATE $DataVersionTable SET data_version = data_version + 1 WHERE data_version = ?")) {
       statement =>
         statement.setLong(1, dataVersion.get())
@@ -209,18 +224,15 @@ object PsqlUtils extends JdbcUtils with Logging {
 
   private def checkDatabaseOwnership(connection: Connection, instanceId: String, lockTimeout: FiniteDuration, lockExceptionHandler: LockExceptionHandler): Unit = {
     Try {
-      inTransaction(connection) { connection =>
-        using(connection.createStatement()) { statement =>
-          statement.executeUpdate(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
-          statement.executeUpdate(s"LOCK TABLE $OwnershipTable IN ACCESS EXCLUSIVE MODE")
-        }
-        getCurrentLease(connection) match {
-          case Some(lease) =>
-            if (!(lease.instanceId == instanceId) || lease.expired)
-              throw new LockException("This Eclair instance is not a database owner")
-          case None =>
-            throw new LockException("No database ownership info")
-        }
+//      acquireExclusiveTableLock(lockTimeout)(connection)
+      getCurrentLease(connection) match {
+        case Some(lease) =>
+          if (!(lease.instanceId == instanceId) || lease.expired) {
+            logger.info(s"Database lease: $lease")
+            throw new LockException("This Eclair instance is not a database owner")
+          }
+        case None =>
+          throw new LockException("No database ownership info")
       }
     } match {
       case Success(_) => ()
@@ -229,8 +241,8 @@ object PsqlUtils extends JdbcUtils with Logging {
           case e: LockException => e
           case t: Throwable => new LockException("Cannot check database ownership", Some(t))
         }
-        logger.error("", lex)
         lockExceptionHandler(lex)
+        throw lex
     }
   }
 
