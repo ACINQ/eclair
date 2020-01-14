@@ -74,4 +74,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
       q.toSet
     }
   }
+
+  // used by mobile apps
+  override def close(): Unit = sqlite.close()
 }

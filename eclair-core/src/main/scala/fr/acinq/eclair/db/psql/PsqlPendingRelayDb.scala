@@ -86,4 +86,6 @@ class PsqlPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pe
       }
     }
   }
+
+  override def close(): Unit = ()
 }

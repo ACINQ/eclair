@@ -293,6 +293,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       q
     }
 
+  // used by mobile apps
   override def close(): Unit = sqlite.close()
 
 }

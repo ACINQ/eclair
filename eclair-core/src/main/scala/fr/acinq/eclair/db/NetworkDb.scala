@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
+
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
@@ -24,7 +26,7 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncemen
 
 import scala.collection.immutable.SortedMap
 
-trait NetworkDb {
+trait NetworkDb extends Closeable {
 
   def addNode(n: NodeAnnouncement)
 
@@ -51,7 +53,5 @@ trait NetworkDb {
   def removeFromPruned(shortChannelId: ShortChannelId)
 
   def isPruned(shortChannelId: ShortChannelId): Boolean
-
-  def close(): Unit
 
 }

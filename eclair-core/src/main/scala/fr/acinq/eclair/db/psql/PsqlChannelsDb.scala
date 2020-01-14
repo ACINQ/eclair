@@ -120,4 +120,5 @@ class PsqlChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channe
     }
   }
 
+  override def close(): Unit = ()
 }

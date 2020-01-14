@@ -136,4 +136,6 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
+  // used by mobile apps
+  override def close(): Unit = sqlite.close()
 }

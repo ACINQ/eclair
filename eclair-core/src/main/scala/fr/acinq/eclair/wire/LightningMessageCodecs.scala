@@ -16,22 +16,30 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.{KamonExt, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{KamonExt, wire}
 import kamon.Kamon
 import kamon.tag.TagSet
-import scodec.bits.BitVector
-import scodec.{Attempt, Codec}
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
+import scodec.{Attempt, Codec}
 
 /**
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
 
-  val initCodec: Codec[Init] = (
+  /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
+  val combinedFeaturesCodec: Codec[ByteVector] = (
     ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[Init]
+      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[ByteVector](
+    { case (gf, lf) =>
+      val length = gf.length.max(lf.length)
+      gf.padLeft(length) | lf.padLeft(length)
+    },
+    { features => (ByteVector.empty, features) })
+
+  val initCodec: Codec[Init] = combinedFeaturesCodec.as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::
@@ -217,8 +225,14 @@ object LightningMessageCodecs {
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
-      .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
-      .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      .\(0) {
+        case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
+        case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
+      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      .\(1) {
+        case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
+      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(
@@ -239,10 +253,10 @@ object LightningMessageCodecs {
         ("firstBlockNum" | uint32) ::
         ("numberOfBlocks" | uint32) ::
         ("tlvStream" | QueryChannelRangeTlv.codec)
-      ).as[QueryChannelRange]
+    ).as[QueryChannelRange]
   }
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] = {
     Codec(
       ("chainHash" | bytes32) ::
         ("firstBlockNum" | uint32) ::
@@ -250,7 +264,7 @@ object LightningMessageCodecs {
         ("complete" | byte) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
         ("tlvStream" | ReplyChannelRangeTlv.codec)
-      ).as[ReplyChannelRange]
+    ).as[ReplyChannelRange]
   }
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (

@@ -433,4 +433,5 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
     }
   }
 
+  override def close(): Unit = ()
 }
