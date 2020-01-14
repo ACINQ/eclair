@@ -163,7 +163,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     }
 
     // aggregate ids from all chunks, to check that they match our input ids exactly
-    val chunkIds = SortedSet.empty[ShortChannelId] ++ chunks.map(_.shortChannelIds).flatten.toSet
+    val chunkIds = SortedSet.empty[ShortChannelId] ++ chunks.flatMap(_.shortChannelIds).toSet
     val expected = ids.filter(Router.keep(firstBlockNum, numberOfBlocks, _))
 
     if (expected.isEmpty) require(chunks == List(ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil)))
