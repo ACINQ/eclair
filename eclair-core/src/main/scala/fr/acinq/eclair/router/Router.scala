@@ -1211,11 +1211,15 @@ object Router {
     /**
      *
      * @param maximumSize maximum size of the short channel ids list
-     * @param keepFirst if true, keep the first elements, otherwise keep the last ones
      * @return a chunk with at most `maximumSize` ids
      */
-    def enforceMaximumSize(maximumSize: Int, keepFirst: Boolean) = {
-      if (shortChannelIds.size <= maximumSize) this else this.copy(shortChannelIds = if (keepFirst) this.shortChannelIds.take(maximumSize) else this.shortChannelIds.takeRight(maximumSize))
+    def enforceMaximumSize(maximumSize: Int) = {
+      if (shortChannelIds.size <= maximumSize) this else {
+        // we use a random offset here, so even if shortChannelIds.size is much bigger than maximumSize (which should
+        // not happen) peers will eventually receive info about all channels in this chunk
+        val offset = Random.nextInt(shortChannelIds.size - maximumSize)
+        this.copy(shortChannelIds = this.shortChannelIds.drop(offset).take(maximumSize))
+      }
     }
   }
 
@@ -1231,7 +1235,7 @@ object Router {
    *                              returned chunks may still contain more than `channelRangeChunkSize` elements
    * @return a list of short channel id chunks
    */
-  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int, keepFirst: => Boolean = Random.nextBoolean()): List[ShortChannelIdsChunk] = {
+  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
     // see BOLT7: MUST encode a short_channel_id for every open channel it knows in blocks first_blocknum to first_blocknum plus number_of_blocks minus one
     val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlockNum).takeWhile(_.blockHeight < firstBlockNum + numberOfBlocks)
     if (it.isEmpty) {
@@ -1269,17 +1273,16 @@ object Router {
       val chunks = loop(first :: Nil, Nil)
 
       // make sure that all our chunks match our max size policy
-      enforceMaximumSize(chunks, keepFirst)
+      enforceMaximumSize(chunks)
     }
   }
 
   /**
    * Enforce max-size constraints for each chunk
    * @param chunks list of short channel id chunks
-   * @param keepFirst flags that specifies whether to keep first of last ids when there are too many of them
    * @return a processed list of chunks
    */
-  def enforceMaximumSize(chunks: List[ShortChannelIdsChunk], keepFirst: => Boolean) : List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE, keepFirst))
+  def enforceMaximumSize(chunks: List[ShortChannelIdsChunk]) : List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE))
 
   def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
     pending match {

@@ -312,45 +312,34 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     def makeChunk(startBlock: Int, count : Int) = ShortChannelIdsChunk(startBlock, count, makeShortChannelIds(startBlock, count))
 
-    def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk, keepFirst: => Boolean) = {
-      val expected = if (keepFirst) before.shortChannelIds.take(Router.MAXIMUM_CHUNK_SIZE) else before.shortChannelIds.takeRight(Router.MAXIMUM_CHUNK_SIZE)
-      require(after.shortChannelIds == expected)
+    def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk) = {
+      require(before.shortChannelIds.containsSlice(after.shortChannelIds))
+      require(after.shortChannelIds.size <= Router.MAXIMUM_CHUNK_SIZE)
     }
 
-    def validateChunks(before: List[ShortChannelIdsChunk], after: List[ShortChannelIdsChunk], keepFirst: => Boolean): Unit = {
-      before.zip(after).foreach { case (b, a) => validate(b, a, keepFirst)}
+    def validateChunks(before: List[ShortChannelIdsChunk], after: List[ShortChannelIdsChunk]): Unit = {
+      before.zip(after).foreach { case (b, a) => validate(b, a) }
     }
 
     // empty chunk
     {
       val chunks = makeChunk(0, 0) :: Nil
-      assert(Router.enforceMaximumSize(chunks, true) == chunks)
-      assert(Router.enforceMaximumSize(chunks, false) == chunks)
+      assert(Router.enforceMaximumSize(chunks) == chunks)
     }
 
     // chunks are just below the limit
     {
       val chunks = makeChunk(0, Router.MAXIMUM_CHUNK_SIZE) :: makeChunk(Router.MAXIMUM_CHUNK_SIZE, Router.MAXIMUM_CHUNK_SIZE) :: Nil
-      assert(Router.enforceMaximumSize(chunks, true) == chunks)
-      assert(Router.enforceMaximumSize(chunks, false) == chunks)
+      assert(Router.enforceMaximumSize(chunks) == chunks)
     }
-
-
+    
     // fuzzy tests
     {
       val chunks = collection.mutable.ArrayBuffer.empty[ShortChannelIdsChunk]
       // we select parameters to make sure that some chunks will have too many ids
       for (i <- 0 until 100) chunks += makeChunk(0, Router.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
-      val randomBools = chunks.map(_ => Random.nextBoolean())
-      var count = 0
-      def keepFirst() : Boolean = {
-        val result = randomBools(count)
-        count = count + 1
-        result
-      }
-      val pruned = Router.enforceMaximumSize(chunks.toList, keepFirst)
-      count = 0
-      validateChunks(chunks.toList, pruned, keepFirst)
+      val pruned = Router.enforceMaximumSize(chunks.toList)
+      validateChunks(chunks.toList, pruned)
     }
   }
 }
