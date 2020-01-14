@@ -187,6 +187,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val res3 = for (_ <- 0 until 100) yield chunk.enforceMaximumSize(3).shortChannelIds
     assert(res3.toSet == Set(List(ids(0), ids(1), ids(2))))
   }
+
   test("split short channel ids correctly (basic tests") {
 
     def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = ShortChannelId(blockHeight, txIndex, outputIndex)
