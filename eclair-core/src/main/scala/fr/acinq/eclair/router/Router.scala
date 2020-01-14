@@ -1218,7 +1218,7 @@ object Router {
         // we use a random offset here, so even if shortChannelIds.size is much bigger than maximumSize (which should
         // not happen) peers will eventually receive info about all channels in this chunk
         val offset = Random.nextInt(shortChannelIds.size - maximumSize)
-        this.copy(shortChannelIds = this.shortChannelIds.drop(offset).take(maximumSize))
+        this.copy(shortChannelIds = this.shortChannelIds.slice(offset, offset + maximumSize))
       }
     }
   }
