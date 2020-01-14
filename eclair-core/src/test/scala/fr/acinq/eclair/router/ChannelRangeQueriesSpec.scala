@@ -174,6 +174,19 @@ class ChannelRangeQueriesSpec extends FunSuite {
     require(noOverlap(chunks))
   }
 
+    test("limit channel ids chunk size") {
+    val ids = makeShortChannelIds(1, 3)
+    val chunk = ShortChannelIdsChunk(0, 10, ids)
+
+    val res1 = for (_ <- 0 until 100) yield chunk.enforceMaximumSize(1).shortChannelIds
+    assert(res1.toSet == Set(List(ids(0)), List(ids(1)), List(ids(2))))
+
+    val res2 = for (_ <- 0 until 100) yield chunk.enforceMaximumSize(2).shortChannelIds
+    assert(res2.toSet == Set(List(ids(0), ids(1)), List(ids(1), ids(2))))
+
+    val res3 = for (_ <- 0 until 100) yield chunk.enforceMaximumSize(3).shortChannelIds
+    assert(res3.toSet == Set(List(ids(0), ids(1), ids(2))))
+  }
   test("split short channel ids correctly (basic tests") {
 
     def id(blockHeight: Int, txIndex: Int = 0, outputIndex: Int = 0) = ShortChannelId(blockHeight, txIndex, outputIndex)
