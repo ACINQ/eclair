@@ -96,7 +96,7 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
         log.info("lost connection to {}, no active connections left", address)
         goto(Disconnected) using DisconnectedData // no more connections
       } else if (d.master != actor) {
-        log.debug("lost connection to {}, we still have our master server", address)
+        log.info("lost connection to {}, we still have our master server", address)
         stay using d.copy(tips = tips1) // we don't care, this wasn't our master
       } else {
         log.info("lost connection to our master server {}", address)
