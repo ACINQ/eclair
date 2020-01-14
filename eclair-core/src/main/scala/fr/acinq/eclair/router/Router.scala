@@ -642,9 +642,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
           log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
           val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
-            enforceMaximumSize(
-              split(shortChannelIds, firstBlockNum, numberOfBlocks, nodeParams.routerConf.channelRangeChunkSize),
-              Random.nextBoolean())
+            split(shortChannelIds, firstBlockNum, numberOfBlocks, nodeParams.routerConf.channelRangeChunkSize)
           }
 
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
@@ -1233,7 +1231,7 @@ object Router {
    *                              returned chunks may still contain more than `channelRangeChunkSize` elements
    * @return a list of short channel id chunks
    */
-  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int): List[ShortChannelIdsChunk] = {
+  def split(shortChannelIds: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, channelRangeChunkSize: Int, keepFirst: => Boolean = Random.nextBoolean()): List[ShortChannelIdsChunk] = {
     // see BOLT7: MUST encode a short_channel_id for every open channel it knows in blocks first_blocknum to first_blocknum plus number_of_blocks minus one
     val it = shortChannelIds.iterator.dropWhile(_.blockHeight < firstBlockNum).takeWhile(_.blockHeight < firstBlockNum + numberOfBlocks)
     if (it.isEmpty) {
@@ -1268,7 +1266,10 @@ object Router {
       }
 
       val first = it.next()
-      loop(first :: Nil, Nil)
+      val chunks = loop(first :: Nil, Nil)
+
+      // make sure that all our chunks match our max size policy
+      enforceMaximumSize(chunks, keepFirst)
     }
   }
 
