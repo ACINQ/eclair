@@ -149,7 +149,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
   }
 
   def validate(chunk: ShortChannelIdsChunk) = {
-    require(!chunk.shortChannelIds.exists(!Router.keep(chunk.firstBlock, chunk.numBlocks, _)))
+    require(chunk.shortChannelIds.forall(Router.keep(chunk.firstBlock, chunk.numBlocks, _)))
   }
 
   // check that chunks do not overlap and contain exactly the ids they were built from
