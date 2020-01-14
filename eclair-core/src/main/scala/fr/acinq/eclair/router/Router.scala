@@ -1275,7 +1275,7 @@ object Router {
   /**
    * Enforce max-size constraints for each chunk
    * @param chunks list of short channel id chunks
-   * @param keepFirst flags that specifies wether to keep to first of last ids when there are too many of them
+   * @param keepFirst flags that specifies whether to keep first of last ids when there are too many of them
    * @return a processed list of chunks
    */
   def enforceMaximumSize(chunks: List[ShortChannelIdsChunk], keepFirst: => Boolean) : List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE, keepFirst))
