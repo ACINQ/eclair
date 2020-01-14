@@ -16,28 +16,28 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.Connection
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.psql.PsqlUtils.DatabaseLock
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
 import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
 
-class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
+class PsqlChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends ChannelsDb with Logging {
 
   import PsqlUtils.ExtendedResultSet._
   import PsqlUtils._
+  import lock._
 
   val DB_NAME = "channels"
   val CURRENT_VERSION = 2
 
-  withConnection { psql =>
-    using(psql.createStatement(), inTransaction = true) { statement =>
+  inTransaction { psql =>
+    using(psql.createStatement()) { statement =>
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
@@ -49,7 +49,7 @@ class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
-    withConnection { psql =>
+    withLock { psql =>
       val data = stateDataCodec.encode(state).require.toByteArray
       using(psql.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
         update.setBytes(1, data)
@@ -66,7 +66,7 @@ class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeUpdate()
@@ -85,7 +85,7 @@ class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
   }
 
   override def listLocalChannels(): Seq[HasCommitments] = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.createStatement) { statement =>
         val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=FALSE")
         codecSequence(rs, stateDataCodec)
@@ -94,8 +94,8 @@ class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
   }
 
   def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
-    withConnection { psql =>
-      using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING"), inTransaction = true) { statement =>
+    withLock { psql =>
+      using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, commitmentNumber)
         statement.setString(3, paymentHash.toHex)
@@ -106,7 +106,7 @@ class PsqlChannelsDb(implicit ds: DataSource) extends ChannelsDb with Logging {
   }
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setString(2, commitmentNumber.toString)

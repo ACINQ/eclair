@@ -59,14 +59,14 @@ import scala.concurrent._
 import scala.concurrent.duration._
 
 /**
- * Setup eclair from a data directory.
- *
- * Created by PM on 25/01/2016.
- *
- * @param datadir          directory where eclair-core will write/read its data.
- * @param overrideDefaults use this parameter to programmatically override the node configuration .
- * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
- */
+  * Setup eclair from a data directory.
+  *
+  * Created by PM on 25/01/2016.
+  *
+  * @param datadir          directory where eclair-core will write/read its data.
+  * @param overrideDefaults use this parameter to programmatically override the node configuration .
+  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+  */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
@@ -354,29 +354,33 @@ class Setup(datadir: File,
 
   private def initDatabase(dbConfig: Config): Databases = {
     try {
-      val database = db match {
+      db match {
         case Some(d) => d
         case None =>
           dbConfig.getString("driver") match {
             case "sqlite" => Databases.sqliteJDBC(chaindir)
-            case "psql" => Databases.setupPsqlDatabases(dbConfig)
+            case "psql" =>
+              val psql = Databases.setupPsqlDatabases(dbConfig, { ex =>
+                logger.error("Cannot obtain lock on the database. Exiting...", ex)
+                sys.exit(-3)
+              })
+              val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
+              system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
+                try {
+                  database.obtainExclusiveLock()
+                } catch {
+                  case e: Throwable =>
+                    logger.error("Cannot obtain ownership on the database. Exiting...", e)
+                    sys.exit(-2)
+                }
+              }
+              psql
             case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
           }
       }
-      val dbLockLeaseRenewInterval = dbConfig.getDuration("lock.lease-renew-interval").toSeconds.seconds
-      system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
-        try {
-          database.obtainExclusiveLock()
-        } catch {
-          case e: Throwable =>
-            logger.error("Cannot lock database. Exiting...", e)
-            sys.exit(-2)
-        }
-      }
-      database
     } catch {
       case e: Throwable =>
-        logger.error("Cannot initialize database. Exiting...", e)
+        logger.error("Cannot initialize the database. Exiting...", e)
         sys.exit(-1)
     }
   }

@@ -22,6 +22,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.db.psql.PsqlUtils.DatabaseLock
 import fr.acinq.eclair.db.{HopSummary, _}
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
@@ -35,10 +36,11 @@ import scala.collection.immutable.Queue
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
+class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends PaymentsDb with Logging {
 
   import PsqlUtils.ExtendedResultSet._
   import PsqlUtils._
+  import lock._
 
   val DB_NAME = "payments"
   val CURRENT_VERSION = 3
@@ -50,8 +52,8 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
   private val paymentFailuresCodec = discriminated[List[FailureSummary]].by(byte)
     .typecase(0x01, listOfN(uint8, failureSummaryCodec))
 
-  withConnection { psql =>
-    using(psql.createStatement(), inTransaction = true) { statement =>
+  inTransaction { psql =>
+    using(psql.createStatement()) { statement =>
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
@@ -68,7 +70,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, sent.id.toString)
         statement.setString(2, sent.parentId.toString)
@@ -85,7 +87,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
 
   def addOutgoingPayment(sent: (UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector])): Unit = {
     val (id, parentId,externalId,paymentHash,amount,targetNodeId,createdAt,paymentRequest,completedAt,paymentPreimage, fees, route, failures) = sent
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request,completed_at, payment_preimage,fees_msat,payment_route,failures) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, id.toString)
         statement.setString(2, parentId.toString)
@@ -106,7 +108,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
   }
 
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         paymentResult.parts.foreach(p => {
           statement.setLong(1, p.timestamp)
@@ -121,7 +123,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("UPDATE sent_payments SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         statement.setLong(1, paymentResult.timestamp)
         statement.setBytes(2, paymentFailuresCodec.encode(paymentResult.failures.map(f => FailureSummary(f)).toList).require.toByteArray)
@@ -178,7 +180,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
 
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
         statement.setString(1, id.toString)
         val rs = statement.executeQuery()
@@ -191,7 +193,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
         statement.setString(1, parentId.toString)
         val rs = statement.executeQuery()
@@ -204,7 +206,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
         statement.setString(1, paymentHash.toHex)
         val rs = statement.executeQuery()
@@ -217,7 +219,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
@@ -231,7 +233,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
         statement.setString(2, preimage.toHex)
@@ -244,7 +246,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
 
   def addIncomingPayment(payment: (ByteVector32,ByteVector32,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])): Unit = {
     val (paymentHash,paymentPreimage,paymentRequest,received,createdAt,expireAt,receivedAt) = payment
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, paymentHash.toHex)
         statement.setString(2, paymentPreimage.toHex)
@@ -259,7 +261,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
   }
 
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
         update.setLong(1, amount.toLong)
         update.setLong(2, receivedAt)
@@ -288,7 +290,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
   }
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
         statement.setString(1, paymentHash.toHex)
         val rs = statement.executeQuery()
@@ -301,7 +303,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
@@ -315,7 +317,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
@@ -329,7 +331,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
@@ -344,7 +346,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     }
 
   override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
@@ -364,7 +366,7 @@ class PsqlPaymentsDb(implicit ds: DataSource) extends PaymentsDb with Logging {
     // - only retrieve incoming payments that did receive funds.
     // - outgoing payments are grouped by parent_id.
     // - order by completion date (or creation date if nothing else).
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement(
         """
           |SELECT * FROM (

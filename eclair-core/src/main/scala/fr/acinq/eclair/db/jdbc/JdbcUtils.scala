@@ -44,6 +44,7 @@ trait JdbcUtils {
    * @param inTransaction if set to true, all updates in the block will be run in a transaction.
    */
   def using[T <: Statement, U](statement: T, inTransaction: Boolean = false)(block: T => U): U = {
+    val autoCommit = statement.getConnection.getAutoCommit
     try {
       if (inTransaction) statement.getConnection.setAutoCommit(false)
       val res = block(statement)
@@ -54,7 +55,7 @@ trait JdbcUtils {
         if (inTransaction) statement.getConnection.rollback()
         throw t
     } finally {
-      if (inTransaction) statement.getConnection.setAutoCommit(true)
+      if (inTransaction) statement.getConnection.setAutoCommit(autoCommit)
       if (statement != null) statement.close()
     }
   }

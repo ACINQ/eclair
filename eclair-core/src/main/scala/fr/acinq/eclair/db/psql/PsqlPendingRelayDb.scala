@@ -20,21 +20,23 @@ package fr.acinq.eclair.db.psql
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{Command, HasHtlcId}
 import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.psql.PsqlUtils._
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
 
-class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
+class PsqlPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends PendingRelayDb {
 
   import PsqlUtils.ExtendedResultSet._
   import PsqlUtils._
+  import lock._
 
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 1
 
-  withConnection { psql =>
-    using(psql.createStatement(), inTransaction = true) { statement =>
+  inTransaction { psql =>
+    using(psql.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
       // note: should we use a foreign key to local_channels table here?
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
@@ -42,7 +44,7 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
   }
 
   override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, cmd.id)
@@ -53,7 +55,7 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
   }
 
   override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, htlcId)
@@ -63,7 +65,7 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
   }
 
   override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         val rs = statement.executeQuery()
@@ -73,7 +75,7 @@ class PsqlPendingRelayDb(implicit ds: DataSource) extends PendingRelayDb {
   }
 
   override def listPendingRelay(): Set[(ByteVector32, Long)] = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
         val rs = statement.executeQuery()
         var q: Queue[(ByteVector32, Long)] = Queue()

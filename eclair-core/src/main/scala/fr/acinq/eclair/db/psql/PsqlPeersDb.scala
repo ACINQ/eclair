@@ -16,32 +16,32 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.Connection
-
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.PeersDb
+import fr.acinq.eclair.db.psql.PsqlUtils.DatabaseLock
 import fr.acinq.eclair.wire._
 import javax.sql.DataSource
 import scodec.bits.BitVector
 
-class PsqlPeersDb(implicit ds: DataSource) extends PeersDb {
+class PsqlPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
 
   import PsqlUtils.ExtendedResultSet._
   import PsqlUtils._
+  import lock._
 
   val DB_NAME = "peers"
   val CURRENT_VERSION = 1
 
-  withConnection { psql =>
-    using(psql.createStatement(), inTransaction = true) { statement =>
+  inTransaction { psql =>
+    using(psql.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
     }
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
-    withConnection { psql =>
+    withLock { psql =>
       val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
       using(psql.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
         update.setBytes(1, data)
@@ -58,7 +58,7 @@ class PsqlPeersDb(implicit ds: DataSource) extends PeersDb {
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.executeUpdate()
@@ -67,7 +67,7 @@ class PsqlPeersDb(implicit ds: DataSource) extends PeersDb {
   }
 
   override def listPeers(): Map[PublicKey, NodeAddress] = {
-    withConnection { psql =>
+    withLock { psql =>
       using(psql.createStatement()) { statement =>
         val rs = statement.executeQuery("SELECT node_id, data FROM peers")
         var m: Map[PublicKey, NodeAddress] = Map()

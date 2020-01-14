@@ -20,7 +20,7 @@ object SqliteToPgsql extends App {
   val dbConfig = config.getConfig("db")
 
   val sqlite = Databases.sqliteJDBC(chaindir)
-  val psql = Databases.setupPsqlDatabases(dbConfig)
+  val psql = Databases.setupPsqlDatabases(dbConfig, {_ => ()})
 
   sqlite.audit.listNetworkFees(0, new Date().getTime).foreach { fee =>
     psql.audit.asInstanceOf[PsqlAuditDb].add(NetworkFeePaid(

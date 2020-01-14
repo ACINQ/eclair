@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.Connection
-
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
@@ -37,8 +35,8 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   val DB_NAME = "network"
   val CURRENT_VERSION = 2
 
-  withConnection { psql =>
-    using(psql.createStatement(), inTransaction = true) { statement =>
+  inTransaction { psql =>
+    using(psql.createStatement()) { statement =>
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION => () // nothing to do
         case unknown => throw new IllegalArgumentException(s"unknown version $unknown for network db")
@@ -50,7 +48,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO nodes VALUES (?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, n.nodeId.value.toHex)
         statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
@@ -60,7 +58,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def updateNode(n: NodeAnnouncement): Unit = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
         statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
         statement.setString(2, n.nodeId.value.toHex)
@@ -70,7 +68,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         val rs = statement.executeQuery()
@@ -80,7 +78,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.executeUpdate()
@@ -89,7 +87,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def listNodes(): Seq[NodeAnnouncement] = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.createStatement()) { statement =>
         val rs = statement.executeQuery("SELECT data FROM nodes")
         codecSequence(rs, nodeAnnouncementCodec)
@@ -98,7 +96,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO channels VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setLong(1, c.shortChannelId.toLong)
         statement.setString(2, txid.toHex)
@@ -111,7 +109,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
 
   override def updateChannel(u: ChannelUpdate): Unit = {
     val column = if (u.isNode1) "channel_update_1" else "channel_update_2"
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement(s"UPDATE channels SET $column=? WHERE short_channel_id=?")) { statement =>
         statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
         statement.setLong(2, u.shortChannelId.toLong)
@@ -121,7 +119,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.createStatement()) { statement =>
         val rs = statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
         var m = SortedMap.empty[ShortChannelId, PublicChannel]
@@ -139,7 +137,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.createStatement) { statement =>
         shortChannelIds
           .grouped(1000) // remove channels by batch of 1000
@@ -152,8 +150,8 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    withConnection { psql =>
-      using(psql.prepareStatement("INSERT INTO pruned VALUES (?) ON CONFLICT DO NOTHING"), inTransaction = true) { statement =>
+    inTransaction { psql =>
+      using(psql.prepareStatement("INSERT INTO pruned VALUES (?) ON CONFLICT DO NOTHING")) { statement =>
         shortChannelIds.foreach(shortChannelId => {
           statement.setLong(1, shortChannelId.toLong)
           statement.addBatch()
@@ -164,7 +162,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.createStatement) { statement =>
         statement.executeUpdate(s"DELETE FROM pruned WHERE short_channel_id=${shortChannelId.toLong}")
       }
@@ -172,7 +170,7 @@ class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def isPruned(shortChannelId: ShortChannelId): Boolean = {
-    withConnection { psql =>
+    inTransaction { psql =>
       using(psql.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
         statement.setLong(1, shortChannelId.toLong)
         val rs = statement.executeQuery()

@@ -26,6 +26,7 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
@@ -68,7 +69,6 @@ object TestConstants {
     def payments(): PaymentsDb
     def pendingRelay(): PendingRelayDb
     def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
-    def obtainLock(): Unit
     def close(): Unit
   }
 
@@ -80,7 +80,6 @@ object TestConstants {
     override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
     override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
-    override def obtainLock(): Unit = ()
     override def close(): Unit = ()
   }
 
@@ -96,14 +95,15 @@ object TestConstants {
 
     implicit val ds = new HikariDataSource(config)
 
-    override def network(): NetworkDb = new PsqlNetworkDb()
-    override def audit(): AuditDb = new PsqlAuditDb()
-    override def channels(): ChannelsDb = new PsqlChannelsDb()
-    override def peers(): PeersDb = new PsqlPeersDb()
-    override def payments(): PaymentsDb = new PsqlPaymentsDb()
-    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb()
+    implicit val lock = NoLock
+
+    override def network(): NetworkDb = new PsqlNetworkDb
+    override def audit(): AuditDb = new PsqlAuditDb
+    override def channels(): ChannelsDb = new PsqlChannelsDb
+    override def peers(): PeersDb = new PsqlPeersDb
+    override def payments(): PaymentsDb = new PsqlPaymentsDb
+    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
-    override def obtainLock(): Unit = PsqlUtils.obtainExclusiveLock("test_instance", 1.minute, 1.second)(ds)
     override def close(): Unit = pg.close()
   }
 
