@@ -21,6 +21,7 @@ import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -31,7 +32,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
 import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec, SendChannelQuery}
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, LightningMessageCodecs, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, InitTlv, LightningMessageCodecs, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, _}
 
@@ -81,7 +82,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.send(peer, Peer.Init(None, channels))
     authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, None))
     transport.expectMsgType[TransportHandler.Listener]
-    transport.expectMsgType[wire.Init]
+    val localInit = transport.expectMsgType[wire.Init]
+    assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
     transport.send(peer, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
     if (expectSync) {
@@ -254,6 +256,19 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val init = transport.expectMsgType[wire.Init]
       assert(init.features === sentFeatures.bytes)
     }
+  }
+  
+  test("disconnect if incompatible networks") { f =>
+    import f._
+    val probe = TestProbe()
+    probe.watch(transport.ref)
+    probe.send(peer, Peer.Init(None, Set.empty))
+    authenticator.send(peer, Authenticator.Authenticated(connection.ref, transport.ref, remoteNodeId, new InetSocketAddress("1.2.3.4", 42000), outgoing = true, None))
+    transport.expectMsgType[TransportHandler.Listener]
+    transport.expectMsgType[wire.Init]
+    transport.send(peer, wire.Init(Bob.nodeParams.features, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
+    transport.expectMsgType[TransportHandler.ReadAck]
+    probe.expectTerminated(transport.ref)
   }
 
   test("handle disconnect in status INITIALIZING") { f =>

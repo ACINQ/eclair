@@ -100,8 +100,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
-      val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some(f) => wire.Init(f)
+      val localFeatures = nodeParams.overrideFeatures.get(remoteNodeId) match {
+        case Some(f) => f
         case None =>
           // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
           // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
@@ -116,9 +116,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
             // ... and leave the others untouched
             case (value, _) => value
           }).reverse.bytes.dropWhile(_ == 0)
-          wire.Init(tweakedFeatures)
+          tweakedFeatures
       }
-      log.info(s"using features=${localInit.features.toBin}")
+      log.info(s"using features=${localFeatures.toBin}")
+      val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       transport ! localInit
 
       val address_opt = if (outgoing) {
@@ -148,9 +149,19 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using features=${remoteInit.features.toBin}")
+      log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
 
-      if (Features.areSupported(remoteInit.features)) {
+      if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(nodeParams.chainHash)) {
+        log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+        d.transport ! PoisonPill
+        stay
+      } else if (!Features.areSupported(remoteInit.features)) {
+        log.warning("incompatible features, disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+        d.transport ! PoisonPill
+        stay
+      } else {
         d.origin_opt.foreach(origin => origin ! "connected")
 
         def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
@@ -181,11 +192,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
         log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
         goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
-      } else {
-        log.warning(s"incompatible features, disconnecting")
-        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        d.transport ! PoisonPill
-        stay
       }
 
     case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
