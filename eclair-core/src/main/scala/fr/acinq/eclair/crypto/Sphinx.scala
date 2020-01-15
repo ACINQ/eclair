@@ -210,7 +210,7 @@ object Sphinx extends Logging {
      * @param associatedData     associated data.
      * @param ephemeralPublicKey ephemeral key shared with the target node.
      * @param sharedSecret       shared secret with this hop.
-     * @param packet             current packet (None if the packet hasn't been initialized).
+     * @param packet             current packet or random bytes if the packet hasn't been initialized.
      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
      * @return the next packet.
      */
@@ -219,7 +219,9 @@ object Sphinx extends Logging {
 
       val (currentMac, currentPayload): (ByteVector32, ByteVector) = packet match {
         // Packet construction starts with an empty mac and random payload.
-        case Left(startingBytes) => (ByteVector32.Zeroes, startingBytes)
+        case Left(startingBytes) =>
+          require(startingBytes.length == PayloadLength, "invalid initial random bytes length")
+          (ByteVector32.Zeroes, startingBytes)
         case Right(p) => (p.hmac, p.payload)
       }
       val nextOnionPayload = {
