@@ -181,12 +181,18 @@ class Setup(datadir: File,
         case true =>
           val host = config.getString("electrum.host")
           val port = config.getInt("electrum.port")
-          val ssl = config.getString("electrum.ssl") match {
-            case "off" => SSL.OFF
-            case "loose" => SSL.LOOSE
-            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
-          }
           val address = InetSocketAddress.createUnresolved(host, port)
+          val ssl = if (address.getHostName.endsWith(".onion")) {
+            // Tor already adds end-to-end encryption, adding TLS on top doesn't add anything
+            SSL.OFF
+          } else {
+            config.getString("electrum.ssl") match {
+              case "off" => SSL.OFF
+              case "loose" => SSL.LOOSE
+              case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
+            }
+          }
+
           logger.info(s"override electrum default with server=$address ssl=$ssl")
           Set(ElectrumServerAddress(address, ssl))
         case false =>
