@@ -252,9 +252,12 @@ object Commitments {
   }
 
   def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = for {
-    _ <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findHtlcById(htlcId, directionRelativeToLocal.opposite)
-    localSigned <- commitments.localCommit.spec.findHtlcById(htlcId, directionRelativeToLocal)
-  } yield localSigned.add
+    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findHtlcById(htlcId, directionRelativeToLocal.opposite)
+    remoteSigned <- commitments.localCommit.spec.findHtlcById(htlcId, directionRelativeToLocal)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
+  }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
