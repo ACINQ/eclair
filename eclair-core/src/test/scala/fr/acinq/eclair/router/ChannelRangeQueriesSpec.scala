@@ -17,11 +17,10 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair
 import fr.acinq.eclair.router.Router.ShortChannelIdsChunk
-import fr.acinq.eclair.wire.{EncodingType, ReplyChannelRangeTlv}
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.{EncodingType, ReplyChannelRangeTlv}
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -379,8 +378,14 @@ class ChannelRangeQueriesSpec extends FunSuite {
           if (extension.wantTimestamps) {
             require(timestamps.map(_.timestamps.size) == Some(ids.size))
             require(timestamps.map(_.encoding) == Some(encodingType))
+          } else {
+            require(timestamps.isEmpty)
           }
-          if (extension.wantChecksums) require(checksums.map(_.checksums.size) == Some(ids.size))
+          if (extension.wantChecksums) {
+            require(checksums.map(_.checksums.size) == Some(ids.size))
+          } else {
+            require(checksums.isEmpty)
+          }
       }
     }
 
