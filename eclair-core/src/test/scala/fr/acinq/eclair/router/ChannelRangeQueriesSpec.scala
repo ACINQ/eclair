@@ -18,7 +18,9 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.router.Router.ShortChannelIdsChunk
+import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.{EncodingType, ReplyChannelRangeTlv}
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -152,13 +154,14 @@ class ChannelRangeQueriesSpec extends FunSuite {
     require(chunk.shortChannelIds.forall(Router.keep(chunk.firstBlock, chunk.numBlocks, _)))
   }
 
-  // check that chunks do not overlap and contain exactly the ids they were built from
+  // check that chunks contain exactly the ids they were built from are are consistent i.e each chunk covers a range that immediately follows
+  // the previous one even if there are gaps in block heights
   def validate(ids: SortedSet[ShortChannelId], firstBlockNum: Long, numberOfBlocks: Long, chunks: List[ShortChannelIdsChunk]): Unit = {
 
     @tailrec
     def noOverlap(chunks: List[ShortChannelIdsChunk]): Boolean = chunks match {
       case Nil => true
-      case a :: b :: _ if b.firstBlock < a.firstBlock + a.numBlocks => false
+      case a :: b :: _ if b.firstBlock != a.firstBlock + a.numBlocks => false
       case _ => noOverlap(chunks.tail)
     }
 
@@ -240,27 +243,27 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // all ids in different blocks, chunk size == 2
     {
-      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
+      val ids = List(id(1000), id(1005), id(1012), id(1013), id(1040), id(1050))
       val firstBlockNum = 900
       val numberOfBlocks = 200
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == List(
-        ShortChannelIdsChunk(firstBlockNum, 100 + 2, List(ids(0), ids(1))),
-        ShortChannelIdsChunk(1002, 2, List(ids(2), ids(3))),
-        ShortChannelIdsChunk(1004, numberOfBlocks - 1004 + firstBlockNum, List(ids(4), ids(5)))
+        ShortChannelIdsChunk(firstBlockNum, 100 + 6, List(ids(0), ids(1))),
+        ShortChannelIdsChunk(1006, 8, List(ids(2), ids(3))),
+        ShortChannelIdsChunk(1014, numberOfBlocks - 1014 + firstBlockNum, List(ids(4), ids(5)))
       ))
     }
 
     // all ids in different blocks, chunk size == 2, first id outside of range
     {
-      val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
+      val ids = List(id(1000), id(1005), id(1012), id(1013), id(1040), id(1050))
       val firstBlockNum = 1001
       val numberOfBlocks = 200
       val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == List(
-        ShortChannelIdsChunk(firstBlockNum, 2, List(ids(1), ids(2))),
-        ShortChannelIdsChunk(1003, 2, List(ids(3), ids(4))),
-        ShortChannelIdsChunk(1005, numberOfBlocks - 1005 + firstBlockNum, List(ids(5)))
+        ShortChannelIdsChunk(firstBlockNum, 12, List(ids(1), ids(2))),
+        ShortChannelIdsChunk(1013, 1040 - 1013 + 1, List(ids(3), ids(4))),
+        ShortChannelIdsChunk(1041, numberOfBlocks - 1041 + firstBlockNum, List(ids(5)))
       ))
     }
 
@@ -312,7 +315,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
   }
 
   test("split short channel ids correctly (comprehensive tests)") {
-    val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
+    val ids = SortedSet.empty[ShortChannelId] ++ makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(45, 50) ++ makeShortChannelIds(47, 30) ++ makeShortChannelIds(50, 120)
     for (firstBlockNum <- 0 to 60) {
       for (numberOfBlocks <- 1 to 60) {
         for (chunkSize <- 1 :: 2 :: 20 :: 50 :: 100 :: 1000 :: Nil) {
@@ -354,6 +357,45 @@ class ChannelRangeQueriesSpec extends FunSuite {
       for (i <- 0 until 100) chunks += makeChunk(0, Router.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
       val pruned = Router.enforceMaximumSize(chunks.toList)
       validateChunks(chunks.toList, pruned)
+    }
+  }
+
+  test("compute extended query information") {
+    import QueryFlags._
+
+    val ids = makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
+    val channels = SortedMap.empty[ShortChannelId, PublicChannel] ++ ids.map(id => id -> RoutingSyncSpec.makeFakeRoutingInfo(id)._1).toMap
+
+    def validate(timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps], checksums: Option[ReplyChannelRangeTlv.EncodedChecksums], ids: List[ShortChannelId], queryFlags_opt: Option[QueryFlags], encodingType: EncodingType) = {
+      queryFlags_opt match {
+        case None =>
+          require(timestamps.isEmpty)
+          require(checksums.isEmpty)
+        case _ if ids.isEmpty =>
+          require(timestamps.isEmpty)
+          require(checksums.isEmpty)
+        case Some(extension) =>
+          if (extension.wantTimestamps) {
+            require(timestamps.map(_.timestamps.size) == Some(ids.size))
+            require(timestamps.map(_.encoding) == Some(encodingType))
+          } else {
+            require(timestamps.isEmpty)
+          }
+          if (extension.wantChecksums) {
+            require(checksums.map(_.checksums.size) == Some(ids.size))
+          } else {
+            require(checksums.isEmpty)
+          }
+      }
+    }
+
+    for (scids <- List(ids, Nil)) {
+      for (flag <- List(None, Some(QueryFlags(WANT_TIMESTAMPS)), Some(QueryFlags(WANT_CHECKSUMS)), Some(QueryFlags(WANT_TIMESTAMPS | WANT_CHECKSUMS)))) {
+        for (encodingType <- List(EncodingType.UNCOMPRESSED, EncodingType.COMPRESSED_ZLIB)) {
+          val (timestamps, checksums) = Router.computeExtendedInformation(scids, channels, flag, encodingType)
+          validate(timestamps, checksums, scids, flag, encodingType)
+        }
+      }
     }
   }
 }
