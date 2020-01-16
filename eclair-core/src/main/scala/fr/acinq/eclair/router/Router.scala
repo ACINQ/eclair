@@ -1276,7 +1276,7 @@ object Router {
    * - channel update checksums
    * @param shortChannelIds list of short channel ids
    * @param channels channel map
-   * @param queryFlags_opt query flag, which specifies what information has been request
+   * @param queryFlags_opt query flag, which specifies what information has been requested
    * @param encodingType encoding type, which specifies how lists should be encoded
    * @return an extended information tuple
    */
