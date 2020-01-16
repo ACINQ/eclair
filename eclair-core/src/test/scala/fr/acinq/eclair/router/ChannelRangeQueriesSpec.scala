@@ -17,7 +17,10 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair
 import fr.acinq.eclair.router.Router.ShortChannelIdsChunk
+import fr.acinq.eclair.wire.{EncodingType, ReplyChannelRangeTlv}
+import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
@@ -355,6 +358,39 @@ class ChannelRangeQueriesSpec extends FunSuite {
       for (i <- 0 until 100) chunks += makeChunk(0, Router.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
       val pruned = Router.enforceMaximumSize(chunks.toList)
       validateChunks(chunks.toList, pruned)
+    }
+  }
+
+  test("compute extended query information") {
+    import QueryFlags._
+
+    val ids = makeShortChannelIds(42, 100) ++ makeShortChannelIds(43, 70) ++ makeShortChannelIds(44, 50) ++ makeShortChannelIds(45, 30) ++ makeShortChannelIds(50, 120)
+    val channels = SortedMap.empty[ShortChannelId, PublicChannel] ++ ids.map(id => id -> RoutingSyncSpec.makeFakeRoutingInfo(id)._1).toMap
+
+    def validate(timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps], checksums: Option[ReplyChannelRangeTlv.EncodedChecksums], ids: List[ShortChannelId], queryFlags_opt: Option[QueryFlags], encodingType: EncodingType) = {
+      queryFlags_opt match {
+        case None =>
+          require(timestamps.isEmpty)
+          require(checksums.isEmpty)
+        case _ if ids.isEmpty =>
+          require(timestamps.isEmpty)
+          require(checksums.isEmpty)
+        case Some(extension) =>
+          if (extension.wantTimestamps) {
+            require(timestamps.map(_.timestamps.size) == Some(ids.size))
+            require(timestamps.map(_.encoding) == Some(encodingType))
+          }
+          if (extension.wantChecksums) require(checksums.map(_.checksums.size) == Some(ids.size))
+      }
+    }
+
+    for (scids <- List(ids, Nil)) {
+      for (flag <- List(None, Some(QueryFlags(WANT_TIMESTAMPS)), Some(QueryFlags(WANT_CHECKSUMS)), Some(QueryFlags(WANT_TIMESTAMPS | WANT_CHECKSUMS)))) {
+        for (encodingType <- List(EncodingType.UNCOMPRESSED, EncodingType.COMPRESSED_ZLIB)) {
+          val (timestamps, checksums) = Router.computeExtendedInformation(scids, channels, flag, encodingType)
+          validate(timestamps, checksums, scids, flag, encodingType)
+        }
+      }
     }
   }
 }

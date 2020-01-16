@@ -1285,7 +1285,7 @@ object Router {
                                  queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags],
                                  encodingType: EncodingType): (Option[ReplyChannelRangeTlv.EncodedTimestamps], Option[ReplyChannelRangeTlv.EncodedChecksums]) = {
     val (timestamps, checksums) = queryFlags_opt match {
-      case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
+      case Some(extension) if shortChannelIds.nonEmpty && (extension.wantChecksums | extension.wantTimestamps) =>
         // we always compute timestamps and checksums even if we don't need both, overhead is negligible
         val (timestamps, checksums) = shortChannelIds.map(getChannelDigestInfo(channels)).unzip
         val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(encodingType, timestamps)) else None
