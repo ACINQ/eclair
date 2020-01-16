@@ -647,15 +647,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
-              val (timestamps, checksums) = routingMessage.queryFlags_opt match {
-                case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
-                  // we always compute timestamps and checksums even if we don't need both, overhead is negligible
-                  val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels)).unzip
-                  val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(nodeParams.routerConf.encodingType, timestamps)) else None
-                  val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
-                  (encodedTimestamps, encodedChecksums)
-                case _ => (None, None)
-              }
+              val (timestamps, checksums) = Router.computeExtendedInformation(chunk.shortChannelIds, d.channels, routingMessage.queryFlags_opt, nodeParams.routerConf.encodingType)
               transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
                 complete = 1,
                 shortChannelIds = EncodedShortChannelIds(nodeParams.routerConf.encodingType, chunk.shortChannelIds),
@@ -1276,6 +1268,32 @@ object Router {
       // make sure that all our chunks match our max size policy
       enforceMaximumSize(chunks)
     }
+  }
+
+  /**
+   * Compute extended channel information, which currently covers:
+   * - channel update timestamps
+   * - channel update checksums
+   * @param shortChannelIds list of short channel ids
+   * @param channels channel map
+   * @param queryFlags_opt query flag, which specifies what information has been request
+   * @param encodingType encoding type, which specifies how lists should be encoded
+   * @return an extended information tuple
+   */
+  def computeExtendedInformation(shortChannelIds: List[ShortChannelId],
+                                 channels: SortedMap[ShortChannelId, PublicChannel],
+                                 queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags],
+                                 encodingType: EncodingType): (Option[ReplyChannelRangeTlv.EncodedTimestamps], Option[ReplyChannelRangeTlv.EncodedChecksums]) = {
+    val (timestamps, checksums) = queryFlags_opt match {
+      case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
+        // we always compute timestamps and checksums even if we don't need both, overhead is negligible
+        val (timestamps, checksums) = shortChannelIds.map(getChannelDigestInfo(channels)).unzip
+        val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(encodingType, timestamps)) else None
+        val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
+        (encodedTimestamps, encodedChecksums)
+      case _ => (None, None)
+    }
+    (timestamps, checksums)
   }
 
   /**
