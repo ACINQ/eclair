@@ -648,7 +648,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
               val (timestamps, checksums) = routingMessage.queryFlags_opt match {
-                case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
+                case Some(extension) if chunk.shortChannelIds.nonEmpty && (extension.wantChecksums | extension.wantTimestamps) =>
                   // we always compute timestamps and checksums even if we don't need both, overhead is negligible
                   val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels)).unzip
                   val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(nodeParams.routerConf.encodingType, timestamps)) else None
@@ -1256,14 +1256,15 @@ object Router {
           else {
             // we always prepend because it's more efficient so we have to reverse the current chunk
             // for the first chunk, we make sure that we start at the request first block
-            val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+            // for the next chunks we start at the end of the range covered by the last chunk
+            val first = if (acc.isEmpty) firstBlockNum else acc.head.firstBlock + acc.head.numBlocks
             val count = currentChunk.head.blockHeight - first + 1
             loop(id :: Nil, ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc)
           }
         }
         else {
-          // for the last chunk, we make sure that we cover the request block range
-          val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+          // for the last chunk, we make sure that we cover the requested block range
+          val first = if (acc.isEmpty) firstBlockNum else acc.head.firstBlock + acc.head.numBlocks
           val count = numberOfBlocks - first + firstBlockNum
           (ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc).reverse
         }
