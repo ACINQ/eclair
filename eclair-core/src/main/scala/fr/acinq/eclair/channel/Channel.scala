@@ -547,7 +547,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
           goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, fundingLocked) storing() sending fundingLocked
         case Failure(t) =>
-          log.error(t, "")
+          log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
           goto(CLOSED)
       }
 
