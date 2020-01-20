@@ -353,21 +353,23 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("filter gossip message (no filtering)") { f =>
     import f._
     val probe = TestProbe()
+    val gossipOrigin = Set(TestProbe().ref)
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
-    val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
+    val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peer, rebroadcast)
-    transport.expectNoMsg(2 seconds)
+    transport.expectNoMsg(10 seconds)
   }
 
   test("filter gossip message (filtered by origin)") { f =>
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    val gossipOrigin = Set(TestProbe().ref)
     val peerActor: ActorRef = peer
     val rebroadcast = Rebroadcast(
-      channels.map(_ -> Set.empty[ActorRef]).toMap + (channels(5) -> Set(peerActor)),
-      updates.map(_ -> Set.empty[ActorRef]).toMap + (updates(6) -> Set(peerActor)) + (updates(10) -> Set(peerActor)),
-      nodes.map(_ -> Set.empty[ActorRef]).toMap + (nodes(4) -> Set(peerActor)))
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(peerActor)),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> Set(peerActor)) + (updates(10) -> Set(peerActor)),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(peerActor)))
     val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
     probe.send(peer, filter)
     probe.send(peer, rebroadcast)
@@ -381,7 +383,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
-    val rebroadcast = Rebroadcast(channels.map(_ -> Set.empty[ActorRef]).toMap, updates.map(_ -> Set.empty[ActorRef]).toMap, nodes.map(_ -> Set.empty[ActorRef]).toMap)
+    val gossipOrigin = Set(TestProbe().ref)
+    val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     val timestamps = updates.map(_.timestamp).sorted.slice(10, 30)
     val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, timestamps.head, timestamps.last - timestamps.head)
     probe.send(peer, filter)
@@ -391,6 +394,24 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // but it will only send updates and node announcements matching the filter
     updates.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
     nodes.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
+  }
+
+  test("does not filter our own gossip message") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    val gossipOrigin = Set(TestProbe().ref)
+    val rebroadcast = Rebroadcast(
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(router.ref)),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> Set(router.ref)) + (updates(10) -> Set(router.ref)),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(router.ref)))
+    // No timestamp filter set -> the only gossip we should broadcast is our own.
+    probe.send(peer, rebroadcast)
+    transport.expectMsg(channels(5))
+    transport.expectMsg(updates(6))
+    transport.expectMsg(updates(10))
+    transport.expectMsg(nodes(4))
+    transport.expectNoMsg(10 seconds)
   }
 
   test("react to peer's bad behavior") { f =>

@@ -376,7 +376,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         case (count, (_, origins)) if origins.contains(self) =>
           // the announcement came from this peer, we don't send it back
           count
-        case (count, (msg, _)) if !timestampInRange(msg, d.gossipTimestampFilter) =>
+        case (count, (msg, origins)) if !timestampInRange(msg, origins, d.gossipTimestampFilter) =>
           // the peer has set up a filter on timestamp and this message is out of range
           count
         case (count, (msg, _)) =>
@@ -587,6 +587,31 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
   }
 
+  /**
+   * Peer may want to filter announcements based on timestamp.
+   *
+   * @param gossipTimestampFilter_opt optional gossip timestamp range
+   * @return
+   *         - true if this is our own gossip
+   *         - true if there is a filter and msg has no timestamp, or has one that matches the filter
+   *         - false otherwise
+   */
+  def timestampInRange(msg: RoutingMessage, origins: Set[ActorRef], gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
+    // For our own gossip, we should ignore the peer's timestamp filter.
+    val isOurGossip = msg match {
+      case n: NodeAnnouncement if n.nodeId == nodeParams.nodeId => true
+      case _ if origins.isEmpty || origins == Set(router) => true // if gossip doesn't come from another peer, it's ours
+      case _ => false
+    }
+    // Otherwise we check if this message has a timestamp that matches the timestamp filter.
+    val matchesFilter = (msg, gossipTimestampFilter_opt) match {
+      case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
+    }
+    isOurGossip || matchesFilter
+  }
+
   // a failing channel won't be restarted, it should handle its states
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 
@@ -695,23 +720,6 @@ object Peer {
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
       features = nodeParams.features)
-  }
-
-  /**
-   * Peer may want to filter announcements based on timestamp
-   *
-   * @param gossipTimestampFilter_opt optional gossip timestamp range
-   * @return
-   *           - true if there is a filter and msg has no timestamp, or has one that matches the filter
-   *           - false otherwise
-   */
-  def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
-    // check if this message has a timestamp that matches our timestamp filter
-    (msg, gossipTimestampFilter_opt) match {
-      case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
-      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
-      case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
-    }
   }
 
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
