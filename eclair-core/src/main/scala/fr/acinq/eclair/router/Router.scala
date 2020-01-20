@@ -648,7 +648,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
               val (timestamps, checksums) = routingMessage.queryFlags_opt match {
-                case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
+                case Some(extension) if chunk.shortChannelIds.nonEmpty && (extension.wantChecksums | extension.wantTimestamps) =>
                   // we always compute timestamps and checksums even if we don't need both, overhead is negligible
                   val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels)).unzip
                   val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(nodeParams.routerConf.encodingType, timestamps)) else None
