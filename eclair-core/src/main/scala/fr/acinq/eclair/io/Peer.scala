@@ -719,7 +719,7 @@ object Peer {
   /**
    * This helps preventing peers reconnection loops due to synchronization of reconnection attempts.
    */
-  def randomizeDelay(initialRandomReconnectDelay: FiniteDuration): FiniteDuration = Random.nextInt(initialRandomReconnectDelay.toMillis.toInt).millis
+  def randomizeDelay(initialRandomReconnectDelay: FiniteDuration): FiniteDuration = Random.nextInt(initialRandomReconnectDelay.toMillis.toInt).millis.max(200 milliseconds)
 
   /**
    * Exponential backoff retry with a finite max
