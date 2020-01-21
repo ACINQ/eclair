@@ -24,9 +24,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{Channel, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{Onion, OnionTlv, TrampolineExpiryTooSoon, TrampolineFeeInsufficient}
@@ -69,29 +69,29 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
     case r: SendTrampolinePaymentRequest =>
       val paymentId = UUID.randomUUID()
       sender ! paymentId
-      if (r.trampolineAttempts.isEmpty) {
-        sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("trampoline fees and cltv expiry delta are missing")) :: Nil)
-      } else if (!r.paymentRequest.features.allowTrampoline && r.paymentRequest.amount.isEmpty) {
-        sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")) :: Nil)
-      } else {
-        val (trampolineFees, trampolineExpiryDelta) =  r.trampolineAttempts.head
-        log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
-        sendTrampolinePayment(paymentId, r, r.trampolineAttempts.head._1, r.trampolineAttempts.head._2)
-        context become main(pending + (paymentId -> PendingPayment(sender, r.trampolineAttempts.tail, r)))
+      r.trampolineAttempts match {
+        case Nil =>
+          sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("trampoline fees and cltv expiry delta are missing")) :: Nil)
+        case _ if !r.paymentRequest.features.allowTrampoline && r.paymentRequest.amount.isEmpty =>
+          sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")) :: Nil)
+        case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
+          log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
+          sendTrampolinePayment(paymentId, r, trampolineFees, trampolineExpiryDelta)
+          context become main(pending + (paymentId -> PendingPayment(sender, remainingAttempts, r)))
       }
 
     case pf: PaymentFailed => pending.get(pf.id).foreach(pp => {
       val decryptedFailures = pf.failures.collect { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(_, f)) => f }
-      val shouldRetry = pp.remainingAttempts.nonEmpty && (decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon))
-      if (shouldRetry) {
-        val (trampolineFees, trampolineExpiryDelta) =  pp.remainingAttempts.head
-        log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
-        sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta)
-        context become main(pending + (pf.id -> pp.copy(remainingAttempts = pp.remainingAttempts.tail)))
-      } else {
-        pp.sender ! pf
-        context.system.eventStream.publish(pf)
-        context become main(pending - pf.id)
+      val canRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
+      pp.remainingAttempts match {
+        case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts if canRetry =>
+          log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
+          sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta)
+          context become main(pending + (pf.id -> pp.copy(remainingAttempts = remainingAttempts)))
+        case _ =>
+          pp.sender ! pf
+          context.system.eventStream.publish(pf)
+          context become main(pending - pf.id)
       }
     })
 
