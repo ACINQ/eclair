@@ -192,7 +192,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val interval = (peer.underlyingActor.nodeParams.maxReconnectInterval.toSeconds / 2) to peer.underlyingActor.nodeParams.maxReconnectInterval.toSeconds
     awaitCond(interval contains peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay.toSeconds)
   }
-
+  
   test("reconnect with increasing delays") { f =>
     import f._
     val probe = TestProbe()
@@ -200,6 +200,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.send(transport.ref, PoisonPill)
     awaitCond(peer.stateName === DISCONNECTED)
     val initialReconnectDelay = peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay
+    assert(initialReconnectDelay >= (200 milliseconds))
     assert(initialReconnectDelay <= (10 seconds))
     probe.send(peer, Reconnect)
     assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (initialReconnectDelay * 2))
