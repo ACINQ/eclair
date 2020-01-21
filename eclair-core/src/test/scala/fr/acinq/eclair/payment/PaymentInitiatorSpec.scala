@@ -28,12 +28,12 @@ import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest, SendTrampolinePaymentRequest}
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest, SendTrampolinePaymentRequest, TrampolineLegacyAmountLessInvoice}
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.router.RouteParams
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire.{OnionCodecs, OnionTlv}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomKey}
+import fr.acinq.eclair.wire.{OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomBytes32, randomKey}
 import org.scalatest.{Outcome, fixture}
 import scodec.bits.HexStringSyntax
 
@@ -45,11 +45,13 @@ import scala.concurrent.duration._
 
 class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams = TestConstants.Alice.nodeParams
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
     class TestPaymentInitiator extends PaymentInitiator(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref) {
       // @formatter:off
       override def spawnPaymentFsm(cfg: SendPaymentConfig): ActorRef = {
@@ -63,7 +65,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
       // @formatter:on
     }
     val initiator = TestActorRef(new TestPaymentInitiator().asInstanceOf[PaymentInitiator])
-    withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender)))
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender, eventListener)))
   }
 
   test("reject payment with unknown mandatory feature") { f =>
@@ -132,7 +134,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val ignoredRoutingHints = List(List(ExtraHop(b, channelUpdate_bc.shortChannelId, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features), extraHops = ignoredRoutingHints)
     val trampolineFees = 21000 msat
-    val req = SendTrampolinePaymentRequest(finalAmount, trampolineFees, pr, b, CltvExpiryDelta(9), CltvExpiryDelta(12))
+    val req = SendTrampolinePaymentRequest(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(9))
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
@@ -172,7 +174,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     import f._
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some eclair-mobile invoice")
     val trampolineFees = 21000 msat
-    val req = SendTrampolinePaymentRequest(finalAmount, trampolineFees, pr, b, CltvExpiryDelta(9), CltvExpiryDelta(12))
+    val req = SendTrampolinePaymentRequest(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(9))
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
@@ -205,15 +207,75 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val features = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)
     val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, "#abittooreckless", None, None, routingHints, features = Some(features))
     val trampolineFees = 21000 msat
-    val req = SendTrampolinePaymentRequest(finalAmount, trampolineFees, pr, b, CltvExpiryDelta(9), CltvExpiryDelta(12))
+    val req = SendTrampolinePaymentRequest(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(9))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id === id)
-    assert(fail.failures.head.isInstanceOf[LocalFailure])
+    assert(fail.failures === LocalFailure(TrampolineLegacyAmountLessInvoice) :: Nil)
 
     multiPartPayFsm.expectNoMsg(50 millis)
     payFsm.expectNoMsg(50 millis)
+  }
+
+  test("retry trampoline payment") { f =>
+    import f._
+    val features = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features))
+    val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
+    val req = SendTrampolinePaymentRequest(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9))
+    sender.send(initiator, req)
+    sender.expectMsgType[UUID]
+    val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
+    assert(cfg.storeInDb)
+    assert(!cfg.publishEvent)
+
+    val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
+    assert(msg1.totalAmount === finalAmount + 21000.msat)
+
+    // Simulate a failure which should trigger a retry.
+    multiPartPayFsm.send(initiator, PaymentFailed(cfg.parentId, pr.paymentHash, Seq(RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient)))))
+    multiPartPayFsm.expectMsgType[SendPaymentConfig]
+    val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
+    assert(msg2.totalAmount === finalAmount + 25000.msat)
+
+    // Simulate success which should publish the event and respond to the original sender.
+    val success = PaymentSent(cfg.parentId, pr.paymentHash, randomBytes32, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), 1000 msat, 500 msat, randomBytes32, None)))
+    multiPartPayFsm.send(initiator, success)
+    sender.expectMsg(success)
+    eventListener.expectMsg(success)
+    sender.expectNoMsg(100 millis)
+    eventListener.expectNoMsg(100 millis)
+  }
+
+  test("retry trampoline payment and fail") { f =>
+    import f._
+    val features = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some phoenix invoice", features = Some(features))
+    val trampolineAttempts = (21000 msat, CltvExpiryDelta(12)) :: (25000 msat, CltvExpiryDelta(24)) :: Nil
+    val req = SendTrampolinePaymentRequest(finalAmount, pr, b, trampolineAttempts, CltvExpiryDelta(9))
+    sender.send(initiator, req)
+    sender.expectMsgType[UUID]
+    val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
+    assert(cfg.storeInDb)
+    assert(!cfg.publishEvent)
+
+    val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
+    assert(msg1.totalAmount === finalAmount + 21000.msat)
+
+    // Simulate a failure which should trigger a retry.
+    val failed = PaymentFailed(cfg.parentId, pr.paymentHash, Seq(RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient))))
+    multiPartPayFsm.send(initiator, failed)
+    multiPartPayFsm.expectMsgType[SendPaymentConfig]
+    val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
+    assert(msg2.totalAmount === finalAmount + 25000.msat)
+
+    // Simulate a failure that exhausts payment attempts.
+    multiPartPayFsm.send(initiator, failed)
+    sender.expectMsg(failed)
+    eventListener.expectMsg(failed)
+    sender.expectNoMsg(100 millis)
+    eventListener.expectNoMsg(100 millis)
   }
 
 }
