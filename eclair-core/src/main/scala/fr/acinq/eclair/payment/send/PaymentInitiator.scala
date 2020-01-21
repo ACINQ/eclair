@@ -49,13 +49,13 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
-          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException(s"can't send payment: unknown invoice features (${invoice.features})")) :: Nil)
+          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(InvalidInvoice(s"unknown invoice features (${invoice.features})")) :: Nil)
         case Some(invoice) if invoice.features.allowMultiPart => invoice.paymentSecret match {
           case Some(paymentSecret) => r.predefinedRoute match {
             case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(r.paymentHash, paymentSecret, r.targetNodeId, r.amount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
             case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(r.paymentHash, hops, Onion.createMultiPartPayload(r.amount, invoice.amount.getOrElse(r.amount), finalExpiry, paymentSecret))
           }
-          case None => sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException("can't send payment: multi-part invoice is missing a payment secret")) :: Nil)
+          case None => sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(InvalidInvoice("multi-part invoice is missing a payment secret")) :: Nil)
         }
         case _ =>
           val payFsm = spawnPaymentFsm(paymentCfg)
@@ -71,9 +71,9 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       sender ! paymentId
       r.trampolineAttempts match {
         case Nil =>
-          sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("trampoline fees and cltv expiry delta are missing")) :: Nil)
+          sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(TrampolineFeesMissing) :: Nil)
         case _ if !r.paymentRequest.features.allowTrampoline && r.paymentRequest.amount.isEmpty =>
-          sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(new IllegalArgumentException("cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")) :: Nil)
+          sender ! PaymentFailed(paymentId, r.paymentRequest.paymentHash, LocalFailure(TrampolineLegacyAmountLessInvoice) :: Nil)
         case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
           log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
           sendTrampolinePayment(paymentId, r, trampolineFees, trampolineExpiryDelta)
@@ -186,5 +186,11 @@ object PaymentInitiator {
                                publishEvent: Boolean,
                                // TODO: @t-bast: this is a very awkward work-around to get accurate data in the DB: fix this once we update the DB schema
                                trampolineData: Option[SendTrampolinePaymentRequest] = None)
+
+  // @formatter:off
+  case class InvalidInvoice(message: String) extends IllegalArgumentException(s"can't send payment: $message")
+  object TrampolineFeesMissing extends IllegalArgumentException("trampoline fees and cltv expiry delta are missing")
+  object TrampolineLegacyAmountLessInvoice extends IllegalArgumentException("cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")
+  // @formatter:on
 
 }
