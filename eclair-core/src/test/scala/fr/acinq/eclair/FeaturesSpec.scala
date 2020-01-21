@@ -36,6 +36,11 @@ class FeaturesSpec extends FunSuite {
     assert(hasFeature(hex"02", OptionDataLossProtect, Some(FeatureSupport.Optional)))
   }
 
+  test("'option_upfront_shutdown_script' feature") {
+    assert(hasFeature(hex"10", UpfrontShutdownScript, Some(FeatureSupport.Mandatory)))
+    assert(hasFeature(hex"20", UpfrontShutdownScript, Some(FeatureSupport.Optional)))
+  }
+
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
     val features = hex"010a"
     assert(areSupported(features))
@@ -89,6 +94,8 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(ByteVector.fromLong(1L << InitialRoutingSync.optional)))
     assert(areSupported(ByteVector.fromLong(1L << OptionDataLossProtect.mandatory)))
     assert(areSupported(ByteVector.fromLong(1L << OptionDataLossProtect.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << UpfrontShutdownScript.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << UpfrontShutdownScript.optional)))
     assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueries.mandatory)))
     assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueries.optional)))
     assert(areSupported(ByteVector.fromLong(1L << VariableLengthOnion.mandatory)))
@@ -102,6 +109,7 @@ class FeaturesSpec extends FunSuite {
 
     val testCases = Map(
       bin"            00000000000000001011" -> true,
+      bin"            00000000101010101010" -> true,
       bin"            00010000100001000000" -> true,
       bin"            00100000100000100000" -> true,
       bin"            00010100000000001000" -> true,

@@ -84,7 +84,8 @@ case class OpenChannel(chainHash: ByteVector32,
                        delayedPaymentBasepoint: PublicKey,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
-                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       channelFlags: Byte,
+                       upfrontShutdownScript: Option[ByteVector] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
@@ -99,7 +100,8 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          paymentBasepoint: PublicKey,
                          delayedPaymentBasepoint: PublicKey,
                          htlcBasepoint: PublicKey,
-                         firstPerCommitmentPoint: PublicKey) extends ChannelMessage with HasTemporaryChannelId
+                         firstPerCommitmentPoint: PublicKey,
+                         upfrontShutdownScript: Option[ByteVector] = None) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,
