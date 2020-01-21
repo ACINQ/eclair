@@ -310,23 +310,6 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.amount === payment.totalAmount)
   }
 
-  test("skip unannounced channels when sending to remote node") { f =>
-    import f._
-
-    // The channels to b are not announced: they should be ignored so the payment should fail.
-    val channels = OutgoingChannels(Seq(
-      OutgoingChannel(b, channelUpdate_ab_1.copy(channelFlags = ChannelFlags.Empty), makeCommitments(1000 * 1000 msat, 10, announceChannel = false)),
-      OutgoingChannel(b, channelUpdate_ab_2.copy(channelFlags = ChannelFlags.Empty), makeCommitments(1500 * 1000 msat, 10, announceChannel = false)),
-      OutgoingChannel(c, channelUpdate_ac_1, makeCommitments(500 * 1000 msat, 10))
-    ))
-    val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 1200 * 1000 msat, expiry, 3)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), channels)
-
-    val result = sender.expectMsgType[PaymentFailed]
-    assert(result.id === paymentId)
-    assert(result.paymentHash === paymentHash)
-  }
-
   test("retry after error") { f =>
     import f._
     val payment = SendMultiPartPayment(paymentHash, randomBytes32, e, 3000 * 1000 msat, expiry, 3)

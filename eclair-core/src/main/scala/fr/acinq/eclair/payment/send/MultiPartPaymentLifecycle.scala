@@ -509,12 +509,11 @@ object MultiPartPaymentLifecycle {
     })
 
     // Otherwise we need to split the amount based on network statistics and pessimistic fees estimates.
-    // We filter out unannounced channels: they are very likely leading to a non-routing node.
     // Note that this will be handled more gracefully once this logic is migrated inside the router.
     val channels = if (randomize) {
-      Random.shuffle(localChannels.filter(p => p.commitments.announceChannel && p.nextNodeId != request.targetNodeId))
+      Random.shuffle(localChannels.filter(p => p.nextNodeId != request.targetNodeId))
     } else {
-      localChannels.filter(p => p.commitments.announceChannel && p.nextNodeId != request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
+      localChannels.filter(p => p.nextNodeId != request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
     }
     val remotePayments = split(toSend - directPayments.map(_.finalPayload.amount).sum, Seq.empty, channels, (remaining: MilliSatoshi, channel: OutgoingChannel) => {
       // We re-generate a split threshold for each channel to randomize the amounts.
