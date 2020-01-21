@@ -50,7 +50,7 @@ You will find detailed guides and frequently asked questions there.
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet. 
 You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
-If your Bitcoin Core wallet has outputs that are neither `p2sh-segwit` or `bech32` ("non-segwit UTXOs"), you must send them to a `p2sh-segwit` or `bech32` address.
+If your Bitcoin Core wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `p2sh-segwit` or `bech32` address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
