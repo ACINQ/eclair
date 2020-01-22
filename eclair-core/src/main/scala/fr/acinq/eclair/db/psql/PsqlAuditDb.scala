@@ -66,8 +66,8 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: AvailableBalanceChanged): Unit =
     inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO balance_updated VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, e.channelId.toArray)
-        statement.setBytes(2, e.commitments.remoteParams.nodeId.value.toArray)
+        statement.setString(1, e.channelId.toHex)
+        statement.setString(2, e.commitments.remoteParams.nodeId.value.toHex)
         statement.setLong(3, e.localBalance.toLong)
         statement.setLong(4, e.commitments.commitInput.txOut.amount.toLong)
         statement.setLong(5, e.commitments.remoteParams.channelReserve.toLong) // remote decides what our reserve should be
@@ -79,8 +79,8 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: ChannelLifecycleEvent): Unit =
     inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, e.channelId.toArray)
-        statement.setBytes(2, e.remoteNodeId.value.toArray)
+        statement.setString(1, e.channelId.toHex)
+        statement.setString(2, e.remoteNodeId.value.toHex)
         statement.setLong(3, e.capacity.toLong)
         statement.setBoolean(4, e.isFunder)
         statement.setBoolean(5, e.isPrivate)
@@ -112,8 +112,8 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       using(psql.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
           statement.setLong(1, p.amount.toLong)
-          statement.setBytes(2, e.paymentHash.toArray)
-          statement.setBytes(3, p.fromChannelId.toArray)
+          statement.setString(2, e.paymentHash.toHex)
+          statement.setString(3, p.fromChannelId.toHex)
           statement.setLong(4, p.timestamp)
           statement.addBatch()
         })
@@ -126,15 +126,16 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       using(psql.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setLong(1, e.amountIn.toLong)
         statement.setLong(2, e.amountOut.toLong)
-        statement.setBytes(3, e.paymentHash.toArray)
+        statement.setString(3, e.paymentHash.toHex)
         e match {
           case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _) =>
-            statement.setBytes(4, fromChannelId.toArray)
-            statement.setBytes(5, toChannelId.toArray)
+            statement.setString(4, fromChannelId.toHex)
+            statement.setString(5, toChannelId.toHex)
           case TrampolinePaymentRelayed(_, _, _, _, fromChannelIds, toChannelIds, _) =>
             // TODO: @t-bast: we should change the DB schema to allow accurate Trampoline reporting
-            statement.setBytes(4, fromChannelIds.head.toArray)
-            statement.setBytes(5, toChannelIds.head.toArray)
+            statement.setString(4, fromChannelIds.head.toHex)
+
+            statement.setString(5, toChannelIds.head.toHex)
         }
         statement.setLong(6, e.timestamp)
         statement.executeUpdate()
@@ -146,9 +147,9 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   def add(e: NetworkFeePaid, txId_opt: Option[ByteVector32]): Unit =
     inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, e.channelId.toArray)
-        statement.setBytes(2, e.remoteNodeId.value.toArray)
-        statement.setBytes(3, txId_opt.getOrElse(e.tx.txid).toArray)
+        statement.setString(1, e.channelId.toHex)
+        statement.setString(2, e.remoteNodeId.value.toHex)
+        statement.setString(3, txId_opt.getOrElse(e.tx.txid).toHex)
         statement.setLong(4, e.fee.toLong)
         statement.setString(5, e.txType)
         statement.setLong(6, Platform.currentTime)
@@ -163,8 +164,8 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           case Channel.LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
           case Channel.RemoteError(error) => ("remote", error.toAscii)
         }
-        statement.setBytes(1, e.channelId.toArray)
-        statement.setBytes(2, e.remoteNodeId.value.toArray)
+        statement.setString(1, e.channelId.toHex)
+        statement.setString(2, e.remoteNodeId.value.toHex)
         statement.setString(3, errorName)
         statement.setString(4, errorMessage)
         statement.setBoolean(5, e.isFatal)
