@@ -176,7 +176,7 @@ class Setup(datadir: File,
       }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
-      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.SECONDS), TimeUnit.MILLISECONDS)
+      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
