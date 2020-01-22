@@ -467,6 +467,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentParts.forall(p => p.parentId != p.id))
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat))
 
+    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
     assert(nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime) === Seq(paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)))))
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
@@ -631,6 +632,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }
     assert(outgoingSuccess.map(_.amount).sum === amount + 300000.msat)
 
+    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
     assert(nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime) === Seq(paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)))))
   }
 

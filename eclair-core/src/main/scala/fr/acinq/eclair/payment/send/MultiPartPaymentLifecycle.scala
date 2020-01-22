@@ -292,7 +292,7 @@ object MultiPartPaymentLifecycle {
    * @param maxAttempts    maximum number of retries.
    * @param assistedRoutes routing hints (usually from a Bolt 11 invoice).
    * @param routeParams    parameters to fine-tune the routing algorithm.
-   * @param additionalTlvs when provided, additional tlvs that will be added to the onion send to the target node.
+   * @param additionalTlvs when provided, additional tlvs that will be added to the onion sent to the target node.
    */
   case class SendMultiPartPayment(paymentSecret: ByteVector32,
                                   targetNodeId: PublicKey,
