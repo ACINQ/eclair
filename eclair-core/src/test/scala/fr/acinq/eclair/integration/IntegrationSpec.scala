@@ -441,6 +441,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a multi-part payment B->D") {
+    val start = Platform.currentTime
     val sender = TestProbe()
     val amount = 1000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill"))
@@ -466,8 +467,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentParts.forall(p => p.parentId != p.id))
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat))
 
+    assert(nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime) === Seq(paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)))))
+
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
   }
 
@@ -524,7 +527,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid == 0.msat))
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
   }
 
@@ -577,7 +580,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentSent.nonTrampolineFees === 0.msat)
 
     awaitCond(nodes("F3").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F3").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F3").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
 
     awaitCond(nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).exists(_.paymentHash == pr.paymentHash))
@@ -586,7 +589,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat)
 
     val outgoingSuccess = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    outgoingSuccess.foreach { case OutgoingPayment(_, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
+    outgoingSuccess.foreach { case OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
       assert(recipientNodeId === nodes("F3").nodeParams.nodeId)
       assert(route.lastOption === Some(HopSummary(nodes("G").nodeParams.nodeId, nodes("F3").nodeParams.nodeId)))
     }
@@ -613,7 +616,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentSent.nonTrampolineFees === 0.msat)
 
     awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
 
     awaitCond(nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).exists(_.paymentHash == pr.paymentHash))
@@ -622,7 +625,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(relayed.amountIn - relayed.amountOut < 300000.msat)
 
     val outgoingSuccess = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    outgoingSuccess.foreach { case OutgoingPayment(_, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
+    outgoingSuccess.foreach { case OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
       assert(recipientNodeId === nodes("B").nodeParams.nodeId)
       assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)))
     }
@@ -655,7 +658,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentSent.trampolineFees === 1000000.msat)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
 
     awaitCond(nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).exists(_.paymentHash == pr.paymentHash))
@@ -664,7 +667,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat)
 
     val outgoingSuccess = nodes("F3").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    outgoingSuccess.foreach { case OutgoingPayment(_, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
+    outgoingSuccess.foreach { case OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
       assert(recipientNodeId === nodes("A").nodeParams.nodeId)
       assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("A").nodeParams.nodeId)))
     }

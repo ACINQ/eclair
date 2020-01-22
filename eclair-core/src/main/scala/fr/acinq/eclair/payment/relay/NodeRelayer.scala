@@ -103,11 +103,11 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       log.debug("trampoline payment successfully relayed")
       pendingOutgoing.get(id).foreach {
-        case PendingResult(upstream, nextPayload) =>
+        case PendingResult(upstream, _) =>
           fulfillPayment(upstream, paymentPreimage)
-          val fromChannelIds = upstream.adds.map(_.channelId)
-          val toChannelIds = parts.map(_.toChannelId)
-          context.system.eventStream.publish(TrampolinePaymentRelayed(upstream.amountIn, nextPayload.amountToForward, paymentHash, nextPayload.outgoingNodeId, fromChannelIds, toChannelIds))
+          val incoming = upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
+          val outgoing = parts.map(part => PaymentRelayed.Part(part.amountWithFees, part.toChannelId))
+          context.system.eventStream.publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing))
       }
       context become main(pendingIncoming, pendingOutgoing - id)
 

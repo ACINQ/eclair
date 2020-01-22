@@ -252,8 +252,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
-    assert(relayEvent.fromChannelIds.toSet === incomingMultiPart.map(_.add.channelId).toSet)
-    assert(relayEvent.toChannelIds.nonEmpty)
+    assert(relayEvent.incoming.toSet === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
+    assert(relayEvent.outgoing.nonEmpty)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -273,8 +273,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     commandBuffer.expectMsg(CommandBuffer.CommandSend(incomingAdd.channelId, CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true)))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
-    assert(relayEvent.fromChannelIds === Seq(incomingSinglePart.add.channelId))
-    assert(relayEvent.toChannelIds.nonEmpty)
+    assert(relayEvent.incoming === Seq(PaymentRelayed.Part(incomingSinglePart.add.amountMsat, incomingSinglePart.add.channelId)))
+    assert(relayEvent.outgoing.nonEmpty)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -305,8 +305,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
-    assert(relayEvent.fromChannelIds === incomingMultiPart.map(_.add.channelId))
-    assert(relayEvent.toChannelIds.nonEmpty)
+    assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
+    assert(relayEvent.outgoing.nonEmpty)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -334,8 +334,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
-    assert(relayEvent.fromChannelIds === incomingMultiPart.map(_.add.channelId))
-    assert(relayEvent.toChannelIds.length === 1)
+    assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
+    assert(relayEvent.outgoing.length === 1)
     commandBuffer.expectNoMsg(100 millis)
   }
 
@@ -361,9 +361,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
 
   def validateRelayEvent(e: TrampolinePaymentRelayed): Unit = {
     assert(e.amountIn === incomingAmount)
-    assert(e.amountOut === outgoingAmount)
+    assert(e.amountOut >= outgoingAmount) // outgoingAmount + routing fees
     assert(e.paymentHash === paymentHash)
-    assert(e.toNodeId === outgoingNodeId)
   }
 
 }

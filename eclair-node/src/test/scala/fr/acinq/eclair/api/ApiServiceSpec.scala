@@ -297,7 +297,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
 
   test("'getreceivedinfo'") {
     val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
-    val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, 42, IncomingPaymentStatus.Pending)
+    val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, None, 42, IncomingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val notFound = randomBytes32
     eclair.receivedInfo(notFound)(any) returns Future.successful(None)
@@ -355,7 +355,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
   }
 
   test("'getsentinfo'") {
-    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, 42 msat, 50 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, None, 42 msat, 50 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val pending = UUID.randomUUID()
     eclair.sentInfo(Left(pending))(any) returns Future.successful(Seq(defaultPayment))
@@ -486,9 +486,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         system.eventStream.publish(prel)
         wsClient.expectMessage(expectedSerializedPrel)
 
-        val recipient = PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9")
-        val ptrel = TrampolinePaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, recipient, Seq(ByteVector32.Zeroes), Seq(ByteVector32.Zeroes, ByteVector32.One), 1553784963659L)
-        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","toNodeId":"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9","fromChannelIds":["0000000000000000000000000000000000000000000000000000000000000000"],"toChannelIds":["0000000000000000000000000000000000000000000000000000000000000000","0100000000000000000000000000000000000000000000000000000000000000"],"timestamp":1553784963659}"""
+        val ptrel = TrampolinePaymentRelayed(ByteVector32.Zeroes, Seq(PaymentRelayed.Part(21 msat, ByteVector32.Zeroes)), Seq(PaymentRelayed.Part(8 msat, ByteVector32.Zeroes), PaymentRelayed.Part(10 msat, ByteVector32.One)), 1553784963659L)
+        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","incoming":[{"amount":21,"channelId":"0000000000000000000000000000000000000000000000000000000000000000"}],"outgoing":[{"amount":8,"channelId":"0000000000000000000000000000000000000000000000000000000000000000"},{"amount":10,"channelId":"0100000000000000000000000000000000000000000000000000000000000000"}],"timestamp":1553784963659}"""
         assert(serialization.write(ptrel) === expectedSerializedPtrel)
         system.eventStream.publish(ptrel)
         wsClient.expectMessage(expectedSerializedPtrel)

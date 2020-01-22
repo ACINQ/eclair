@@ -31,7 +31,7 @@ trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with Payment
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
-  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit
+  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
@@ -80,6 +80,12 @@ trait OutgoingPaymentsDb {
 
 }
 
+case object PaymentType {
+  val Standard = "Standard"
+  val SwapIn = "SwapIn"
+  val SwapOut = "SwapOut"
+}
+
 /**
  * An incoming payment received by this node.
  * At first it is in a pending state once the payment request has been generated, then will become either a success (if
@@ -87,11 +93,13 @@ trait OutgoingPaymentsDb {
  *
  * @param paymentRequest  Bolt 11 payment request.
  * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param paymentType     distinguish different payment types (standard, swaps, etc).
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
  * @param status          current status of the payment.
  */
 case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
+                           paymentType: Option[String],
                            createdAt: Long,
                            status: IncomingPaymentStatus)
 
@@ -123,6 +131,7 @@ object IncomingPaymentStatus {
  * @param parentId        internal identifier of a parent payment, or [[id]] if single-part payment.
  * @param externalId      external payment identifier: lets lightning applications reconcile payments with their own db.
  * @param paymentHash     payment_hash.
+ * @param paymentType     distinguish different payment types (standard, swaps, etc).
  * @param amount          amount that will be received by the target node.
  * @param finalAmount     amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
@@ -134,6 +143,7 @@ case class OutgoingPayment(id: UUID,
                            parentId: UUID,
                            externalId: Option[String],
                            paymentHash: ByteVector32,
+                           paymentType: Option[String],
                            amount: MilliSatoshi,
                            finalAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,
@@ -219,6 +229,7 @@ trait PaymentsOverviewDb {
  */
 sealed trait PlainPayment {
   val paymentHash: ByteVector32
+  val paymentType: Option[String]
   val paymentRequest: Option[String]
   val finalAmount: Option[MilliSatoshi]
   val createdAt: Long
@@ -226,6 +237,7 @@ sealed trait PlainPayment {
 }
 
 case class PlainIncomingPayment(paymentHash: ByteVector32,
+                                paymentType: Option[String],
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: IncomingPaymentStatus,
@@ -236,6 +248,7 @@ case class PlainIncomingPayment(paymentHash: ByteVector32,
 case class PlainOutgoingPayment(parentId: Option[UUID],
                                 externalId: Option[String],
                                 paymentHash: ByteVector32,
+                                paymentType: Option[String],
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: OutgoingPaymentStatus,
