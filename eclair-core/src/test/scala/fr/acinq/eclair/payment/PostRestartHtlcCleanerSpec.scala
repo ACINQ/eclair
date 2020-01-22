@@ -22,7 +22,7 @@ import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.Relayer.{ForwardFail, ForwardFulfill}
@@ -257,7 +257,8 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     assert(e1.paymentPreimage === preimage2)
     assert(e1.paymentHash === paymentHash2)
     assert(e1.parts.length === 2)
-    assert(e1.amount === 2834.msat)
+    assert(e1.amountWithFees === 2834.msat)
+    assert(e1.finalAmount === 2500.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status === OutgoingPaymentStatus.Pending)
@@ -268,7 +269,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     assert(e2.paymentPreimage === preimage1)
     assert(e2.paymentHash === paymentHash1)
     assert(e2.parts.length === 1)
-    assert(e2.amount === 561.msat)
+    assert(e2.finalAmount === 561.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
 
     commandBuffer.expectNoMsg(100 millis)
@@ -402,9 +403,9 @@ object PostRestartHtlcCleanerSpec {
     val origin3 = Origin.Local(id3, None)
 
     // Prepare channels and payment state before restart.
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, id1, None, paymentHash1, add1.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash2, add2.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
-    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, parentId, None, paymentHash2, add3.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
+    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, id1, None, paymentHash1, None, add1.amountMsat, add1.amountMsat, c, 0, None, OutgoingPaymentStatus.Pending))
+    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash2, Some(PaymentType.Standard), add2.amountMsat, 2500 msat, c, 0, None, OutgoingPaymentStatus.Pending))
+    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, parentId, None, paymentHash2, None, add3.amountMsat, 2500 msat, c, 0, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.makeChannelDataNormal(
       Seq(add1, add2, add3).map(add => DirectedHtlc(OUT, add)),
       Map(add1.id -> origin1, add2.id -> origin2, add3.id -> origin3))

@@ -48,7 +48,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
         .histogram("payment.hist")
         .withTag("direction", "sent")
         .withTag("type", "amount")
-        .record(e.amount.truncateToSatoshi.toLong)
+        .record(e.finalAmount.truncateToSatoshi.toLong)
       Kamon
         .histogram("payment.hist")
         .withTag("direction", "sent")
