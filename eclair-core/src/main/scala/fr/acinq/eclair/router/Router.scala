@@ -1256,14 +1256,15 @@ object Router {
           else {
             // we always prepend because it's more efficient so we have to reverse the current chunk
             // for the first chunk, we make sure that we start at the request first block
-            val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+            // for the next chunks we start at the end of the range covered by the last chunk
+            val first = if (acc.isEmpty) firstBlockNum else acc.head.firstBlock + acc.head.numBlocks
             val count = currentChunk.head.blockHeight - first + 1
             loop(id :: Nil, ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc)
           }
         }
         else {
-          // for the last chunk, we make sure that we cover the request block range
-          val first = if (acc.isEmpty) firstBlockNum else currentChunk.last.blockHeight
+          // for the last chunk, we make sure that we cover the requested block range
+          val first = if (acc.isEmpty) firstBlockNum else acc.head.firstBlock + acc.head.numBlocks
           val count = numberOfBlocks - first + firstBlockNum
           (ShortChannelIdsChunk(first, count, currentChunk.reverse) :: acc).reverse
         }

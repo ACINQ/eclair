@@ -102,7 +102,7 @@ object IncomingPacket {
   }
 
   private def validateFinal(add: UpdateAddHtlc, payload: Onion.FinalPayload): Either[FailureMessage, IncomingPacket] = {
-    if (add.amountMsat < payload.amount) {
+    if (add.amountMsat != payload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != payload.expiry) {
       Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
@@ -112,7 +112,7 @@ object IncomingPacket {
   }
 
   private def validateFinal(add: UpdateAddHtlc, outerPayload: Onion.FinalPayload, innerPayload: Onion.FinalPayload): Either[FailureMessage, IncomingPacket] = {
-    if (add.amountMsat < outerPayload.amount) {
+    if (add.amountMsat != outerPayload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != outerPayload.expiry) {
       Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
