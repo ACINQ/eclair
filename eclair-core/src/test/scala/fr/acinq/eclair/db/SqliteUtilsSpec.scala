@@ -16,12 +16,20 @@
 
 package fr.acinq.eclair.db
 
+import java.sql.SQLException
+
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
-import org.scalatest.FunSuite
-import org.sqlite.SQLiteException
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
-class SqliteUtilsSpec extends FunSuite {
+class SqliteUtilsSpec extends FunSuite with BeforeAndAfter {
+
+  after {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate("DROP TABLE IF EXISTS utils_test")
+    }
+  }
 
   test("using with auto-commit disabled") {
     val conn = TestConstants.sqliteInMemory()
@@ -41,7 +49,7 @@ class SqliteUtilsSpec extends FunSuite {
       assert(!results.next())
     }
 
-    assertThrows[SQLiteException](using(conn.createStatement(), inTransaction = true) { statement =>
+    assertThrows[SQLException](using(conn.createStatement(), inTransaction = true) { statement =>
       statement.executeUpdate("INSERT INTO utils_test VALUES (3, 3)")
       statement.executeUpdate("INSERT INTO utils_test VALUES (1, 3)") // should throw (primary key violation)
     })

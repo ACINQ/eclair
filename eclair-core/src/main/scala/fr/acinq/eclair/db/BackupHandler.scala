@@ -53,28 +53,26 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
 
   def receive = {
     case persisted: ChannelPersisted =>
-      val start = System.currentTimeMillis()
-      val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
-      databases.backup(tmpFile)
-      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
-      // as the temporary file
-      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-      val end = System.currentTimeMillis()
+      if (databases.isBackupSupported) {
+        val start = System.currentTimeMillis()
+        databases.backup(backupFile)
+        val end = System.currentTimeMillis()
 
-      // publish a notification that we have updated our backup
-      context.system.eventStream.publish(BackupCompleted)
+        // publish a notification that we have updated our backup
+        context.system.eventStream.publish(BackupCompleted)
 
-      log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
+        log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
 
-      backupScript_opt.foreach(backupScript => {
-        Try {
-          // run the script in the current thread and wait until it terminates
-          Process(backupScript).!
-        } match {
-          case Success(exitCode) => log.info(s"backup notify script $backupScript returned $exitCode")
-          case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
-        }
-      })
+        backupScript_opt.foreach(backupScript => {
+          Try {
+            // run the script in the current thread and wait until it terminates
+            Process(backupScript).!
+          } match {
+            case Success(exitCode) => log.info(s"backup notify script $backupScript returned $exitCode")
+            case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
+          }
+        })
+      }
   }
 }
 
