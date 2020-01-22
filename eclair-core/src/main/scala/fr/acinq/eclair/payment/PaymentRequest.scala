@@ -33,22 +33,27 @@ import scala.util.Try
  * Lightning Payment Request
  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
  *
- * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
- * @param amount    amount to pay (empty string means no amount is specified)
- * @param timestamp request timestamp (UNIX format)
- * @param nodeId    id of the node emitting the payment request
- * @param tags      payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
- * @param signature request signature that will be checked against node id
+ * @param prefix             currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
+ * @param amount             amount to pay (empty string means no amount is specified)
+ * @param timestamp          request timestamp (UNIX format)
+ * @param nodeId             id of the node emitting the payment request
+ * @param tags               payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
+ * @param signature          request signature that will be checked against node id
+ * @param verifyFeatureGraph if false, doesn't validate that the feature bits are spec-compliant. This may be useful for
+ *                           backwards-compatibility with invoices that were generated before the spec made this mandatory.
  */
-case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
+case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector)(verifyFeatureGraph: Boolean) {
 
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  private val featuresErr = validateFeatureGraph(features.bitmask)
-  require(featuresErr.isEmpty, featuresErr.map(_.message))
   if (features.allowPaymentSecret) {
     require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
+  }
+
+  if (verifyFeatureGraph) {
+    val featuresErr = validateFeatureGraph(features.bitmask)
+    require(featuresErr.isEmpty, featuresErr.map(_.message))
   }
 
   /**
@@ -113,7 +118,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     val (pub1, _) = Crypto.recoverPublicKey(sig64, hash)
     val recid = if (nodeId == pub1) 0.toByte else 1.toByte
     val signature = sig64 :+ recid
-    this.copy(signature = signature)
+    this.copy(signature = signature)(verifyFeatureGraph)
   }
 }
 
@@ -150,7 +155,7 @@ object PaymentRequest {
       timestamp = timestamp,
       nodeId = privateKey.publicKey,
       tags = tags,
-      signature = ByteVector.empty)
+      signature = ByteVector.empty)(verifyFeatureGraph = true)
       .sign(privateKey)
   }
 
@@ -470,10 +475,11 @@ object PaymentRequest {
   val eight2fiveCodec: Codec[List[Byte]] = list(ubyte(5))
 
   /**
-   * @param input bech32-encoded payment request
+   * @param input              bech32-encoded payment request
+   * @param verifyFeatureGraph verify the invoice feature graph is spec-compliant.
    * @return a payment request
    */
-  def read(input: String): PaymentRequest = {
+  def read(input: String, verifyFeatureGraph: Boolean = true): PaymentRequest = {
     // used only for data validation
     Bech32.decode(input)
     val lowercaseInput = input.toLowerCase
@@ -495,15 +501,14 @@ object PaymentRequest {
       timestamp = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
-      signature = bolt11Data.signature
-    )
+      signature = bolt11Data.signature)(verifyFeatureGraph)
   }
 
   private def readBoltData(input: String): Bolt11Data = {
     val lowercaseInput = input.toLowerCase
     val separatorIndex = lowercaseInput.lastIndexOf('1')
     val hrp = lowercaseInput.take(separatorIndex)
-    val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    if (!prefixes.values.exists(prefix => hrp.startsWith(prefix))) throw new RuntimeException("unknown prefix")
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     Codecs.bolt11DataCodec.decode(data).require.value
   }

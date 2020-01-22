@@ -101,8 +101,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = None)
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === None)
-    assert(send.targetNodeId === nodeId)
-    assert(send.amount === 123.msat)
+    assert(send.recipientNodeId === nodeId)
+    assert(send.finalAmount === 123.msat)
     assert(send.paymentHash === ByteVector32.Zeroes)
     assert(send.paymentRequest === None)
     assert(send.assistedRoutes === Seq.empty)
@@ -114,20 +114,20 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(Some(externalId1), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice1))
     val send1 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send1.externalId === Some(externalId1))
-    assert(send1.targetNodeId === nodeId)
-    assert(send1.amount === 123.msat)
+    assert(send1.recipientNodeId === nodeId)
+    assert(send1.finalAmount === 123.msat)
     assert(send1.paymentHash === ByteVector32.Zeroes)
     assert(send1.paymentRequest === Some(invoice1))
     assert(send1.assistedRoutes === hints)
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
-    val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodeId, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
+    val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodeId, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)(verifyFeatureGraph = true)
     eclair.send(Some(externalId2), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice2))
     val send2 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send2.externalId === Some(externalId2))
-    assert(send2.targetNodeId === nodeId)
-    assert(send2.amount === 123.msat)
+    assert(send2.recipientNodeId === nodeId)
+    assert(send2.finalAmount === 123.msat)
     assert(send2.paymentHash === ByteVector32.Zeroes)
     assert(send2.paymentRequest === Some(invoice2))
     assert(send2.finalExpiryDelta === CltvExpiryDelta(96))
@@ -136,8 +136,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = None, feeThreshold_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
     val send3 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send3.externalId === None)
-    assert(send3.targetNodeId === nodeId)
-    assert(send3.amount === 123.msat)
+    assert(send3.recipientNodeId === nodeId)
+    assert(send3.finalAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
     assert(send3.routeParams.get.maxFeeBase === 123000.msat) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct === 4.20)
@@ -145,7 +145,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), nodeId, 123 msat, ByteVector32.Zeroes), 50 millis))
 
-    val expiredInvoice = invoice2.copy(timestamp = 0L)
+    val expiredInvoice = invoice2.copy(timestamp = 0L)(verifyFeatureGraph = true)
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(expiredInvoice)), 50 millis))
   }
 
@@ -321,7 +321,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === Some("42"))
     assert(send.predefinedRoute === route)
-    assert(send.amount === 1234.msat)
+    assert(send.finalAmount === 1234.msat)
     assert(send.finalExpiryDelta === CltvExpiryDelta(123))
     assert(send.paymentHash === ByteVector32.One)
     assert(send.paymentRequest === Some(pr))
