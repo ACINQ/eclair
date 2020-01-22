@@ -128,7 +128,6 @@ case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: Chan
  * A directed hop between two trampoline nodes.
  * These nodes need not be connected and we don't need to know a route between them.
  * The start node will compute the route to the end node itself when it receives our payment.
- * TODO: @t-bast: once the NodeUpdate message is implemented, we should use that instead of inline cltv and fee.
  *
  * @param nodeId          id of the start node.
  * @param nextNodeId      id of the end node.
