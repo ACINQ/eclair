@@ -98,8 +98,8 @@ class LightningMessageCodecsSpec extends FunSuite {
       TestCase(defaultEncoded, defaultOpen, Some(defaultEncoded ++ hex"0000")), // legacy encoding without upfront_shutdown_script
       TestCase(defaultEncoded ++ hex"0000", defaultOpen), // empty upfront_shutdown_script
       TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultOpen.copy(upfrontShutdownScript = Some(hex"01abcdef"))), // non-empty upfront_shutdown_script
-      TestCase(defaultEncoded ++ hex"0000 010202a 030102", defaultOpen, Some(defaultEncoded ++ hex"0000")), // empty upfront_shutdown_script + unknown odd tlv records
-      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultOpen.copy(upfrontShutdownScript = Some(hex"1234")), Some(defaultEncoded ++ hex"0002 1234")) // non-empty upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0000 0102002a 030102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(1), hex"002a"), GenericTlv(UInt64(3), hex"02")))))), // empty upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultOpen.copy(upfrontShutdownScript = Some(hex"1234"), tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"010203")))))) // non-empty upfront_shutdown_script + unknown odd tlv records
     )
 
     for (testCase <- testCases) {
@@ -115,7 +115,10 @@ class LightningMessageCodecsSpec extends FunSuite {
     val testCases = Seq(
       defaultEncoded ++ hex"00", // truncated length
       defaultEncoded ++ hex"01", // truncated length
-      defaultEncoded ++ hex"0004 123456" // truncated script
+      defaultEncoded ++ hex"0004 123456", // truncated script
+      defaultEncoded ++ hex"0000 02012a", // invalid tlv stream (unknown even record)
+      defaultEncoded ++ hex"0000 01012a 030201", // invalid tlv stream (truncated)
+      defaultEncoded ++ hex"01012a" // missing upfront_shutdown_script before tlv stream
     )
 
     for (testCase <- testCases) {

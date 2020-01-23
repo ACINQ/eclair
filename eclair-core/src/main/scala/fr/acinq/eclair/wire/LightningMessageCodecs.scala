@@ -89,7 +89,8 @@ object LightningMessageCodecs {
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
       ("channelFlags" | byte) ::
-      ("upfront_shutdown_script" | upfrontShutdownScript)).as[OpenChannel]
+      ("upfront_shutdown_script" | upfrontShutdownScript) ::
+      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::

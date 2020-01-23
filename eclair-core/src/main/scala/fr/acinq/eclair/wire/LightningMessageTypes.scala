@@ -85,7 +85,8 @@ case class OpenChannel(chainHash: ByteVector32,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte,
-                       upfrontShutdownScript: Option[ByteVector] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       upfrontShutdownScript: Option[ByteVector] = None,
+                       tlvStream_opt: Option[TlvStream[OpenTlv]] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
