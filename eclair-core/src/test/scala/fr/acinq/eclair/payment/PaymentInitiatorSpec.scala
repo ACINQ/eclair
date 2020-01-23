@@ -34,7 +34,7 @@ import fr.acinq.eclair.router.RouteParams
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{OnionCodecs, OnionTlv}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomKey}
-import org.scalatest.{Outcome, fixture}
+import org.scalatest.{Outcome, Tag, fixture}
 import scodec.bits.HexStringSyntax
 
 import scala.concurrent.duration._
@@ -48,7 +48,8 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val nodeParams = TestConstants.Alice.nodeParams
+    val features = if (test.tags.contains("mpp_disabled")) hex"0a8a" else hex"028a8a"
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features)
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     class TestPaymentInitiator extends PaymentInitiator(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref) {
       // @formatter:off
@@ -99,6 +100,16 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val id2 = sender.expectMsgType[UUID]
     payFsm.expectMsg(SendPaymentConfig(id2, id2, None, paymentHash, e, Upstream.Local(id2), None, storeInDb = true, publishEvent = true))
     payFsm.expectMsg(SendPayment(paymentHash, e, FinalLegacyPayload(finalAmount, Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)), 3))
+  }
+
+  test("forward legacy payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
+    import f._
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some MPP invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true))
+    payFsm.expectMsg(SendPayment(paymentHash, c, FinalLegacyPayload(finalAmount, req.finalExpiry(nodeParams.currentBlockHeight)), 1))
   }
 
   test("forward multi-part payment") { f =>
