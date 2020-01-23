@@ -59,6 +59,39 @@ object LightningMessageCodecs {
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
+  // Legacy nodes may encode an upfront_shutdown_script even if we didn't advertise support for option_upfront_shutdown_script.
+  // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.
+  // This codec decodes both legacy and new versions, while always encoding with an upfront_shutdown_script (of length 0 if none actually provided).
+  private val upfrontShutdownScript = Codec[Option[ByteVector]](
+    (script: Option[ByteVector]) => variableSizeBytes(uint16, bytes).encode(script.getOrElse(ByteVector.empty)),
+    (b: BitVector) => optional(bitsRemaining, variableSizeBytes(uint16, bytes)).decode(b).map(r => r.map {
+      case Some(s) if s.nonEmpty => Some(s)
+      case _ => None
+    })
+  )
+
+  val legacyOpenChannelCodec: Codec[OpenChannel] = (
+    ("chainHash" | bytes32) ::
+      ("temporaryChannelId" | bytes32) ::
+      ("fundingSatoshis" | satoshi) ::
+      ("pushMsat" | millisatoshi) ::
+      ("dustLimitSatoshis" | satoshi) ::
+      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("channelReserveSatoshis" | satoshi) ::
+      ("htlcMinimumMsat" | millisatoshi) ::
+      ("feeratePerKw" | uint32) ::
+      ("toSelfDelay" | cltvExpiryDelta) ::
+      ("maxAcceptedHtlcs" | uint16) ::
+      ("fundingPubkey" | publicKey) ::
+      ("revocationBasepoint" | publicKey) ::
+      ("paymentBasepoint" | publicKey) ::
+      ("delayedPaymentBasepoint" | publicKey) ::
+      ("htlcBasepoint" | publicKey) ::
+      ("firstPerCommitmentPoint" | publicKey) ::
+      ("channelFlags" | byte) ::
+      ("upfront_shutdown_script" | provide(Option.empty[ByteVector])) ::
+      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
+
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
@@ -77,7 +110,9 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | byte)).as[OpenChannel]
+      ("channelFlags" | byte) ::
+      ("upfront_shutdown_script" | upfrontShutdownScript) ::
+      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
@@ -93,7 +128,8 @@ object LightningMessageCodecs {
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
-      ("firstPerCommitmentPoint" | publicKey)).as[AcceptChannel]
+      ("firstPerCommitmentPoint" | publicKey) ::
+      ("upfront_shutdown_script" | upfrontShutdownScript)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | bytes32) ::
@@ -291,6 +327,36 @@ object LightningMessageCodecs {
 
   //
 
+  val legacyLightningMessageCodec = discriminated[LightningMessage].by(uint16)
+    .typecase(16, initCodec)
+    .typecase(17, errorCodec)
+    .typecase(18, pingCodec)
+    .typecase(19, pongCodec)
+    .typecase(32, legacyOpenChannelCodec)
+    .typecase(33, acceptChannelCodec)
+    .typecase(34, fundingCreatedCodec)
+    .typecase(35, fundingSignedCodec)
+    .typecase(36, fundingLockedCodec)
+    .typecase(38, shutdownCodec)
+    .typecase(39, closingSignedCodec)
+    .typecase(128, updateAddHtlcCodec)
+    .typecase(130, updateFulfillHtlcCodec)
+    .typecase(131, updateFailHtlcCodec)
+    .typecase(132, commitSigCodec)
+    .typecase(133, revokeAndAckCodec)
+    .typecase(134, updateFeeCodec)
+    .typecase(135, updateFailMalformedHtlcCodec)
+    .typecase(136, channelReestablishCodec)
+    .typecase(256, channelAnnouncementCodec)
+    .typecase(257, nodeAnnouncementCodec)
+    .typecase(258, channelUpdateCodec)
+    .typecase(259, announcementSignaturesCodec)
+    .typecase(261, queryShortChannelIdsCodec)
+    .typecase(262, replyShortChanelIdsEndCodec)
+    .typecase(263, queryChannelRangeCodec)
+    .typecase(264, replyChannelRangeCodec)
+    .typecase(265, gossipTimestampFilterCodec)
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -339,7 +405,18 @@ object LightningMessageCodecs {
   //
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
-    (msg: LightningMessage) => KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
+    (msg: LightningMessage) => {
+      val (codec, toEncode) = msg match {
+        case oc: OpenChannel =>
+          val useLegacy = oc.tlvStream_opt.exists(_.get[OpenTlv.Encoding].exists(_.useLegacy))
+          val codec = if (useLegacy) legacyLightningMessageCodec else lightningMessageCodec
+          // We don't actually want to send that TLV record.
+          val toEncode = oc.copy(tlvStream_opt = oc.tlvStream_opt.map(tlvs => tlvs.copy(records = tlvs.records.filter(!_.isInstanceOf[OpenTlv.Encoding]))))
+          (codec, toEncode)
+        case _ => (lightningMessageCodec, msg)
+      }
+      KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(codec.encode(toEncode))
+    },
     (bits: BitVector) => {
       // this is a bit more involved, because we don't know beforehand what the type of the message will be
       val timer = Kamon.timer("scodec.decode.time")
