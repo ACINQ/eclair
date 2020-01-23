@@ -54,6 +54,11 @@ object Features {
     val mandatory = 2
   }
 
+  case object UpfrontShutdownScript extends Feature {
+    val rfcName = "option_upfront_shutdown_script"
+    val mandatory = 4
+  }
+
   case object ChannelRangeQueries extends Feature {
     val rfcName = "gossip_queries"
     val mandatory = 6
@@ -126,6 +131,7 @@ object Features {
   def areSupported(features: BitVector): Boolean = {
     val supportedMandatoryFeatures = Set(
       OptionDataLossProtect,
+      UpfrontShutdownScript,
       ChannelRangeQueries,
       VariableLengthOnion,
       ChannelRangeQueriesExtended,

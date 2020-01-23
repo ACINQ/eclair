@@ -59,6 +59,17 @@ object LightningMessageCodecs {
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
+  // Legacy nodes are supposed to encode an upfront_shutdown_script only if both sides advertised support for option_upfront_shutdown_script.
+  // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.
+  // This codec decodes both legacy and new versions, while always encoding with an upfront_shutdown_script (of length 0 if none actually provided).
+  private val upfrontShutdownScript = Codec[Option[ByteVector]](
+    (script: Option[ByteVector]) => variableSizeBytes(uint16, bytes).encode(script.getOrElse(ByteVector.empty)),
+    (b: BitVector) => optional(bitsRemaining, variableSizeBytes(uint16, bytes)).decode(b).map(r => r.map {
+      case Some(s) if s.nonEmpty => Some(s)
+      case _ => None
+    })
+  )
+
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
@@ -77,7 +88,9 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | byte)).as[OpenChannel]
+      ("channelFlags" | byte) ::
+      ("upfront_shutdown_script" | upfrontShutdownScript) ::
+      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
@@ -93,7 +106,8 @@ object LightningMessageCodecs {
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
-      ("firstPerCommitmentPoint" | publicKey)).as[AcceptChannel]
+      ("firstPerCommitmentPoint" | publicKey) ::
+      ("upfront_shutdown_script" | upfrontShutdownScript)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | bytes32) ::

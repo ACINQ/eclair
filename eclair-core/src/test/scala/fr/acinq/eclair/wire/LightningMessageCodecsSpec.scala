@@ -87,6 +87,68 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(bin === bin2)
   }
 
+  test("encode/decode open_channel") {
+    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    // Default encoding that completely omits the upfront_shutdown_script (nodes were supposed to encode it only if both
+    // sides advertised support for option_upfront_shutdown_script).
+    // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714
+    val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
+    case class TestCase(encoded: ByteVector, decoded: OpenChannel, reEncoded: Option[ByteVector] = None)
+    val testCases = Seq(
+      TestCase(defaultEncoded, defaultOpen, Some(defaultEncoded ++ hex"0000")), // legacy encoding without upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000", defaultOpen), // empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultOpen.copy(upfrontShutdownScript = Some(hex"01abcdef"))), // non-empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000 0102002a 030102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(1), hex"002a"), GenericTlv(UInt64(3), hex"02")))))), // empty upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultOpen.copy(upfrontShutdownScript = Some(hex"1234"), tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"010203")))))) // non-empty upfront_shutdown_script + unknown odd tlv records
+    )
+
+    for (testCase <- testCases) {
+      val decoded = openChannelCodec.decode(testCase.encoded.bits).require.value
+      assert(decoded === testCase.decoded)
+      val reEncoded = openChannelCodec.encode(decoded).require.bytes
+      assert(reEncoded === testCase.reEncoded.getOrElse(testCase.encoded))
+    }
+  }
+
+  test("decode invalid open_channel") {
+    val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
+    val testCases = Seq(
+      defaultEncoded ++ hex"00", // truncated length
+      defaultEncoded ++ hex"01", // truncated length
+      defaultEncoded ++ hex"0004 123456", // truncated script
+      defaultEncoded ++ hex"0000 02012a", // invalid tlv stream (unknown even record)
+      defaultEncoded ++ hex"0000 01012a 030201", // invalid tlv stream (truncated)
+      defaultEncoded ++ hex"01012a" // missing upfront_shutdown_script before tlv stream
+    )
+
+    for (testCase <- testCases) {
+      assert(openChannelCodec.decode(testCase.bits).isFailure, testCase.toHex)
+    }
+  }
+
+  test("encode/decode accept_channel") {
+    val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
+    // Default encoding that completely omits the upfront_shutdown_script (nodes were supposed to encode it only if both
+    // sides advertised support for option_upfront_shutdown_script).
+    // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714
+    val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
+    case class TestCase(encoded: ByteVector, decoded: AcceptChannel, reEncoded: Option[ByteVector] = None)
+    val testCases = Seq(
+      TestCase(defaultEncoded, defaultAccept, Some(defaultEncoded ++ hex"0000")), // legacy encoding without upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000", defaultAccept), // empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultAccept.copy(upfrontShutdownScript = Some(hex"01abcdef"))), // non-empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000 010202a 030102", defaultAccept, Some(defaultEncoded ++ hex"0000")), // empty upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultAccept.copy(upfrontShutdownScript = Some(hex"1234")), Some(defaultEncoded ++ hex"0002 1234")) // non-empty upfront_shutdown_script + unknown odd tlv records
+    )
+
+    for (testCase <- testCases) {
+      val decoded = acceptChannelCodec.decode(testCase.encoded.bits).require.value
+      assert(decoded === testCase.decoded)
+      val reEncoded = acceptChannelCodec.encode(decoded).require.bytes
+      assert(reEncoded === testCase.reEncoded.getOrElse(testCase.encoded))
+    }
+  }
+
   test("encode/decode all channel messages") {
     val open = OpenChannel(randomBytes32, randomBytes32, 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, 9, CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
     val accept = AcceptChannel(randomBytes32, 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
