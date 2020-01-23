@@ -199,6 +199,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.send(transport.ref, PoisonPill)
     awaitCond(peer.stateName === DISCONNECTED)
     val initialReconnectDelay = peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay
+    assert(initialReconnectDelay >= (200 milliseconds))
     assert(initialReconnectDelay <= (10 seconds))
     probe.send(peer, Reconnect)
     assert(peer.stateData.asInstanceOf[DisconnectedData].nextReconnectionDelay === (initialReconnectDelay * 2))
