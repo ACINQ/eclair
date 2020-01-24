@@ -23,6 +23,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.tor.Socks5ProxyParams
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.PooledByteBufAllocator
 import io.netty.channel._
@@ -31,8 +32,10 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.string.{LineEncoder, StringDecoder}
 import io.netty.handler.codec.{LineBasedFrameDecoder, MessageToMessageDecoder, MessageToMessageEncoder}
+import io.netty.handler.proxy.Socks5ProxyHandler
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
+import io.netty.resolver.{NoopAddressResolver, NoopAddressResolverGroup}
 import io.netty.util.CharsetUtil
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
@@ -48,7 +51,7 @@ import scala.util.{Failure, Success, Try}
   * For later optimizations, see http://normanmaurer.me/presentations/2014-facebook-eng-netty/slides.html
   *
   */
-class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
+class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt: Option[Socks5ProxyParams] = None)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
 
   import ElectrumClient._
 
@@ -93,9 +96,14 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL)(implicit val ec
       ch.pipeline.addLast(new JsonRPCRequestEncoder)
       // error handler
       ch.pipeline.addLast(new ExceptionHandler)
+      // optional proxy (must be the first handler)
+      socksProxy_opt.foreach(params => ch.pipeline().addFirst(new Socks5ProxyHandler(params.address)))
     }
   })
 
+  // don't try to resolve addresses if we're using a proxy
+  socksProxy_opt.foreach(params => b.resolver(NoopAddressResolverGroup.INSTANCE))
+  
   // Start the client.
   log.info("connecting to server={}", serverAddress)
 
