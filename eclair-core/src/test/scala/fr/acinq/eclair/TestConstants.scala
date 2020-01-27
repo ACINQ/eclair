@@ -61,7 +61,7 @@ object TestConstants {
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
-    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash, isElectrumBech32 = false)
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
@@ -141,7 +141,7 @@ object TestConstants {
 
   object Bob {
     val seed = ByteVector32(ByteVector.fill(32)(2))
-    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash, isElectrumBech32 = false)
 
     def nodeParams = NodeParams(
       keyManager = keyManager,

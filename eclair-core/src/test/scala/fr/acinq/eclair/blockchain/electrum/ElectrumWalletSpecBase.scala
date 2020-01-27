@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionRes
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse, SSL}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT}
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.{bitcoin, eclair}
@@ -41,9 +42,12 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
+trait ElectrumWalletSpecBase extends FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
+  self: TestKit =>
 
   import ElectrumWallet._
+
+  def walletType: WalletType
 
   val entropy = ByteVector32(ByteVector.fill(32)(1))
   val mnemonics = MnemonicCode.toMnemonics(entropy)
@@ -90,17 +94,17 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("wait until wallet is ready") {
     electrumClient = system.actorOf(Props(new ElectrumClientPool(new AtomicLong(), Set(ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)))))
-    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat))), "wallet")
+    wallet = system.actorOf(Props(new ElectrumWallet(seed, electrumClient, WalletParameters(BECH32, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat))), "wallet")
     val probe = TestProbe()
     awaitCond({
       probe.send(wallet, GetData)
       val GetDataResponse(state) = probe.expectMsgType[GetDataResponse]
       state.status.size == state.accountKeys.size + state.changeKeys.size
-    }, max = 30 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 500 millis)
     logger.info(s"wallet is ready")
   }
 
-  test("receive funds") {
+  test(s"receive funds ($walletType)") {
     val probe = TestProbe()
     val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
     logger.info(s"initial balance: $confirmed $unconfirmed")
@@ -140,7 +144,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
   }
 
-  test("handle transactions with identical outputs to us") {
+  test(s"handle transactions with identical outputs to us ($walletType)") {
     val probe = TestProbe()
     val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
     logger.info(s"initial balance: $confirmed $unconfirmed")
@@ -174,7 +178,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
   }
 
-  test("receive 'confidence changed' notification") {
+  test(s"receive 'confidence changed' notification ($walletType)") {
     val probe = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
@@ -212,7 +216,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
   }
 
-  test("send money to someone else (we broadcast)") {
+  test(s"send money to someone else (we broadcast $walletType)") {
     val probe = TestProbe()
     val GetBalanceResponse(confirmed, _) = getBalance(probe)
 
@@ -222,6 +226,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
     probe.send(wallet, CompleteTransaction(tx, 20000))
     val CompleteTransactionResponse(tx1, _, None) = probe.expectMsgType[CompleteTransactionResponse]
+    assert(tx1.txIn.forall(_.signatureScript.isEmpty))
 
     // send it ourselves
     logger.info(s"sending 1 btc to $address with tx ${tx1.txid}")
@@ -243,7 +248,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
   }
 
-  test("send money to ourselves (we broadcast)") {
+  test(s"send money to ourselves (we broadcast $walletType)") {
     val probe = TestProbe()
     val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
     logger.info(s"current balance is $confirmed $unconfirmed")
@@ -269,7 +274,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     }, max = 30 seconds, interval = 1 second)
   }
 
-  test("detect is a tx has been double-spent") {
+  test(s"detect is a tx has been double-spent ($walletType)") {
     val probe = TestProbe()
     val GetBalanceResponse(confirmed, unconfirmed) = getBalance(probe)
     logger.info(s"current balance is $confirmed $unconfirmed")
@@ -332,7 +337,7 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     probe.expectMsg(IsDoubleSpentResponse(tx2, true))
   }
 
-  test("use all available balance") {
+  test(s"use all available balance ($walletType)") {
     val probe = TestProbe()
 
     // send all our funds to ourself, so we have only one utxo which is the worse case here
@@ -390,4 +395,12 @@ class ElectrumWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
       data.utxos.length == 1 && data.utxos(0).outPoint.txid == tx5.txid
     }, max = 30 seconds, interval = 1 second)
   }
+}
+
+class BIP49ElectrumWalletSpec extends TestKit(ActorSystem("test")) with ElectrumWalletSpecBase {
+  override def walletType: ElectrumWallet.WalletType = P2SH_SEGWIT
+}
+
+class BIP84ElectrumWalletSpec extends TestKit(ActorSystem("test")) with ElectrumWalletSpecBase {
+  override def walletType: ElectrumWallet.WalletType = BECH32
 }
