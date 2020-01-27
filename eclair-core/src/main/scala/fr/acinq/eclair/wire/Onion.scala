@@ -271,8 +271,7 @@ object Onion {
 
   /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
   def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload = {
-    require(invoice.amount.nonEmpty, "cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")
-    val tlvs = Seq[OnionTlv](AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(targetNodeId), InvoiceFeatures(invoice.features.bitmask.bytes), InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
+    val tlvs = Seq[OnionTlv](AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(targetNodeId), InvoiceFeatures(invoice.features.toByteVector), InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
     val tlvs2 = invoice.paymentSecret.map(s => tlvs :+ PaymentData(s, totalAmount)).getOrElse(tlvs)
     NodeRelayPayload(TlvStream(tlvs2))
   }
@@ -322,9 +321,9 @@ object OnionCodecs {
   val payloadLengthDecoder = Decoder[Long]((bits: BitVector) =>
     varintoverflow.decode(bits).map(d => DecodeResult(d.value + (bits.length - d.remainder.length) / 8, d.remainder)))
 
-  private val amountToForward: Codec[AmountToForward] = ("amount_msat" | tmillisatoshi).as[AmountToForward]
+  private val amountToForward: Codec[AmountToForward] = ("amount_msat" | ltmillisatoshi).as[AmountToForward]
 
-  private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | tu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
+  private val outgoingCltv: Codec[OutgoingCltv] = ("cltv" | ltu32).xmap(cltv => OutgoingCltv(CltvExpiry(cltv)), (c: OutgoingCltv) => c.cltv.toLong)
 
   private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
 

@@ -210,19 +210,20 @@ object Sphinx extends Logging {
      * @param associatedData     associated data.
      * @param ephemeralPublicKey ephemeral key shared with the target node.
      * @param sharedSecret       shared secret with this hop.
-     * @param packet             current packet (None if the packet hasn't been initialized).
+     * @param packet             current packet or random bytes if the packet hasn't been initialized.
      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
      * @return the next packet.
      */
-    def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Option[wire.OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): wire.OnionRoutingPacket = {
+    def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Either[ByteVector, wire.OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): wire.OnionRoutingPacket = {
       require(payload.length <= PayloadLength - MacLength, s"packet payload cannot exceed ${PayloadLength - MacLength} bytes")
 
       val (currentMac, currentPayload): (ByteVector32, ByteVector) = packet match {
-        // Packet construction starts with an empty mac and payload.
-        case None => (ByteVector32.Zeroes, ByteVector.fill(PayloadLength)(0))
-        case Some(p) => (p.hmac, p.payload)
+        // Packet construction starts with an empty mac and random payload.
+        case Left(startingBytes) =>
+          require(startingBytes.length == PayloadLength, "invalid initial random bytes length")
+          (ByteVector32.Zeroes, startingBytes)
+        case Right(p) => (p.hmac, p.payload)
       }
-
       val nextOnionPayload = {
         val onionPayload1 = payload ++ currentMac ++ currentPayload.dropRight(payload.length + MacLength)
         val onionPayload2 = onionPayload1 xor generateStream(generateKey("rho", sharedSecret), PayloadLength)
@@ -248,12 +249,14 @@ object Sphinx extends Logging {
       val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
       val filler = generateFiller("rho", sharedsecrets.dropRight(1), payloads.dropRight(1))
 
-      val lastPacket = wrap(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, None, filler)
+      // We deterministically-derive the initial payload bytes: see https://github.com/lightningnetwork/lightning-rfc/pull/697
+      val startingBytes = generateStream(generateKey("pad", sessionKey.value), PayloadLength)
+      val lastPacket = wrap(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, Left(startingBytes), filler)
 
       @tailrec
       def loop(hopPayloads: Seq[ByteVector], ephKeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: wire.OnionRoutingPacket): wire.OnionRoutingPacket = {
         if (hopPayloads.isEmpty) packet else {
-          val nextPacket = wrap(hopPayloads.last, associatedData, ephKeys.last, sharedSecrets.last, Some(packet))
+          val nextPacket = wrap(hopPayloads.last, associatedData, ephKeys.last, sharedSecrets.last, Right(packet))
           loop(hopPayloads.dropRight(1), ephKeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
         }
       }

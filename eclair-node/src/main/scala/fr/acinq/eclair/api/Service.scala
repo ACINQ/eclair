@@ -221,6 +221,13 @@ trait Service extends ExtraDirectives with Logging {
                             case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                           }
                         } ~
+                        // TODO: @t-bast: remove this API once stabilized: should re-work the payment APIs to integrate Trampoline nicely
+                        path("sendtotrampoline") {
+                          formFields(invoiceFormParam, "trampolineId".as[PublicKey], "trampolineFeesMsat".as[MilliSatoshi], "trampolineExpiryDelta".as[Int]) {
+                            (invoice, trampolineId, trampolineFees, trampolineExpiryDelta) =>
+                              complete(eclairApi.sendToTrampoline(invoice, trampolineId, trampolineFees, CltvExpiryDelta(trampolineExpiryDelta)))
+                          }
+                        } ~
                         path("sendtonode") {
                           formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?) {
                             (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
@@ -241,8 +248,8 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("createinvoice") {
-                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?, "allowMultiPart".as[Boolean].?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt) =>
-                            complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt, allowMultiPart_opt.getOrElse(false)))
+                          formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) { (desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt) =>
+                            complete(eclairApi.receive(desc, amountMsat, expire, fallBackAddress, paymentPreimage_opt))
                           }
                         } ~
                         path("getinvoice") {
@@ -283,7 +290,7 @@ trait Service extends ExtraDirectives with Logging {
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
                         } ~
-                        path("getnewaddress"){
+                        path("getnewaddress") {
                           complete(eclairApi.newAddress())
                         }
                     } ~ get {

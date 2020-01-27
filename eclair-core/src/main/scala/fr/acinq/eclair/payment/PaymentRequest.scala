@@ -18,8 +18,9 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.Features.{PaymentSecret => PaymentSecretF, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
@@ -43,8 +44,12 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
-  require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size <= 1, "there must be at most one payment secret tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
+  private val featuresErr = validateFeatureGraph(features.bitmask)
+  require(featuresErr.isEmpty, featuresErr.map(_.message))
+  if (features.allowPaymentSecret) {
+    require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
+  }
 
   /**
    * @return the payment hash
@@ -114,8 +119,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
 
-  import fr.acinq.eclair.Features.PAYMENT_SECRET_OPTIONAL
-
   val DEFAULT_EXPIRY_SECONDS = 3600
 
   val prefixes = Map(
@@ -126,23 +129,27 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[Features] = Some(Features(PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
+            features: Option[Features] = Some(Features(VariableLengthOnion.optional, PaymentSecretF.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
+    val tags = {
+      val defaultTags = List(
+        Some(PaymentHash(paymentHash)),
+        Some(Description(description)),
+        fallbackAddress.map(FallbackAddress(_)),
+        expirySeconds.map(Expiry(_)),
+        features).flatten
+      val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32) :: Nil else Nil
+      val routingInfoTags = extraHops.map(RoutingInfo)
+      defaultTags ++ paymentSecretTag ++ routingInfoTags
+    }
 
     PaymentRequest(
       prefix = prefix,
       amount = amount,
       timestamp = timestamp,
       nodeId = privateKey.publicKey,
-      tags = List(
-        Some(PaymentHash(paymentHash)),
-        Some(PaymentSecret(randomBytes32)),
-        Some(Description(description)),
-        fallbackAddress.map(FallbackAddress(_)),
-        expirySeconds.map(Expiry(_)),
-        features
-      ).flatten ++ extraHops.map(RoutingInfo),
+      tags = tags,
       signature = ByteVector.empty)
       .sign(privateKey)
   }
@@ -321,15 +328,20 @@ object PaymentRequest {
    * Features supported or required for receiving this payment.
    */
   case class Features(bitmask: BitVector) extends TaggedField {
-
-    import fr.acinq.eclair.Features._
-
     lazy val supported: Boolean = areSupported(bitmask)
-    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
-    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
-    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
+    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment)
+    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF)
+    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(FeatureSupport.Mandatory))
+    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment)
 
     override def toString: String = s"Features(${bitmask.toBin})"
+
+    // When converting from BitVector to ByteVector, scodec pads right instead of left so we have to do this ourselves.
+    // We also want to enforce a minimal encoding of the feature bytes.
+    def toByteVector: ByteVector = {
+      val pad = if (bitmask.length % 8 == 0) 0 else 8 - bitmask.length % 8
+      bitmask.padLeft(bitmask.length + pad).bytes.dropWhile(_ == 0)
+    }
   }
 
   object Features {
@@ -485,6 +497,47 @@ object PaymentRequest {
       tags = bolt11Data.taggedFields,
       signature = bolt11Data.signature
     )
+  }
+
+  private def readBoltData(input: String): Bolt11Data = {
+    val lowercaseInput = input.toLowerCase
+    val separatorIndex = lowercaseInput.lastIndexOf('1')
+    val hrp = lowercaseInput.take(separatorIndex)
+    val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
+    Codecs.bolt11DataCodec.decode(data).require.value
+  }
+
+  /**
+   * Extracts the description from a serialized payment request that is **expected to be valid**.
+   * Throws an error if the payment request is not valid.
+   *
+   * @param input valid serialized payment request
+   * @return description as a String. If the description is a hash, returns the hash value as a String.
+   */
+  def fastReadDescription(input: String): String = {
+    readBoltData(input).taggedFields.collectFirst {
+      case PaymentRequest.Description(d) => d
+      case PaymentRequest.DescriptionHash(h) => h.toString()
+    }.get
+  }
+
+  /**
+   * Checks if a serialized payment request is expired. Timestamp is compared to the System's current time.
+   *
+   * @param input valid serialized payment request
+   * @return true if the payment request has expired, false otherwise.
+   */
+  def fastHasExpired(input: String): Boolean = {
+    val bolt11Data = readBoltData(input)
+    val expiry_opt = bolt11Data.taggedFields.collectFirst {
+      case p: PaymentRequest.Expiry => p
+    }
+    val timestamp = bolt11Data.timestamp
+    expiry_opt match {
+      case Some(expiry) => timestamp + expiry.toLong <= Platform.currentTime.milliseconds.toSeconds
+      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+    }
   }
 
   /**

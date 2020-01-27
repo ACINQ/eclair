@@ -24,8 +24,8 @@ import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.Register._
 
 /**
-  * Created by PM on 26/01/2016.
-  */
+ * Created by PM on 26/01/2016.
+ */
 
 class Register extends Actor with ActorLogging {
 
@@ -48,7 +48,7 @@ class Register extends Actor with ActorLogging {
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
 
-    case ShortChannelIdAssigned(_, channelId, shortChannelId) =>
+    case ShortChannelIdAssigned(_, channelId, shortChannelId, _) =>
       context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
@@ -69,7 +69,7 @@ class Register extends Actor with ActorLogging {
       }
 
     case fwd@ForwardShortId(shortChannelId, msg) =>
-      shortIds.get(shortChannelId).flatMap(channels.get(_)) match {
+      shortIds.get(shortChannelId).flatMap(channels.get) match {
         case Some(channel) => channel forward msg
         case None => sender ! Failure(ForwardShortIdFailure(fwd))
       }

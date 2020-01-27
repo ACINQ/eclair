@@ -25,8 +25,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 /**
-  * A Fuzzy [[fr.acinq.eclair.Pipe]] which randomly disconnects/reconnects peers.
-  */
+ * A Fuzzy [[fr.acinq.eclair.Pipe]] which randomly disconnects/reconnects peers.
+ */
 class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
 
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -39,7 +39,7 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
     case _ => stash()
   }
 
-  def stayOrDisconnect(a: ActorRef, b: ActorRef, countdown: Int) = {
+  def stayOrDisconnect(a: ActorRef, b: ActorRef, countdown: Int): Unit = {
     if (!fuzzy) context become connected(a, b, countdown - 1) // fuzzy mode disabled, we never disconnect
     else if (countdown > 1) context become connected(a, b, countdown - 1)
     else {
@@ -71,7 +71,7 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
       log.debug(f"  X-${msg2String(msg)}%-6s--- B")
     case 'reconnect =>
       log.debug("RECONNECTED")
-      val dummyInit = Init(ByteVector.empty, ByteVector.empty)
+      val dummyInit = Init(ByteVector.empty)
       a ! INPUT_RECONNECTED(self, dummyInit, dummyInit)
       b ! INPUT_RECONNECTED(self, dummyInit, dummyInit)
       context become connected(a, b, Random.nextInt(40))

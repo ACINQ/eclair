@@ -25,6 +25,7 @@ import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Protocol
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, _}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
@@ -64,7 +65,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
       case _ => None
     }
 
-    wireLog.mdc(Logs.mdc(remoteNodeId_opt, channelId_opt))
+    val category_opt = LogCategory(message)
+
+    wireLog.mdc(Logs.mdc(category_opt, remoteNodeId_opt, channelId_opt))
     if (channelId_opt.isDefined) {
       // channel-related messages are logged as info
       wireLog.info(s"$direction msg={}", message)
@@ -266,7 +269,10 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
   initialize()
 
-  override def mdc(currentMessage: Any): MDC = Logs.mdc(remoteNodeId_opt = remoteNodeId_opt)
+  override def mdc(currentMessage: Any): MDC = {
+    val category_opt = LogCategory(currentMessage)
+    Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt)
+  }
 
 }
 
