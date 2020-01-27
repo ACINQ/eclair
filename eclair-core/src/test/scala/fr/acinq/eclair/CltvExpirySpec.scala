@@ -32,6 +32,10 @@ class CltvExpirySpec extends FunSuite with ParallelTestExecution {
     assert(d + 5 === CltvExpiryDelta(566))
     assert(d + CltvExpiryDelta(5) === CltvExpiryDelta(566))
 
+    // subtract
+    assert(d - CltvExpiryDelta(5) === CltvExpiryDelta(556))
+    assert(d - CltvExpiryDelta(562) === CltvExpiryDelta(-1))
+
     // compare
     assert(d <= CltvExpiryDelta(561))
     assert(d < CltvExpiryDelta(562))

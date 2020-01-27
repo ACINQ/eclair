@@ -135,8 +135,15 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(1, e.amountIn.toLong)
       statement.setLong(2, e.amountOut.toLong)
       statement.setBytes(3, e.paymentHash.toArray)
-      statement.setBytes(4, e.fromChannelId.toArray)
-      statement.setBytes(5, e.toChannelId.toArray)
+      e match {
+        case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _) =>
+          statement.setBytes(4, fromChannelId.toArray)
+          statement.setBytes(5, toChannelId.toArray)
+        case TrampolinePaymentRelayed(_, _, _, _, fromChannelIds, toChannelIds, _) =>
+          // TODO: @t-bast: we should change the DB schema to allow accurate Trampoline reporting
+          statement.setBytes(4, fromChannelIds.head.toArray)
+          statement.setBytes(5, toChannelIds.head.toArray)
+      }
       statement.setLong(6, e.timestamp)
       statement.executeUpdate()
     }
@@ -214,7 +221,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       val rs = statement.executeQuery()
       var q: Queue[PaymentRelayed] = Queue()
       while (rs.next()) {
-        q = q :+ PaymentRelayed(
+        q = q :+ ChannelPaymentRelayed(
           amountIn = MilliSatoshi(rs.getLong("amount_in_msat")),
           amountOut = MilliSatoshi(rs.getLong("amount_out_msat")),
           paymentHash = rs.getByteVector32("payment_hash"),
@@ -286,6 +293,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       q
     }
 
+  // used by mobile apps
   override def close(): Unit = sqlite.close()
 
 }

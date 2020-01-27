@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
@@ -26,7 +27,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
 
-trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
@@ -194,3 +195,40 @@ object FailureSummary {
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }
 }
+
+trait PaymentsOverviewDb {
+  def listPaymentsOverview(limit: Int): Seq[PlainPayment]
+}
+
+/**
+ * Generic payment trait holding only the minimum information in the most plain type possible. Notably, payment request
+ * is kept as a String, because deserialization is costly.
+ * <p>
+ * This object should only be used for a high level snapshot of the payments stored in the payment database.
+ * <p>
+ * Payment status should be of the correct type, but may not contain all the required data (routes, failures...).
+ */
+sealed trait PlainPayment {
+  val paymentHash: ByteVector32
+  val paymentRequest: Option[String]
+  val finalAmount: Option[MilliSatoshi]
+  val createdAt: Long
+  val completedAt: Option[Long]
+}
+
+case class PlainIncomingPayment(paymentHash: ByteVector32,
+                                finalAmount: Option[MilliSatoshi],
+                                paymentRequest: Option[String],
+                                status: IncomingPaymentStatus,
+                                createdAt: Long,
+                                completedAt: Option[Long],
+                                expireAt: Option[Long]) extends PlainPayment
+
+case class PlainOutgoingPayment(parentId: Option[UUID],
+                                externalId: Option[String],
+                                paymentHash: ByteVector32,
+                                finalAmount: Option[MilliSatoshi],
+                                paymentRequest: Option[String],
+                                status: OutgoingPaymentStatus,
+                                createdAt: Long,
+                                completedAt: Option[Long]) extends PlainPayment

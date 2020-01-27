@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
@@ -67,8 +67,8 @@ object Helpers {
    */
   def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
     val commitments1 = data.commitments.copy(
-      localParams = data.commitments.localParams.copy(globalFeatures = localInit.globalFeatures, localFeatures = localInit.localFeatures),
-      remoteParams = data.commitments.remoteParams.copy(globalFeatures = remoteInit.globalFeatures, localFeatures = remoteInit.localFeatures))
+      localParams = data.commitments.localParams.copy(features = localInit.features),
+      remoteParams = data.commitments.remoteParams.copy(features = remoteInit.features))
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
@@ -163,19 +163,21 @@ object Helpers {
    * @param currentUpdateTimestamp
    * @return the delay until the next update
    */
-  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: LoggingAdapter): FiniteDuration = {
+  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
     val age = Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
-    log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+    Logs.withMdc(log)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+      log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+    }
     delay
   }
 
   /**
-    *
-    * @param referenceFeePerKw reference fee rate per kiloweight
-    * @param currentFeePerKw   current fee rate per kiloweight
-    * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
-    */
+   *
+   * @param referenceFeePerKw reference fee rate per kiloweight
+   * @param currentFeePerKw   current fee rate per kiloweight
+   * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
+   */
   def feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
     Math.abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
 
@@ -183,13 +185,13 @@ object Helpers {
     feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
 
   /**
-    *
-    * @param referenceFeePerKw      reference fee rate per kiloweight
-    * @param currentFeePerKw        current fee rate per kiloweight
-    * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
-    * @return true if the difference between current and reference fee rates is too high.
-    *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
-    */
+   *
+   * @param referenceFeePerKw       reference fee rate per kiloweight
+   * @param currentFeePerKw         current fee rate per kiloweight
+   * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
+   * @return true if the difference between current and reference fee rates is too high.
+   *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
+   */
   def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
     feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
 
@@ -457,7 +459,7 @@ object Helpers {
       // TODO: check that
       val dustLimitSatoshis = localParams.dustLimit.max(remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
-      val localClosingSig = keyManager.sign(closingTx,  keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+      val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
       val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)
       log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
       log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")

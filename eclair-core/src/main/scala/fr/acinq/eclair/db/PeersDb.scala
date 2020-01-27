@@ -16,17 +16,17 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
+
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.NodeAddress
 
-trait PeersDb {
+trait PeersDb extends Closeable {
 
   def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
 
   def removePeer(nodeId: PublicKey)
 
   def listPeers(): Map[PublicKey, NodeAddress]
-
-  def close(): Unit
 
 }

@@ -55,10 +55,12 @@ case object RequiredChannelFeatureMissing extends Perm { def message = "channel 
 case object UnknownNextPeer extends Perm { def message = "processing node does not know the next peer in the route" }
 case class AmountBelowMinimum(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment amount was below the minimum required by the channel" }
 case class FeeInsufficient(amount: MilliSatoshi, update: ChannelUpdate) extends Update { def message = s"payment fee was below the minimum required by the channel" }
+case object TrampolineFeeInsufficient extends Node { def message = "payment fee was below the minimum required by the trampoline node" }
 case class ChannelDisabled(messageFlags: Byte, channelFlags: Byte, update: ChannelUpdate) extends Update { def message = "channel is currently disabled" }
 case class IncorrectCltvExpiry(expiry: CltvExpiry, update: ChannelUpdate) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi, height: Long) extends Perm { def message = "incorrect payment details or unknown payment hash" }
 case class ExpiryTooSoon(update: ChannelUpdate) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
+case object TrampolineExpiryTooSoon extends Node { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case object ExpiryTooFar extends FailureMessage { def message = "payment expiry is too far in the future" }
@@ -117,7 +119,11 @@ object FailureMessageCodecs {
       .typecase(19, ("amountMsat" | millisatoshi).as[FinalIncorrectHtlcAmount])
       .typecase(21, provide(ExpiryTooFar))
       .typecase(PERM | 22, (("tag" | varint) :: ("offset" | uint16)).as[InvalidOnionPayload])
-      .typecase(23, provide(PaymentTimeout)),
+      .typecase(23, provide(PaymentTimeout))
+      // TODO: @t-bast: once fully spec-ed, these should probably include a NodeUpdate and use a different ID.
+      // We should update Phoenix and our nodes at the same time, or first update Phoenix to understand both new and old errors.
+      .typecase(NODE | 51, provide(TrampolineFeeInsufficient))
+      .typecase(NODE | 52, provide(TrampolineExpiryTooSoon)),
     uint16.xmap(code => {
       val failureMessage = code match {
         // @formatter:off

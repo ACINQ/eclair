@@ -85,6 +85,13 @@ To create a Tor hidden service endpoint simply set the `eclair.tor.enabled` para
 ```
 eclair.tor.enabled = true
 ```
+
+Next set the TOR authentication method. The choices are `safecookie` or `password`.  
+```
+eclair.tor.auth = safecookie
+# eclair.tor.password = ""      # Needed if you set auth to password
+```
+
 Eclair will automatically set up a hidden service endpoint and add its onion address to the `server.public-ips` list.
 You can see what onion address is assigned using `eclair-cli`:
 

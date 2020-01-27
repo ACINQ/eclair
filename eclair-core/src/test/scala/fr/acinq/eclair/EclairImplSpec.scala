@@ -51,6 +51,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val watcher = TestProbe()
     val paymentHandler = TestProbe()
     val register = TestProbe()
+    val commandBuffer = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
     val switchboard = TestProbe()
@@ -62,6 +63,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
       watcher.ref,
       paymentHandler.ref,
       register.ref,
+      commandBuffer.ref,
       relayer.ref,
       router.ref,
       switchboard.ref,
@@ -202,18 +204,18 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     })
   }
 
-  test("router returns Network Stats") { f=>
+  test("router returns Network Stats") { f =>
     import f._
 
-    val capStat=Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
-    val cltvStat=Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
-    val feeBaseStat=Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat=Stats(32l, 11l, 13l, 22l, 42l, 51l, 53l)
+    val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
+    val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
+    val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
+    val feePropStat = Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
     val eclair = new EclairImpl(kit)
     val fResp = eclair.networkStats()
     f.router.expectMsg(GetNetworkStats)
 
-    f.router.reply(Some(new NetworkStats(1,2,capStat,cltvStat,feeBaseStat,feePropStat)))
+    f.router.reply(Some(new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat)))
 
     awaitCond({
       fResp.value match {
@@ -250,26 +252,25 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None, allowMultiPart = true)
+    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amount_opt === Some(123 msat))
     assert(receive.expirySeconds_opt === Some(456))
     assert(receive.fallbackAddress === Some(fallBackAddressRaw))
-    assert(receive.allowMultiPart)
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None, allowMultiPart = false))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
     import f._
 
-    val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(PaymentHandler.props(Alice.nodeParams)))
+    val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref)))
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage), allowMultiPart = false)
+    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage))
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
