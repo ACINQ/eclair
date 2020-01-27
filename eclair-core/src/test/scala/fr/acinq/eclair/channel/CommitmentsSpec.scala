@@ -404,6 +404,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
   test("should always be able to send availableForSend", Tag("fuzzy")) { f =>
+    val maxPendingHtlcAmount = 1000000.msat
     case class FuzzTest(isFunder: Boolean, pendingHtlcs: Int, feeRatePerKw: Long, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
     for (_ <- 1 to 100) {
       val t = FuzzTest(
@@ -411,13 +412,13 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
         pendingHtlcs = Random.nextInt(10),
         feeRatePerKw = Random.nextInt(10000),
         dustLimit = Random.nextInt(1000).sat,
-        // We make sure there's always enough to add the initial pending HTLCs.
-        toLocal = 20000000.msat + Random.nextInt(1000000000).msat,
-        toRemote = Random.nextInt(1000000000).msat)
+        // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
+        toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
+        toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
-        val amount = Random.nextInt(1000000).msat
+        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey.publicKey, f.currentBlockHeight)
         sendAdd(c, cmdAdd, Local(UUID.randomUUID, None), f.currentBlockHeight) match {
           case Right((cc, _)) => c = cc
@@ -431,6 +432,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
   test("should always be able to receive availableForReceive", Tag("fuzzy")) { f =>
+    val maxPendingHtlcAmount = 1000000.msat
     case class FuzzTest(isFunder: Boolean, pendingHtlcs: Int, feeRatePerKw: Long, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
     for (_ <- 1 to 100) {
       val t = FuzzTest(
@@ -438,13 +440,13 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
         pendingHtlcs = Random.nextInt(10),
         feeRatePerKw = Random.nextInt(10000),
         dustLimit = Random.nextInt(1000).sat,
-        toLocal = Random.nextInt(1000000000).msat,
-        // We make sure there's always enough to add the potential pending HTLCs
-        toRemote = 20000000.msat + Random.nextInt(1000000000).msat)
+        // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
+        toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
+        toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
-        val amount = Random.nextInt(1000000).msat
+        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat
         val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, amount, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
         Try(receiveAdd(c, add)) match {
           case Success(cc) => c = cc
