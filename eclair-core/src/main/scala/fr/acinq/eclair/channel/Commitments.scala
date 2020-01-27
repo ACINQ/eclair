@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
-import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -92,7 +91,7 @@ case class Commitments(channelVersion: ChannelVersion,
     val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0 msat)
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
-      val commitFees = commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi
+      val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
         // htlc will be trimmed
@@ -115,7 +114,7 @@ case class Commitments(channelVersion: ChannelVersion,
       balanceNoFees
     } else {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
-      val commitFees = commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
+      val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
         // htlc will be trimmed
