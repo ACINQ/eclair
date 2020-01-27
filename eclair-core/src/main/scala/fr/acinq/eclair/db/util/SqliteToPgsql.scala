@@ -20,25 +20,49 @@ object SqliteToPgsql extends App {
   val dbConfig = config.getConfig("db")
 
   val sqlite = Databases.sqliteJDBC(chaindir)
-  val psql = Databases.setupPsqlDatabases(dbConfig, {_ => ()})
+  val psql = Databases.setupPsqlDatabases(dbConfig, { _ => () })
 
-  sqlite.audit.listNetworkFees(0, new Date().getTime).foreach { fee =>
+  println(s"Transferring data from ${chaindir} to ${dbConfig.getString("psql.database")} at ${dbConfig.getString("psql.host")}")
+
+  val (from, to) = (0, new Date().getTime)
+
+  val existingDataRows = psql.audit.listNetworkFees(from, to).size +
+    psql.audit.listReceived(from, to).size +
+    psql.audit.listRelayed(from, to).size +
+    psql.audit.listSent(from, to).size +
+    psql.channels.listLocalChannels().size +
+    psql.network.listChannels().size +
+    psql.network.listNodes().size +
+    psql.payments.listIncomingPayments(from, to).size +
+    psql.payments.listOutgoingPayments(from, to).size +
+    psql.peers.listPeers().size +
+    psql.pendingRelay.listPendingRelay().size
+
+  if (existingDataRows > 0) {
+    System.err.println("ERROR! Destination database is not empty.")
+    sys.exit(-1)
+  }
+
+  println("audit ... ")
+  sqlite.audit.listNetworkFees(from, to).foreach { fee =>
     psql.audit.asInstanceOf[PsqlAuditDb].add(NetworkFeePaid(
       channel = null, remoteNodeId = fee.remoteNodeId, channelId = fee.channelId, tx = null, fee = fee.fee, txType = fee.txType
     ), txId_opt = Some(fee.txId))
   }
 
-  sqlite.audit.listReceived(0, new Date().getTime).foreach { received =>
+  sqlite.audit.listReceived(from, to).foreach { received =>
     psql.audit.add(received)
   }
 
-  sqlite.audit.listRelayed(0, new Date().getTime).foreach { relayed =>
+  sqlite.audit.listRelayed(from, to).foreach { relayed =>
     psql.audit.add(relayed)
   }
 
-  sqlite.audit.listSent(0, new Date().getTime).foreach { sent =>
+  sqlite.audit.listSent(from, to).foreach { sent =>
     psql.audit.add(sent)
   }
+
+  println("channels ... ")
 
   sqlite.channels.listLocalChannels().foreach { hasCommitments =>
     psql.channels.addOrUpdateChannel(hasCommitments)
@@ -46,6 +70,8 @@ object SqliteToPgsql extends App {
       psql.channels.addOrUpdateHtlcInfo(hasCommitments.channelId, commitmentNumber, paymentHash, cltvExpiry)
     }
   }
+
+  println("network ... ")
 
   sqlite.network.listChannels().foreach { case (_, channel) =>
     psql.network.addChannel(channel.ann, channel.fundingTxid, channel.capacity)
@@ -55,6 +81,8 @@ object SqliteToPgsql extends App {
     psql.network.addNode(announcement)
   }
 
+  println("payments ... ")
+
   sqlite.payments.asInstanceOf[SqlitePaymentsDb].listIncomingPayments().foreach { incomingPayment =>
     psql.payments.asInstanceOf[PsqlPaymentsDb].addIncomingPayment(incomingPayment)
   }
@@ -63,14 +91,20 @@ object SqliteToPgsql extends App {
     psql.payments.asInstanceOf[PsqlPaymentsDb].addOutgoingPayment(outgoingPayment)
   }
 
+  println("peers ... ")
+
   sqlite.peers.listPeers().foreach { case (nodeId, nodeAddress) =>
     psql.peers.addOrUpdatePeer(nodeId, nodeAddress)
   }
+
+  println("pendingRelay ... ")
 
   sqlite.pendingRelay.listPendingRelay().map(_._1).foreach { channelId =>
     sqlite.pendingRelay.listPendingRelay(channelId).foreach { cmd =>
       psql.pendingRelay.addPendingRelay(channelId, cmd)
     }
   }
+
+  println("Done!")
 
 }
