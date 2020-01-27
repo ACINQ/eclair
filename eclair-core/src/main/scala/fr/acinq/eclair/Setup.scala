@@ -354,37 +354,34 @@ class Setup(datadir: File,
   }
 
   private def initDatabase(dbConfig: Config): Databases = {
-    try {
-      db match {
-        case Some(d) => d
-        case None =>
-          dbConfig.getString("driver") match {
-            case "sqlite" => Databases.sqliteJDBC(chaindir)
-            case "psql" =>
-              val psql = Databases.setupPsqlDatabases(dbConfig, { ex =>
-                logger.error("Cannot obtain lock on the database. Exiting...", ex)
-                sys.exit(-3)
-              })
-              if (LockType(dbConfig.getString("psql.lock-type")) == LockType.EXCLUSIVE) {
-                val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
-                system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
-                  try {
-                    database.obtainExclusiveLock()
-                  } catch {
-                    case e: Throwable =>
-                      logger.error("Cannot obtain ownership on the database. Exiting...", e)
-                      sys.exit(-2)
-                  }
+    db match {
+      case Some(d) => d
+      case None =>
+        dbConfig.getString("driver") match {
+          case "sqlite" => Databases.sqliteJDBC(chaindir)
+          case "psql" =>
+            val psql = Databases.setupPsqlDatabases(dbConfig, { ex =>
+              logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
+              sys.exit(-2)
+            })
+            if (LockType(dbConfig.getString("psql.lock-type")) == LockType.EXCLUSIVE) {
+              val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
+              val dbLockLeaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
+              if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)
+                throw new RuntimeException("Invalid configuration: `db.psql.ownership-lease.lease-interval` must be greater than `db.psql.ownership-lease.lease-renew-interval`")
+              system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
+                try {
+                  database.obtainExclusiveLock()
+                } catch {
+                  case e: Throwable =>
+                    logger.error("fatal error: Cannot obtain ownership on the database.\n", e)
+                    sys.exit(-1)
                 }
               }
-              psql
-            case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
-          }
-      }
-    } catch {
-      case e: Throwable =>
-        logger.error("Cannot initialize the database. Exiting...", e)
-        sys.exit(-1)
+            }
+            psql
+          case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
+        }
     }
   }
 }

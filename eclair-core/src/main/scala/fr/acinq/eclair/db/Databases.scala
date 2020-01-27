@@ -89,49 +89,46 @@ object Databases extends Logging {
                    instanceId: String = ManagementFactory.getRuntimeMXBean().getName(),
                    databaseLeaseInterval: FiniteDuration = 5.minutes,
                    lockTimeout: FiniteDuration = 5.seconds,
-                   lockExceptionHandler: LockExceptionHandler = {_ => ()},
+                   lockExceptionHandler: LockExceptionHandler = { _ => () },
                    lockType: LockType = LockType.NONE): Databases = {
-    try {
-      implicit val lock: DatabaseLock = lockType match {
-        case LockType.NONE => NoLock
-        case LockType.OPTIMISTIC => OptimisticLock(new AtomicLong(0L), lockExceptionHandler)
-        case LockType.EXCLUSIVE => ExclusiveLock(instanceId, databaseLeaseInterval, lockTimeout, lockExceptionHandler)
-        case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
-      }
-
-      val url = s"jdbc:postgresql://${host}:${port}/${database}"
-
-      import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
-
-      val config = new HikariConfig()
-      config.setJdbcUrl(url)
-      username.foreach(config.setUsername)
-      password.foreach(config.setPassword)
-      poolProperties.get("max-size").foreach(x => config.setMaximumPoolSize(x.toInt))
-      poolProperties.get("connection-timeout").foreach(config.setConnectionTimeout)
-      poolProperties.get("idle-timeout").foreach(config.setIdleTimeout)
-      poolProperties.get("max-life-time").foreach(config.setMaxLifetime)
-
-      implicit val ds: DataSource = new HikariDataSource(config)
-
-      val databases: Databases = new Databases {
-        override val network = new PsqlNetworkDb
-        override val audit = new PsqlAuditDb
-        override val channels = new PsqlChannelsDb
-        override val peers = new PsqlPeersDb
-        override val payments = new PsqlPaymentsDb
-        override val pendingRelay = new PsqlPendingRelayDb
-        override def backup(file: File): Unit = throw new RuntimeException("psql driver does not support channels backup")
-        override val isBackupSupported: Boolean = false
-        override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock
-      }
-      databases.obtainExclusiveLock()
-      databases
-    } catch {
-      case t: Throwable =>
-        logger.error("could not create connection to psql database: ", t)
-        throw t
+    implicit val lock: DatabaseLock = lockType match {
+      case LockType.NONE => NoLock
+      case LockType.OPTIMISTIC => OptimisticLock(new AtomicLong(0L), lockExceptionHandler)
+      case LockType.EXCLUSIVE => ExclusiveLock(instanceId, databaseLeaseInterval, lockTimeout, lockExceptionHandler)
+      case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
     }
+
+    val url = s"jdbc:postgresql://${host}:${port}/${database}"
+
+    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+
+    val config = new HikariConfig()
+    config.setJdbcUrl(url)
+    username.foreach(config.setUsername)
+    password.foreach(config.setPassword)
+    poolProperties.get("max-size").foreach(x => config.setMaximumPoolSize(x.toInt))
+    poolProperties.get("connection-timeout").foreach(config.setConnectionTimeout)
+    poolProperties.get("idle-timeout").foreach(config.setIdleTimeout)
+    poolProperties.get("max-life-time").foreach(config.setMaxLifetime)
+
+    implicit val ds: DataSource = new HikariDataSource(config)
+
+    val databases: Databases = new Databases {
+      override val network = new PsqlNetworkDb
+      override val audit = new PsqlAuditDb
+      override val channels = new PsqlChannelsDb
+      override val peers = new PsqlPeersDb
+      override val payments = new PsqlPaymentsDb
+      override val pendingRelay = new PsqlPendingRelayDb
+
+      override def backup(file: File): Unit = throw new RuntimeException("psql driver does not support channels backup")
+
+      override val isBackupSupported: Boolean = false
+
+      override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock
+    }
+    databases.obtainExclusiveLock()
+    databases
   }
 
   def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases {
