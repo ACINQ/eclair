@@ -24,8 +24,7 @@ import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet, Satoshi, Transactio
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.{ChannelFlags, Commitments, Upstream}
+import fr.acinq.eclair.channel.{ChannelFlags, Commitments, CommitmentsSpec, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
@@ -34,8 +33,6 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag, fixture}
 import scodec.bits.ByteVector
@@ -555,29 +552,8 @@ object MultiPartPaymentLifecycleSpec {
 
   val emptyStats = NetworkStats(0, 0, Stats(Seq(0), d => Satoshi(d.toLong)), Stats(Seq(0), d => CltvExpiryDelta(d.toInt)), Stats(Seq(0), d => MilliSatoshi(d.toLong)), Stats(Seq(0), d => d.toLong))
 
-  def makeCommitments(canSend: MilliSatoshi, feeRatePerKw: Long, announceChannel: Boolean = true): Commitments = {
-    import fr.acinq.eclair.channel._
-    import fr.acinq.eclair.crypto.ShaChain
-    // We are only interested in availableBalanceForSend so we can put dummy values in most places.
-    val localParams = LocalParams(randomKey.publicKey, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64(50000000), 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, ByteVector.empty)
-    val remoteParams = RemoteParams(randomKey.publicKey, 0 sat, UInt64(5000000), 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, ByteVector.empty)
-    val commitmentInput = Funding.makeFundingInputInfo(randomBytes32, 0, canSend.truncateToSatoshi, randomKey.publicKey, remoteParams.fundingPubKey)
-    Commitments(
-      ChannelVersion.STANDARD,
-      localParams,
-      remoteParams,
-      channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-      LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, canSend, 0 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, 0 msat, canSend), randomBytes32, randomKey.publicKey),
-      LocalChanges(Nil, Nil, Nil),
-      RemoteChanges(Nil, Nil, Nil),
-      localNextHtlcId = 1,
-      remoteNextHtlcId = 1,
-      originChannels = Map.empty,
-      remoteNextCommitInfo = Right(randomKey.publicKey),
-      commitInput = commitmentInput,
-      remotePerCommitmentSecrets = ShaChain.init,
-      channelId = randomBytes32)
-  }
+  // We are only interested in availableBalanceForSend so we can put dummy values for the rest.
+  def makeCommitments(canSend: MilliSatoshi, feeRatePerKw: Long, announceChannel: Boolean = true): Commitments =
+    CommitmentsSpec.makeCommitments(canSend, 0 msat, feeRatePerKw, 0 sat, announceChannel = announceChannel)
 
 }

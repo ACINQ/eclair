@@ -646,20 +646,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
-              val (timestamps, checksums) = routingMessage.queryFlags_opt match {
-                case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
-                  // we always compute timestamps and checksums even if we don't need both, overhead is negligible
-                  val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(d.channels)).unzip
-                  val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(nodeParams.routerConf.encodingType, timestamps)) else None
-                  val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
-                  (encodedTimestamps, encodedChecksums)
-                case _ => (None, None)
-              }
-              transport ! ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
-                complete = 1,
-                shortChannelIds = EncodedShortChannelIds(nodeParams.routerConf.encodingType, chunk.shortChannelIds),
-                timestamps = timestamps,
-                checksums = checksums)
+              val reply = Router.buildReplyChannelRange(chunk, chainHash, nodeParams.routerConf.encodingType, routingMessage.queryFlags_opt, d.channels)
+              transport ! reply
             }
           }
           stay
@@ -698,17 +686,25 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
               (c1, u1)
           }
           log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
+
+          def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
+            // always encode empty lists as UNCOMPRESSED
+            val encoding = if (chunk.isEmpty) EncodingType.UNCOMPRESSED else shortChannelIds.encoding
+            QueryShortChannelIds(chainHash,
+              shortChannelIds = EncodedShortChannelIds(encoding, chunk.map(_.shortChannelId)),
+              if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
+                TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(encoding, chunk.map(_.flag)))
+              else
+                TlvStream.empty
+            )
+          }
+
           // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
           val replies = shortChannelIdAndFlags
             .grouped(nodeParams.routerConf.channelQueryChunkSize)
-            .map(chunk => QueryShortChannelIds(chainHash,
-              shortChannelIds = EncodedShortChannelIds(shortChannelIds.encoding, chunk.map(_.shortChannelId)),
-              if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
-                TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(shortChannelIds.encoding, chunk.map(_.flag)))
-              else
-                TlvStream.empty
-            ))
+            .map(buildQuery)
             .toList
+
           val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
           // we only send a reply right away if there were no pending requests
           replynow_opt.foreach(transport ! _)
@@ -1283,6 +1279,33 @@ object Router {
    * @return a processed list of chunks
    */
   def enforceMaximumSize(chunks: List[ShortChannelIdsChunk]) : List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE))
+
+  /**
+   * Build a `reply_channel_range` message
+   * @param chunk chunk of scids
+   * @param chainHash chain hash
+   * @param defaultEncoding default encoding
+   * @param queryFlags_opt query flag set by the requester
+   * @param channels channels map
+   * @return a ReplyChannelRange object
+   */
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
+    val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
+    val (timestamps, checksums) = queryFlags_opt match {
+      case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
+        // we always compute timestamps and checksums even if we don't need both, overhead is negligible
+        val (timestamps, checksums) = chunk.shortChannelIds.map(getChannelDigestInfo(channels)).unzip
+        val encodedTimestamps = if (extension.wantTimestamps) Some(ReplyChannelRangeTlv.EncodedTimestamps(encoding, timestamps)) else None
+        val encodedChecksums = if (extension.wantChecksums) Some(ReplyChannelRangeTlv.EncodedChecksums(checksums)) else None
+        (encodedTimestamps, encodedChecksums)
+      case _ => (None, None)
+    }
+    ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
+      complete = 1,
+      shortChannelIds = EncodedShortChannelIds(encoding, chunk.shortChannelIds),
+      timestamps = timestamps,
+      checksums = checksums)
+  }
 
   def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
     pending match {
