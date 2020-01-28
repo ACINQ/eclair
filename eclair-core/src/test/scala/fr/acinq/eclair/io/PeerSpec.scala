@@ -418,9 +418,9 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val gossipOrigin = Set(TestProbe().ref)
     val rebroadcast = Rebroadcast(
-      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(router.ref)),
-      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> Set(router.ref)) + (updates(10) -> Set(router.ref)),
-      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(router.ref)))
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set.empty[ActorRef]),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> Set.empty[ActorRef]) + (updates(10) -> Set.empty[ActorRef]),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set.empty[ActorRef]))
     // No timestamp filter set -> the only gossip we should broadcast is our own.
     probe.send(peer, rebroadcast)
     transport.expectMsg(channels(5))

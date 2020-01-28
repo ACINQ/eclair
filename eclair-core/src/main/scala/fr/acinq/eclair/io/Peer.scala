@@ -606,7 +606,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     // For our own gossip, we should ignore the peer's timestamp filter.
     val isOurGossip = msg match {
       case n: NodeAnnouncement if n.nodeId == nodeParams.nodeId => true
-      case _ if origins.isEmpty || origins == Set(router) => true // if gossip doesn't come from another peer, it's ours
+      case _ if origins.isEmpty => true // if gossip doesn't come from another peer, it's ours
       case _ => false
     }
     // Otherwise we check if this message has a timestamp that matches the timestamp filter.
