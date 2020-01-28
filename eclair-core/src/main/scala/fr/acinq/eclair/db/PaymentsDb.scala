@@ -99,7 +99,7 @@ case object PaymentType {
  */
 case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
-                           paymentType: Option[String],
+                           paymentType: String,
                            createdAt: Long,
                            status: IncomingPaymentStatus)
 
@@ -143,7 +143,7 @@ case class OutgoingPayment(id: UUID,
                            parentId: UUID,
                            externalId: Option[String],
                            paymentHash: ByteVector32,
-                           paymentType: Option[String],
+                           paymentType: String,
                            amount: MilliSatoshi,
                            recipientAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,

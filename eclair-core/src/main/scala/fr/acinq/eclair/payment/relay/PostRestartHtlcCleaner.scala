@@ -131,7 +131,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               // dummy values in the DB (to make sure we store the preimage) but we don't emit an event.
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
-              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, None, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, Platform.currentTime, None, OutgoingPaymentStatus.Pending))
+              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, Platform.currentTime, None, OutgoingPaymentStatus.Pending))
               nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
