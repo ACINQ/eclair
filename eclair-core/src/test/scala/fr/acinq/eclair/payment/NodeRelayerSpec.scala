@@ -344,7 +344,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(!outgoingCfg.storeInDb)
     assert(outgoingCfg.paymentHash === paymentHash)
     assert(outgoingCfg.paymentRequest === None)
-    assert(outgoingCfg.finalAmount === outgoingAmount)
+    assert(outgoingCfg.recipientAmount === outgoingAmount)
     assert(outgoingCfg.recipientNodeId === outgoingNodeId)
     assert(outgoingCfg.upstream === upstream)
   }

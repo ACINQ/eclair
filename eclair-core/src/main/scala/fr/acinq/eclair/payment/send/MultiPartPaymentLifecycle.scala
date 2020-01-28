@@ -61,7 +61,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     .tag("parentPaymentId", cfg.parentId.toString)
     .tag("paymentHash", paymentHash.toHex)
     .tag("recipientNodeId", cfg.recipientNodeId.toString())
-    .tag("finalAmount", cfg.finalAmount.toLong)
+    .tag("recipientAmount", cfg.recipientAmount.toLong)
     .start()
 
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)

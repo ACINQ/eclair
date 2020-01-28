@@ -447,7 +447,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val ps = eventListener.expectMsgType[PaymentSent]
     assert(ps.id === parentId)
     assert(ps.feesPaid > 0.msat)
-    assert(ps.finalAmount === defaultAmountMsat)
+    assert(ps.recipientAmount === defaultAmountMsat)
     assert(ps.paymentHash === defaultPaymentHash)
     assert(ps.paymentPreimage === defaultPaymentPreimage)
     assert(ps.parts.head.id === id)
@@ -499,7 +499,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // NB: A -> B doesn't pay fees because it's our direct neighbor
     // NB: B -> G doesn't asks for fees at all
     assert(fee === 0.msat)
-    assert(paymentOK.finalAmount === request.finalPayload.amount)
+    assert(paymentOK.recipientAmount === request.finalPayload.amount)
   }
 
   test("filter errors properly") { _ =>

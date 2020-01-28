@@ -258,7 +258,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     assert(e1.paymentHash === paymentHash2)
     assert(e1.parts.length === 2)
     assert(e1.amountWithFees === 2834.msat)
-    assert(e1.finalAmount === 2500.msat)
+    assert(e1.recipientAmount === 2500.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status === OutgoingPaymentStatus.Pending)
@@ -269,7 +269,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     assert(e2.paymentPreimage === preimage1)
     assert(e2.paymentHash === paymentHash1)
     assert(e2.parts.length === 1)
-    assert(e2.finalAmount === 561.msat)
+    assert(e2.recipientAmount === 561.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
 
     commandBuffer.expectNoMsg(100 millis)

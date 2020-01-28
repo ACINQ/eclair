@@ -455,7 +455,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentSent.paymentHash === pr.paymentHash)
     assert(paymentSent.parts.length > 1)
     assert(paymentSent.recipientNodeId === nodes("D").nodeParams.nodeId)
-    assert(paymentSent.finalAmount === amount)
+    assert(paymentSent.recipientAmount === amount)
     assert(paymentSent.feesPaid > 0.msat)
     assert(paymentSent.parts.forall(p => p.id != paymentSent.id))
     assert(paymentSent.parts.forall(p => p.route.isDefined))
@@ -518,7 +518,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentSent.id === paymentId)
     assert(paymentSent.paymentHash === pr.paymentHash)
     assert(paymentSent.parts.length > 1)
-    assert(paymentSent.finalAmount === amount)
+    assert(paymentSent.recipientAmount === amount)
     assert(paymentSent.feesPaid === 0.msat) // no fees when using direct channels
 
     val paymentParts = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
@@ -576,7 +576,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentSent.id === paymentId)
     assert(paymentSent.paymentHash === pr.paymentHash)
     assert(paymentSent.recipientNodeId === nodes("F3").nodeParams.nodeId)
-    assert(paymentSent.finalAmount === amount)
+    assert(paymentSent.recipientAmount === amount)
     assert(paymentSent.feesPaid === 1000000.msat)
     assert(paymentSent.nonTrampolineFees === 0.msat)
 
@@ -612,7 +612,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
     assert(paymentSent.id === paymentId)
     assert(paymentSent.paymentHash === pr.paymentHash)
-    assert(paymentSent.finalAmount === amount)
+    assert(paymentSent.recipientAmount === amount)
     assert(paymentSent.feesPaid === 300000.msat)
     assert(paymentSent.nonTrampolineFees === 0.msat)
 
@@ -656,7 +656,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
     assert(paymentSent.id === paymentId)
     assert(paymentSent.paymentHash === pr.paymentHash)
-    assert(paymentSent.finalAmount === amount)
+    assert(paymentSent.recipientAmount === amount)
     assert(paymentSent.trampolineFees === 1000000.msat)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))

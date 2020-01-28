@@ -102,7 +102,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === None)
     assert(send.recipientNodeId === nodeId)
-    assert(send.finalAmount === 123.msat)
+    assert(send.recipientAmount === 123.msat)
     assert(send.paymentHash === ByteVector32.Zeroes)
     assert(send.paymentRequest === None)
     assert(send.assistedRoutes === Seq.empty)
@@ -115,7 +115,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val send1 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send1.externalId === Some(externalId1))
     assert(send1.recipientNodeId === nodeId)
-    assert(send1.finalAmount === 123.msat)
+    assert(send1.recipientAmount === 123.msat)
     assert(send1.paymentHash === ByteVector32.Zeroes)
     assert(send1.paymentRequest === Some(invoice1))
     assert(send1.assistedRoutes === hints)
@@ -127,7 +127,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val send2 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send2.externalId === Some(externalId2))
     assert(send2.recipientNodeId === nodeId)
-    assert(send2.finalAmount === 123.msat)
+    assert(send2.recipientAmount === 123.msat)
     assert(send2.paymentHash === ByteVector32.Zeroes)
     assert(send2.paymentRequest === Some(invoice2))
     assert(send2.finalExpiryDelta === CltvExpiryDelta(96))
@@ -137,7 +137,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val send3 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send3.externalId === None)
     assert(send3.recipientNodeId === nodeId)
-    assert(send3.finalAmount === 123.msat)
+    assert(send3.recipientAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
     assert(send3.routeParams.get.maxFeeBase === 123000.msat) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct === 4.20)
@@ -321,7 +321,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === Some("42"))
     assert(send.predefinedRoute === route)
-    assert(send.finalAmount === 1234.msat)
+    assert(send.recipientAmount === 1234.msat)
     assert(send.finalExpiryDelta === CltvExpiryDelta(123))
     assert(send.paymentHash === ByteVector32.One)
     assert(send.paymentRequest === Some(pr))

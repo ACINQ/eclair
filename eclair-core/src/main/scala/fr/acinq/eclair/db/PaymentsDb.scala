@@ -133,7 +133,7 @@ object IncomingPaymentStatus {
  * @param paymentHash     payment_hash.
  * @param paymentType     distinguish different payment types (standard, swaps, etc).
  * @param amount          amount that will be received by the target node.
- * @param finalAmount     amount that will be received by the final recipient.
+ * @param recipientAmount amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
  * @param paymentRequest  Bolt 11 payment request (if paying from an invoice).
@@ -145,7 +145,7 @@ case class OutgoingPayment(id: UUID,
                            paymentHash: ByteVector32,
                            paymentType: Option[String],
                            amount: MilliSatoshi,
-                           finalAmount: MilliSatoshi,
+                           recipientAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,
                            createdAt: Long,
                            paymentRequest: Option[PaymentRequest],

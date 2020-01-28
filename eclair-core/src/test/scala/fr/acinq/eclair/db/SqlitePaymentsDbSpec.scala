@@ -307,7 +307,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val ps4 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32, Some(PaymentType.SwapOut), 50 msat, 100 msat, carol, 1100, Some(invoice1), OutgoingPaymentStatus.Pending)
     postMigrationDb.addOutgoingPayment(ps4)
-    postMigrationDb.updateOutgoingPayment(PaymentSent(parentId, paymentHash1, preimage1, ps2.finalAmount, ps2.recipientNodeId, Seq(PaymentSent.PartialPayment(id2, ps2.amount, 15 msat, randomBytes32, Some(Seq(hop_ab)), 1105))))
+    postMigrationDb.updateOutgoingPayment(PaymentSent(parentId, paymentHash1, preimage1, ps2.recipientAmount, ps2.recipientNodeId, Seq(PaymentSent.PartialPayment(id2, ps2.amount, 15 msat, randomBytes32, Some(Seq(hop_ab)), 1105))))
 
     assert(postMigrationDb.listOutgoingPayments(1, 2000) === Seq(ps1, ps2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Seq(HopSummary(hop_ab)), 1105)), ps3, ps4))
   }
@@ -402,7 +402,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
     // can't update again once it's in a final state
-    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, s3.finalAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32, None)))))
+    assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, s3.recipientAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32, None)))))
 
     val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, 600 msat, carol, Seq(
       PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32, None, 400),
@@ -467,7 +467,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addOutgoingPayment(outgoing3)
     db.addOutgoingPayment(outgoing4)
     // complete #2 and #3 partial payments
-    val sent = PaymentSent(parentId2, paymentHash1, preimage1, outgoing3.finalAmount, outgoing3.recipientNodeId, Seq(
+    val sent = PaymentSent(parentId2, paymentHash1, preimage1, outgoing3.recipientAmount, outgoing3.recipientNodeId, Seq(
       PaymentSent.PartialPayment(outgoing3.id, outgoing3.amount, 15 msat, randomBytes32, None, 400),
       PaymentSent.PartialPayment(outgoing4.id, outgoing4.amount, 20 msat, randomBytes32, None, 410)
     ))

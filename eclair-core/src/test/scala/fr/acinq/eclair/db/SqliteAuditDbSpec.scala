@@ -185,7 +185,7 @@ class SqliteAuditDbSpec extends FunSuite {
 
     // add a row (no ID on sent)
     using(connection.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, ps.finalAmount.toLong)
+      statement.setLong(1, ps.recipientAmount.toLong)
       statement.setLong(2, ps.feesPaid.toLong)
       statement.setBytes(3, ps.paymentHash.toArray)
       statement.setBytes(4, ps.paymentPreimage.toArray)
@@ -328,8 +328,8 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     assert(migratedDb.listSent(50, 150).toSet === Set(
-      ps1.copy(id = pp1.id, finalAmount = pp1.amount, parts = pp1 :: Nil),
-      ps1.copy(id = pp2.id, finalAmount = pp2.amount, parts = pp2 :: Nil)
+      ps1.copy(id = pp1.id, recipientAmount = pp1.amount, parts = pp1 :: Nil),
+      ps1.copy(id = pp2.id, recipientAmount = pp2.amount, parts = pp2 :: Nil)
     ))
     assert(migratedDb.listRelayed(100, 120) === Seq(relayed1, relayed2))
 

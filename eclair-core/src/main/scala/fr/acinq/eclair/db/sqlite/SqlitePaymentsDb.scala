@@ -77,13 +77,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
 
     def migration34(statement: Statement): Int = {
-      // We add a final_amount_msat and payment_type columns, rename some columns and change column order.
+      // We add a recipient_amount_msat and payment_type columns, rename some columns and change column order.
       statement.executeUpdate("DROP index sent_parent_id_idx")
       statement.executeUpdate("DROP index sent_payment_hash_idx")
       statement.executeUpdate("DROP index sent_created_idx")
       statement.executeUpdate("ALTER TABLE sent_payments RENAME TO _sent_payments_old")
-      statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT, amount_msat INTEGER NOT NULL, fees_msat INTEGER, final_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
-      statement.executeUpdate("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_preimage, amount_msat, fees_msat, final_amount_msat, recipient_node_id, payment_request, payment_route, failures, created_at, completed_at) SELECT id, parent_id, external_id, payment_hash, payment_preimage, amount_msat, fees_msat, amount_msat, target_node_id, payment_request, payment_route, failures, created_at, completed_at FROM _sent_payments_old")
+      statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
+      statement.executeUpdate("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_preimage, amount_msat, fees_msat, recipient_amount_msat, recipient_node_id, payment_request, payment_route, failures, created_at, completed_at) SELECT id, parent_id, external_id, payment_hash, payment_preimage, amount_msat, fees_msat, amount_msat, target_node_id, payment_request, payment_route, failures, created_at, completed_at FROM _sent_payments_old")
       statement.executeUpdate("DROP table _sent_payments_old")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
@@ -116,7 +116,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT, amount_msat INTEGER NOT NULL, fees_msat INTEGER, final_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
 
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
@@ -129,14 +129,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
-    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, final_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
       statement.setString(2, sent.parentId.toString)
       statement.setString(3, sent.externalId.orNull)
       statement.setBytes(4, sent.paymentHash.toArray)
       statement.setString(5, sent.paymentType.orNull)
       statement.setLong(6, sent.amount.toLong)
-      statement.setLong(7, sent.finalAmount.toLong)
+      statement.setLong(7, sent.recipientAmount.toLong)
       statement.setBytes(8, sent.recipientNodeId.value.toArray)
       statement.setLong(9, sent.createdAt)
       statement.setString(10, sent.paymentRequest.map(PaymentRequest.write).orNull)
@@ -180,7 +180,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       rs.getByteVector32("payment_hash"),
       rs.getStringNullable("payment_type"),
       MilliSatoshi(rs.getLong("amount_msat")),
-      MilliSatoshi(rs.getLong("final_amount_msat")),
+      MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVector("recipient_node_id")),
       rs.getLong("created_at"),
       rs.getStringNullable("payment_request").map(PaymentRequest.read(_, verifyFeatureGraph = false)), // we may have old, non spec-compliant invoices in our history

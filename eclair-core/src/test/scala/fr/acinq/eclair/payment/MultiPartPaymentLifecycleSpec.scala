@@ -157,7 +157,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     sender.expectMsg(expectedMsg)
     eventListener.expectMsg(expectedMsg)
 
-    assert(expectedMsg.finalAmount === finalAmount)
+    assert(expectedMsg.recipientAmount === finalAmount)
     assert(expectedMsg.amountWithFees === (2000 * 1000).msat)
     assert(expectedMsg.trampolineFees === (1000 * 1000).msat)
     assert(expectedMsg.nonTrampolineFees === 0.msat)
@@ -235,7 +235,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.paymentHash === paymentHash)
     assert(result.paymentPreimage === paymentPreimage)
     assert(result.parts === partialPayments)
-    assert(result.finalAmount === finalAmount)
+    assert(result.recipientAmount === finalAmount)
     assert(result.amountWithFees > (3200 * 1000).msat)
     assert(result.trampolineFees === (2200 * 1000).msat)
     assert(result.nonTrampolineFees === partialPayments.map(_.feesPaid).sum)

@@ -113,7 +113,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
           nodeParams.db.payments.getOutgoingPayment(id) match {
             case Some(p) =>
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.finalAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
               // If all downstream HTLCs are now resolved, we can emit the payment event.
               val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
               if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
@@ -121,8 +121,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
                   case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
                     PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
                 }
-                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.finalAmount, p.recipientNodeId, succeeded)
-                log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.finalAmount})")
+                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded)
+                log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.recipientAmount})")
                 context.system.eventStream.publish(sent)
               }
             case None =>

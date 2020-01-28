@@ -55,10 +55,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     def migration34(statement: Statement): Int = {
       statement.executeUpdate("DROP index sent_timestamp_idx")
       statement.executeUpdate("ALTER TABLE sent RENAME TO _sent_old")
-      statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, final_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
       // Old rows will be missing a recipient node id, so we use an easy-to-spot default value.
       val defaultRecipientNodeId = PrivateKey(ByteVector32.One).publicKey
-      statement.executeUpdate(s"INSERT INTO sent (amount_msat, fees_msat, final_amount_msat, payment_id, parent_payment_id, payment_hash, payment_preimage, recipient_node_id, to_channel_id, timestamp) SELECT amount_msat, fees_msat, amount_msat, id, id, payment_hash, payment_preimage, X'${defaultRecipientNodeId.toString}', to_channel_id, timestamp FROM _sent_old")
+      statement.executeUpdate(s"INSERT INTO sent (amount_msat, fees_msat, recipient_amount_msat, payment_id, parent_payment_id, payment_hash, payment_preimage, recipient_node_id, to_channel_id, timestamp) SELECT amount_msat, fees_msat, amount_msat, id, id, payment_hash, payment_preimage, X'${defaultRecipientNodeId.toString}', to_channel_id, timestamp FROM _sent_old")
       statement.executeUpdate("DROP table _sent_old")
 
       statement.executeUpdate("DROP INDEX relayed_timestamp_idx")
@@ -91,7 +91,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, final_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
@@ -138,7 +138,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       e.parts.foreach(p => {
         statement.setLong(1, p.amount.toLong)
         statement.setLong(2, p.feesPaid.toLong)
-        statement.setLong(3, e.finalAmount.toLong)
+        statement.setLong(3, e.recipientAmount.toLong)
         statement.setString(4, p.id.toString)
         statement.setString(5, e.id.toString)
         statement.setBytes(6, e.paymentHash.toArray)
@@ -228,7 +228,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
             parentId,
             rs.getByteVector32("payment_hash"),
             rs.getByteVector32("payment_preimage"),
-            MilliSatoshi(rs.getLong("final_amount_msat")),
+            MilliSatoshi(rs.getLong("recipient_amount_msat")),
             PublicKey(rs.getByteVector("recipient_node_id")),
             Seq(part))
         }

@@ -42,16 +42,16 @@ sealed trait PaymentEvent {
  *                        a different id).
  * @param paymentHash     payment hash.
  * @param paymentPreimage payment preimage (proof of payment).
- * @param finalAmount     amount that has been received by the final recipient.
+ * @param recipientAmount amount that has been received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param parts           child payments (actual outgoing HTLCs).
  */
-case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, finalAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
-  require(parts.nonEmpty, "must have at least one sub-payment")
+case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
+  require(parts.nonEmpty, "must have at least one payment part")
   val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum
-  val feesPaid: MilliSatoshi = amountWithFees - finalAmount
-  val trampolineFees: MilliSatoshi = parts.map(_.amount).sum - finalAmount
-  val nonTrampolineFees: MilliSatoshi = parts.map(_.feesPaid).sum
+  val feesPaid: MilliSatoshi = amountWithFees - recipientAmount // overall fees for this payment (routing + trampoline)
+  val trampolineFees: MilliSatoshi = parts.map(_.amount).sum - recipientAmount
+  val nonTrampolineFees: MilliSatoshi = feesPaid - trampolineFees // routing fees to reach the first trampoline node, or the recipient if not using trampoline
   val timestamp: Long = parts.map(_.timestamp).min // we use min here because we receive the proof of payment as soon as the first partial payment is fulfilled
 }
 
@@ -85,8 +85,8 @@ sealed trait PaymentRelayed extends PaymentEvent {
 case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentRelayed
 
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, timestamp: Long = Platform.currentTime) extends PaymentRelayed {
-  override val amountIn = incoming.map(_.amount).sum
-  override val amountOut = outgoing.map(_.amount).sum
+  override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
+  override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
 }
 
 object PaymentRelayed {
@@ -99,7 +99,7 @@ object PaymentRelayed {
 }
 
 case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
-  require(parts.nonEmpty, "must have at least one sub-payment")
+  require(parts.nonEmpty, "must have at least one payment part")
   val amount: MilliSatoshi = parts.map(_.amount).sum
   val timestamp: Long = parts.map(_.timestamp).max // we use max here because we fulfill the payment only once we received all the parts
 }

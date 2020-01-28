@@ -24,9 +24,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{Channel, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{ChannelHop, Hop, NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{Onion, OnionTlv, TrampolineExpiryTooSoon, TrampolineFeeInsufficient}
@@ -45,15 +45,15 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
     case r: SendPaymentRequest =>
       val paymentId = UUID.randomUUID()
       sender ! paymentId
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.finalAmount, r.recipientNodeId, Upstream.Local(paymentId), r.paymentRequest, storeInDb = true, publishEvent = true, Nil)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), r.paymentRequest, storeInDb = true, publishEvent = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
           sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(InvalidInvoice(s"unknown invoice features (${invoice.features})")) :: Nil)
         case Some(invoice) if invoice.features.allowMultiPart => invoice.paymentSecret match {
           case Some(paymentSecret) => r.predefinedRoute match {
-            case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(paymentSecret, r.recipientNodeId, r.finalAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
-            case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(hops, Onion.createMultiPartPayload(r.finalAmount, invoice.amount.getOrElse(r.finalAmount), finalExpiry, paymentSecret))
+            case Nil => spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
+            case hops => spawnPaymentFsm(paymentCfg) forward SendPaymentToRoute(hops, Onion.createMultiPartPayload(r.recipientAmount, invoice.amount.getOrElse(r.recipientAmount), finalExpiry, paymentSecret))
           }
           case None => sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(InvalidInvoice("multi-part invoice is missing a payment secret")) :: Nil)
         }
@@ -61,8 +61,8 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
           val payFsm = spawnPaymentFsm(paymentCfg)
           // NB: we only generate legacy payment onions for now for maximum compatibility.
           r.predefinedRoute match {
-            case Nil => payFsm forward SendPayment(r.recipientNodeId, FinalLegacyPayload(r.finalAmount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
-            case hops => payFsm forward SendPaymentToRoute(hops, FinalLegacyPayload(r.finalAmount, finalExpiry))
+            case Nil => payFsm forward SendPayment(r.recipientNodeId, FinalLegacyPayload(r.recipientAmount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
+            case hops => payFsm forward SendPaymentToRoute(hops, FinalLegacyPayload(r.recipientAmount, finalExpiry))
           }
       }
 
@@ -111,11 +111,11 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
       NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
-    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.finalAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = false, trampolineRoute.tail)
+    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = false, trampolineRoute.tail)
     val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
-      Onion.createMultiPartPayload(r.finalAmount, r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
+      Onion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
     } else {
-      Onion.createSinglePartPayload(r.finalAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret)
+      Onion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret)
     }
     // We assume that the trampoline node supports multi-part payments (it should).
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
@@ -141,7 +141,7 @@ object PaymentInitiator {
    * Once we have trampoline fee estimation built into the router, the decision to use Trampoline or not should be done
    * automatically by the router instead of the caller.
    *
-   * @param finalAmount        amount that should be received by the final recipient (usually from a Bolt 11 invoice).
+   * @param recipientAmount    amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    * @param paymentRequest     Bolt 11 invoice.
    * @param trampolineNodeId   id of the trampoline node.
    * @param trampolineAttempts fees and expiry delta for the trampoline node. If this list contains multiple entries,
@@ -151,7 +151,7 @@ object PaymentInitiator {
    * @param finalExpiryDelta   expiry delta for the final recipient.
    * @param routeParams        (optional) parameters to fine-tune the routing algorithm.
    */
-  case class SendTrampolinePaymentRequest(finalAmount: MilliSatoshi,
+  case class SendTrampolinePaymentRequest(recipientAmount: MilliSatoshi,
                                           paymentRequest: PaymentRequest,
                                           trampolineNodeId: PublicKey,
                                           trampolineAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)],
@@ -165,7 +165,7 @@ object PaymentInitiator {
   }
 
   /**
-   * @param finalAmount      amount that should be received by the final recipient (usually from a Bolt 11 invoice).
+   * @param recipientAmount  amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    * @param paymentHash      payment hash.
    * @param recipientNodeId  id of the final recipient.
    * @param maxAttempts      maximum number of retries.
@@ -176,7 +176,7 @@ object PaymentInitiator {
    * @param assistedRoutes   (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams      (optional) parameters to fine-tune the routing algorithm.
    */
-  case class SendPaymentRequest(finalAmount: MilliSatoshi,
+  case class SendPaymentRequest(recipientAmount: MilliSatoshi,
                                 paymentHash: ByteVector32,
                                 recipientNodeId: PublicKey,
                                 maxAttempts: Int,
@@ -198,7 +198,7 @@ object PaymentInitiator {
    *                        each with a different id).
    * @param externalId      externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param paymentHash     payment hash.
-   * @param finalAmount     amount that should be received by the final recipient (usually from a Bolt 11 invoice).
+   * @param recipientAmount amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    * @param recipientNodeId id of the final recipient.
    * @param upstream        information about the payment origin (to link upstream to downstream when relaying a payment).
    * @param paymentRequest  Bolt 11 invoice.
@@ -213,7 +213,7 @@ object PaymentInitiator {
                                parentId: UUID,
                                externalId: Option[String],
                                paymentHash: ByteVector32,
-                               finalAmount: MilliSatoshi,
+                               recipientAmount: MilliSatoshi,
                                recipientNodeId: PublicKey,
                                upstream: Upstream,
                                paymentRequest: Option[PaymentRequest],
@@ -222,7 +222,7 @@ object PaymentInitiator {
                                additionalHops: Seq[NodeHop]) {
     def fullRoute(hops: Seq[ChannelHop]): Seq[Hop] = hops ++ additionalHops
 
-    def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, finalAmount, recipientNodeId, parts)
+    def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeId, parts)
   }
 
   // @formatter:off
