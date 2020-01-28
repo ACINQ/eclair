@@ -409,7 +409,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         val parentId = rs.getUUIDNullable("parent_id")
         val externalId_opt = rs.getStringNullable("external_id")
         val paymentHash = rs.getByteVector32("payment_hash")
-        val paymentType_opt = rs.getStringNullable("payment_type")
+        val paymentType = rs.getString("payment_type")
         val paymentRequest_opt = rs.getStringNullable("payment_request")
         val amount_opt = rs.getMilliSatoshiNullable("final_amount")
         val createdAt = rs.getLong("created_at")
@@ -418,12 +418,12 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
         val p = if (rs.getString("type") == "received") {
           val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
-          PlainIncomingPayment(paymentHash, paymentType_opt, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
+          PlainIncomingPayment(paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
         } else {
           val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
           // note that the resulting status will not contain any details (routes, failures...)
           val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
-          PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType_opt, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
+          PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
         }
         q = q :+ p
       }

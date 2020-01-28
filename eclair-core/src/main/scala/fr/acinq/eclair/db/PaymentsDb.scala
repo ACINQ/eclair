@@ -229,7 +229,7 @@ trait PaymentsOverviewDb {
  */
 sealed trait PlainPayment {
   val paymentHash: ByteVector32
-  val paymentType: Option[String]
+  val paymentType: String
   val paymentRequest: Option[String]
   val finalAmount: Option[MilliSatoshi]
   val createdAt: Long
@@ -237,7 +237,7 @@ sealed trait PlainPayment {
 }
 
 case class PlainIncomingPayment(paymentHash: ByteVector32,
-                                paymentType: Option[String],
+                                paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: IncomingPaymentStatus,
@@ -248,7 +248,7 @@ case class PlainIncomingPayment(paymentHash: ByteVector32,
 case class PlainOutgoingPayment(parentId: Option[UUID],
                                 externalId: Option[String],
                                 paymentHash: ByteVector32,
-                                paymentType: Option[String],
+                                paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: OutgoingPaymentStatus,
