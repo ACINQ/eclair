@@ -20,9 +20,9 @@ import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.{KamonExt, wire}
 import kamon.Kamon
 import kamon.tag.TagSet
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, DecodeResult}
 
 /**
  * Created by PM on 15/11/2016.
@@ -62,15 +62,22 @@ object LightningMessageCodecs {
   // Legacy nodes may encode an upfront_shutdown_script even if we didn't advertise support for option_upfront_shutdown_script.
   // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.
   // This codec decodes both legacy and new versions, while always encoding with an upfront_shutdown_script (of length 0 if none actually provided).
-  private val upfrontShutdownScript = Codec[Option[ByteVector]](
-    (script: Option[ByteVector]) => variableSizeBytes(uint16, bytes).encode(script.getOrElse(ByteVector.empty)),
-    (b: BitVector) => optional(bitsRemaining, variableSizeBytes(uint16, bytes)).decode(b).map(r => r.map {
-      case Some(s) if s.nonEmpty => Some(s)
-      case _ => None
-    })
+  private val shutdownScriptGuard = Codec[Boolean](
+    (included: Boolean) => if (included) Attempt.Successful(BitVector.empty) else Attempt.Successful(hex"0000".bits),
+    // Bolt 2 specifies that upfront_shutdown_scripts must be P2PKH/P2SH or segwit-v0 P2WPK/P2WSH.
+    // The length of such scripts will always start with 0x00, so we use that to discriminate whether we're decoding an
+    // upfront_shutdown_script or a tlv stream.
+    (b: BitVector) => Attempt.successful(DecodeResult(b.nonEmpty && b.startsWith(hex"00".bits), b))
   )
 
-  val legacyOpenChannelCodec: Codec[OpenChannel] = (
+  private def emptyToNone(script: Option[ByteVector]): Option[ByteVector] = script match {
+    case Some(s) if s.nonEmpty => script
+    case _ => None
+  }
+
+  private val upfrontShutdownScript = optional(shutdownScriptGuard, variableSizeBytes(uint16, bytes)).xmap(emptyToNone, emptyToNone)
+
+  private def openChannelCodec_internal(upfrontShutdownScriptCodec: Codec[Option[ByteVector]]): Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
       ("fundingSatoshis" | satoshi) ::
@@ -89,30 +96,19 @@ object LightningMessageCodecs {
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
       ("channelFlags" | byte) ::
-      ("upfront_shutdown_script" | provide(Option.empty[ByteVector])) ::
+      ("upfront_shutdown_script" | upfrontShutdownScriptCodec) ::
       ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
 
-  val openChannelCodec: Codec[OpenChannel] = (
-    ("chainHash" | bytes32) ::
-      ("temporaryChannelId" | bytes32) ::
-      ("fundingSatoshis" | satoshi) ::
-      ("pushMsat" | millisatoshi) ::
-      ("dustLimitSatoshis" | satoshi) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
-      ("channelReserveSatoshis" | satoshi) ::
-      ("htlcMinimumMsat" | millisatoshi) ::
-      ("feeratePerKw" | uint32) ::
-      ("toSelfDelay" | cltvExpiryDelta) ::
-      ("maxAcceptedHtlcs" | uint16) ::
-      ("fundingPubkey" | publicKey) ::
-      ("revocationBasepoint" | publicKey) ::
-      ("paymentBasepoint" | publicKey) ::
-      ("delayedPaymentBasepoint" | publicKey) ::
-      ("htlcBasepoint" | publicKey) ::
-      ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | byte) ::
-      ("upfront_shutdown_script" | upfrontShutdownScript) ::
-      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
+  val openChannelCodec = Codec[OpenChannel](
+    (open: OpenChannel) => {
+      // Phoenix versions <= 1.1.0 don't support the upfront_shutdown_script field (they interpret it as a tlv stream
+      // with an unknown tlv record). For these channels we use an encoding that omits the upfront_shutdown_script for
+      // backwards-compatibility (once enough Phoenix users have upgraded, we can remove work-around).
+      val upfrontShutdownScriptCodec = if (open.tlvStream_opt.isDefined) provide(Option.empty[ByteVector]) else upfrontShutdownScript
+      openChannelCodec_internal(upfrontShutdownScriptCodec).encode(open)
+    },
+    (bits: BitVector) => openChannelCodec_internal(upfrontShutdownScript).decode(bits)
+  )
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
@@ -327,36 +323,6 @@ object LightningMessageCodecs {
 
   //
 
-  val legacyLightningMessageCodec = discriminated[LightningMessage].by(uint16)
-    .typecase(16, initCodec)
-    .typecase(17, errorCodec)
-    .typecase(18, pingCodec)
-    .typecase(19, pongCodec)
-    .typecase(32, legacyOpenChannelCodec)
-    .typecase(33, acceptChannelCodec)
-    .typecase(34, fundingCreatedCodec)
-    .typecase(35, fundingSignedCodec)
-    .typecase(36, fundingLockedCodec)
-    .typecase(38, shutdownCodec)
-    .typecase(39, closingSignedCodec)
-    .typecase(128, updateAddHtlcCodec)
-    .typecase(130, updateFulfillHtlcCodec)
-    .typecase(131, updateFailHtlcCodec)
-    .typecase(132, commitSigCodec)
-    .typecase(133, revokeAndAckCodec)
-    .typecase(134, updateFeeCodec)
-    .typecase(135, updateFailMalformedHtlcCodec)
-    .typecase(136, channelReestablishCodec)
-    .typecase(256, channelAnnouncementCodec)
-    .typecase(257, nodeAnnouncementCodec)
-    .typecase(258, channelUpdateCodec)
-    .typecase(259, announcementSignaturesCodec)
-    .typecase(261, queryShortChannelIdsCodec)
-    .typecase(262, replyShortChanelIdsEndCodec)
-    .typecase(263, queryChannelRangeCodec)
-    .typecase(264, replyChannelRangeCodec)
-    .typecase(265, gossipTimestampFilterCodec)
-
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -405,18 +371,7 @@ object LightningMessageCodecs {
   //
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
-    (msg: LightningMessage) => {
-      val (codec, toEncode) = msg match {
-        case oc: OpenChannel =>
-          val useLegacy = oc.tlvStream_opt.exists(_.get[OpenTlv.Encoding].exists(_.useLegacy))
-          val codec = if (useLegacy) legacyLightningMessageCodec else lightningMessageCodec
-          // We don't actually want to send that TLV record.
-          val toEncode = oc.copy(tlvStream_opt = oc.tlvStream_opt.map(tlvs => tlvs.copy(records = tlvs.records.filter(!_.isInstanceOf[OpenTlv.Encoding]))))
-          (codec, toEncode)
-        case _ => (lightningMessageCodec, msg)
-      }
-      KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(codec.encode(toEncode))
-    },
+    (msg: LightningMessage) => KamonExt.time("scodec.encode.time", tags = TagSet.of("type", msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
     (bits: BitVector) => {
       // this is a bit more involved, because we don't know beforehand what the type of the message will be
       val timer = Kamon.timer("scodec.decode.time")

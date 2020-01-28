@@ -20,19 +20,17 @@ import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.TlvCodecs.tlvStream
 import scodec.Codec
+import scodec.bits.ByteVector
 import scodec.codecs._
 
 sealed trait OpenTlv extends Tlv
 
 object OpenTlv {
 
-  // Phoenix versions <= 1.1.0 expect a TLV stream for pay-to-open, but no upfront_shutdown_script. This makes them
-  // incompatible with the latest update to the encoding of OpenChannel, so we discriminate them and send them the old
-  // encoding. We should remove that work-around as soon as enough users have updated to > 1.1.0.
-  case class Encoding(useLegacy: Boolean) extends OpenTlv
+  case class Placeholder(b: ByteVector) extends OpenTlv
 
   val openTlvCodec: Codec[TlvStream[OpenTlv]] = tlvStream(discriminated.by(varint)
-    .typecase(UInt64(0x47000001), variableSizeBytesLong(varintoverflow, bool).as[Encoding])
+    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, bytes).as[Placeholder])
   )
 
 }

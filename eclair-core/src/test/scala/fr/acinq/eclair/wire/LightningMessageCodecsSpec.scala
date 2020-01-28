@@ -89,17 +89,23 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   test("encode/decode open_channel") {
     val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
-    // Default encoding that completely omits the upfront_shutdown_script (nodes were supposed to encode it only if both
-    // sides advertised support for option_upfront_shutdown_script).
+    // Default encoding that completely omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714
     val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
     case class TestCase(encoded: ByteVector, decoded: OpenChannel, reEncoded: Option[ByteVector] = None)
     val testCases = Seq(
-      TestCase(defaultEncoded, defaultOpen, Some(defaultEncoded ++ hex"0000")), // legacy encoding without upfront_shutdown_script
-      TestCase(defaultEncoded ++ hex"0000", defaultOpen), // empty upfront_shutdown_script
-      TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultOpen.copy(upfrontShutdownScript = Some(hex"01abcdef"))), // non-empty upfront_shutdown_script
-      TestCase(defaultEncoded ++ hex"0000 0102002a 030102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(1), hex"002a"), GenericTlv(UInt64(3), hex"02")))))), // empty upfront_shutdown_script + unknown odd tlv records
-      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultOpen.copy(upfrontShutdownScript = Some(hex"1234"), tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"010203")))))) // non-empty upfront_shutdown_script + unknown odd tlv records
+      // legacy encoding without upfront_shutdown_script
+      TestCase(defaultEncoded, defaultOpen, Some(defaultEncoded ++ hex"0000")),
+      // empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000", defaultOpen),
+      // non-empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultOpen.copy(upfrontShutdownScript = Some(hex"01abcdef"))),
+      // missing upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0302002a 050102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))))),
+      // empty upfront_shutdown_script + unknown odd tlv records: we don't encode the upfront_shutdown_script when a tlv stream is provided
+      TestCase(defaultEncoded ++ hex"0000 0302002a 050102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02"))))), Some(defaultEncoded ++ hex"0302002a 050102")),
+      // non-empty upfront_shutdown_script + unknown odd tlv records: we don't encode the upfront_shutdown_script when a tlv stream is provided
+      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultOpen.copy(upfrontShutdownScript = Some(hex"1234"), tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"010203"))))), Some(defaultEncoded ++ hex"0303010203"))
     )
 
     for (testCase <- testCases) {
@@ -118,30 +124,12 @@ class LightningMessageCodecsSpec extends FunSuite {
       defaultEncoded ++ hex"0004 123456", // truncated script
       defaultEncoded ++ hex"0000 02012a", // invalid tlv stream (unknown even record)
       defaultEncoded ++ hex"0000 01012a 030201", // invalid tlv stream (truncated)
-      defaultEncoded ++ hex"01012a" // missing upfront_shutdown_script before tlv stream
+      defaultEncoded ++ hex"02012a", // invalid tlv stream (unknown even record)
+      defaultEncoded ++ hex"01012a 030201" // invalid tlv stream (truncated)
     )
 
     for (testCase <- testCases) {
       assert(openChannelCodec.decode(testCase.bits).isFailure, testCase.toHex)
-    }
-  }
-
-  test("encode open_channel for Phoenix <= 1.1.0") {
-    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
-    // Default encoding that completely omits the upfront_shutdown_script (nodes were supposed to encode it only if both
-    // sides advertised support for option_upfront_shutdown_script).
-    val defaultEncoded = hex"0020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
-    val testCases = Map(
-      defaultOpen -> (defaultEncoded ++ hex"0000"),
-      defaultOpen.copy(tlvStream_opt = Some(TlvStream(OpenTlv.Encoding(useLegacy = true)))) -> defaultEncoded,
-      defaultOpen.copy(tlvStream_opt = Some(TlvStream(OpenTlv.Encoding(useLegacy = true) :: Nil, GenericTlv(UInt64(257), hex"012a") :: Nil))) -> (defaultEncoded ++ hex"fd010102012a"),
-      defaultOpen.copy(tlvStream_opt = Some(TlvStream(OpenTlv.Encoding(useLegacy = false)))) -> (defaultEncoded ++ hex"0000"),
-      defaultOpen.copy(tlvStream_opt = Some(TlvStream(OpenTlv.Encoding(useLegacy = false) :: Nil, GenericTlv(UInt64(257), hex"012a") :: Nil))) -> (defaultEncoded ++ hex"0000 fd010102012a")
-    )
-
-    for ((open, expected) <- testCases) {
-      val encoded = meteredLightningMessageCodec.encode(open).require.bytes
-      assert(encoded === expected)
     }
   }
 
