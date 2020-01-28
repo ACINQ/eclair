@@ -286,7 +286,7 @@ class PaymentRequestSpec extends FunSuite {
         Description("description"),
         UnknownTag21(BitVector("some data we don't understand".getBytes))
       ),
-      signature = ByteVector.empty)(verifyFeatureGraph = true).sign(priv)
+      signature = ByteVector.empty).sign(priv)
 
     val serialized = PaymentRequest write pr
     val pr1 = PaymentRequest read serialized

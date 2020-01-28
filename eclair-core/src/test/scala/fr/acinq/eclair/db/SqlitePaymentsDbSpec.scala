@@ -237,10 +237,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     // Insert a bunch of old version 3 rows.
     val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
     val parentId = UUID.randomUUID()
-    // This invoice has non spec-compliant feature bits: it's missing `var_onion_optin`.
-    // The first Phoenix release was made before the spec added this requirement, so we need to be able to read such invoices.
-    val serializedInvoice1 = "lntb28340p1p0zshlypp586d00aa6ppd6h2c37rkqlj3k6mst2p0xkpnz4l3j5qscx607w64sdqsd9h8vmmfvdjjqge3xqp79qy9qqqsp5pxsgj6s8dgp5vsh8ll40df6t0lajyr68wvax3p37amu0drz8eh9qlpu7mwhqel4a7pwva3z5xzscrjpf76tj55q033s7gdyxqs2y7k8n53fnn3685p5nzyx9l9wkqnwxwgp0y52mz9kn47h2486g3edcs5qqsz7x0p"
-    val invoice1 = PaymentRequest.read(serializedInvoice1, verifyFeatureGraph = false)
+    val invoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(2834 msat), paymentHash1, bobPriv, "invoice #1", expirySeconds = Some(30))
     val ps1 = OutgoingPayment(id1, id1, Some("42"), randomBytes32, None, 561 msat, 561 msat, alice, 1000, None, OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.REMOTE, "no candy for you", List(HopSummary(hop_ab), HopSummary(hop_bc)))), 1020))
     val ps2 = OutgoingPayment(id2, parentId, Some("42"), paymentHash1, None, 1105 msat, 1105 msat, bob, 1010, Some(invoice1), OutgoingPaymentStatus.Pending)
     val ps3 = OutgoingPayment(id3, parentId, None, paymentHash1, None, 1729 msat, 1729 msat, bob, 1040, None, OutgoingPaymentStatus.Succeeded(preimage1, 10 msat, Seq(HopSummary(hop_ab), HopSummary(hop_bc)), 1060))
@@ -266,7 +263,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
       statement.setLong(5, ps2.amount.toLong)
       statement.setBytes(6, ps2.recipientNodeId.value.toArray)
       statement.setLong(7, ps2.createdAt)
-      statement.setString(8, serializedInvoice1)
+      statement.setString(8, PaymentRequest.write(invoice1))
       statement.executeUpdate()
     }
 

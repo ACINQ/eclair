@@ -183,7 +183,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVector("recipient_node_id")),
       rs.getLong("created_at"),
-      rs.getStringNullable("payment_request").map(PaymentRequest.read(_, verifyFeatureGraph = false)), // we may have old, non spec-compliant invoices in our history
+      rs.getStringNullable("payment_request").map(PaymentRequest.read),
       status
     )
   }
@@ -283,7 +283,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = rs.getString("payment_request")
     IncomingPayment(
-      PaymentRequest.read(paymentRequest, verifyFeatureGraph = false), // we may have old, non spec-compliant invoices in our history
+      PaymentRequest.read(paymentRequest),
       rs.getByteVector32("payment_preimage"),
       rs.getStringNullable("payment_type"),
       rs.getLong("created_at"),
