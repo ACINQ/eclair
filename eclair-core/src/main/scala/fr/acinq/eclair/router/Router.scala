@@ -41,7 +41,7 @@ import scodec.bits.ByteVector
 import shapeless.HNil
 
 import scala.annotation.tailrec
-import scala.collection.immutable.{Queue, SortedMap}
+import scala.collection.immutable.SortedMap
 import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -262,27 +262,27 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       d.channels.get(shortChannelId) match {
         case Some(_) =>
           // channel has already been announced and router knows about it, we can process the channel_update
-          stay using handle(u, self, d)
+          stay using handle(u, None, d)
         case None =>
           channelAnnouncement_opt match {
             case Some(c) if d.awaiting.contains(c) =>
               // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-              stay using handle(u, self, d)
+              stay using handle(u, None, d)
             case Some(c) =>
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
               watcher ! ValidateRequest(c)
               val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
               // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
               db.removeFromPruned(c.shortChannelId)
-              stay using handle(u, self, d1)
+              stay using handle(u, None, d1)
             case None if d.privateChannels.contains(shortChannelId) =>
               // channel isn't announced but we already know about it, we can process the channel_update
-              stay using handle(u, self, d)
+              stay using handle(u, None, d)
             case None =>
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
               log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
-              stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(nodeParams.nodeId, remoteNodeId, None, None))))
+              stay using handle(u, None, d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(nodeParams.nodeId, remoteNodeId, None, None))))
           }
       }
 
@@ -406,10 +406,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                     awaiting = awaiting1)
                   // we only reprocess updates and nodes if validation succeeded
                   val d2 = reprocessUpdates.foldLeft(d1) {
-                    case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, origin, d) } // we reprocess the same channel_update for every origin (to preserve origin information)
+                    case (d, (u, origins)) if origins.isEmpty => handle(u, None, d)
+                    case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, Some(origin), d) } // we reprocess the same channel_update for every origin (to preserve origin information)
                   }
                   val d3 = reprocessNodes.foldLeft(d2) {
-                    case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
+                    case (d, (n, origins)) if origins.isEmpty => handle(n, None, d)
+                    case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, Some(origin), d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
                   }
                   stay using d3
                 }
@@ -581,14 +583,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(u: ChannelUpdate, d: Data) =>
-      // it was sent by us (e.g. the payment lifecycle); routing messages that are sent by our peers are now wrapped in a PeerRoutingMessage
+      // it was sent by us (e.g. the payment lifecycle); routing messages that are sent by our peers are wrapped in a PeerRoutingMessage
       log.debug("received channel update from {}", sender)
-      stay using handle(u, sender, d)
+      stay using handle(u, None, d)
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-      stay using handle(u, sender, d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
+      stay using handle(u, Some(sender), d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
 
     case Event(PeerRoutingMessage(_, _, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -624,14 +626,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      // it was sent by us, routing messages that are sent by  our peers are now wrapped in a PeerRoutingMessage
+      // it was sent by us, routing messages that are sent by our peers are wrapped in a PeerRoutingMessage
       log.debug("received node announcement from {}", sender)
-      stay using handle(n, sender, d)
+      stay using handle(n, None, d)
 
     case Event(PeerRoutingMessage(_, _, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
       log.debug("received node announcement for nodeId={}", n.nodeId)
-      stay using handle(n, sender, d)
+      stay using handle(n, Some(sender), d)
 
     case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
@@ -781,35 +783,35 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
   initialize()
 
-  def handle(n: NodeAnnouncement, origin: ActorRef, d: Data): Data =
+  def handle(n: NodeAnnouncement, origin_opt: Option[ActorRef], d: Data): Data =
     if (d.stash.nodes.contains(n)) {
       log.debug("ignoring {} (already stashed)", n)
-      val origins = d.stash.nodes(n) + origin
+      val origins = addOrigin(origin_opt, d.stash.nodes(n))
       d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))
     } else if (d.rebroadcast.nodes.contains(n)) {
       log.debug("ignoring {} (pending rebroadcast)", n)
-      val origins = d.rebroadcast.nodes(n) + origin
+      val origins = addOrigin(origin_opt, d.rebroadcast.nodes(n))
       d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
     } else if (d.nodes.contains(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
       log.debug("ignoring {} (duplicate)", n)
       d
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)
-      origin ! InvalidSignature(n)
+      origin_opt.foreach(_ ! InvalidSignature(n))
       d
     } else if (d.nodes.contains(n.nodeId)) {
       log.debug("updated node nodeId={}", n.nodeId)
       context.system.eventStream.publish(NodeUpdated(n))
       db.updateNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> addOrigin(origin_opt, Set.empty))))
     } else if (d.channels.values.exists(c => isRelatedTo(c.ann, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
       context.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> addOrigin(origin_opt, Set.empty))))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("stashing {}", n)
-      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> Set(origin))))
+      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> addOrigin(origin_opt, Set.empty))))
     } else {
       log.debug("ignoring {} (no related channel found)", n)
       // there may be a record if we have just restarted
@@ -817,7 +819,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       d
     }
 
-  def handle(u: ChannelUpdate, origin: ActorRef, d: Data, remoteNodeId_opt: Option[PublicKey] = None, transport_opt: Option[ActorRef] = None): Data =
+  def handle(u: ChannelUpdate, origin_opt: Option[ActorRef], d: Data, remoteNodeId_opt: Option[PublicKey] = None, transport_opt: Option[ActorRef] = None): Data =
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
@@ -825,7 +827,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       val desc = getDesc(u, pc.ann)
       if (d.rebroadcast.updates.contains(u)) {
         log.debug("ignoring {} (pending rebroadcast)", u)
-        val origins = d.rebroadcast.updates(u) + origin
+        val origins = addOrigin(origin_opt, d.rebroadcast.updates(u))
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)))
       } else if (isStale(u)) {
         log.debug("ignoring {} (stale)", u)
@@ -835,7 +837,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         d
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        origin ! InvalidSignature(u)
+        origin_opt.foreach(_ ! InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
@@ -846,24 +848,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           case true => d.graph.removeEdge(desc).addEdge(desc, u)
           case false => d.graph.removeEdge(desc) // if the channel is now disabled, we remove it from the graph
         }
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> addOrigin(origin_opt, Set.empty))), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         context.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> addOrigin(origin_opt, Set.empty))), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
       if (d.stash.updates.contains(u)) {
         log.debug("ignoring {} (already stashed)", u)
-        val origins = d.stash.updates(u) + origin
+        val origins = addOrigin(origin_opt, d.stash.updates(u))
         d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
       } else {
         log.debug("stashing {}", u)
-        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> Set(origin))))
+        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> addOrigin(origin_opt, Set.empty))))
       }
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
@@ -877,7 +879,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        origin ! InvalidSignature(u)
+        origin_opt.foreach(_ ! InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
@@ -1080,6 +1082,11 @@ object Router {
     if (flags == 0) 0 else flags | flagsNodes
   }
 
+  def addOrigin(origin_opt: Option[ActorRef], origins: Set[ActorRef]): Set[ActorRef] = origin_opt match {
+    case Some(origin) => origins + origin
+    case None => origins
+  }
+
   /**
    * Handle a query message, which includes a list of channel ids and flags.
    *
@@ -1228,9 +1235,9 @@ object Router {
    * there could be several reply_channel_range messages for a single query, but we make sure that the returned
    * chunks fully covers the [firstBlockNum, numberOfBlocks] range that was requested
    *
-   * @param shortChannelIds list of short channel ids to split
-   * @param firstBlockNum first block height requested by our peers
-   * @param numberOfBlocks number of blocks requested by our peer
+   * @param shortChannelIds       list of short channel ids to split
+   * @param firstBlockNum         first block height requested by our peers
+   * @param numberOfBlocks        number of blocks requested by our peer
    * @param channelRangeChunkSize target chunk size. All ids that have the same block height will be grouped together, so
    *                              returned chunks may still contain more than `channelRangeChunkSize` elements
    * @return a list of short channel id chunks
@@ -1280,10 +1287,11 @@ object Router {
 
   /**
    * Enforce max-size constraints for each chunk
+   *
    * @param chunks list of short channel id chunks
    * @return a processed list of chunks
    */
-  def enforceMaximumSize(chunks: List[ShortChannelIdsChunk]) : List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE))
+  def enforceMaximumSize(chunks: List[ShortChannelIdsChunk]): List[ShortChannelIdsChunk] = chunks.map(_.enforceMaximumSize(MAXIMUM_CHUNK_SIZE))
 
   def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
     pending match {
