@@ -351,4 +351,48 @@ class SqliteAuditDbSpec extends FunSuite {
     assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
   }
 
+  test("fails if the DB contains invalid values") {
+    val sqlite = TestConstants.sqliteInMemory()
+    val db = new SqliteAuditDb(sqlite)
+
+    using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, randomBytes32.toArray)
+      statement.setLong(2, 42)
+      statement.setBytes(3, randomBytes32.toArray)
+      statement.setString(4, "IN")
+      statement.setString(5, "unknown") // invalid relay type
+      statement.setLong(6, 10)
+      statement.executeUpdate()
+    }
+
+    assertThrows[MatchError](db.listRelayed(5, 15))
+
+    using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, randomBytes32.toArray)
+      statement.setLong(2, 51)
+      statement.setBytes(3, randomBytes32.toArray)
+      statement.setString(4, "UP") // invalid direction
+      statement.setString(5, "channel")
+      statement.setLong(6, 20)
+      statement.executeUpdate()
+    }
+
+    assertThrows[MatchError](db.listRelayed(15, 25))
+
+    val paymentHash = randomBytes32
+    val channelId = randomBytes32
+
+    using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, paymentHash.toArray)
+      statement.setLong(2, 65)
+      statement.setBytes(3, channelId.toArray)
+      statement.setString(4, "IN")
+      statement.setString(5, "channel")
+      statement.setLong(6, 30)
+      statement.executeUpdate()
+    }
+
+    assert(db.listRelayed(25, 35) === Seq(ChannelPaymentRelayed(65 msat, 0 msat, paymentHash, channelId, ByteVector32.Zeroes, 30)))
+  }
+
 }

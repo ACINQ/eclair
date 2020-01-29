@@ -165,8 +165,12 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: PaymentRelayed): Unit = {
     val payments = e match {
-      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) => Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", ts), RelayedPart(toChannelId, amountOut, "OUT", "channel", ts))
-      case TrampolinePaymentRelayed(_, incoming, outgoing, ts) => incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", ts)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", ts))
+      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
+        // non-trampoline relayed payments have one input and one output
+        Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", ts), RelayedPart(toChannelId, amountOut, "OUT", "channel", ts))
+      case TrampolinePaymentRelayed(_, incoming, outgoing, ts) =>
+        // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
+        incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", ts)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", ts))
     }
     for (p <- payments) {
       using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -220,7 +224,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           MilliSatoshi(rs.getLong("amount_msat")),
           MilliSatoshi(rs.getLong("fees_msat")),
           rs.getByteVector32("to_channel_id"),
-          None, // we don't store the route
+          None, // we don't store the route in the audit DB
           rs.getLong("timestamp"))
         val sent = sentByParentId.get(parentId) match {
           case Some(s) => s.copy(parts = s.parts :+ part)
@@ -277,23 +281,13 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       relayedByHash.map {
         case (paymentHash, parts) => parts.head.relayType match {
           case "channel" => parts.foldLeft(ChannelPaymentRelayed(0 msat, 0 msat, paymentHash, ByteVector32.Zeroes, ByteVector32.Zeroes, parts.head.timestamp)) {
-            case (e, part) => if (part.direction == "IN") {
-              e.copy(amountIn = part.amount, fromChannelId = part.channelId)
-            } else {
-              e.copy(amountOut = part.amount, toChannelId = part.channelId)
-            }
+            case (e, part) if part.direction == "IN" => e.copy(amountIn = part.amount, fromChannelId = part.channelId)
+            case (e, part) if part.direction == "OUT" => e.copy(amountOut = part.amount, toChannelId = part.channelId)
           }
-          case relayType =>
-            if (relayType != "trampoline") {
-              logger.warn(s"unknown payment relayType=$relayType for paymentHash=$paymentHash")
-            }
-            parts.foldLeft(TrampolinePaymentRelayed(paymentHash, Nil, Nil, parts.head.timestamp)) {
-              case (e, part) => if (part.direction == "IN") {
-                e.copy(incoming = e.incoming :+ PaymentRelayed.Part(part.amount, part.channelId))
-              } else {
-                e.copy(outgoing = e.outgoing :+ PaymentRelayed.Part(part.amount, part.channelId))
-              }
-            }
+          case "trampoline" => parts.foldLeft(TrampolinePaymentRelayed(paymentHash, Nil, Nil, parts.head.timestamp)) {
+            case (e, part) if part.direction == "IN" => e.copy(incoming = e.incoming :+ PaymentRelayed.Part(part.amount, part.channelId))
+            case (e, part) if part.direction == "OUT" => e.copy(outgoing = e.outgoing :+ PaymentRelayed.Part(part.amount, part.channelId))
+          }
         }
       }.toSeq.sortBy(_.timestamp)
     }

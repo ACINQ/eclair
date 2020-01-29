@@ -132,7 +132,7 @@ object IncomingPaymentStatus {
  * @param externalId      external payment identifier: lets lightning applications reconcile payments with their own db.
  * @param paymentHash     payment_hash.
  * @param paymentType     distinguish different payment types (standard, swaps, etc).
- * @param amount          amount that will be received by the target node.
+ * @param amount          amount that will be received by the target node, will be different from recipientAmount for trampoline payments.
  * @param recipientAmount amount that will be received by the final recipient.
  * @param recipientNodeId id of the final recipient.
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
