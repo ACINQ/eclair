@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
-import fr.acinq.eclair.router.{Rebroadcast, RoutingSyncSpec, SendChannelQuery}
+import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, EncodedShortChannelIds, EncodingType, Error, IPv4, InitTlv, LightningMessageCodecs, NodeAddress, NodeAnnouncement, Ping, Pong, QueryShortChannelIds, TlvStream}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, _}
@@ -258,7 +258,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(init.features === sentFeatures.bytes)
     }
   }
-  
+
   test("disconnect if incompatible networks") { f =>
     import f._
     val probe = TestProbe()
@@ -369,7 +369,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("filter gossip message (no filtering)") { f =>
     import f._
     val probe = TestProbe()
-    val gossipOrigin = Set(TestProbe().ref)
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peer, rebroadcast)
@@ -380,12 +380,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
-    val gossipOrigin = Set(TestProbe().ref)
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
     val peerActor: ActorRef = peer
     val rebroadcast = Rebroadcast(
-      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(peerActor)),
-      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> Set(peerActor)) + (updates(10) -> Set(peerActor)),
-      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(peerActor)))
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(RemoteGossip(peerActor))),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + RemoteGossip(peerActor))) + (updates(10) -> Set(RemoteGossip(peerActor))),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(RemoteGossip(peerActor))))
     val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
     probe.send(peer, filter)
     probe.send(peer, rebroadcast)
@@ -399,7 +399,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
-    val gossipOrigin = Set(TestProbe().ref)
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     val timestamps = updates.map(_.timestamp).sorted.slice(10, 30)
     val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, timestamps.head, timestamps.last - timestamps.head)
@@ -416,11 +416,11 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
-    val gossipOrigin = Set(TestProbe().ref)
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
     val rebroadcast = Rebroadcast(
-      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(router.ref)),
-      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> Set(router.ref)) + (updates(10) -> Set(router.ref)),
-      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(router.ref)))
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(LocalGossip(probe.ref))),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + LocalGossip(probe.ref))) + (updates(10) -> Set(LocalGossip(probe.ref))),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(LocalGossip(probe.ref))))
     // No timestamp filter set -> the only gossip we should broadcast is our own.
     probe.send(peer, rebroadcast)
     transport.expectMsg(channels(5))
