@@ -9,11 +9,9 @@
 ## Build
 
 Eclair supports deterministic builds for the eclair-core submodule, this is the 'core' of the eclair application
-and its artifact can be deterministically built achieving byte-to-byte equality for each build. This process helps
-to ensure the artifact you're building is exactly the same as the one published in the release, please note
-that the deterministic build is limited to eclair-core and is OS dependent, to build the artifact deterministically
-you must use Ubuntu 18.10, JDK11.0.4 and maven 3.6.0. To check if your artifact is correct please check out the release 
-page for the latest published release.
+and its artifact can be deterministically built achieving byte-to-byte equality for each build. To build the exact 
+same artifacts that we release, you must use the build environment (OS, JDK, maven...) that we specify in our 
+release notes, to check if your artifact is correct please check out the release page for the latest published release.
 
 To build the project and run the tests, simply run:
 
