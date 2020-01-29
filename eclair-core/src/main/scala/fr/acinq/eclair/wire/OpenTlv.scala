@@ -30,7 +30,7 @@ object OpenTlv {
   case class Placeholder(b: ByteVector) extends OpenTlv
 
   val openTlvCodec: Codec[TlvStream[OpenTlv]] = tlvStream(discriminated.by(varint)
-    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, bytes).as[Placeholder])
+    .typecase(UInt64(65717), variableSizeBytesLong(varintoverflow, bytes).as[Placeholder])
   )
 
 }

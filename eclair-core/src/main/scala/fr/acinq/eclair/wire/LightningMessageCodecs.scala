@@ -59,15 +59,20 @@ object LightningMessageCodecs {
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
-  // Legacy nodes may encode an upfront_shutdown_script even if we didn't advertise support for option_upfront_shutdown_script.
-  // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.
+  // Legacy nodes may encode an empty upfront_shutdown_script (0x0000) even if we didn't advertise support for option_upfront_shutdown_script.
+  // To allow extending all messages with TLV streams, the upfront_shutdown_script field was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.
   // This codec decodes both legacy and new versions, while always encoding with an upfront_shutdown_script (of length 0 if none actually provided).
   private val shutdownScriptGuard = Codec[Boolean](
+    // Similar to bitsRemaining but encodes 0x0000 for an empty upfront_shutdown_script.
     (included: Boolean) => if (included) Attempt.Successful(BitVector.empty) else Attempt.Successful(hex"0000".bits),
     // Bolt 2 specifies that upfront_shutdown_scripts must be P2PKH/P2SH or segwit-v0 P2WPK/P2WSH.
-    // The length of such scripts will always start with 0x00, so we use that to discriminate whether we're decoding an
-    // upfront_shutdown_script or a tlv stream.
-    (b: BitVector) => Attempt.successful(DecodeResult(b.nonEmpty && b.startsWith(hex"00".bits), b))
+    // The length of such scripts will always start with 0x00.
+    // On top of that, since TLV records start with a varint, a TLV stream will never start with 0x00 unless the spec
+    // assigns TLV type 0 to a new record. If that happens, that record should be the upfront_shutdown_script to allow
+    // easy backwards-compatibility (as proposed here: https://github.com/lightningnetwork/lightning-rfc/pull/714).
+    // That means we can discriminate on byte 0x00 to know whether we're decoding an upfront_shutdown_script or a TLV
+    // stream.
+    (b: BitVector) => Attempt.successful(DecodeResult(b.startsWith(hex"00".bits), b))
   )
 
   private def emptyToNone(script: Option[ByteVector]): Option[ByteVector] = script match {
