@@ -720,7 +720,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               trimmedHtlcs collect {
                 case DirectedHtlc(_, u) =>
                   log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
-                  nodeParams.db.channels.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
+                  nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
               }
               if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
