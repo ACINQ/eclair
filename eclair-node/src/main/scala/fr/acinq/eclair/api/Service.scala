@@ -222,6 +222,11 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         // TODO: @t-bast: remove this API once stabilized: should re-work the payment APIs to integrate Trampoline nicely
+                        //  - payinvoice: should stay the same, it's the easy flow where the node does its magic
+                        //  - sendtonode: exactly like payinvoice but without an invoice: let the node do its magic
+                        //  - sendtoroute: no path-finding, lets the user control exactly how to send (provide multiple routes, with trampoline or not, etc) -> maybe doesn't go through normal PayFSM (avoid retries)
+                        //    -> maybe somehow make one call per partial HTLC (allows easier failure reporting and out-of-node retry logic)?
+                        //    -> needs both trampolineRoute and routeToTrampoline arguments?
                         path("sendtotrampoline") {
                           formFields(invoiceFormParam, "trampolineId".as[PublicKey], "trampolineFeesMsat".as[MilliSatoshi], "trampolineExpiryDelta".as[Int]) {
                             (invoice, trampolineId, trampolineFees, trampolineExpiryDelta) =>
