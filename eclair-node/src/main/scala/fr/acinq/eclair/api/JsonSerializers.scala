@@ -261,7 +261,6 @@ object CustomTypeHints {
     classOf[OutgoingPaymentStatus.Succeeded] -> "sent"
   ))
 
-  // TODO: @t-bast: don't forget to update slate-doc
   val paymentEvent = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
     classOf[ChannelPaymentRelayed] -> "payment-relayed",
