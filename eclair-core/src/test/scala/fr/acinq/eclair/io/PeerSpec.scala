@@ -418,9 +418,9 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
     val rebroadcast = Rebroadcast(
-      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(LocalGossip(probe.ref))),
-      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + LocalGossip(probe.ref))) + (updates(10) -> Set(LocalGossip(probe.ref))),
-      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(LocalGossip(probe.ref))))
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(LocalGossip)),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + LocalGossip)) + (updates(10) -> Set(LocalGossip)),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(LocalGossip)))
     // No timestamp filter set -> the only gossip we should broadcast is our own.
     probe.send(peer, rebroadcast)
     transport.expectMsg(channels(5))
@@ -477,7 +477,6 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val error1 = transport.expectMsgType[Error]
     assert(error1.channelId === CHANNELID_ZERO)
     assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
-
 
     // let's assume that one of the sigs were invalid
     router.send(peer, Peer.InvalidSignature(channels(0)))

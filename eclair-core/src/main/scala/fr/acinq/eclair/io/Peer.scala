@@ -379,7 +379,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
        * Send and count in a single iteration
        */
       def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[GossipOrigin]]): Int = msgs.foldLeft(0) {
-        case (count, (_, origins)) if origins.map(_.actor).contains(self) =>
+        case (count, (_, origins)) if origins.contains(RemoteGossip(self)) =>
           // the announcement came from this peer, we don't send it back
           count
         case (count, (msg, origins)) if !timestampInRange(msg, origins, d.gossipTimestampFilter) =>
@@ -606,7 +606,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     // For our own gossip, we should ignore the peer's timestamp filter.
     val isOurGossip = msg match {
       case n: NodeAnnouncement if n.nodeId == nodeParams.nodeId => true
-      case _ if origins.exists(_.isInstanceOf[LocalGossip]) => true
+      case _ if origins.contains(LocalGossip) => true
       case _ => false
     }
     // Otherwise we check if this message has a timestamp that matches the timestamp filter.
