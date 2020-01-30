@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import java.util.UUID
+
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import akka.util.Timeout
@@ -30,7 +32,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 import fr.acinq.eclair.router.{Announcements, PublicChannel, Router, GetNetworkStats, NetworkStats, Stats}
 import org.mockito.Mockito
@@ -313,18 +315,15 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
   test("sendtoroute should pass the parameters correctly") { f =>
     import f._
 
-    val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val eclair = new EclairImpl(kit)
+    val route = Seq(randomKey.publicKey)
+    val trampolines = Seq(randomKey.publicKey, randomKey.publicKey)
+    val parentId = UUID.randomUUID()
+    val secret = randomBytes32
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey, "Some invoice")
-    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123), Some(pr))
+    eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
 
-    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
-    assert(send.externalId === Some("42"))
-    assert(send.predefinedRoute === route)
-    assert(send.recipientAmount === 1234.msat)
-    assert(send.finalExpiryDelta === CltvExpiryDelta(123))
-    assert(send.paymentHash === ByteVector32.One)
-    assert(send.paymentRequest === Some(pr))
+    paymentInitiator.expectMsg(SendPaymentToRouteRequest(1000 msat, 1200 msat, Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
   }
 
 }

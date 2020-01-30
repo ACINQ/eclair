@@ -221,18 +221,6 @@ trait Service extends ExtraDirectives with Logging {
                             case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
                           }
                         } ~
-                        // TODO: @t-bast: remove this API once stabilized: should re-work the payment APIs to integrate Trampoline nicely
-                        //  - payinvoice: should stay the same, it's the easy flow where the node does its magic
-                        //  - sendtonode: exactly like payinvoice but without an invoice: let the node do its magic
-                        //  - sendtoroute: no path-finding, lets the user control exactly how to send (provide multiple routes, with trampoline or not, etc) -> maybe doesn't go through normal PayFSM (avoid retries)
-                        //    -> maybe somehow make one call per partial HTLC (allows easier failure reporting and out-of-node retry logic)?
-                        //    -> needs both trampolineRoute and routeToTrampoline arguments?
-                        path("sendtotrampoline") {
-                          formFields(invoiceFormParam, "trampolineId".as[PublicKey], "trampolineFeesMsat".as[MilliSatoshi], "trampolineExpiryDelta".as[Int]) {
-                            (invoice, trampolineId, trampolineFees, trampolineExpiryDelta) =>
-                              complete(eclairApi.sendToTrampoline(invoice, trampolineId, trampolineFees, CltvExpiryDelta(trampolineExpiryDelta)))
-                          }
-                        } ~
                         path("sendtonode") {
                           formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?) {
                             (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
@@ -240,9 +228,9 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("sendtoroute") {
-                          formFields(amountMsatFormParam, paymentHashFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?, invoiceFormParam.?) {
-                            (amountMsat, paymentHash, finalCltvExpiry, route, externalId_opt, invoice_opt) =>
-                              complete(eclairApi.sendToRoute(externalId_opt, route, amountMsat, paymentHash, CltvExpiryDelta(finalCltvExpiry), invoice_opt))
+                          formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?, "parentId".as[UUID].?, "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
+                            (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) =>
+                              complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
                           }
                         } ~
                         path("getsentinfo") {
