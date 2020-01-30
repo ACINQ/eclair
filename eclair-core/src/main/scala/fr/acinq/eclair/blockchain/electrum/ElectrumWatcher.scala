@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
-import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, TxCoordinates}
 
@@ -97,7 +97,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case watch@WatchConfirmed(_, txid, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-confirmed on txid=$txid scriptHash=$scriptHash")
-      client ! ElectrumClient.GetScriptHashHistory(scriptHash)
+      client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
       context.watch(watch.channel)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
@@ -117,7 +117,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case ElectrumClient.GetScriptHashHistoryResponse(_, history) =>
       // we retrieve the transaction before checking watches
-      history.filter(_.height >= 0).foreach { item => client ! ElectrumClient.GetTransaction(item.tx_hash, Some(item)) }
+      history.filter(_.height >= -1).foreach { item => client ! ElectrumClient.GetTransaction(item.tx_hash, Some(item)) }
 
     case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem)) =>
       // this is for WatchSpent/WatchSpendBasic
@@ -133,8 +133,13 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
           channel ! WatchEventSpentBasic(event)
           Some(w)
       }).flatten
+      // special case for mempool watches (min depth = 0)
+      val watchMempoolTriggered = watches.collect {
+        case w@WatchConfirmed(channel, txid, _, 0, BITCOIN_FUNDING_DEPTHOK) if txid == tx.txid =>
+          channel ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 0, 0, tx)
+          w
+      }
       // this is for WatchConfirmed
-      // don't ask for merkle proof for unconfirmed transactions
       if (item.height > 0) {
         watches.collect {
           case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
@@ -147,7 +152,8 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
             }
         }
       }
-      context become running(height, tip, watches -- watchSpentTriggered, scriptHashStatus, block2tx, sent)
+
+      context become running(height, tip, watches -- watchSpentTriggered -- watchMempoolTriggered, scriptHashStatus, block2tx, sent)
 
     case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction)) =>
       val confirmations = height - txheight + 1
