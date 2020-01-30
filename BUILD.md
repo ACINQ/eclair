@@ -11,7 +11,7 @@
 Eclair supports deterministic builds for the eclair-core submodule, this is the 'core' of the eclair application
 and its artifact can be deterministically built achieving byte-to-byte equality for each build. To build the exact 
 same artifacts that we release, you must use the build environment (OS, JDK, maven...) that we specify in our 
-release notes, to check if your artifact is correct please check out the release page for the latest published release.
+release notes.
 
 To build the project and run the tests, simply run:
 
