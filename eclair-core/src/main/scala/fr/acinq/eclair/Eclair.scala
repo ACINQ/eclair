@@ -220,7 +220,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     } else if (route.isEmpty) {
       Future.failed(new IllegalArgumentException("missing payment route"))
     } else if (externalId_opt.exists(_.length > externalIdMaxLength)) {
-      Future.failed(new IllegalArgumentException("externalId is too long: cannot exceed 66 characters"))
+      Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
     } else if (trampolineNodes_opt.nonEmpty && (trampolineFees_opt.isEmpty || trampolineExpiryDelta_opt.isEmpty)) {
       Future.failed(new IllegalArgumentException("trampoline payments must specify a trampoline fee and cltv delta"))
     } else if (trampolineNodes_opt.nonEmpty && trampolineNodes_opt.length != 2) {
@@ -239,7 +239,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
 
     externalId_opt match {
-      case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException("externalId is too long: cannot exceed 66 characters"))
+      case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
       case _ => invoice_opt match {
         case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
         case Some(invoice) =>
