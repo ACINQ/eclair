@@ -263,7 +263,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
-    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       val rs = statement.executeQuery()
@@ -278,17 +278,18 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           rs.getLong("timestamp"))
         relayedByHash = relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
       }
-      relayedByHash.map {
-        case (paymentHash, parts) => parts.head.relayType match {
-          case "channel" => parts.foldLeft(ChannelPaymentRelayed(0 msat, 0 msat, paymentHash, ByteVector32.Zeroes, ByteVector32.Zeroes, parts.head.timestamp)) {
-            case (e, part) if part.direction == "IN" => e.copy(amountIn = part.amount, fromChannelId = part.channelId)
-            case (e, part) if part.direction == "OUT" => e.copy(amountOut = part.amount, toChannelId = part.channelId)
+      relayedByHash.flatMap {
+        case (paymentHash, parts) =>
+          val timestamp = parts.head.timestamp
+          // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
+          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId))
+          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId))
+          parts.head.relayType match {
+            case "channel" => incoming.zip(outgoing).map {
+              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
+            }
+            case "trampoline" => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, timestamp) :: Nil
           }
-          case "trampoline" => parts.foldLeft(TrampolinePaymentRelayed(paymentHash, Nil, Nil, parts.head.timestamp)) {
-            case (e, part) if part.direction == "IN" => e.copy(incoming = e.incoming :+ PaymentRelayed.Part(part.amount, part.channelId))
-            case (e, part) if part.direction == "OUT" => e.copy(outgoing = e.outgoing :+ PaymentRelayed.Part(part.amount, part.channelId))
-          }
-        }
       }.toSeq.sortBy(_.timestamp)
     }
 
