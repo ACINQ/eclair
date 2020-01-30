@@ -22,16 +22,15 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Bech32, ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
-import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import grizzled.slf4j.Logging
-import org.json4s
-import org.json4s.JsonAST.{JArray, JString, JValue}
+import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
@@ -120,6 +119,59 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     probe.expectMsgType[JValue]
     generateBlocks(bitcoincli, 2)
     listener.expectMsgType[WatchEventSpent](20 seconds)
+    system.stop(watcher)
+  }
+
+  test("watch for mempool transactions") {
+    val probe = TestProbe()
+    val blockCount = new AtomicLong()
+    val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
+    val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
+
+    val priv = PrivateKey(ByteVector32.fromValidHex("01" * 32))
+    val pub = priv.publicKey
+    val address = Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160)
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
+    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
+    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
+    val JString(hex) = probe.expectMsgType[JValue]
+    val tx = Transaction.read(hex)
+
+    // tx sends funds to our key
+    val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))
+
+    val fee = 10000 sat
+    val tx1 = {
+      val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx, outputIndex), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx.txOut(outputIndex).amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
+      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx.txOut(outputIndex).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+      val tmp1 = tmp.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
+      Transaction.correctlySpends(tmp1, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      tmp1
+    }
+    // tx1 spends tx
+    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
+    probe.expectMsgType[JValue]
+
+    val tx2 = {
+      val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx1, 0), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx1.txOut(0).amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
+      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+      val tmp1 = tmp.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
+      Transaction.correctlySpends(tmp1, tx1 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      tmp1
+    }
+    // and tx2 spends tx1
+    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
+    probe.expectMsgType[JValue]
+
+
+    // tx2, tx1 and tx should be (or will soon be) in our bitcoin node's mempool
+    // tx2 is not confirmed and spends tx1 which is also not confirmed so electrum will give us a height of -1, not 0
+
+    // special case, we set a watch with a min depth of 0 i.e we want to be told when the tx enters the mempool
+    val listener = TestProbe()
+    probe.send(watcher, WatchConfirmed(listener.ref, tx2.txid, tx2.txOut(0).publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+    val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
+    assert(confirmed.tx.txid === tx2.txid)
     system.stop(watcher)
   }
 
