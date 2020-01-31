@@ -122,22 +122,15 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     system.stop(watcher)
   }
 
-  test("watch for mempool transactions") {
-    val probe = TestProbe()
-    val blockCount = new AtomicLong()
-    val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
-    val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
-
-    val priv = PrivateKey(ByteVector32.fromValidHex("01" * 32))
-    val pub = priv.publicKey
-    val address = Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160)
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
-    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
-    val JString(hex) = probe.expectMsgType[JValue]
-    val tx = Transaction.read(hex)
-
+  /**
+   * Create a chain of unspent txs
+   * @param tx tx that sends funds to a p2wpkh of priv
+   * @param priv private key that tx sends funds to
+   * @return a (tx1, tx2) tuple where tx2 spends tx1 which spends tx
+   */
+  def createUnspentTxChain(tx: Transaction, priv: PrivateKey) : (Transaction, Transaction) = {
     // tx sends funds to our key
+    val pub = priv.publicKey
     val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))
 
     val fee = 10000 sat
@@ -149,8 +142,6 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
       tmp1
     }
     // tx1 spends tx
-    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
-    probe.expectMsgType[JValue]
 
     val tx2 = {
       val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx1, 0), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx1.txOut(0).amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
@@ -160,16 +151,78 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
       tmp1
     }
     // and tx2 spends tx1
+    (tx1, tx2)
+  }
+
+  test("watch for mempool transactions (txs in mempool before we set the watch)") {
+    val probe = TestProbe()
+    val blockCount = new AtomicLong()
+    val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
+    probe.send(electrumClient, ElectrumClient.AddStatusListener(probe.ref))
+    probe.expectMsgType[ElectrumClient.ElectrumReady]
+
+    val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
+
+    val priv = PrivateKey(ByteVector32.fromValidHex("01" * 32))
+    val pub = priv.publicKey
+    val address = Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160)
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
+    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
+    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
+    val JString(hex) = probe.expectMsgType[JValue]
+    val tx = Transaction.read(hex)
+
+    val (tx1, tx2) = createUnspentTxChain(tx, priv)
+
+    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
+    probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
     probe.expectMsgType[JValue]
 
 
-    // tx2, tx1 and tx should be (or will soon be) in our bitcoin node's mempool
-    // tx2 is not confirmed and spends tx1 which is also not confirmed so electrum will give us a height of -1, not 0
+    // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
+    awaitCond({
+      probe.send(electrumClient, ElectrumClient.GetScriptHashHistory(ElectrumClient.computeScriptHash(tx2.txOut(0).publicKeyScript)))
+      val ElectrumClient.GetScriptHashHistoryResponse(_, history) = probe.expectMsgType[ElectrumClient.GetScriptHashHistoryResponse]
+      history.map(_.tx_hash).toSet == Set(tx.txid, tx1.txid, tx2.txid)
+    }, max = 30 seconds, interval = 5 seconds)
 
-    // special case, we set a watch with a min depth of 0 i.e we want to be told when the tx enters the mempool
+    // then set a watch
     val listener = TestProbe()
     probe.send(watcher, WatchConfirmed(listener.ref, tx2.txid, tx2.txOut(0).publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+    val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
+    assert(confirmed.tx.txid === tx2.txid)
+    system.stop(watcher)
+  }
+
+  test("watch for mempool transactions (txs not yet in the mempool when we set the watch)") {
+    val probe = TestProbe()
+    val blockCount = new AtomicLong()
+    val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
+    probe.send(electrumClient, ElectrumClient.AddStatusListener(probe.ref))
+    probe.expectMsgType[ElectrumClient.ElectrumReady]
+    val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
+
+    val priv = PrivateKey(ByteVector32.fromValidHex("01" * 32))
+    val pub = priv.publicKey
+    val address = Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160)
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
+    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
+    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
+    val JString(hex) = probe.expectMsgType[JValue]
+    val tx = Transaction.read(hex)
+
+    val (tx1, tx2) = createUnspentTxChain(tx, priv)
+
+    // here we set the watch * before * we publish our transactions
+    val listener = TestProbe()
+    probe.send(watcher, WatchConfirmed(listener.ref, tx2.txid, tx2.txOut(0).publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+
+    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
+    probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
+    probe.expectMsgType[JValue]
+
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid === tx2.txid)
     system.stop(watcher)
