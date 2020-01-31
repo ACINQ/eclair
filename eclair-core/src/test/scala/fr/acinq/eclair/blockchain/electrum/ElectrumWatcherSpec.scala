@@ -230,11 +230,10 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
   }
 
   test("compute dummy height/txindex for 0-conf channels") {
-    val currentHeight = 500000
     val buffer = new Array[Byte](32)
     val dummies = (0 to 1000).map { _ =>
-      val txid = Random.nextBytes(buffer)
-      ElectrumWatcher.makeDummyShortChannelId(currentHeight, ByteVector32(ByteVector.view(buffer)))
+      Random.nextBytes(buffer)
+      ElectrumWatcher.makeDummyShortChannelId(ByteVector32(ByteVector.view(buffer)))
     } toSet
 
     assert(dummies.size >= 1000 - 10)

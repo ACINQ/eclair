@@ -139,7 +139,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       val watchConfirmedTriggered = watches.collect {
         case w@WatchConfirmed(channel, txid, _, minDepth, BITCOIN_FUNDING_DEPTHOK) if txid == tx.txid && minDepth == 0 =>
           // special case for mempool watches (min depth = 0)
-          val (dummyHeight, dummyTxIndex) = ElectrumWatcher.makeDummyShortChannelId(height, txid)
+          val (dummyHeight, dummyTxIndex) = ElectrumWatcher.makeDummyShortChannelId(txid)
           channel ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, dummyHeight, dummyTxIndex, tx)
           Some(w)
         case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid && minDepth > 0 =>
@@ -226,14 +226,16 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 object ElectrumWatcher {
   /**
    *
-   * @param currentHeight current block height
    * @param txid funding transaction id
-   * @return a (blockHeight, txIndex) tuple that is extracted from the input source and where blockHeight < currentHeight - 10
+   * @return a (blockHeight, txIndex) tuple that is extracted from the input source
    *         This is used to create unique "dummy" short channel ids for zero-conf channels
    */
-  def makeDummyShortChannelId(currentHeight: Int, txid: ByteVector32): (Int, Int) = {
-    val height = txid.bits.sliceToInt(0, 24, false) % (currentHeight - 10)
-    val txIndex = txid.bits.sliceToInt(32, 16, false)
+  def makeDummyShortChannelId(txid: ByteVector32): (Int, Int) = {
+    // we use a height of 0
+    // - to make sure that the tx will be marked as "confirmed"
+    // - to identify scids linked to 0-conf channels
+    val height = 0
+    val txIndex = txid.bits.sliceToInt(0, 16, false)
     (height, txIndex)
   }
 }
