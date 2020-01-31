@@ -28,11 +28,11 @@ import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest, SendTrampolinePaymentRequest, TrampolineLegacyAmountLessInvoice}
+import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.router.RouteParams
+import fr.acinq.eclair.router.{NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire.{OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
+import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomBytes32, randomKey}
 import org.scalatest.{Outcome, Tag, fixture}
 import scodec.bits.HexStringSyntax
@@ -83,9 +83,10 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward payment with pre-defined route") { f =>
     import f._
-    sender.send(initiator, SendPaymentRequest(finalAmount, paymentHash, c, 1, predefinedRoute = Seq(a, b, c)))
-    val paymentId = sender.expectMsgType[UUID]
-    payFsm.expectMsg(SendPaymentConfig(paymentId, paymentId, None, paymentHash, finalAmount, c, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, Nil))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some invoice", features = None)
+    sender.send(initiator, SendPaymentToRouteRequest(finalAmount, finalAmount, None, None, pr, Channel.MIN_CLTV_EXPIRY_DELTA, Seq(a, b, c), None, 0 msat, CltvExpiryDelta(0), Nil))
+    val payment = sender.expectMsgType[SendPaymentToRouteResponse]
+    payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, Nil))
     payFsm.expectMsg(SendPaymentToRoute(Seq(a, b, c), FinalLegacyPayload(finalAmount, Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1))))
   }
 
@@ -126,11 +127,11 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
 
   test("forward multi-part payment with pre-defined route") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
-    val req = SendPaymentRequest(finalAmount / 2, paymentHash, c, 1, paymentRequest = Some(pr), predefinedRoute = Seq(a, b, c))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val req = SendPaymentToRouteRequest(finalAmount / 2, finalAmount, None, None, pr, Channel.MIN_CLTV_EXPIRY_DELTA, Seq(a, b, c), None, 0 msat, CltvExpiryDelta(0), Nil)
     sender.send(initiator, req)
-    val id = sender.expectMsgType[UUID]
-    payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount / 2, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true, Nil))
+    val payment = sender.expectMsgType[SendPaymentToRouteResponse]
+    payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, Nil))
     val msg = payFsm.expectMsgType[SendPaymentToRoute]
     assert(msg.hops === Seq(a, b, c))
     assert(msg.finalPayload.amount === finalAmount / 2)
@@ -284,6 +285,34 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     eventListener.expectMsg(failed)
     sender.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
+  }
+
+  test("forward trampoline payment with pre-defined route") { f =>
+    import f._
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, "Some invoice")
+    val trampolineFees = 100 msat
+    val req = SendPaymentToRouteRequest(finalAmount + trampolineFees, finalAmount, None, None, pr, Channel.MIN_CLTV_EXPIRY_DELTA, Seq(a, b), None, trampolineFees, CltvExpiryDelta(144), Seq(b, c))
+    sender.send(initiator, req)
+    val payment = sender.expectMsgType[SendPaymentToRouteResponse]
+    assert(payment.trampolineSecret.nonEmpty)
+    payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, Seq(NodeHop(b, c, CltvExpiryDelta(0), 0 msat))))
+    val msg = payFsm.expectMsgType[SendPaymentToRoute]
+    assert(msg.hops === Seq(a, b))
+    assert(msg.finalPayload.amount === finalAmount + trampolineFees)
+    assert(msg.finalPayload.paymentSecret === payment.trampolineSecret)
+    assert(msg.finalPayload.totalAmount === finalAmount + trampolineFees)
+    assert(msg.finalPayload.isInstanceOf[Onion.FinalTlvPayload])
+    val trampolineOnion = msg.finalPayload.asInstanceOf[Onion.FinalTlvPayload].records.get[OnionTlv.TrampolineOnion]
+    assert(trampolineOnion.nonEmpty)
+
+    // Verify that the trampoline node can correctly peel the trampoline onion.
+    val Right(decrypted) = Sphinx.TrampolinePacket.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion.get.packet)
+    assert(!decrypted.isLastPacket)
+    val trampolinePayload = OnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
+    assert(trampolinePayload.amountToForward === finalAmount)
+    assert(trampolinePayload.totalAmount === finalAmount)
+    assert(trampolinePayload.outgoingNodeId === c)
+    assert(trampolinePayload.paymentSecret === pr.paymentSecret)
   }
 
 }

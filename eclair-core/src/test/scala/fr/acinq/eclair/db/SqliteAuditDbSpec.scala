@@ -61,7 +61,10 @@ class SqliteAuditDbSpec extends FunSuite {
     val e8 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, isFunder = true, isPrivate = false, "mutual")
     val e9 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
     val e10 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
-    val e11 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(20000 msat, randomBytes32), PaymentRelayed.Part(22000 msat, randomBytes32)), Seq(PaymentRelayed.Part(20000 msat, randomBytes32), PaymentRelayed.Part(10000 msat, randomBytes32), PaymentRelayed.Part(10000 msat, randomBytes32)))
+    val e11 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(20000 msat, randomBytes32), PaymentRelayed.Part(22000 msat, randomBytes32)), Seq(PaymentRelayed.Part(10000 msat, randomBytes32), PaymentRelayed.Part(12000 msat, randomBytes32), PaymentRelayed.Part(15000 msat, randomBytes32)))
+    val multiPartPaymentHash = randomBytes32
+    val e12 = ChannelPaymentRelayed(13000 msat, 11000 msat, multiPartPaymentHash, randomBytes32, randomBytes32)
+    val e13 = ChannelPaymentRelayed(15000 msat, 12500 msat, multiPartPaymentHash, randomBytes32, randomBytes32)
 
     db.add(e1)
     db.add(e2)
@@ -74,11 +77,13 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e9)
     db.add(e10)
     db.add(e11)
+    db.add(e12)
+    db.add(e13)
 
     assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toMillis).toSet === Set(e1, e5, e6))
     assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e1))
     assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e2))
-    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3, e11))
+    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3, e11, e12, e13))
     assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).size === 1)
     assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).head.txType === "mutual")
   }
@@ -343,7 +348,7 @@ class SqliteAuditDbSpec extends FunSuite {
       PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32, None, 160),
       PaymentSent.PartialPayment(UUID.randomUUID(), 600 msat, 5 msat, randomBytes32, None, 165)
     ))
-    val relayed3 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(500 msat, randomBytes32), PaymentRelayed.Part(450 msat, randomBytes32)), Seq(PaymentRelayed.Part(800 msat, randomBytes32)), 150)
+    val relayed3 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(450 msat, randomBytes32), PaymentRelayed.Part(500 msat, randomBytes32)), Seq(PaymentRelayed.Part(800 msat, randomBytes32)), 150)
 
     postMigrationDb.add(ps2)
     assert(postMigrationDb.listSent(155, 200) === Seq(ps2))
@@ -351,7 +356,7 @@ class SqliteAuditDbSpec extends FunSuite {
     assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
   }
 
-  test("fails if the DB contains invalid values") {
+  test("ignore invalid values in the DB") {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteAuditDb(sqlite)
 
@@ -365,8 +370,6 @@ class SqliteAuditDbSpec extends FunSuite {
       statement.executeUpdate()
     }
 
-    assertThrows[MatchError](db.listRelayed(5, 15))
-
     using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, randomBytes32.toArray)
       statement.setLong(2, 51)
@@ -377,8 +380,6 @@ class SqliteAuditDbSpec extends FunSuite {
       statement.executeUpdate()
     }
 
-    assertThrows[MatchError](db.listRelayed(15, 25))
-
     val paymentHash = randomBytes32
     val channelId = randomBytes32
 
@@ -386,13 +387,13 @@ class SqliteAuditDbSpec extends FunSuite {
       statement.setBytes(1, paymentHash.toArray)
       statement.setLong(2, 65)
       statement.setBytes(3, channelId.toArray)
-      statement.setString(4, "IN")
+      statement.setString(4, "IN") // missing a corresponding OUT
       statement.setString(5, "channel")
       statement.setLong(6, 30)
       statement.executeUpdate()
     }
 
-    assert(db.listRelayed(25, 35) === Seq(ChannelPaymentRelayed(65 msat, 0 msat, paymentHash, channelId, ByteVector32.Zeroes, 30)))
+    assert(db.listRelayed(0, 40) === Nil)
   }
 
 }
