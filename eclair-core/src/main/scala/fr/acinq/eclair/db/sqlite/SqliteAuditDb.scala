@@ -278,17 +278,19 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           rs.getLong("timestamp"))
         relayedByHash = relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
       }
-      relayedByHash.map {
-        case (paymentHash, parts) => parts.head.relayType match {
-          case "channel" => parts.foldLeft(ChannelPaymentRelayed(0 msat, 0 msat, paymentHash, ByteVector32.Zeroes, ByteVector32.Zeroes, parts.head.timestamp)) {
-            case (e, part) if part.direction == "IN" => e.copy(amountIn = part.amount, fromChannelId = part.channelId)
-            case (e, part) if part.direction == "OUT" => e.copy(amountOut = part.amount, toChannelId = part.channelId)
+      relayedByHash.flatMap {
+        case (paymentHash, parts) =>
+          // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
+          // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
+          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
+          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
+          parts.headOption match {
+            case Some(RelayedPart(_, _, _, "channel", timestamp)) => incoming.zip(outgoing).map {
+              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
+            }
+            case Some(RelayedPart(_, _, _, "trampoline", timestamp)) => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, timestamp) :: Nil
+            case _ => Nil
           }
-          case "trampoline" => parts.foldLeft(TrampolinePaymentRelayed(paymentHash, Nil, Nil, parts.head.timestamp)) {
-            case (e, part) if part.direction == "IN" => e.copy(incoming = e.incoming :+ PaymentRelayed.Part(part.amount, part.channelId))
-            case (e, part) if part.direction == "OUT" => e.copy(outgoing = e.outgoing :+ PaymentRelayed.Part(part.amount, part.channelId))
-          }
-        }
       }.toSeq.sortBy(_.timestamp)
     }
 

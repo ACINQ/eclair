@@ -30,10 +30,11 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair._
-import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.router.{NetworkStats, Stats}
 import fr.acinq.eclair.wire.NodeAddress
@@ -400,8 +401,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
   }
 
   test("'sendtoroute' method should accept a both a json-encoded AND comma separated list of pubkeys") {
-    val rawUUID = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
-    val paymentUUID = UUID.fromString(rawUUID)
+    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
+    val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val externalId = UUID.randomUUID().toString
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey, "Some invoice")
     val expectedRoute = List(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"))
@@ -409,30 +410,30 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val jsonNodes = serialization.write(expectedRoute)
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[Option[String]], any[List[PublicKey]], any[MilliSatoshi], any[ByteVector32], any[CltvExpiryDelta], any[Option[PaymentRequest]])(any[Timeout]) returns Future.successful(paymentUUID)
+    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[PaymentRequest], any[CltvExpiryDelta], any[List[PublicKey]], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
-    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.Zeroes.toHex, "finalCltvExpiry" -> "190", "externalId" -> externalId.toString, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
+    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId.toString, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        assert(entityAs[String] == "\"" + rawUUID + "\"")
-        eclair.sendToRoute(Some(externalId), expectedRoute, 1234 msat, ByteVector32.Zeroes, CltvExpiryDelta(190), Some(pr))(any[Timeout]).wasCalled(once)
+        assert(entityAs[String] == expected)
+        eclair.sendToRoute(1234 msat, None, Some(externalId), None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
       }
 
     // this test uses CSV encoded route
-    Post("/sendtoroute", FormData("route" -> csvNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.One.toHex, "finalCltvExpiry" -> "190").toEntity) ~>
+    Post("/sendtoroute", FormData("route" -> csvNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        assert(entityAs[String] == "\"" + rawUUID + "\"")
-        eclair.sendToRoute(None, expectedRoute, 1234 msat, ByteVector32.One, CltvExpiryDelta(190), None)(any[Timeout]).wasCalled(once)
+        assert(entityAs[String] == expected)
+        eclair.sendToRoute(1234 msat, None, None, None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -440,7 +441,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
     val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
     val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat = Stats(32l, 11l, 13l, 22l, 42l, 51l, 53l)
+    val feePropStat = Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
     val networkStats = new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat)
 
     val eclair = mock[Eclair]
