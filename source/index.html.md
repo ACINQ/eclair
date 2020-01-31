@@ -16,15 +16,15 @@ search: true
 # Introduction
 
 Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API.
-Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair). The API
-uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON encoded object or simple strings if no object
-is being returned, all errors are handled with a JSON response more info [here](#errors). All monetary values are in millisatoshi unless stated otherwise.
+Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair).
+The API uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON encoded object or simple strings if no object is being returned, all errors are handled with a JSON response more info [here](#errors).
+All monetary values are in millisatoshi unless stated otherwise.
 
 # Authentication
 
 Eclair uses HTTP Basic authentication and expects to receive the correct header with every request.
 To set an API password use the [configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
-The rest of this document will use '21satoshi' as password which encoded as _base64_ results in `OjIxc2F0b3NoaQ==`
+The rest of this document will use '21satoshi' as password which encoded as _base64_ results in `OjIxc2F0b3NoaQ==`.
 
 <aside class="notice">
  Please note that eclair only expects a password and an empty user name.
@@ -77,13 +77,12 @@ eclair-cli connect --uri=<target_uri>
 
 > The above command returns:
 
-```
+```shell
 connected
 ```
 
-Connect to another lightning node, this will perform a connection but no channel will be opened. 
-Note in the _URI_ the port is optional and if missing the default (9735) will be used. 
-
+Connect to another lightning node, this will perform a connection but no channel will be opened.
+Note in the _URI_ the port is optional and if missing the default (9735) will be used.
 
 ### HTTP Request
 
@@ -91,15 +90,14 @@ Note in the _URI_ the port is optional and if missing the default (9735) will be
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-uri | The URI in format 'nodeId@host:port' | No | String
+Parameter | Description                          | Optional | Type  
+--------- | ------------------------------------ | -------- | ------
+uri       | The URI in format 'nodeId@host:port' | No       | String
 
 ## Connect manually
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> \ 
-	-F host=<host> "http://localhost:8080/connect"
+curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> -F host=<host> "http://localhost:8080/connect"
 
 # with eclair-cli
 eclair-cli connect --nodeId=<node_id> --host=<host>
@@ -107,7 +105,7 @@ eclair-cli connect --nodeId=<node_id> --host=<host>
 
 > The above command returns:
 
-```
+```shell
 connected
 ```
 
@@ -119,11 +117,11 @@ Connect to another lightning node, this will perform a connection but no channel
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The **nodeId** of the node you want to connect to | No | 33bytes-HexString (String)
-host | The IPv4 host address of the node | No | String
-port | The port of the node (default: 9735) | Yes | Integer
+Parameter | Description                                       | Optional | Type
+--------- | ------------------------------------------------- | -------- | ---------------------------
+nodeId    | The **nodeId** of the node you want to connect to | No       | 33-bytes-HexString (String)
+host      | The IPv4 host address of the node                 | No       | String
+port      | The port of the node (default: 9735)              | Yes      | Integer
 
 ## Connect via NodeId
 
@@ -136,11 +134,11 @@ eclair-cli connect --nodeId=<nodeId>
 
 > The above command returns:
 
-```
+```shell
 connected
 ```
 
-Connect to another lightning node, this will perform a connection but no channel will be opened. 
+Connect to another lightning node, this will perform a connection but no channel will be opened.
 This API does not require a target address, instead eclair will use one of the addresses published
 by the remote peer in his `node_announcement` messages.
 
@@ -150,9 +148,9 @@ by the remote peer in his `node_announcement` messages.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The **nodeId** of the node you want to connect to | No | 33bytes-HexString (String)
+Parameter | Description                                       | Optional | Type
+--------- | ------------------------------------------------- | -------- | ---------------------------
+nodeId    | The **nodeId** of the node you want to connect to | No       | 33-bytes-HexString (String)
 
 ## Disconnect
 
@@ -165,7 +163,7 @@ eclair-cli disconnect --nodeId=<nodeId>
 
 > The above command returns:
 
-```
+```shell
 disconnecting
 ```
 
@@ -177,17 +175,16 @@ Disconnect from a peer.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The **nodeId** of the node you want to disconnect from | No | 33bytes-HexString (String)
+Parameter | Description                                            | Optional | Type
+--------- | ------------------------------------------------------ | -------- | ---------------------------
+nodeId    | The **nodeId** of the node you want to disconnect from | No       | 33-bytes-HexString (String)
 
 # Open
 
 ## Open
 
 ```shell
-curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
-	"http://localhost:8080/open" -u :<eclair_api_password>
+curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> "http://localhost:8080/open" -u :<eclair_api_password>
 
 # with eclair-cli
 eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
@@ -195,7 +192,7 @@ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
 
 > The above command returns the channelId of the newly created channel:
 
-```
+```shell
 created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
@@ -208,14 +205,14 @@ you can send to the remote a _pushMsat_ value and you can specify wether this sh
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The nodeId of the node you want to connect to | No | 33bytes-HexString (String)
-fundingSatoshis | Amount of satoshis to spend in the funding of the channel | No | Satoshis (Integer)
-pushMsat | Amount of millisatoshi to unilaterally push to the counterparty | Yes | Millisatoshis (Integer)
-fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction | Yes | Satoshis (Integer)
-channelFlags | Flags for the new channel: 0 = private, 1 = public | Yes | Integer
-openTimeoutSeconds | Timeout for the operation to complete | Yes | Seconds (Integer)
+Parameter             | Description                                                     | Optional | Type
+--------------------- | --------------------------------------------------------------- | -------- | ---------------------------
+nodeId                | The nodeId of the node you want to connect to                   | No       | 33-bytes-HexString (String)
+fundingSatoshis       | Amount of satoshis to spend in the funding of the channel       | No       | Satoshis (Integer)
+pushMsat              | Amount of millisatoshi to unilaterally push to the counterparty | Yes      | Millisatoshis (Integer)
+fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction         | Yes      | Satoshis (Integer)
+channelFlags          | Flags for the new channel: 0 = private, 1 = public              | Yes      | Integer
+openTimeoutSeconds    | Timeout for the operation to complete                           | Yes      | Seconds (Integer)
 
 # Close
 
@@ -230,7 +227,7 @@ eclair-cli close --channelId=<channel>
 
 > The above command returns:
 
-```
+```shell
 ok
 ```
 
@@ -243,11 +240,11 @@ If you specified a scriptPubKey then the closing transaction will spend to that 
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-channelId | The channelId of the channel you want to close | No | 32bytes-HexString (String)
-shortChannelId | The shortChannelId of the channel you want to close | Yes | ShortChannelId (String)
-scriptPubKey | A serialized scriptPubKey that you want to use to close the channel | Yes | HexString (String)
+Parameter      | Description                                                         | Optional | Type
+-------------- | ------------------------------------------------------------------- | -------- | ---------------------------
+channelId      | The channelId of the channel you want to close                      | No       | 32-bytes-HexString (String)
+shortChannelId | The shortChannelId of the channel you want to close                 | Yes      | ShortChannelId (String)
+scriptPubKey   | A serialized scriptPubKey that you want to use to close the channel | Yes      | HexString (String)
 
 ## ForceClose
 
@@ -260,7 +257,7 @@ eclair-cli forceclose --channelId=<channel>
 
 > The above command returns:
 
-```
+```shell
 ok
 ```
 
@@ -273,10 +270,10 @@ transaction id. Note that you must specify at least a _channelId_ **or** _shortC
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-channelId | The channelId of the channel you want to close | No | 32bytes-HexString (String)
-shortChannelId | The shortChannelId of the channel you want to close | Yes | ShortChannelId (String)
+Parameter      | Description                                         | Optional | Type
+-------------- | --------------------------------------------------- | -------- | ---------------------------
+channelId      | The channelId of the channel you want to close      | No       | 32-bytes-HexString (String)
+shortChannelId | The shortChannelId of the channel you want to close | Yes      | ShortChannelId (String)
 
 # UpdateRelayFee
 
@@ -289,14 +286,14 @@ curl -u :<eclair_api_password> -X POST -F channelId=<channel> \
 
 #eclair-cli
 eclair-cli updaterelayfee \
-	--channelId=<channel> \
-	--feeBaseMsat=<feebase> \
-	--feeProportionalMillionths=<feeproportional>
+  --channelId=<channel> \
+  --feeBaseMsat=<feebase> \
+  --feeProportionalMillionths=<feeproportional>
 ```
 
 > The above command returns:
 
-```
+```shell
 ok
 ```
 
@@ -308,12 +305,12 @@ Updates the fee policy for the specified _channelId_, a new update for this chan
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-channelId | The channelId of the channel you want to update | No | 32bytes-HexString (String)
-shortChannelId | The shortChannelId of the channel you want to update | Yes | ShortChannelId (String)
-feeBaseMsat | The new base fee to use  | No | Millisatoshi (Integer)
-feeProportionalMillionths | The new proportional fee to use | No | Integer
+Parameter                 | Description                                          | Optional | Type
+------------------------- | ---------------------------------------------------- | -------- | ---------------------------
+channelId                 | The channelId of the channel you want to update      | No       | 32-bytes-HexString (String)
+shortChannelId            | The shortChannelId of the channel you want to update | Yes      | ShortChannelId (String)
+feeBaseMsat               | The new base fee to use                              | No       | Millisatoshi (Integer)
+feeProportionalMillionths | The new proportional fee to use                      | No       | Integer
 
 # Peers
 
@@ -495,9 +492,9 @@ Returns the list of local channels, optionally filtered by remote node.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The remote node id to be used as filter for the channels | Yes | 33bytes-HexString (String)
+Parameter | Description                                              | Optional | Type
+--------- | -------------------------------------------------------- | -------- | ---------------------------
+nodeId    | The remote node id to be used as filter for the channels | Yes      | 33-bytes-HexString (String)
 
 ## Channel
 
@@ -641,9 +638,9 @@ Returns detailed information about a local channel.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-channelId | The channel id of the requested channel | No | 32bytes-HexString (String)
+Parameter | Description                             | Optional | Type
+--------- | --------------------------------------- | -------- | ---------------------------
+channelId | The channel id of the requested channel | No       | 32-bytes-HexString (String)
 
 # Network
 
@@ -772,9 +769,9 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | --------
-nodeId | The node id of the node to be used as filter for the updates | Yes | 33bytes-HexString (String)
+Parameter | Description                                                  | Optional | Type
+--------- | ------------------------------------------------------------ | -------- | ---------------------------
+nodeId    | The node id of the node to be used as filter for the updates | Yes      | 33-bytes-HexString (String)
 
 # Payments
 
@@ -800,7 +797,8 @@ eclair-cli createinvoice --description=<some_description> --amountMsat=<some_amo
   "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
   "description": "A payment description",
   "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
-  "expiry": 21600
+  "expiry": 21600,
+  "amount": 42000
 }
 ```
 
@@ -812,13 +810,13 @@ Create a **BOLT11** payment invoice.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-description | A description for the invoice | No | String
-amountMsat | Amount in millisatoshi for this invoice | Yes | Millisatoshi (Integer)
-expireIn | Number of seconds that the invoice will be valid | Yes | Seconds (Integer)
-fallbackAddress | An on-chain fallback address to receive the payment | Yes | Bitcoin address (String)
-paymentPreimage | A user defined input for the generation of the paymentHash | Yes | 32bytes-HexString (String)
+Parameter       | Description                                                | Optional | Type
+--------------- | ---------------------------------------------------------- | -------- | ---------------------------
+description     | A description for the invoice                              | No       | String
+amountMsat      | Amount in millisatoshi for this invoice                    | Yes      | Millisatoshi (Integer)
+expireIn        | Number of seconds that the invoice will be valid           | Yes      | Seconds (Integer)
+fallbackAddress | An on-chain fallback address to receive the payment        | Yes      | Bitcoin address (String)
+paymentPreimage | A user defined input for the generation of the paymentHash | Yes      | 32-bytes-HexString (String)
 
 ## ParseInvoice
 
@@ -851,9 +849,9 @@ Returns detailed information about the given invoice.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-invoice | The invoice you want to decode | No | String
+Parameter | Description                    | Optional | Type
+--------- | ------------------------------ | -------- | ------
+invoice   | The invoice you want to decode | No       | String
 
 ## PayInvoice
 
@@ -881,14 +879,14 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-invoice | The invoice you want to pay | No | String
-amountMsat | Amount in to pay if the invoice does not have one | Yes | Millisatoshi (Integer)
-maxAttempts | Max number of retries | Yes | Integer
-feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (Integer)
-maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Double
-externalId | Extra payment identifier specified by the caller | Yes | String
+Parameter       | Description                                                                                    | Optional | Type
+--------------- | ---------------------------------------------------------------------------------------------- | -------- | ----------------------
+invoice         | The invoice you want to pay                                                                    | No       | String
+amountMsat      | Amount to pay if the invoice does not have one                                                 | Yes      | Millisatoshi (Integer)
+maxAttempts     | Max number of retries                                                                          | Yes      | Integer
+feeThresholdSat | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
+maxFeePct       | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Double
+externalId      | Extra payment identifier specified by the caller                                               | Yes      | String
 
 ## SendToNode
 
@@ -917,37 +915,47 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The recipient of this payment | No | 33bytes-HexString (String)
-amountMsat | Amount in to pay | No | Millisatoshi (Integer)
-paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
-maxAttempts | Max number of retries | Yes | Integer
-feeThresholdSat | Fee threshold to be paid along the payment route | Yes | Satoshi (Integer)
-maxFeePct | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`)| Yes | Double
-externalId | Extra payment identifier specified by the caller | Yes | String
+Parameter       | Description                                                                                    | Optional | Type
+--------------- | ---------------------------------------------------------------------------------------------- | -------- | ---------------------------
+nodeId          | The recipient of this payment                                                                  | No       | 33-bytes-HexString (String)
+amountMsat      | Amount to pay                                                                                  | No       | Millisatoshi (Integer)
+paymentHash     | The payment hash for this payment                                                              | No       | 32-bytes-HexString (String)
+maxAttempts     | Max number of retries                                                                          | Yes      | Integer
+feeThresholdSat | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
+maxFeePct       | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Double
+externalId      | Extra payment identifier specified by the caller                                               | Yes      | String
 
 ## SendToRoute
 
 ```shell
 curl -u :<eclair_api_password> -X POST -F route=node1,node2 \
-  -F amountMsat=<amount> -F paymentHash=<some_hash> -F finalCltvExpiry=<some_value> "http://localhost:8080/sendtoroute"
+  -F amountMsat=<amount> \
+  -F paymentHash=<some_hash> \
+  -F finalCltvExpiry=<some_value> \
+  -F invoice=<some_invoice> \
+  "http://localhost:8080/sendtoroute"
 
 # with eclair-cli
-eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value>
+eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value> --invoice=<some_invoice>
 ```
 
 > The above command returns:
 
 ```json
-"e4227601-38b3-404e-9aa0-75a829e9bec0"
+{
+  "paymentId": "15798966-5e95-4dce-84a0-825bd2f2a8d1",
+  "parentId": "20b2a854-261a-4e9f-a4ca-59b381aee4bc"
+}
 ```
 
-Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
+Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
-nodeIds that the payment will traverse, it can be a json-encoded array (same as [findroute](#findroute) output) or a comma 
-separated list of nodeIds. Note that the channels between the nodes in the route must be public.It's possible to add an 
+nodeIds that the payment will traverse, it can be a json-encoded array (same as [findroute](#findroute) output) or a comma
+separated list of nodeIds. Note that the channels between the nodes in the route must be public. It's possible to add an
 extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
+
+This command may also be used to send multipart payments with your own splitting algorithm.
+Go to the [wiki](https://github.com/ACINQ/eclair/wiki) for details on how to do that.
 
 ### HTTP Request
 
@@ -955,13 +963,16 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-route | A list of nodeIds from source to destination of the payment | No | List of nodeIds
-amountMsat | Amount in to pay | No | Millisatoshi (Integer)
-paymentHash | The payment hash for this payment | No | 32bytes-HexString (String)
-finalCltvExpiry | The total CLTV expiry value for this payment | No | Integer
-externalId | Extra payment identifier specified by the caller | Yes | String
+Parameter           | Description                                                   | Optional | Type
+------------------- | ------------------------------------------------------------- | -------- | ---------------------------
+invoice             | The invoice you want to pay                                   | No       | String
+route               | A list of nodeIds from source to destination of the payment   | No       | List of nodeIds
+amountMsat          | Amount to pay                                                 | No       | Millisatoshi (Integer)
+paymentHash         | The payment hash for this payment                             | No       | 32-bytes-HexString (String)
+finalCltvExpiry     | The total CLTV expiry value for this payment                  | No       | Integer
+recipientAmountMsat | Total amount that the recipient should receive (if using MPP) | Yes      | Millisatoshi (Integer)
+parentId            | Id of the whole payment (if using MPP)                        | Yes      | Java's UUID (String)
+externalId          | Extra payment identifier specified by the caller              | Yes      | String
 
 ## GetSentInfo
 
@@ -981,8 +992,10 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
     "parentId": "10886b3c-1803-415e-b97d-84d1003cda31",
     "externalId": "cool-id",
     "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+    "paymentType": "Standard",
     "amount": 10000,
-    "targetNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+    "recipientAmount": 10000,
+    "recipientNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
     "createdAt": 1569337970908,
     "paymentRequest": {
       "prefix": "lnbcrt",
@@ -1018,8 +1031,10 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
     "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
     "parentId": "c85d70da-d159-4a36-938a-c3d2f967f730",
     "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+    "paymentType": "Standard",
     "amount": 10000,
-    "targetNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
+    "recipientAmount": 10000,
+    "recipientNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
     "createdAt": 1569337870892,
     "paymentRequest": {
       "prefix": "lnbcrt",
@@ -1058,10 +1073,10 @@ The API can be queried by `paymentHash` OR by `uuid`.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-paymentHash | The payment hash common to all payment attepts to be retrieved | No | 32bytes-HexString (String)
-id | The unique id of the payment attempt | Yes | Java's UUID (String)
+Parameter   | Description                                                    | Optional | Type
+----------- | -------------------------------------------------------------- | -------- | ---------------------------
+paymentHash | The payment hash common to all payment attepts to be retrieved | No       | 32-bytes-HexString (String)
+id          | The unique id of the payment attempt                           | Yes      | Java's UUID (String)
 
 ## GetReceivedInfo
 
@@ -1087,6 +1102,7 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
     "amount": 1000
   },
   "paymentPreimage": "69d56a778eca1619d19d4efc4dbe014ef64005338cb9f6cb88d47e4bac7abc30",
+  "paymentType": "Standard",
   "createdAt": 1569338266000,
   "status": {
     "type": "received",
@@ -1105,10 +1121,10 @@ as parameter instead of the `paymentHash` but at least one of the two must be sp
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-paymentHash | The payment hash you want to check | No | 32bytes-HexString (String)
-invoice | The invoice containing the payment hash | Yes | String
+Parameter   | Description                             | Optional | Type
+----------- | --------------------------------------- | -------- | ---------------------------
+paymentHash | The payment hash you want to check      | No       | 32-bytes-HexString (String)
+invoice     | The invoice containing the payment hash | Yes      | String
 
 ## GetInvoice
 
@@ -1141,9 +1157,9 @@ Queries the payment DB for a stored invoice with the given `paymentHash`, if non
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-paymentHash | The payment hash of the invoice you want to retrieve | No | 32bytes-HexString (String)
+Parameter   | Description                                          | Optional | Type
+----------- | ---------------------------------------------------- | -------- | ---------------------------
+paymentHash | The payment hash of the invoice you want to retrieve | No       | 32-bytes-HexString (String)
 
 ## ListInvoices
 
@@ -1178,7 +1194,7 @@ eclair-cli listinvoices
 ]
 ```
 
-Returns all the **BOLT11** invoice stored.
+Returns all the **BOLT11** invoices stored.
 
 ### HTTP Request
 
@@ -1186,10 +1202,10 @@ Returns all the **BOLT11** invoice stored.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+Parameter | Description                                           | Optional | Type
+--------- | ----------------------------------------------------- | -------- | -----------------------------------
+from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
+to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
 
 ## ListPendingInvoices
 
@@ -1233,10 +1249,10 @@ order.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+Parameter | Description                                           | Optional | Type
+--------- | ----------------------------------------------------- | -------- | -----------------------------------
+from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
+to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
 
 # Route
 
@@ -1248,6 +1264,7 @@ curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://l
 # with eclair-cli
 eclair-cli findroute --invoice=<some_bolt11invoice>
 ```
+
 > The above command returns:
 
 ```json
@@ -1258,9 +1275,8 @@ eclair-cli findroute --invoice=<some_bolt11invoice>
 ]
 ```
 
-Finds a route to the node specified by the invoice, if the invoice does not specify an amount 
+Finds a route to the node specified by the invoice, if the invoice does not specify an amount
 you must do so via the `amountMsat` parameter.
-
 
 ### HTTP Request
 
@@ -1268,10 +1284,10 @@ you must do so via the `amountMsat` parameter.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-invoice | The invoice containing the destination | No | String
-amountMsat | The amount that should go through the route | Yes | Millisatoshi (Integer)
+Parameter  | Description                                 | Optional | Type
+---------- | ------------------------------------------- | -------- | ----------------------
+invoice    | The invoice containing the destination      | No       | String
+amountMsat | The amount that should go through the route | Yes      | Millisatoshi (Integer)
 
 ## FindRouteToNode
 
@@ -1282,6 +1298,7 @@ curl -u :<eclair_api_password> -X POST -F nodeId=<some_node> \
 # with eclair-cli
 eclair-cli --nodeId=<some_node> --amountMsat=<some_amount>
 ```
+
 > The above command returns:
 
 ```json
@@ -1300,10 +1317,10 @@ Finds a route to the node.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-nodeId | The destination of the route | No | 33bytes-HexString (String)
-amountMsat | The amount that should go through the route | No | Millisatoshi (Integer)
+Parameter  | Description                                 | Optional | Type
+---------- | ------------------------------------------- | -------- | ---------------------------
+nodeId     | The destination of the route                | No       | 33-bytes-HexString (String)
+amountMsat | The amount that should go through the route | No       | Millisatoshi (Integer)
 
 # Miscellaneous
 
@@ -1315,6 +1332,7 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/getnewaddress"
 # with eclair-cli
 eclair-cli getnewaddress
 ```
+
 > The above command returns:
 
 ```json
@@ -1323,7 +1341,7 @@ eclair-cli getnewaddress
 
 Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
-depend on the configured address-type in bitcoin.conf.
+depend on the configured address-type in `bitcoin.conf`.
 
 ### HTTP Request
 
@@ -1337,20 +1355,31 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/audit"
 # with eclair-cli
 eclair-cli audit
 ```
+
 > The above command returns:
 
 ```json
 {
    "sent":[
       {
+        "type": "payment-sent",
         "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
         "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
         "paymentPreimage": "62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4",
+        "recipientAmount": 100000,
+        "recipientNodeId": "03d41301628a6086aa7a46a2810e73cc1dcdaf4678ea2b3e805befd3b76af31512",
         "parts": [
           {
-            "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
-            "amount": 10000,
-            "feesPaid": 0,
+            "id": "4e8f2440-dbfd-4e76-bb45-a0647a966b2a",
+            "amount": 40000,
+            "feesPaid": 50,
+            "toChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
+            "timestamp": 1569337871061
+          },
+          {
+            "id": "63e9b037-92d6-4f3d-b484-41740fc278f5",
+            "amount": 60000,
+            "feesPaid": 10,
             "toChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
             "timestamp": 1569337871061
           }
@@ -1359,18 +1388,25 @@ eclair-cli audit
    ],
    "received":[
     {
+      "type": "payment-received",
       "paymentHash": "5271e28256bf0511921a11fc15984b260937f4bf42e85bac31bc4da7a89c6bc3",
       "parts": [
         {
           "amount": 1000,
           "fromChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
           "timestamp": 1569338275801
+        },
+        {
+          "amount": 1500,
+          "fromChannelId": "8ca125b6ae86c44021337c273bd620e88263d4769de35cccded3cdcb9d1cdcc4",
+          "timestamp": 1569338275803
         }
       ]
     }
    ],
    "relayed":[
       {
+         "type": "payment-relayed",
          "amountIn":150001,
          "amountOut":150000,
          "paymentHash":"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3",
@@ -1382,8 +1418,8 @@ eclair-cli audit
 }
 ```
 
-Retrieves information about payments handled by this node such as: sent, received and relayed payments. All monetary
-values are expressed in millisatoshi.
+Retrieves information about payments handled by this node such as: sent, received and relayed payments.
+All monetary values are expressed in millisatoshi.
 
 ### HTTP Request
 
@@ -1391,10 +1427,10 @@ values are expressed in millisatoshi.
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+Parameter | Description                                           | Optional | Type
+--------- | ----------------------------------------------------- | -------- | -----------------------------------
+from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
+to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
 
 ## NetworkFees
 
@@ -1404,6 +1440,7 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/networkfees"
 # with eclair-cli
 eclair-cli networkfees
 ```
+
 > The above command returns:
 
 ```json
@@ -1427,10 +1464,10 @@ Retrieves information about on-chain fees paid during channel operations, curren
 
 ### Parameters
 
-Parameter | Description | Optional | Type
---------- | ----------- | --------- | ---------
-from | Filters elements no older than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
-to | Filters elements no younger than this unix-timestamp  | Yes | Unix timestamp in seconds (Integer)
+Parameter | Description                                           | Optional | Type
+--------- | ----------------------------------------------------- | -------- | -----------------------------------
+from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
+to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
 
 ## ChannelStats
 
@@ -1440,6 +1477,7 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/channelstats"
 # with eclair-cli
 eclair-cli channelstats
 ```
+
 > The above command returns:
 
 ```json
@@ -1469,6 +1507,7 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/usablebalances"
 # with eclair-cli
 eclair-cli usablebalances
 ```
+
 > The above command returns:
 
 ```json
@@ -1497,13 +1536,13 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type":"payment-relayed",
-   "amountIn":21,
-   "amountOut":20,
-   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
-   "fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000",
-   "toChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
-   "timestamp":1553784963659
+   "type": "payment-relayed",
+   "amountIn": 21,
+   "amountOut": 20,
+   "paymentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "fromChannelId": "0000000000000000000000000000000000000000000000000000000000000000",
+   "toChannelId": "0100000000000000000000000000000000000000000000000000000000000000",
+   "timestamp": 1553784963659
 }
 ```
 
@@ -1511,18 +1550,18 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type":"payment-received",
-   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
+   "type": "payment-received",
+   "paymentHash": "0000000000000000000000000000000000000000000000000000000000000000",
    "parts":[
      {
-       "amount":21,
-       "fromChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
-       "timestamp":1553784963659
+       "amount": 21,
+       "fromChannelId": "0100000000000000000000000000000000000000000000000000000000000000",
+       "timestamp": 1553784963659
      },
      {
-       "amount":24,
-       "fromChannelId":"0200000000000000000000000000000000000000000000000000000000000000",
-       "timestamp":1553784963873
+       "amount": 24,
+       "fromChannelId": "0200000000000000000000000000000000000000000000000000000000000000",
+       "timestamp": 1553784963873
      }
    ]
 }
@@ -1548,6 +1587,8 @@ Retrieves information about the available balance of local channels.
    "id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
    "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
    "paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000",
+   "recipientAmount": 45,
+   "recipientNodeId": "02fef72bab86280a4fe30f2710b23a5d4c0d17f5adc4e1f24adabfd16cf6bd3c35",
    "parts":[
      {
        "id":"b8799834-8db9-460b-b754-2942f20e3500",
@@ -1583,19 +1624,14 @@ several types covering all the possible outcomes. All monetary values are expres
 
 ### Response types
 
-Type | Description
---------- | -----------
-payment-received | A payment has been received  
-payment-relayed | A payment has been successfully relayed
-payment-sent | A payment has been successfully sent
+Type                     | Description
+------------------------ | ------------------------------------------------------------------
+payment-received         | A payment has been received  
+payment-relayed          | A payment has been successfully relayed
+payment-sent             | A payment has been successfully sent
 payment-settling-onchain | A payment wasn't fulfilled and its HTLC is being redeemed on-chain
-payment-failed | A payment failed
- 
- 
+payment-failed           | A payment failed
 
 ### HTTP Request
 
 `GET ws://localhost:8080/ws`
-
-
-
