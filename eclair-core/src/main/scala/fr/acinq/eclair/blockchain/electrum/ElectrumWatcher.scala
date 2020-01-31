@@ -133,27 +133,27 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
           channel ! WatchEventSpentBasic(event)
           Some(w)
       }).flatten
-      // special case for mempool watches (min depth = 0)
-      val watchMempoolTriggered = watches.collect {
-        case w@WatchConfirmed(channel, txid, _, 0, BITCOIN_FUNDING_DEPTHOK) if txid == tx.txid =>
-          channel ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 0, 0, tx)
-          w
-      }
-      // this is for WatchConfirmed
-      if (item.height > 0) {
-        watches.collect {
-          case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
-            val txheight = item.height
-            val confirmations = height - txheight + 1
-            log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
-            if (confirmations >= minDepth) {
-              // we need to get the tx position in the block
-              client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
-            }
-        }
-      }
 
-      context become running(height, tip, watches -- watchSpentTriggered -- watchMempoolTriggered, scriptHashStatus, block2tx, sent)
+      // this is for WatchConfirmed
+      val watchConfirmedTriggered = watches.collect {
+        case w@WatchConfirmed(channel, txid, _, minDepth, BITCOIN_FUNDING_DEPTHOK) if txid == tx.txid && minDepth == 0 =>
+          // special case for mempool watches (min depth = 0)
+          val (dummyHeight, dummyTxIndex) = ElectrumWatcher.makeDummyShortChannelId(height, txid)
+          channel ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, dummyHeight, dummyTxIndex, tx)
+          Some(w)
+        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid && minDepth > 0 =>
+          // min depth > 0 here
+          val txheight = item.height
+          val confirmations = height - txheight + 1
+          log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
+          if (confirmations >= minDepth) {
+            // we need to get the tx position in the block
+            client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
+          }
+          None
+      }.flatten
+
+      context become running(height, tip, watches -- watchSpentTriggered -- watchConfirmedTriggered, scriptHashStatus, block2tx, sent)
 
     case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction)) =>
       val confirmations = height - txheight + 1
@@ -220,4 +220,19 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
   }
 
+}
+
+object ElectrumWatcher {
+  /**
+   *
+   * @param currentHeight current block height
+   * @param txid funding transaction id
+   * @return a (blockHeight, txIndex) tuple that is extracted from the input source and where blockHeight < currentHeight - 10
+   *         This is used to create unique "dummy" short channel ids for zero-conf channels
+   */
+  def makeDummyShortChannelId(currentHeight: Int, txid: ByteVector32): (Int, Int) = {
+    val height = txid.bits.sliceToInt(0, 24, false) % (currentHeight - 10)
+    val txIndex = txid.bits.sliceToInt(32, 16, false)
+    (height, txIndex)
+  }
 }

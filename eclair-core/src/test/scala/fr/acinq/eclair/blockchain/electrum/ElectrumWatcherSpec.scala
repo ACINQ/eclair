@@ -35,6 +35,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
@@ -226,6 +227,17 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     assert(confirmed.tx.txid === tx2.txid)
     system.stop(watcher)
+  }
+
+  test("compute dummy height/txindex for 0-conf channels") {
+    val currentHeight = 500000
+    val buffer = new Array[Byte](32)
+    val dummies = (0 to 1000).map { _ =>
+      val txid = Random.nextBytes(buffer)
+      ElectrumWatcher.makeDummyShortChannelId(currentHeight, ByteVector32(ByteVector.view(buffer)))
+    } toSet
+
+    assert(dummies.size >= 1000 - 10)
   }
 
   test("get transaction") {
