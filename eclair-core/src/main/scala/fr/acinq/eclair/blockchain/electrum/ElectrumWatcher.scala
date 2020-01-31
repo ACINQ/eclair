@@ -117,6 +117,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case ElectrumClient.GetScriptHashHistoryResponse(_, history) =>
       // we retrieve the transaction before checking watches
+      // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed. we need to take them into consideration if we want to handle unconfirmed txes (which is the case for turbo channels)
       history.filter(_.height >= -1).foreach { item => client ! ElectrumClient.GetTransaction(item.tx_hash, Some(item)) }
 
     case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem)) =>
