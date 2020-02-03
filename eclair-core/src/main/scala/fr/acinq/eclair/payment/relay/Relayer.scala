@@ -100,7 +100,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
       context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
-    case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>
+    case AvailableBalanceChanged(_, _, shortChannelId, commitments) =>
       val channelUpdates1 = channelUpdates.get(shortChannelId) match {
         case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
         case None => channelUpdates // we only consider the balance if we have the channel_update
@@ -122,7 +122,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 
     case ForwardAdd(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
-      IncomingPacket.decrypt(add, nodeParams.privateKey, nodeParams.globalFeatures) match {
+      IncomingPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p

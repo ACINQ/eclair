@@ -554,12 +554,12 @@ class RelayerSpec extends TestkitBaseClass {
     assert(channels1.last.channelUpdate === channelUpdate_bc)
     assert(channels1.last.toUsableBalance === UsableBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false))
 
-    relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, 0 msat, makeCommitments(channelId_bc, 200000 msat, 500000 msat))
+    relayer ! AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat))
     sender.send(relayer, GetOutgoingChannels())
     val OutgoingChannels(channels2) = sender.expectMsgType[OutgoingChannels]
     assert(channels2.last.commitments.availableBalanceForReceive === 500000.msat && channels2.last.commitments.availableBalanceForSend === 200000.msat)
 
-    relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, 0 msat, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
+    relayer ! AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat))
     relayer ! LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c)
     sender.send(relayer, GetOutgoingChannels())
     val OutgoingChannels(channels3) = sender.expectMsgType[OutgoingChannels]

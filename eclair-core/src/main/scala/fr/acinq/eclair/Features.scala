@@ -19,63 +19,121 @@ package fr.acinq.eclair
 import scodec.bits.{BitVector, ByteVector}
 
 /**
-  * Created by PM on 13/02/2017.
-  */
+ * Created by PM on 13/02/2017.
+ */
+
+sealed trait FeatureSupport
+
+// @formatter:off
+object FeatureSupport {
+  case object Mandatory extends FeatureSupport
+  case object Optional extends FeatureSupport
+}
+// @formatter:on
+
+sealed trait Feature {
+  def rfcName: String
+
+  def mandatory: Int
+
+  def optional: Int = mandatory + 1
+
+  override def toString = rfcName
+}
+
 object Features {
-  val OPTION_DATA_LOSS_PROTECT_MANDATORY = 0
-  val OPTION_DATA_LOSS_PROTECT_OPTIONAL = 1
 
-  // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
-  //val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
-  val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
+  case object OptionDataLossProtect extends Feature {
+    val rfcName = "option_data_loss_protect"
+    val mandatory = 0
+  }
 
-  val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
-  val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
+  case object InitialRoutingSync extends Feature {
+    val rfcName = "initial_routing_sync"
+    // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
+    val mandatory = 2
+  }
 
-  val VARIABLE_LENGTH_ONION_MANDATORY = 8
-  val VARIABLE_LENGTH_ONION_OPTIONAL = 9
+  case object ChannelRangeQueries extends Feature {
+    val rfcName = "gossip_queries"
+    val mandatory = 6
+  }
 
-  val CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY = 10
-  val CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL = 11
+  case object VariableLengthOnion extends Feature {
+    val rfcName = "var_onion_optin"
+    val mandatory = 8
+  }
 
-  val PAYMENT_SECRET_MANDATORY = 14
-  val PAYMENT_SECRET_OPTIONAL = 15
+  case object ChannelRangeQueriesExtended extends Feature {
+    val rfcName = "gossip_queries_ex"
+    val mandatory = 10
+  }
 
-  val BASIC_MULTI_PART_PAYMENT_MANDATORY = 16
-  val BASIC_MULTI_PART_PAYMENT_OPTIONAL = 17
+  case object PaymentSecret extends Feature {
+    val rfcName = "payment_secret"
+    val mandatory = 14
+  }
+
+  case object BasicMultiPartPayment extends Feature {
+    val rfcName = "basic_mpp"
+    val mandatory = 16
+  }
 
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
-  // We're not advertizing these bits yet in our announcements, clients have to assume support.
+  // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
-  val TRAMPOLINE_PAYMENT_MANDATORY = 50
-  val TRAMPOLINE_PAYMENT_OPTIONAL = 51
+  case object TrampolinePayment extends Feature {
+    val rfcName = "trampoline_payment"
+    val mandatory = 50
+  }
+
+  // Features may depend on other features, as specified in Bolt 9.
+  private val featuresDependency = Map(
+    ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
+    // This dependency requirement was added to the spec after the Phoenix release, which means Phoenix users have "invalid"
+    // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
+    // PaymentSecret -> (VariableLengthOnion :: Nil),
+    BasicMultiPartPayment -> (PaymentSecret :: Nil),
+    TrampolinePayment -> (PaymentSecret :: Nil)
+  )
+
+  case class FeatureException(message: String) extends IllegalArgumentException(message)
+
+  def validateFeatureGraph(features: BitVector): Option[FeatureException] = featuresDependency.collectFirst {
+    case (feature, dependencies) if hasFeature(features, feature) && dependencies.exists(d => !hasFeature(features, d)) =>
+      FeatureException(s"${features.toBin} sets $feature but is missing a dependency (${dependencies.filter(d => !hasFeature(features, d)).mkString(" and ")})")
+  }
+
+  def validateFeatureGraph(features: ByteVector): Option[FeatureException] = validateFeatureGraph(features.bits)
 
   // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
   // This is why we have to reverse the bits to check if a feature is set.
 
-  def hasFeature(features: BitVector, bit: Int): Boolean = if (features.sizeLessThanOrEqual(bit)) false else features.reverse.get(bit)
+  private def hasFeature(features: BitVector, bit: Int): Boolean = features.sizeGreaterThan(bit) && features.reverse.get(bit)
 
-  def hasFeature(features: ByteVector, bit: Int): Boolean = hasFeature(features.bits, bit)
+  def hasFeature(features: BitVector, feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
+    case Some(FeatureSupport.Mandatory) => hasFeature(features, feature.mandatory)
+    case Some(FeatureSupport.Optional) => hasFeature(features, feature.optional)
+    case None => hasFeature(features, feature.optional) || hasFeature(features, feature.mandatory)
+  }
+
+  def hasFeature(features: ByteVector, feature: Feature): Boolean = hasFeature(features.bits, feature)
+
+  def hasFeature(features: ByteVector, feature: Feature, support: Option[FeatureSupport]): Boolean = hasFeature(features.bits, feature, support)
 
   /**
-   * We currently don't distinguish mandatory and optional. Interpreting VARIABLE_LENGTH_ONION_MANDATORY strictly would
-   * be very restrictive and probably fork us out of the network.
-   * We may implement this distinction later, but for now both flags are interpreted as an optional support.
+   * Check that the features that we understand are correctly specified, and that there are no mandatory features that
+   * we don't understand (even bits).
    */
-  def hasVariableLengthOnion(features: ByteVector): Boolean = hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY) || hasFeature(features, VARIABLE_LENGTH_ONION_OPTIONAL)
-
-  /**
-    * Check that the features that we understand are correctly specified, and that there are no mandatory features that
-    * we don't understand (even bits).
-    */
   def areSupported(features: BitVector): Boolean = {
-    val supportedMandatoryFeatures = Set[Long](
-      OPTION_DATA_LOSS_PROTECT_MANDATORY,
-      CHANNEL_RANGE_QUERIES_BIT_MANDATORY,
-      VARIABLE_LENGTH_ONION_MANDATORY,
-      CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY,
-      PAYMENT_SECRET_MANDATORY,
-      BASIC_MULTI_PART_PAYMENT_MANDATORY)
+    val supportedMandatoryFeatures = Set(
+      OptionDataLossProtect,
+      ChannelRangeQueries,
+      VariableLengthOnion,
+      ChannelRangeQueriesExtended,
+      PaymentSecret,
+      BasicMultiPartPayment
+    ).map(_.mandatory.toLong)
     val reversed = features.reverse
     for (i <- 0L until reversed.length by 2) {
       if (reversed.get(i) && !supportedMandatoryFeatures.contains(i)) return false
@@ -85,9 +143,9 @@ object Features {
   }
 
   /**
-    * A feature set is supported if all even bits are supported.
-    * We just ignore unknown odd bits.
-    */
+   * A feature set is supported if all even bits are supported.
+   * We just ignore unknown odd bits.
+   */
   def areSupported(features: ByteVector): Boolean = areSupported(features.bits)
 
 }

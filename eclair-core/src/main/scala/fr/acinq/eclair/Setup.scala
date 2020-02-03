@@ -170,7 +170,7 @@ class Setup(datadir: File,
       assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
-        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
+        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a p2sh-segwit or bech32 address to use Eclair (check out our README for more details).")
       }
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
@@ -181,12 +181,14 @@ class Setup(datadir: File,
         case true =>
           val host = config.getString("electrum.host")
           val port = config.getInt("electrum.port")
-          val ssl = config.getString("electrum.ssl") match {
-            case "off" => SSL.OFF
-            case "loose" => SSL.LOOSE
-            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
-          }
           val address = InetSocketAddress.createUnresolved(host, port)
+          val ssl = config.getString("electrum.ssl") match {
+              case _ if address.getHostName.endsWith(".onion") => SSL.OFF // Tor already adds end-to-end encryption, adding TLS on top doesn't add anything
+              case "off" => SSL.OFF
+              case "loose" => SSL.LOOSE
+              case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
+          }
+
           logger.info(s"override electrum default with server=$address ssl=$ssl")
           Set(ElectrumServerAddress(address, ssl))
         case false =>
@@ -228,7 +230,7 @@ class Setup(datadir: File,
       }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
-      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.SECONDS), TimeUnit.MILLISECONDS)
+      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>

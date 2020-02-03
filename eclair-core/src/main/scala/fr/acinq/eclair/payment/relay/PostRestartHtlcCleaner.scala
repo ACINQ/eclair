@@ -30,6 +30,7 @@ import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
 import scodec.bits.ByteVector
 
+import scala.compat.Platform
 import scala.concurrent.Promise
 import scala.util.Try
 
@@ -63,7 +64,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
     // Closed channels will be removed, other channels will be restored.
     val channels = nodeParams.db.channels.listLocalChannels().filter(c => Closing.isClosed(c, None).isEmpty)
     cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.globalFeatures)
+    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features)
   }
 
   override def receive: Receive = main(brokenHtlcs)
@@ -110,20 +111,29 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       case Some(relayedOut) => origin match {
         case Origin.Local(id, _) =>
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
-          nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
-          // If all downstream HTLCs are now resolved, we can emit the payment event.
-          nodeParams.db.payments.getOutgoingPayment(id).foreach(p => {
-            val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
-            if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
-              val succeeded = payments.collect {
-                case OutgoingPayment(id, _, _, _, amount, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
-                  PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
+          nodeParams.db.payments.getOutgoingPayment(id) match {
+            case Some(p) =>
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              // If all downstream HTLCs are now resolved, we can emit the payment event.
+              val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
+              if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
+                val succeeded = payments.collect {
+                  case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
+                    PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
+                }
+                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded)
+                log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.recipientAmount})")
+                context.system.eventStream.publish(sent)
               }
-              val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, succeeded)
-              log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.amount})")
-              context.system.eventStream.publish(sent)
-            }
-          })
+            case None =>
+              log.warning(s"database inconsistency detected: payment $id is fulfilled but doesn't have a corresponding database entry")
+              // Since we don't have a matching DB entry, we've lost the payment recipient and total amount, so we put
+              // dummy values in the DB (to make sure we store the preimage) but we don't emit an event.
+              val dummyFinalAmount = fulfilledHtlc.amountMsat
+              val dummyNodeId = nodeParams.nodeId
+              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, Platform.currentTime, None, OutgoingPaymentStatus.Pending))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+          }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
           // instead spread across multiple local origins) so we can now forget this origin.
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
@@ -229,7 +239,7 @@ object PostRestartHtlcCleaner {
    */
   private def shouldFulfill(finalPacket: IncomingPacket.FinalPacket, paymentsDb: IncomingPaymentsDb): Option[ByteVector32] =
     paymentsDb.getIncomingPayment(finalPacket.add.paymentHash) match {
-      case Some(IncomingPayment(_, preimage, _, IncomingPaymentStatus.Received(_, _))) => Some(preimage)
+      case Some(IncomingPayment(_, preimage, _, _, IncomingPaymentStatus.Received(_, _))) => Some(preimage)
       case _ => None
     }
 

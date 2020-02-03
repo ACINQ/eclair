@@ -16,21 +16,22 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import scala.compat.Platform
 
-trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb
+trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
-  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit
+  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
@@ -79,6 +80,12 @@ trait OutgoingPaymentsDb {
 
 }
 
+case object PaymentType {
+  val Standard = "Standard"
+  val SwapIn = "SwapIn"
+  val SwapOut = "SwapOut"
+}
+
 /**
  * An incoming payment received by this node.
  * At first it is in a pending state once the payment request has been generated, then will become either a success (if
@@ -86,11 +93,13 @@ trait OutgoingPaymentsDb {
  *
  * @param paymentRequest  Bolt 11 payment request.
  * @param paymentPreimage pre-image associated with the payment request's payment_hash.
+ * @param paymentType     distinguish different payment types (standard, swaps, etc).
  * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment request was generated.
  * @param status          current status of the payment.
  */
 case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
+                           paymentType: String,
                            createdAt: Long,
                            status: IncomingPaymentStatus)
 
@@ -118,22 +127,26 @@ object IncomingPaymentStatus {
  * An outgoing payment sent by this node.
  * At first it is in a pending state, then will become either a success or a failure.
  *
- * @param id             internal payment identifier.
- * @param parentId       internal identifier of a parent payment, or [[id]] if single-part payment.
- * @param externalId     external payment identifier: lets lightning applications reconcile payments with their own db.
- * @param paymentHash    payment_hash.
- * @param amount         amount of the payment, in milli-satoshis.
- * @param targetNodeId   node ID of the payment recipient.
- * @param createdAt      absolute time in milli-seconds since UNIX epoch when the payment was created.
- * @param paymentRequest Bolt 11 payment request (if paying from an invoice).
- * @param status         current status of the payment.
+ * @param id              internal payment identifier.
+ * @param parentId        internal identifier of a parent payment, or [[id]] if single-part payment.
+ * @param externalId      external payment identifier: lets lightning applications reconcile payments with their own db.
+ * @param paymentHash     payment_hash.
+ * @param paymentType     distinguish different payment types (standard, swaps, etc).
+ * @param amount          amount that will be received by the target node, will be different from recipientAmount for trampoline payments.
+ * @param recipientAmount amount that will be received by the final recipient.
+ * @param recipientNodeId id of the final recipient.
+ * @param createdAt       absolute time in milli-seconds since UNIX epoch when the payment was created.
+ * @param paymentRequest  Bolt 11 payment request (if paying from an invoice).
+ * @param status          current status of the payment.
  */
 case class OutgoingPayment(id: UUID,
                            parentId: UUID,
                            externalId: Option[String],
                            paymentHash: ByteVector32,
+                           paymentType: String,
                            amount: MilliSatoshi,
-                           targetNodeId: PublicKey,
+                           recipientAmount: MilliSatoshi,
+                           recipientNodeId: PublicKey,
                            createdAt: Long,
                            paymentRequest: Option[PaymentRequest],
                            status: OutgoingPaymentStatus)
@@ -150,8 +163,9 @@ object OutgoingPaymentStatus {
    * We now have a valid proof-of-payment.
    *
    * @param paymentPreimage the preimage of the payment_hash.
-   * @param feesPaid        total amount of fees paid to intermediate routing nodes.
-   * @param route           payment route.
+   * @param feesPaid        fees paid to route to the target node (which not necessarily the final recipient, e.g. when
+   *                        trampoline is used).
+   * @param route           payment route used.
    * @param completedAt     absolute time in milli-seconds since UNIX epoch when the payment was completed.
    */
   case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: Long) extends OutgoingPaymentStatus
@@ -175,7 +189,13 @@ case class HopSummary(nodeId: PublicKey, nextNodeId: PublicKey, shortChannelId: 
 }
 
 object HopSummary {
-  def apply(h: ChannelHop): HopSummary = HopSummary(h.nodeId, h.nextNodeId, Some(h.lastUpdate.shortChannelId))
+  def apply(h: Hop): HopSummary = {
+    val shortChannelId = h match {
+      case ChannelHop(_, _, channelUpdate) => Some(channelUpdate.shortChannelId)
+      case _: NodeHop => None
+    }
+    HopSummary(h.nodeId, h.nextNodeId, shortChannelId)
+  }
 }
 
 /** A minimal representation of a payment failure (suitable to store in a database). */
@@ -209,6 +229,7 @@ trait PaymentsOverviewDb {
  */
 sealed trait PlainPayment {
   val paymentHash: ByteVector32
+  val paymentType: String
   val paymentRequest: Option[String]
   val finalAmount: Option[MilliSatoshi]
   val createdAt: Long
@@ -216,6 +237,7 @@ sealed trait PlainPayment {
 }
 
 case class PlainIncomingPayment(paymentHash: ByteVector32,
+                                paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: IncomingPaymentStatus,
@@ -226,6 +248,7 @@ case class PlainIncomingPayment(paymentHash: ByteVector32,
 case class PlainOutgoingPayment(parentId: Option[UUID],
                                 externalId: Option[String],
                                 paymentHash: ByteVector32,
+                                paymentType: String,
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: OutgoingPaymentStatus,

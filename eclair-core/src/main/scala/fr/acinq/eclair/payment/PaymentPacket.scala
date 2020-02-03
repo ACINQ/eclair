@@ -54,11 +54,11 @@ object IncomingPacket {
 
   case class DecodedOnionPacket[T <: Onion.PacketType](payload: T, next: OnionRoutingPacket)
 
-  private def decryptOnion[T <: Onion.PacketType: ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
+  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
     packetType.peel(privateKey, add.paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !Features.hasVariableLengthOnion(features) => Left(InvalidRealm)
+          case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !Features.hasFeature(features, Features.VariableLengthOnion) => Left(InvalidRealm)
           case Attempt.Successful(DecodeResult(perHopPayload: T, remainder)) =>
             if (remainder.nonEmpty) {
               log.warning(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
@@ -102,7 +102,7 @@ object IncomingPacket {
   }
 
   private def validateFinal(add: UpdateAddHtlc, payload: Onion.FinalPayload): Either[FailureMessage, IncomingPacket] = {
-    if (add.amountMsat < payload.amount) {
+    if (add.amountMsat != payload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != payload.expiry) {
       Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
@@ -112,7 +112,7 @@ object IncomingPacket {
   }
 
   private def validateFinal(add: UpdateAddHtlc, outerPayload: Onion.FinalPayload, innerPayload: Onion.FinalPayload): Either[FailureMessage, IncomingPacket] = {
-    if (add.amountMsat < outerPayload.amount) {
+    if (add.amountMsat != outerPayload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != outerPayload.expiry) {
       Left(FinalIncorrectCltvExpiry(add.cltvExpiry))

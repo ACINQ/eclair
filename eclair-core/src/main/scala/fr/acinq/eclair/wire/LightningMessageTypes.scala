@@ -45,11 +45,11 @@ sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
-case class Init(globalFeatures: ByteVector,
-                localFeatures: ByteVector) extends SetupMessage
+case class Init(features: ByteVector, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
+  val networks = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+}
 
-case class Error(channelId: ByteVector32,
-                 data: ByteVector) extends SetupMessage with HasChannelId {
+case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
   def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
 }
 
@@ -84,7 +84,9 @@ case class OpenChannel(chainHash: ByteVector32,
                        delayedPaymentBasepoint: PublicKey,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
-                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       channelFlags: Byte,
+                       upfrontShutdownScript: Option[ByteVector] = None,
+                       tlvStream_opt: Option[TlvStream[OpenTlv]] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
@@ -99,7 +101,8 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          paymentBasepoint: PublicKey,
                          delayedPaymentBasepoint: PublicKey,
                          htlcBasepoint: PublicKey,
-                         firstPerCommitmentPoint: PublicKey) extends ChannelMessage with HasTemporaryChannelId
+                         firstPerCommitmentPoint: PublicKey,
+                         upfrontShutdownScript: Option[ByteVector] = None) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,

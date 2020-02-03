@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
+
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
-trait AuditDb {
-
-  def add(availableBalanceChanged: AvailableBalanceChanged)
+trait AuditDb extends Closeable {
 
   def add(channelLifecycle: ChannelLifecycleEvent)
 
@@ -46,8 +46,6 @@ trait AuditDb {
   def listNetworkFees(from: Long, to: Long): Seq[NetworkFee]
 
   def stats: Seq[Stats]
-
-  def close(): Unit
 
 }
 

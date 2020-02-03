@@ -14,19 +14,23 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.wire
 
-import java.io.Closeable
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.TlvCodecs.tlvStream
+import scodec.Codec
+import scodec.bits.ByteVector
+import scodec.codecs._
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.NodeAddress
+sealed trait OpenTlv extends Tlv
 
-trait PeersDb extends Closeable {
+object OpenTlv {
 
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
+  case class Placeholder(b: ByteVector) extends OpenTlv
 
-  def removePeer(nodeId: PublicKey)
-
-  def listPeers(): Map[PublicKey, NodeAddress]
+  val openTlvCodec: Codec[TlvStream[OpenTlv]] = tlvStream(discriminated.by(varint)
+    .typecase(UInt64(65717), variableSizeBytesLong(varintoverflow, bytes).as[Placeholder])
+  )
 
 }
