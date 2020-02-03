@@ -664,6 +664,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate === bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
   }
 
+
+  test("recv CMD_SIGN (after CMD_UPDATE_FEE)") { f =>
+    import f._
+    val sender = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
+    sender.send(alice, CMD_UPDATE_FEE(654564))
+    sender.expectMsg("ok")
+    alice2bob.expectMsgType[UpdateFee]
+    sender.send(alice, CMD_SIGN)
+    listener.expectMsgType[AvailableBalanceChanged]
+  }
+
   test("recv CommitSig (one htlc received)") { f =>
     import f._
     val sender = TestProbe()
