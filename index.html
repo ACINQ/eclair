@@ -396,13 +396,13 @@
       <div class="content">
         <h1 id='introduction'>Introduction</h1>
 <p>Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API.
-Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the <a href="https://github.com/ACINQ/eclair">repo</a>. The API
-uses <a href="https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms">HTTP form data</a> and returns JSON encoded object or simple strings if no object
-is being returned, all errors are handled with a JSON response more info <a href="#errors">here</a>. All monetary values are in millisatoshi unless stated otherwise.</p>
+Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the <a href="https://github.com/ACINQ/eclair">repo</a>.
+The API uses <a href="https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms">HTTP form data</a> and returns JSON encoded object or simple strings if no object is being returned, all errors are handled with a JSON response more info <a href="#errors">here</a>.
+All monetary values are in millisatoshi unless stated otherwise.</p>
 <h1 id='authentication'>Authentication</h1>
 <p>Eclair uses HTTP Basic authentication and expects to receive the correct header with every request.
 To set an API password use the <a href="https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf">configuration</a>.
-The rest of this document will use &#39;21satoshi&#39; as password which encoded as <em>base64</em> results in <code>OjIxc2F0b3NoaQ==</code></p>
+The rest of this document will use &#39;21satoshi&#39; as password which encoded as <em>base64</em> results in <code>OjIxc2F0b3NoaQ==</code>.</p>
 
 <aside class="notice">
  Please note that eclair only expects a password and an empty user name.
@@ -439,10 +439,10 @@ eclair-cli connect --uri<span class="o">=</span>&lt;target_uri&gt;
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>connected
+<pre class="highlight shell tab-shell"><code>connected
 </code></pre>
-<p>Connect to another lightning node, this will perform a connection but no channel will be opened. 
-Note in the <em>URI</em> the port is optional and if missing the default (9735) will be used. </p>
+<p>Connect to another lightning node, this will perform a connection but no channel will be opened.
+Note in the <em>URI</em> the port is optional and if missing the default (9735) will be used.</p>
 <h3 id='http-request-2'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/connect</code></p>
 <h3 id='parameters'>Parameters</h3>
@@ -461,8 +461,7 @@ Note in the <em>URI</em> the port is optional and if missing the default (9735) 
 <td>String</td>
 </tr>
 </tbody></table>
-<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; <span class="se">\ </span>
-    -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; <span class="s2">"http://localhost:8080/connect"</span>
+<h2 id='connect-manually'>Connect manually</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">host</span><span class="o">=</span>&lt;host&gt; <span class="s2">"http://localhost:8080/connect"</span>
 
 <span class="c"># with eclair-cli</span>
 eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span class="o">=</span>&lt;host&gt;
@@ -470,7 +469,7 @@ eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span c
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>connected
+<pre class="highlight shell tab-shell"><code>connected
 </code></pre>
 <p>Connect to another lightning node, this will perform a connection but no channel will be opened.</p>
 <h3 id='http-request-3'>HTTP Request</h3>
@@ -488,7 +487,7 @@ eclair-cli connect --nodeId<span class="o">=</span>&lt;node_id&gt; --host<span c
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the node you want to connect to</td>
 <td>No</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>host</td>
@@ -511,9 +510,9 @@ eclair-cli connect --nodeId<span class="o">=</span>&lt;nodeId&gt;
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>connected
+<pre class="highlight shell tab-shell"><code>connected
 </code></pre>
-<p>Connect to another lightning node, this will perform a connection but no channel will be opened. 
+<p>Connect to another lightning node, this will perform a connection but no channel will be opened.
 This API does not require a target address, instead eclair will use one of the addresses published
 by the remote peer in his <code>node_announcement</code> messages.</p>
 <h3 id='http-request-4'>HTTP Request</h3>
@@ -531,7 +530,7 @@ by the remote peer in his <code>node_announcement</code> messages.</p>
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the node you want to connect to</td>
 <td>No</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='disconnect'>Disconnect</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;nodeId&gt;  <span class="s2">"http://localhost:8080/disconnect"</span>
@@ -542,7 +541,7 @@ eclair-cli disconnect --nodeId<span class="o">=</span>&lt;nodeId&gt;
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>disconnecting
+<pre class="highlight shell tab-shell"><code>disconnecting
 </code></pre>
 <p>Disconnect from a peer.</p>
 <h3 id='http-request-5'>HTTP Request</h3>
@@ -560,11 +559,10 @@ eclair-cli disconnect --nodeId<span class="o">=</span>&lt;nodeId&gt;
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the node you want to disconnect from</td>
 <td>No</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="se">\</span>
-    <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
+<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
 
 <span class="c"># with eclair-cli</span>
 eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshis<span class="o">=</span>&lt;funding_satoshis&gt;
@@ -572,7 +570,7 @@ eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshi
 <blockquote>
 <p>The above command returns the channelId of the newly created channel:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
+<pre class="highlight shell tab-shell"><code>created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 </code></pre>
 <p>Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
 you can send to the remote a <em>pushMsat</em> value and you can specify wether this should be a public or private channel (default is set in the config).</p>
@@ -591,7 +589,7 @@ you can send to the remote a <em>pushMsat</em> value and you can specify wether 
 <td>nodeId</td>
 <td>The nodeId of the node you want to connect to</td>
 <td>No</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>fundingSatoshis</td>
@@ -632,7 +630,7 @@ eclair-cli close --channelId<span class="o">=</span>&lt;channel&gt;
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>ok
+<pre class="highlight shell tab-shell"><code>ok
 </code></pre>
 <p>Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the <em>funding_signed</em> message has been negotiated.
 If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
@@ -651,7 +649,7 @@ If you specified a scriptPubKey then the closing transaction will spend to that 
 <td>channelId</td>
 <td>The channelId of the channel you want to close</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>shortChannelId</td>
@@ -674,7 +672,7 @@ eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>ok
+<pre class="highlight shell tab-shell"><code>ok
 </code></pre>
 <p>Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
 transaction id. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
@@ -693,7 +691,7 @@ transaction id. Note that you must specify at least a <em>channelId</em> <strong
 <td>channelId</td>
 <td>The channelId of the channel you want to close</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>shortChannelId</td>
@@ -708,14 +706,14 @@ transaction id. Note that you must specify at least a <em>channelId</em> <strong
 
 <span class="c">#eclair-cli</span>
 eclair-cli updaterelayfee <span class="se">\</span>
-    --channelId<span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
-    --feeBaseMsat<span class="o">=</span>&lt;feebase&gt; <span class="se">\</span>
-    --feeProportionalMillionths<span class="o">=</span>&lt;feeproportional&gt;
+  --channelId<span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
+  --feeBaseMsat<span class="o">=</span>&lt;feebase&gt; <span class="se">\</span>
+  --feeProportionalMillionths<span class="o">=</span>&lt;feeproportional&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight plaintext"><code>ok
+<pre class="highlight shell tab-shell"><code>ok
 </code></pre>
 <p>Updates the fee policy for the specified <em>channelId</em>, a new update for this channel will be broadcasted to the network.</p>
 <h3 id='http-request-9'>HTTP Request</h3>
@@ -733,7 +731,7 @@ eclair-cli updaterelayfee <span class="se">\</span>
 <td>channelId</td>
 <td>The channelId of the channel you want to update</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>shortChannelId</td>
@@ -925,7 +923,7 @@ eclair-cli channels
 <td>nodeId</td>
 <td>The remote node id to be used as filter for the channels</td>
 <td>Yes</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='channel'>Channel</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt;  <span class="s2">"http://localhost:8080/channel"</span>
@@ -1073,7 +1071,7 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 <td>channelId</td>
 <td>The channel id of the requested channel</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h1 id='network'>Network</h1>
@@ -1192,7 +1190,7 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>nodeId</td>
 <td>The node id of the node to be used as filter for the updates</td>
 <td>Yes</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h1 id='payments'>Payments</h1>
@@ -1213,7 +1211,8 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
   </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"A payment description"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="w">
+  </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">21600</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">42000</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Create a <strong>BOLT11</strong> payment invoice.</p>
@@ -1256,7 +1255,7 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 <td>paymentPreimage</td>
 <td>A user defined input for the generation of the paymentHash</td>
 <td>Yes</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='parseinvoice'>ParseInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
@@ -1329,7 +1328,7 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 </tr>
 <tr>
 <td>amountMsat</td>
-<td>Amount in to pay if the invoice does not have one</td>
+<td>Amount to pay if the invoice does not have one</td>
 <td>Yes</td>
 <td>Millisatoshi (Integer)</td>
 </tr>
@@ -1388,11 +1387,11 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>nodeId</td>
 <td>The recipient of this payment</td>
 <td>No</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>amountMsat</td>
-<td>Amount in to pay</td>
+<td>Amount to pay</td>
 <td>No</td>
 <td>Millisatoshi (Integer)</td>
 </tr>
@@ -1400,7 +1399,7 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>paymentHash</td>
 <td>The payment hash for this payment</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>maxAttempts</td>
@@ -1428,21 +1427,31 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 </tr>
 </tbody></table>
 <h2 id='sendtoroute'>SendToRoute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">route</span><span class="o">=</span>node1,node2 <span class="se">\</span>
-  -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; -F <span class="nv">finalCltvExpiry</span><span class="o">=</span>&lt;some_value&gt; <span class="s2">"http://localhost:8080/sendtoroute"</span>
+  -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; <span class="se">\</span>
+  -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="se">\</span>
+  -F <span class="nv">finalCltvExpiry</span><span class="o">=</span>&lt;some_value&gt; <span class="se">\</span>
+  -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="se">\</span>
+  <span class="s2">"http://localhost:8080/sendtoroute"</span>
 
 <span class="c"># with eclair-cli</span>
-eclair-cli sendtoroute --route<span class="o">=</span>node1,node2 --amountMsat<span class="o">=</span>&lt;amount&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt; --finalCltvExpiry<span class="o">=</span>&lt;some_value&gt;
+eclair-cli sendtoroute --route<span class="o">=</span>node1,node2 --amountMsat<span class="o">=</span>&lt;amount&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt; --finalCltvExpiry<span class="o">=</span>&lt;some_value&gt; --invoice<span class="o">=</span>&lt;some_invoice&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
-<pre class="highlight json tab-json"><code><span class="s2">"e4227601-38b3-404e-9aa0-75a829e9bec0"</span><span class="w">
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"paymentId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"15798966-5e95-4dce-84a0-825bd2f2a8d1"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"parentId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"20b2a854-261a-4e9f-a4ca-59b381aee4bc"</span><span class="w">
+</span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where 
+<p>Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
-nodeIds that the payment will traverse, it can be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma 
-separated list of nodeIds. Note that the channels between the nodes in the route must be public.It&#39;s possible to add an 
+nodeIds that the payment will traverse, it can be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma
+separated list of nodeIds. Note that the channels between the nodes in the route must be public. It&#39;s possible to add an
 extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
+
+<p>This command may also be used to send multipart payments with your own splitting algorithm.
+Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on how to do that.</p>
 <h3 id='http-request-18'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtoroute</code></p>
 <h3 id='parameters-16'>Parameters</h3>
@@ -1455,6 +1464,12 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 </tr>
 </thead><tbody>
 <tr>
+<td>invoice</td>
+<td>The invoice you want to pay</td>
+<td>No</td>
+<td>String</td>
+</tr>
+<tr>
 <td>route</td>
 <td>A list of nodeIds from source to destination of the payment</td>
 <td>No</td>
@@ -1462,7 +1477,7 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 </tr>
 <tr>
 <td>amountMsat</td>
-<td>Amount in to pay</td>
+<td>Amount to pay</td>
 <td>No</td>
 <td>Millisatoshi (Integer)</td>
 </tr>
@@ -1470,13 +1485,25 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>paymentHash</td>
 <td>The payment hash for this payment</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>finalCltvExpiry</td>
 <td>The total CLTV expiry value for this payment</td>
 <td>No</td>
 <td>Integer</td>
+</tr>
+<tr>
+<td>recipientAmountMsat</td>
+<td>Total amount that the recipient should receive (if using MPP)</td>
+<td>Yes</td>
+<td>Millisatoshi (Integer)</td>
+</tr>
+<tr>
+<td>parentId</td>
+<td>Id of the whole payment (if using MPP)</td>
+<td>Yes</td>
+<td>Java&#39;s UUID (String)</td>
 </tr>
 <tr>
 <td>externalId</td>
@@ -1499,8 +1526,10 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
     </span><span class="s2">"parentId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"10886b3c-1803-415e-b97d-84d1003cda31"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"externalId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cool-id"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"paymentType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Standard"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"targetNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"recipientAmount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"recipientNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569337970908</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentRequest"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt"</span><span class="p">,</span><span class="w">
@@ -1536,8 +1565,10 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
     </span><span class="s2">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"c85d70da-d159-4a36-938a-c3d2f967f730"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"parentId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"c85d70da-d159-4a36-938a-c3d2f967f730"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"paymentType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Standard"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"targetNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"recipientAmount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"recipientNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569337870892</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentRequest"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt"</span><span class="p">,</span><span class="w">
@@ -1583,7 +1614,7 @@ The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
 <td>paymentHash</td>
 <td>The payment hash common to all payment attepts to be retrieved</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>id</td>
@@ -1612,6 +1643,7 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="w">
   </span><span class="p">},</span><span class="w">
   </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"69d56a778eca1619d19d4efc4dbe014ef64005338cb9f6cb88d47e4bac7abc30"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"paymentType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Standard"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"createdAt"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569338266000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
     </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"received"</span><span class="p">,</span><span class="w">
@@ -1637,7 +1669,7 @@ as parameter instead of the <code>paymentHash</code> but at least one of the two
 <td>paymentHash</td>
 <td>The payment hash you want to check</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>invoice</td>
@@ -1680,7 +1712,7 @@ eclair-cli getinvoice --description<span class="o">=</span>&lt;some_description&
 <td>paymentHash</td>
 <td>The payment hash of the invoice you want to retrieve</td>
 <td>No</td>
-<td>32bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
 <h2 id='listinvoices'>ListInvoices</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/listinvoices"</span>
@@ -1711,7 +1743,7 @@ eclair-cli listinvoices
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Returns all the <strong>BOLT11</strong> invoice stored.</p>
+<p>Returns all the <strong>BOLT11</strong> invoices stored.</p>
 <h3 id='http-request-22'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listinvoices</code></p>
 <h3 id='parameters-20'>Parameters</h3>
@@ -1804,7 +1836,7 @@ eclair-cli findroute --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
   </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Finds a route to the node specified by the invoice, if the invoice does not specify an amount 
+<p>Finds a route to the node specified by the invoice, if the invoice does not specify an amount
 you must do so via the <code>amountMsat</code> parameter.</p>
 <h3 id='http-request-24'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroute</code></p>
@@ -1861,7 +1893,7 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 <td>nodeId</td>
 <td>The destination of the route</td>
 <td>No</td>
-<td>33bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>amountMsat</td>
@@ -1882,7 +1914,7 @@ eclair-cli getnewaddress
 </span></code></pre>
 <p>Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
-depend on the configured address-type in bitcoin.conf.</p>
+depend on the configured address-type in <code>bitcoin.conf</code>.</p>
 <h3 id='http-request-26'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getnewaddress</code></p>
 <h2 id='audit'>Audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
@@ -1896,14 +1928,24 @@ eclair-cli audit
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
    </span><span class="s2">"sent"</span><span class="p">:[</span><span class="w">
       </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment-sent"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"c85d70da-d159-4a36-938a-c3d2f967f730"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="w"> </span><span class="s2">"62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"recipientAmount"</span><span class="p">:</span><span class="w"> </span><span class="mi">100000</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"recipientNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03d41301628a6086aa7a46a2810e73cc1dcdaf4678ea2b3e805befd3b76af31512"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"parts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
           </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"c85d70da-d159-4a36-938a-c3d2f967f730"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">10000</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"feesPaid"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4e8f2440-dbfd-4e76-bb45-a0647a966b2a"</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">40000</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"feesPaid"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379"</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569337871061</span><span class="w">
+          </span><span class="p">},</span><span class="w">
+          </span><span class="p">{</span><span class="w">
+            </span><span class="s2">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"63e9b037-92d6-4f3d-b484-41740fc278f5"</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">60000</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"feesPaid"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w">
             </span><span class="s2">"toChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379"</span><span class="p">,</span><span class="w">
             </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569337871061</span><span class="w">
           </span><span class="p">}</span><span class="w">
@@ -1912,18 +1954,25 @@ eclair-cli audit
    </span><span class="p">],</span><span class="w">
    </span><span class="s2">"received"</span><span class="p">:[</span><span class="w">
     </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment-received"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5271e28256bf0511921a11fc15984b260937f4bf42e85bac31bc4da7a89c6bc3"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"parts"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
         </span><span class="p">{</span><span class="w">
           </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
           </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569338275801</span><span class="w">
+        </span><span class="p">},</span><span class="w">
+        </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">1500</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"8ca125b6ae86c44021337c273bd620e88263d4769de35cccded3cdcb9d1cdcc4"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1569338275803</span><span class="w">
         </span><span class="p">}</span><span class="w">
       </span><span class="p">]</span><span class="w">
     </span><span class="p">}</span><span class="w">
    </span><span class="p">],</span><span class="w">
    </span><span class="s2">"relayed"</span><span class="p">:[</span><span class="w">
       </span><span class="p">{</span><span class="w">
+         </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment-relayed"</span><span class="p">,</span><span class="w">
          </span><span class="s2">"amountIn"</span><span class="p">:</span><span class="mi">150001</span><span class="p">,</span><span class="w">
          </span><span class="s2">"amountOut"</span><span class="p">:</span><span class="mi">150000</span><span class="p">,</span><span class="w">
          </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3"</span><span class="p">,</span><span class="w">
@@ -1934,8 +1983,8 @@ eclair-cli audit
    </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Retrieves information about payments handled by this node such as: sent, received and relayed payments. All monetary
-values are expressed in millisatoshi.</p>
+<p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.
+All monetary values are expressed in millisatoshi.</p>
 <h3 id='http-request-27'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
 <h3 id='parameters-24'>Parameters</h3>
@@ -2052,31 +2101,31 @@ eclair-cli usablebalances
 <p>Payment relayed event</p>
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
-   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-relayed"</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"amountIn"</span><span class="p">:</span><span class="mi">21</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"amountOut"</span><span class="p">:</span><span class="mi">20</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"toChannelId"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553784963659</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment-relayed"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amountIn"</span><span class="p">:</span><span class="w"> </span><span class="mi">21</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"amountOut"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"toChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553784963659</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <blockquote>
 <p>Payment received event</p>
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
-   </span><span class="s2">"type"</span><span class="p">:</span><span class="s2">"payment-received"</span><span class="p">,</span><span class="w">
-   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment-received"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
    </span><span class="s2">"parts"</span><span class="p">:[</span><span class="w">
      </span><span class="p">{</span><span class="w">
-       </span><span class="s2">"amount"</span><span class="p">:</span><span class="mi">21</span><span class="p">,</span><span class="w">
-       </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
-       </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553784963659</span><span class="w">
+       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">21</span><span class="p">,</span><span class="w">
+       </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+       </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553784963659</span><span class="w">
      </span><span class="p">},</span><span class="w">
      </span><span class="p">{</span><span class="w">
-       </span><span class="s2">"amount"</span><span class="p">:</span><span class="mi">24</span><span class="p">,</span><span class="w">
-       </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="s2">"0200000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
-       </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="mi">1553784963873</span><span class="w">
+       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="p">,</span><span class="w">
+       </span><span class="s2">"fromChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0200000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+       </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553784963873</span><span class="w">
      </span><span class="p">}</span><span class="w">
    </span><span class="p">]</span><span class="w">
 </span><span class="p">}</span><span class="w">
@@ -2100,6 +2149,8 @@ eclair-cli usablebalances
    </span><span class="s2">"id"</span><span class="p">:</span><span class="s2">"487da196-a4dc-4b1e-92b4-3e5e905e9f3f"</span><span class="p">,</span><span class="w">
    </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="s2">"0000000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
    </span><span class="s2">"paymentPreimage"</span><span class="p">:</span><span class="s2">"0100000000000000000000000000000000000000000000000000000000000000"</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"recipientAmount"</span><span class="p">:</span><span class="w"> </span><span class="mi">45</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"recipientNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02fef72bab86280a4fe30f2710b23a5d4c0d17f5adc4e1f24adabfd16cf6bd3c35"</span><span class="p">,</span><span class="w">
    </span><span class="s2">"parts"</span><span class="p">:[</span><span class="w">
      </span><span class="p">{</span><span class="w">
        </span><span class="s2">"id"</span><span class="p">:</span><span class="s2">"b8799834-8db9-460b-b754-2942f20e3500"</span><span class="p">,</span><span class="w">
