@@ -749,7 +749,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
-          if (commitments1.availableBalanceForSend != commitments1.availableBalanceForSend) {
+          if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
             // we send this event only when our balance changes
             context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           }
@@ -2294,7 +2294,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   initialize()
 
 }
-
 
 
 
