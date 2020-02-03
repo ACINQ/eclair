@@ -634,6 +634,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
@@ -655,6 +656,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
@@ -666,6 +668,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFailMalformed(d.commitments, c)) match {
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
