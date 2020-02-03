@@ -69,10 +69,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val sender = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
     val h = randomBytes32
     val add = CMD_ADD_HTLC(50000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     sender.expectMsg("ok")
+    val e = listener.expectMsgType[AvailableBalanceChanged]
+    assert(e.commitments.availableBalanceForSend < initialState.commitments.availableBalanceForSend)
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
     awaitCond(alice.stateData == initialState.copy(
