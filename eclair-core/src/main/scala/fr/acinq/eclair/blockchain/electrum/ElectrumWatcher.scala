@@ -233,7 +233,11 @@ object ElectrumWatcher {
   def makeDummyShortChannelId(txid: ByteVector32): (Int, Int) = {
     // we use a height of 0
     // - to make sure that the tx will be marked as "confirmed"
-    // - to identify scids linked to 0-conf channels
+    // - to easily identify scids linked to 0-conf channels
+    //
+    // this gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
+    // collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed)
+    // if this ever becomes a problem we could just extract some bits for our dummy height instead of just returning 0
     val height = 0
     val txIndex = txid.bits.sliceToInt(0, 16, false)
     (height, txIndex)

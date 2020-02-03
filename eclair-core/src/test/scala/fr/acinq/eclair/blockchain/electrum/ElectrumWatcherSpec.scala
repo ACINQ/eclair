@@ -23,19 +23,18 @@ import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Bech32, ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
+import fr.acinq.eclair.{LongToBtcAmount, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
 import scala.concurrent.duration._
-import scala.util.Random
 
 class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
@@ -229,14 +228,16 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     system.stop(watcher)
   }
 
-  test("compute dummy height/txindex for 0-conf channels") {
-    val buffer = new Array[Byte](32)
-    val dummies = (0 to 1000).map { _ =>
-      Random.nextBytes(buffer)
-      ElectrumWatcher.makeDummyShortChannelId(ByteVector32(ByteVector.view(buffer)))
+  test("generate unique dummy scids") {
+    // generate 1000 dummy ids
+    val dummies = (0 until 20).map { _ =>
+      ElectrumWatcher.makeDummyShortChannelId(randomBytes32)
     } toSet
 
-    assert(dummies.size >= 1000 - 10)
+    // make sure that they are unique (we allow for 1 collision here, actual probability of a collision with the current impl. is 1%
+    // but that could change and we don't want to make this test impl. dependent)
+    // if this test fails it's very likely that the code that generates dummy scids is broken
+    assert(dummies.size >= 19)
   }
 
   test("get transaction") {
