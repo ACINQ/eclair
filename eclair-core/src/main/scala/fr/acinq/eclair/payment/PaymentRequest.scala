@@ -396,20 +396,23 @@ object PaymentRequest {
 
     val paymentHashCodec: Codec[PaymentHashTag] = discriminatorWithDefault(
       discriminated.by(dataLengthCodec)
-        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
-        .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[PaymentHash])),
+        // Bolt11: MUST skip over (...) p, h, s or n fields that do NOT have data_lengths of 52, 52, 52 or 53, respectively.
+        // NB: Bech32 encodes 5 bits per character.
+        .typecase(52 * 5, dataCodecLengthDiscriminated(52 * 5, bytes32.as[PaymentHash])),
       bits.as[InvalidPaymentHash].upcast[PaymentHashTag])
 
     val paymentSecretCodec: Codec[PaymentSecretTag] = discriminatorWithDefault(
       discriminated.by(dataLengthCodec)
-        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
-        .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[PaymentSecret])),
+        // Bolt11: MUST skip over (...) p, h, s or n fields that do NOT have data_lengths of 52, 52, 52 or 53, respectively.
+        // NB: Bech32 encodes 5 bits per character.
+        .typecase(52 * 5, dataCodecLengthDiscriminated(52 * 5, bytes32.as[PaymentSecret])),
       bits.as[InvalidPaymentSecret].upcast[PaymentSecretTag])
 
     val descriptionHashCodec: Codec[DescriptionHashTag] = discriminatorWithDefault(
       discriminated.by(dataLengthCodec)
-        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
-        .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[DescriptionHash])),
+        // Bolt11: MUST skip over (...) p, h, s or n fields that do NOT have data_lengths of 52, 52, 52 or 53, respectively.
+        // NB: Bech32 encodes 5 bits per character.
+        .typecase(52 * 5, dataCodecLengthDiscriminated(52 * 5, bytes32.as[DescriptionHash])),
       bits.as[InvalidDescriptionHash].upcast[DescriptionHashTag])
 
     val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField].by(ubyte(5))
