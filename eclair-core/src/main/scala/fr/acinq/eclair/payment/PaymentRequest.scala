@@ -396,16 +396,19 @@ object PaymentRequest {
 
     val paymentHashCodec: Codec[PaymentHashTag] = discriminatorWithDefault(
       discriminated.by(dataLengthCodec)
+        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
         .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[PaymentHash])),
       bits.as[InvalidPaymentHash].upcast[PaymentHashTag])
 
     val paymentSecretCodec: Codec[PaymentSecretTag] = discriminatorWithDefault(
       discriminated.by(dataLengthCodec)
+        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
         .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[PaymentSecret])),
       bits.as[InvalidPaymentSecret].upcast[PaymentSecretTag])
 
     val descriptionHashCodec: Codec[DescriptionHashTag] = discriminatorWithDefault(
       discriminated.by(dataLengthCodec)
+        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
         .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[DescriptionHash])),
       bits.as[InvalidDescriptionHash].upcast[DescriptionHashTag])
 
