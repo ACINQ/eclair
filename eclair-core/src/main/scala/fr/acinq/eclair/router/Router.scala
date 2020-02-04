@@ -52,6 +52,8 @@ import scala.util.{Random, Try}
  * Created by PM on 24/05/2016.
  */
 
+case class GetExtraHops(channels: Seq[ShortChannelId], localNodeId: PublicKey)
+
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
                       routerBroadcastInterval: FiniteDuration,
@@ -80,6 +82,13 @@ case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, ca
   def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
 
   def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+
+  def getExtraHopFromRemoteUpdate(localNodeId: PublicKey): List[ExtraHop] =
+    for {
+      upd <- (update_1_opt ++ update_2_opt).toList
+      updateNodeId = getNodeIdSameSideAs(upd)
+      if updateNodeId != localNodeId
+    } yield ExtraHop(updateNodeId, upd.shortChannelId, upd.feeBaseMsat, upd.feeProportionalMillionths, upd.cltvExpiryDelta)
 }
 case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
   val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
@@ -327,6 +336,16 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(GetNetworkStats, d: Data) =>
       sender ! GetNetworkStatsResponse(d.stats)
+      stay
+
+    case Event(GetExtraHops(shortIds, localNodeId), d: Data) =>
+      val extraHops = for {
+        shortId <- shortIds.toList
+        publicChannel <- d.channels.get(shortId)
+        extraHop = publicChannel.getExtraHopFromRemoteUpdate(localNodeId)
+        if extraHop.nonEmpty
+      } yield extraHop
+      sender ! extraHops
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>
