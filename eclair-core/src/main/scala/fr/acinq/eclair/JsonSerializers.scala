@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, Init, NodeAddress, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, GenericTlv, Init, NodeAddress, OnionRoutingPacket, OpenChannel, OpenTlv, Shutdown, Tlv, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
 import scodec.bits.{BitVector, ByteVector}
 
 object JsonSerializers {
@@ -61,6 +61,11 @@ object JsonSerializers {
   implicit val relayedOriginReadWriter: ReadWriter[Origin.Relayed] = macroRW
   implicit val paymentOriginReadWriter: ReadWriter[Origin] = ReadWriter.merge(localOriginReadWriter, relayedOriginReadWriter)
   implicit val remoteChangesReadWriter: ReadWriter[RemoteChanges] = macroRW
+  implicit val openTlvPlaceholderReadWriter: ReadWriter[OpenTlv.Placeholder] = macroRW
+  implicit val openTlvReadWriter: ReadWriter[OpenTlv] = ReadWriter.merge(openTlvPlaceholderReadWriter)
+  implicit val genericTlvReadWriter: ReadWriter[GenericTlv] = macroRW
+  implicit val tlvReadWriter: ReadWriter[Tlv] = ReadWriter.merge(genericTlvReadWriter)
+  implicit val tlvStreamOpenTlvReadWriter: ReadWriter[TlvStream[OpenTlv]] = readwriter[String].bimap[TlvStream[OpenTlv]](s => "N/A", s2 => TlvStream(List.empty[OpenTlv]))
 
   case class ShaChain2(knownHashes: Map[Long, ByteVector32], lastIndex: Option[Long] = None) {
     def toShaChain = ShaChain(knownHashes.map { case (k, v) => ShaChain.moves(k) -> v }, lastIndex)
@@ -75,7 +80,7 @@ object JsonSerializers {
   implicit val actorRefReadWriter: ReadWriter[ActorRef] = readwriter[String].bimap[ActorRef](_.toString, _ => ActorRef.noSender)
   implicit val shortChannelIdReadWriter: ReadWriter[ShortChannelId] = readwriter[String].bimap[ShortChannelId](_.toString, s => ShortChannelId(s))
 
-  implicit val initReadWriter: ReadWriter[Init] = macroRW
+  implicit val initReadWriter: ReadWriter[Init] = readwriter[ByteVector].bimap[Init](_.features, s => Init(s))
   implicit val openChannelReadWriter: ReadWriter[OpenChannel] = macroRW
   implicit val acceptChannelReadWriter: ReadWriter[AcceptChannel] = macroRW
   implicit val fundingCreatedReadWriter: ReadWriter[FundingCreated] = macroRW

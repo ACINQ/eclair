@@ -14,24 +14,23 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.wire
 
-import java.io.Closeable
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.TlvCodecs.tlvStream
+import scodec.Codec
+import scodec.bits.ByteVector
+import scodec.codecs._
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.channel.HasCommitments
+sealed trait OpenTlv extends Tlv
 
-trait ChannelsDb extends Closeable {
+object OpenTlv {
 
-  def addOrUpdateChannel(state: HasCommitments)
+  case class Placeholder(b: ByteVector) extends OpenTlv
 
-  def removeChannel(channelId: ByteVector32)
-
-  def listLocalChannels(): Seq[HasCommitments]
-
-  def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
-
-  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]
+  val openTlvCodec: Codec[TlvStream[OpenTlv]] = tlvStream(discriminated.by(varint)
+    .typecase(UInt64(65717), variableSizeBytesLong(varintoverflow, bytes).as[Placeholder])
+  )
 
 }
