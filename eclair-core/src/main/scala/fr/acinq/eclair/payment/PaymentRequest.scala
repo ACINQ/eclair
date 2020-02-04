@@ -158,11 +158,12 @@ object PaymentRequest {
 
   sealed trait TaggedField
 
-  sealed trait UnknownTaggedField extends TaggedField
+  sealed trait UnknownTaggedField extends TaggedField {
+    def data: BitVector
+  }
 
   // @formatter:off
   case class UnknownTag0(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag1(data: BitVector) extends UnknownTaggedField
   case class UnknownTag2(data: BitVector) extends UnknownTaggedField
   case class UnknownTag4(data: BitVector) extends UnknownTaggedField
   case class UnknownTag7(data: BitVector) extends UnknownTaggedField
@@ -187,19 +188,27 @@ object PaymentRequest {
   case class UnknownTag31(data: BitVector) extends UnknownTaggedField
   // @formatter:on
 
+  // @formatter:off
+  sealed trait PaymentHashTag extends TaggedField
   /**
    * Payment Hash
    *
    * @param hash payment hash
    */
-  case class PaymentHash(hash: ByteVector32) extends TaggedField
+  case class PaymentHash(hash: ByteVector32) extends PaymentHashTag
+  case class InvalidPaymentHash(data: BitVector) extends PaymentHashTag with UnknownTaggedField
+  // @formatter:on
 
+  // @formatter:off
+  sealed trait PaymentSecretTag extends TaggedField
   /**
    * Payment secret. This is currently random bytes used to protect against probing from the next-to-last node.
    *
    * @param secret payment secret
    */
-  case class PaymentSecret(secret: ByteVector32) extends TaggedField
+  case class PaymentSecret(secret: ByteVector32) extends PaymentSecretTag
+  case class InvalidPaymentSecret(data: BitVector) extends PaymentSecretTag with UnknownTaggedField
+  // @formatter:on
 
   /**
    * Description
@@ -208,13 +217,17 @@ object PaymentRequest {
    */
   case class Description(description: String) extends TaggedField
 
+  // @formatter:off
+  sealed trait DescriptionHashTag extends TaggedField
   /**
    * Hash
    *
    * @param hash hash that will be included in the payment request, and can be checked against the hash of a
    *             long description, an invoice, ...
    */
-  case class DescriptionHash(hash: ByteVector32) extends TaggedField
+  case class DescriptionHash(hash: ByteVector32) extends DescriptionHashTag
+  case class InvalidDescriptionHash(data: BitVector) extends DescriptionHashTag with UnknownTaggedField
+  // @formatter:on
 
   /**
    * Fallback Payment that specifies a fallback payment address to be used if LN payment cannot be processed
@@ -377,41 +390,61 @@ object PaymentRequest {
 
     val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
 
-    def dataCodec[A](valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(dataLengthCodec, valueCodec, multipleForPadding = 5)
+    def dataCodec[A <: TaggedField](valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(dataLengthCodec, valueCodec, multipleForPadding = 5)
+
+    def dataCodecLengthDiscriminated[A <: TaggedField](length: Long, valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(provide(length), valueCodec, multipleForPadding = 5)
+
+    val paymentHashCodec: Codec[PaymentHashTag] = discriminatorWithDefault(
+      discriminated.by(dataLengthCodec)
+        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
+        .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[PaymentHash])),
+      bits.as[InvalidPaymentHash].upcast[PaymentHashTag])
+
+    val paymentSecretCodec: Codec[PaymentSecretTag] = discriminatorWithDefault(
+      discriminated.by(dataLengthCodec)
+        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
+        .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[PaymentSecret])),
+      bits.as[InvalidPaymentSecret].upcast[PaymentSecretTag])
+
+    val descriptionHashCodec: Codec[DescriptionHashTag] = discriminatorWithDefault(
+      discriminated.by(dataLengthCodec)
+        // 260 is 256 bits padded to the next multiple of 5 (because of Bech32)
+        .typecase(260, dataCodecLengthDiscriminated(260, bytes32.as[DescriptionHash])),
+      bits.as[InvalidDescriptionHash].upcast[DescriptionHashTag])
 
     val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField].by(ubyte(5))
-      .typecase(0, dataCodec(bits).as[UnknownTag0])
-      .typecase(1, dataCodec(bytes32).as[PaymentHash])
-      .typecase(2, dataCodec(bits).as[UnknownTag2])
-      .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
-      .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).as[Features])
-      .typecase(6, dataCodec(bits).as[Expiry])
-      .typecase(7, dataCodec(bits).as[UnknownTag7])
-      .typecase(8, dataCodec(bits).as[UnknownTag8])
-      .typecase(9, dataCodec(ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddress])
-      .typecase(10, dataCodec(bits).as[UnknownTag10])
-      .typecase(11, dataCodec(bits).as[UnknownTag11])
-      .typecase(12, dataCodec(bits).as[UnknownTag12])
-      .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
-      .typecase(14, dataCodec(bits).as[UnknownTag14])
-      .typecase(15, dataCodec(bits).as[UnknownTag15])
-      .typecase(16, dataCodec(bytes32).as[PaymentSecret])
-      .typecase(17, dataCodec(bits).as[UnknownTag17])
-      .typecase(18, dataCodec(bits).as[UnknownTag18])
-      .typecase(19, dataCodec(bits).as[UnknownTag19])
-      .typecase(20, dataCodec(bits).as[UnknownTag20])
-      .typecase(21, dataCodec(bits).as[UnknownTag21])
-      .typecase(22, dataCodec(bits).as[UnknownTag22])
-      .typecase(23, dataCodec(bytes32).as[DescriptionHash])
-      .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
-      .typecase(25, dataCodec(bits).as[UnknownTag25])
-      .typecase(26, dataCodec(bits).as[UnknownTag26])
-      .typecase(27, dataCodec(bits).as[UnknownTag27])
-      .typecase(28, dataCodec(bits).as[UnknownTag28])
-      .typecase(29, dataCodec(bits).as[UnknownTag29])
-      .typecase(30, dataCodec(bits).as[UnknownTag30])
-      .typecase(31, dataCodec(bits).as[UnknownTag31])
+      .typecase(0, dataCodec(bits.as[UnknownTag0]))
+      .typecase(1, paymentHashCodec)
+      .typecase(2, dataCodec(bits.as[UnknownTag2]))
+      .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec).as[RoutingInfo]))
+      .typecase(4, dataCodec(bits.as[UnknownTag4]))
+      .typecase(5, dataCodec(bits.as[Features]))
+      .typecase(6, dataCodec(bits.as[Expiry]))
+      .typecase(7, dataCodec(bits.as[UnknownTag7]))
+      .typecase(8, dataCodec(bits.as[UnknownTag8]))
+      .typecase(9, dataCodec((ubyte(5) :: alignedBytesCodec(bytes)).as[FallbackAddress]))
+      .typecase(10, dataCodec(bits.as[UnknownTag10]))
+      .typecase(11, dataCodec(bits.as[UnknownTag11]))
+      .typecase(12, dataCodec(bits.as[UnknownTag12]))
+      .typecase(13, dataCodec(alignedBytesCodec(utf8).as[Description]))
+      .typecase(14, dataCodec(bits.as[UnknownTag14]))
+      .typecase(15, dataCodec(bits.as[UnknownTag15]))
+      .typecase(16, paymentSecretCodec)
+      .typecase(17, dataCodec(bits.as[UnknownTag17]))
+      .typecase(18, dataCodec(bits.as[UnknownTag18]))
+      .typecase(19, dataCodec(bits.as[UnknownTag19]))
+      .typecase(20, dataCodec(bits.as[UnknownTag20]))
+      .typecase(21, dataCodec(bits.as[UnknownTag21]))
+      .typecase(22, dataCodec(bits.as[UnknownTag22]))
+      .typecase(23, descriptionHashCodec)
+      .typecase(24, dataCodec(bits.as[MinFinalCltvExpiry]))
+      .typecase(25, dataCodec(bits.as[UnknownTag25]))
+      .typecase(26, dataCodec(bits.as[UnknownTag26]))
+      .typecase(27, dataCodec(bits.as[UnknownTag27]))
+      .typecase(28, dataCodec(bits.as[UnknownTag28]))
+      .typecase(29, dataCodec(bits.as[UnknownTag29]))
+      .typecase(30, dataCodec(bits.as[UnknownTag30]))
+      .typecase(31, dataCodec(bits.as[UnknownTag31]))
 
     def fixedSizeTrailingCodec[A](codec: Codec[A], size: Int): Codec[A] = Codec[A](
       (data: A) => codec.encode(data),
