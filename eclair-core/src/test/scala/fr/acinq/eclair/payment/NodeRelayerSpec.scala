@@ -27,7 +27,8 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.relay.{CommandBuffer, NodeRelayer}
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{BalanceTooLow, SendMultiPartPayment}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.PaymentError
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router.RouteNotFound
@@ -186,7 +187,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
     outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
-    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(BalanceTooLow) :: Nil))
+    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(PaymentError.BalanceTooLow) :: Nil))
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)

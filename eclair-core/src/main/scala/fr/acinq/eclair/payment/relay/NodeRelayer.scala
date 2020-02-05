@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
+import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
 import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
@@ -237,7 +237,7 @@ object NodeRelayer {
 
     failures match {
       case Nil => None
-      case LocalFailure(MultiPartPaymentLifecycle.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case LocalFailure(PaymentError.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
       case _ if tooManyRouteNotFound(failures) => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.

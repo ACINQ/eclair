@@ -27,9 +27,9 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
-import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
+import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator}
 import fr.acinq.eclair.router.{NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
@@ -221,7 +221,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id === id)
-    assert(fail.failures === LocalFailure(TrampolineLegacyAmountLessInvoice) :: Nil)
+    assert(fail.failures === LocalFailure(PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
 
     multiPartPayFsm.expectNoMsg(50 millis)
     payFsm.expectNoMsg(50 millis)

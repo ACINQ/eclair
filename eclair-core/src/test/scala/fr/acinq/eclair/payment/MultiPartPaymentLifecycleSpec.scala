@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{Block, Crypto, DeterministicWallet, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -28,10 +28,10 @@ import fr.acinq.eclair.channel.{ChannelFlags, Commitments, CommitmentsSpec, Upst
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
+import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag, fixture}
@@ -359,7 +359,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.id === paymentId)
     assert(result.paymentHash === paymentHash)
     assert(result.failures.length === 1)
-    assert(result.failures.head.asInstanceOf[LocalFailure].t === BalanceTooLow)
+    assert(result.failures.head.asInstanceOf[LocalFailure].t === PaymentError.BalanceTooLow)
   }
 
   test("cannot send (fee rate too high)") { f =>
@@ -374,7 +374,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.id === paymentId)
     assert(result.paymentHash === paymentHash)
     assert(result.failures.length === 1)
-    assert(result.failures.head.asInstanceOf[LocalFailure].t === BalanceTooLow)
+    assert(result.failures.head.asInstanceOf[LocalFailure].t === PaymentError.BalanceTooLow)
   }
 
   test("payment timeout") { f =>
@@ -430,7 +430,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.paymentHash === paymentHash)
     assert(result.failures.length === 3)
     assert(result.failures.slice(0, 2) === failures)
-    assert(result.failures.last.asInstanceOf[LocalFailure].t === RetryExhausted)
+    assert(result.failures.last.asInstanceOf[LocalFailure].t === PaymentError.RetryExhausted)
   }
 
   test("receive partial failure after success (recipient spec violation)") { f =>
