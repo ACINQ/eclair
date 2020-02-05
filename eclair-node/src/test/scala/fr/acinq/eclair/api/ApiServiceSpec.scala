@@ -19,13 +19,15 @@ package fr.acinq.eclair.api
 import java.util.UUID
 
 import akka.util.Timeout
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import fr.acinq.eclair._
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.wire.NodeAddress
 import org.mockito.scalatest.IdiomaticMockito
@@ -313,38 +315,38 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest wit
   }
 
   test("'sendtoroute' method should accept a both a json-encoded AND comma separaterd list of pubkeys") {
-    val rawUUID = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
-    val paymentUUID = UUID.fromString(rawUUID)
+    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
     val externalId = UUID.randomUUID().toString
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey, "Some invoice")
     val expectedRoute = List(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"))
     val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
     val jsonNodes = serialization.write(expectedRoute)
     val mockEclair = mock[Eclair]
     val service = new MockService(mockEclair)
 
-    mockEclair.sendToRoute(any[Option[String]], any[List[PublicKey]], any[MilliSatoshi], any[ByteVector32], any[CltvExpiryDelta], any[Option[PaymentRequest]])(any[Timeout]) returns Future.successful(paymentUUID)
+    mockEclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[PaymentRequest], any[CltvExpiryDelta], any[List[PublicKey]], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
 
-    Post("/sendtoroute", FormData(Map("route" -> jsonNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.Zeroes.toHex, "finalCltvExpiry" -> "190", "externalId" -> externalId.toString))) ~>
+    Post("/sendtoroute", FormData(Map("route" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId.toString, "invoice" -> PaymentRequest.write(pr)))) ~>
       addCredentials(BasicHttpCredentials("", mockPassword)) ~>
       addHeader("Content-Type", "application/json") ~>
       HttpService.sealRoute(service.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        assert(responseAs[String] == "\"" + rawUUID + "\"")
-        mockEclair.sendToRoute(Some(externalId), expectedRoute, 1234 msat, ByteVector32.Zeroes, CltvExpiryDelta(190), any[Option[PaymentRequest]])(any[Timeout]).wasCalled(once)
+        assert(responseAs[String] == "\"" + payment.paymentId + "\"")
+        mockEclair.sendToRoute(1234 msat, None, Some(externalId), None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
       }
 
     // this test uses CSV encoded route
-    Post("/sendtoroute", FormData(Map("route" -> csvNodes, "amountMsat" -> "1234", "paymentHash" -> ByteVector32.One.toHex, "finalCltvExpiry" -> "190"))) ~>
+    Post("/sendtoroute", FormData(Map("route" -> csvNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "invoice" -> PaymentRequest.write(pr)))) ~>
       addCredentials(BasicHttpCredentials("", mockPassword)) ~>
       addHeader("Content-Type", "application/json") ~>
       HttpService.sealRoute(service.route) ~>
       check {
         assert(handled)
         assert(status == OK)
-        assert(responseAs[String] == "\"" + rawUUID + "\"")
-        mockEclair.sendToRoute(None, expectedRoute, 1234 msat, ByteVector32.One, CltvExpiryDelta(190), any[Option[PaymentRequest]])(any[Timeout]).wasCalled(once)
+        assert(responseAs[String] == "\"" + payment.paymentId + "\"")
+        mockEclair.sendToRoute(1234 msat, None, None, None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
       }
   }
 

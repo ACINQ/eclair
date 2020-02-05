@@ -103,7 +103,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
       context.system.eventStream.publish(OutgoingChannels(channelUpdates1.values.toSeq))
       context become main(channelUpdates1, node2channels.removeBinding(remoteNodeId, shortChannelId))
 
-    case AvailableBalanceChanged(_, _, shortChannelId, _, commitments) =>
+    case AvailableBalanceChanged(_, _, shortChannelId, commitments) =>
       val channelUpdates1 = channelUpdates.get(shortChannelId) match {
         case Some(c: OutgoingChannel) => channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
         case None => channelUpdates // we only consider the balance if we have the channel_update

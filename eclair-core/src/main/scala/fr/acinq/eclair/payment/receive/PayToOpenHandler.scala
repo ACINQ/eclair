@@ -21,7 +21,7 @@ import akka.actor.{ActorContext, ActorRef}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.{NodeParams, _}
-import fr.acinq.eclair.db.{IncomingPayment, PaymentsDb}
+import fr.acinq.eclair.db.{IncomingPayment, PaymentType, PaymentsDb}
 import fr.acinq.eclair.io.PayToOpenRequestEvent
 import fr.acinq.eclair.payment.PaymentReceived
 import fr.acinq.eclair.payment.receive.PayToOpenHandler._
@@ -37,7 +37,7 @@ class PayToOpenHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends 
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case payToOpenRequest: PayToOpenRequest => nodeParams.db.payments.getIncomingPayment(payToOpenRequest.paymentHash) match {
-      case Some(record@IncomingPayment(paymentRequest, _, _, _)) if paymentRequest.features.allowMultiPart && paymentRequest.amount.isDefined && payToOpenRequest.amountMsat < paymentRequest.amount.get =>
+      case Some(record@IncomingPayment(paymentRequest, _, PaymentType.Standard, _, _)) if paymentRequest.features.allowMultiPart && paymentRequest.amount.isDefined && payToOpenRequest.amountMsat < paymentRequest.amount.get =>
         // this is a chunk for a multipart payment, do we already have the rest?
         log.info(s"received chunk for a multipart payment payToOpenRequest=$payToOpenRequest")
         val chunks = payToOpenRequest +: pendingPayToOpenReqs.getOrElse(payToOpenRequest.paymentHash, Nil)
@@ -74,7 +74,7 @@ object PayToOpenHandler {
       paymentHash = paymentHash,
       paymentPreimage = ByteVector32.Zeroes) // preimage all-zero means we say no to the pay-to-open request
     record_opt match {
-      case Some(IncomingPayment(paymentRequest, paymentPreimage, _, _)) =>
+      case Some(IncomingPayment(paymentRequest, paymentPreimage, _, _, _)) =>
         paymentRequest.amount match {
           case _ if paymentRequest.isExpired =>
             log.warning(s"received payment for an expired payment request paymentHash=${paymentHash}")

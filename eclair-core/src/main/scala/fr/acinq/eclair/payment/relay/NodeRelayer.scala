@@ -21,14 +21,15 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
-import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent, TrampolinePaymentRelayed}
-import fr.acinq.eclair.router.{RouteParams, Router}
+import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
@@ -44,9 +45,6 @@ import scala.collection.immutable.Queue
  * router to find a route to the remote node and potentially splitting the payment using multi-part).
  */
 class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
-
-  // TODO: @t-bast: if fees/cltv insufficient (could not find route) send special error (sender should retry with higher fees/cltv)?
-  // TODO: @t-bast: add Kamon counters to monitor the size of pendingIncoming/Outgoing?
 
   import NodeRelayer._
 
@@ -93,6 +91,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
           case Some(failure) =>
             log.warning(s"rejecting trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length} reason=$failure)")
             rejectPayment(upstream, Some(failure))
+            context become main(pendingIncoming - paymentHash, pendingOutgoing)
           case None =>
             log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length})")
             val paymentId = relay(paymentHash, upstream, nextPayload, nextPacket)
@@ -101,23 +100,20 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       case None => throw new RuntimeException(s"could not find pending incoming payment (paymentHash=$paymentHash)")
     }
 
-    case PaymentSent(id, paymentHash, paymentPreimage, parts) =>
+    case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       log.debug("trampoline payment successfully relayed")
       pendingOutgoing.get(id).foreach {
-        case PendingResult(upstream, nextPayload) =>
+        case PendingResult(upstream, _) =>
           fulfillPayment(upstream, paymentPreimage)
-          val fromChannelIds = upstream.adds.map(_.channelId)
-          val toChannelIds = parts.map(_.toChannelId)
-          context.system.eventStream.publish(TrampolinePaymentRelayed(upstream.amountIn, nextPayload.amountToForward, paymentHash, nextPayload.outgoingNodeId, fromChannelIds, toChannelIds))
+          val incoming = upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
+          val outgoing = parts.map(part => PaymentRelayed.Part(part.amountWithFees, part.toChannelId))
+          context.system.eventStream.publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing))
       }
       context become main(pendingIncoming, pendingOutgoing - id)
 
-    case PaymentFailed(id, _, _, _) =>
-      // TODO: @t-bast: try to extract the most meaningful error to return upstream (from the downstream failures)
-      //  - if local failure because balance too low: we should send a TEMPORARY failure upstream (they should retry when we have more balance available)
-      //  - if local failure because route not found: sender probably need to raise fees/cltv?
+    case PaymentFailed(id, _, failures, _) =>
       log.debug("trampoline payment failed")
-      pendingOutgoing.get(id).foreach { case PendingResult(upstream, _) => rejectPayment(upstream) }
+      pendingOutgoing.get(id).foreach { case PendingResult(upstream, nextPayload) => rejectPayment(upstream, translateError(failures, nextPayload.outgoingNodeId)) }
       context become main(pendingIncoming, pendingOutgoing - id)
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
@@ -134,7 +130,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
   private def relay(paymentHash: ByteVector32, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): UUID = {
     val paymentId = UUID.randomUUID()
-    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false)
+    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     payloadOut.invoiceFeatures match {
       case Some(_) =>
@@ -143,13 +139,13 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
         // TODO: @t-bast: MPP is disabled for trampoline to non-trampoline payments until we improve the splitting algorithm for nodes with a lot of channels.
         val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = false)
         val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-        val payment = SendPayment(paymentHash, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+        val payment = SendPayment(payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
         payFSM ! payment
       case None =>
         log.debug("relaying trampoline payment to next trampoline node")
         val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32 // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(paymentHash, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
+        val payment = SendMultiPartPayment(paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
         payFSM ! payment
     }
     paymentId
@@ -170,12 +166,12 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
-      case IncomingPacket.NodeRelayPacket(add, _, _, _) => Some(add.paymentHash)
-      case MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, _, _) => Some(paymentHash)
-      case MultiPartPaymentFSM.MultiPartHtlcSucceeded(paymentHash, _) => Some(paymentHash)
-      case MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, _, _) => Some(paymentHash)
-      case PaymentFailed(_, paymentHash, _, _) => Some(paymentHash)
-      case PaymentSent(_, paymentHash, _, _) => Some(paymentHash)
+      case m: IncomingPacket.NodeRelayPacket => Some(m.add.paymentHash)
+      case m: MultiPartPaymentFSM.MultiPartHtlcFailed => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.MultiPartHtlcSucceeded => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.ExtraHtlcReceived => Some(m.paymentHash)
+      case m: PaymentFailed => Some(m.paymentHash)
+      case m: PaymentSent => Some(m.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -207,21 +203,19 @@ object NodeRelayer {
    */
   case class PendingResult(upstream: Upstream.TrampolineRelayed, nextPayload: Onion.NodeRelayPayload)
 
-  def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
+  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
-      // TODO: @t-bast: should be a TrampolineFeeInsufficient(upstream.amountIn, myLatestNodeUpdate)
-      Some(IncorrectOrUnknownPaymentDetails(upstream.amountIn, nodeParams.currentBlockHeight))
+      Some(TrampolineFeeInsufficient)
     } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDeltaBlocks) {
-      // TODO: @t-bast: should be a TrampolineExpiryTooSoon(myLatestNodeUpdate)
-      Some(IncorrectOrUnknownPaymentDetails(upstream.amountIn, nodeParams.currentBlockHeight))
+      Some(TrampolineExpiryTooSoon)
     } else {
       None
     }
   }
 
   /** Compute route params that honor our fee and cltv requirements. */
-  def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
+  private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDeltaBlocks
     val routeMaxFee = amountIn - amountOut - nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, amountOut)
     Router.getDefaultRouteParams(nodeParams.routerConf).copy(
@@ -229,6 +223,29 @@ object NodeRelayer {
       routeMaxCltv = routeMaxCltv,
       maxFeePct = 0 // we disable percent-based max fee calculation, we're only interested in collecting our node fee
     )
+  }
+
+  /**
+   * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
+   * should return upstream.
+   */
+  private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
+    def tooManyRouteNotFound(failures: Seq[PaymentFailure]): Boolean = {
+      val routeNotFoundCount = failures.count(_ == LocalFailure(RouteNotFound))
+      routeNotFoundCount > failures.length / 2
+    }
+
+    failures match {
+      case Nil => None
+      case LocalFailure(MultiPartPaymentLifecycle.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case _ if tooManyRouteNotFound(failures) => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
+      case _ =>
+        // Otherwise, we try to find a downstream error that we could decrypt.
+        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == outgoingNodeId => e.failureMessage }
+        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, e) => e.failureMessage }
+        val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure))
+        Some(failure)
+    }
   }
 
 }
