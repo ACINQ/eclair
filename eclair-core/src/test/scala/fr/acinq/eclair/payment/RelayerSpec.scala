@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
@@ -500,16 +500,38 @@ class RelayerSpec extends TestkitBaseClass {
   test("relay a trampoline htlc-fulfill") { f =>
     import f._
 
+    // A sends a multi-payment to trampoline node B.
+    val preimage = randomBytes32
+    val paymentHash = Crypto.sha256(preimage)
+    val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, nodeParams.expiryDeltaBlocks, nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, finalAmount)) :: Nil
+    val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret))
+    val secret_ab = randomBytes32
+    val (cmd1, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(trampolineAmount - 10000000.msat, trampolineAmount, trampolineExpiry, secret_ab, trampolineOnion.packet))
+    val add_ab1 = UpdateAddHtlc(channelId_ab, 561, cmd1.amount, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
+    val (cmd2, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(10000000.msat, trampolineAmount, trampolineExpiry, secret_ab, trampolineOnion.packet))
+    val add_ab2 = UpdateAddHtlc(channelId_ab, 565, cmd2.amount, cmd2.paymentHash, cmd2.cltvExpiry, cmd2.onion)
+    sender.send(relayer, ForwardAdd(add_ab1))
+    sender.send(relayer, ForwardAdd(add_ab2))
+    router.expectMsg(GetNetworkStats) // A multi-part payment FSM is started to relay the payment downstream.
+
+    // We simulate a fake htlc fulfill for the downstream channel.
     val payFSM = TestProbe()
+    val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, preimage)
+    sender.send(relayer, ForwardFulfill(fulfill_ba, TrampolineRelayed(null, Some(payFSM.ref)), UpdateAddHtlc(channelId_bc, 13, 1000 msat, paymentHash, CltvExpiry(1), null)))
 
-    // we build a fake htlc for the downstream channel
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 72, paymentPreimage = ByteVector32.Zeroes)
-    val origin = TrampolineRelayed(List((channelId_ab, 42), (randomBytes32, 7)), Some(payFSM.ref))
-    sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
-
-    // we forward to the FSM responsible for the payment.
+    // the FSM responsible for the payment should receive the fulfill.
     payFSM.expectMsg(fulfill_ba)
+
+    // the payment should be immediately fulfilled upstream.
+    val upstream1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+    val upstream2 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+    assert(Set(upstream1, upstream2) === Set(
+      Register.Forward(channelId_ab, CMD_FULFILL_HTLC(561, preimage, commit = true)),
+      Register.Forward(channelId_ab, CMD_FULFILL_HTLC(565, preimage, commit = true))
+    ))
+
+    register.expectNoMsg(50 millis)
+    payFSM.expectNoMsg(50 millis)
   }
 
   test("relay an htlc-fail") { f =>

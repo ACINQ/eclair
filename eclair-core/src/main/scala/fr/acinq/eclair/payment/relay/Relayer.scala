@@ -164,7 +164,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
           context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, add.paymentHash, originChannelId, fulfill.channelId))
         case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-        case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fulfill
+        case Origin.TrampolineRelayed(_, Some(_)) => nodeRelayer forward ff
       }
 
     case ff@ForwardFail(fail, to, _) =>
