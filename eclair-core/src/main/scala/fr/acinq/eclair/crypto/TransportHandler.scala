@@ -275,15 +275,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
     }
   }
 
-  override def aroundPostStop(): Unit
-
-  = connection ! Tcp.Close // attempts to gracefully close the connection when dying
+  override def aroundPostStop(): Unit = connection ! Tcp.Close // attempts to gracefully close the connection when dying
 
   initialize()
 
-  override def mdc(currentMessage: Any): MDC
-
-  = {
+  override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
     Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt)
   }
