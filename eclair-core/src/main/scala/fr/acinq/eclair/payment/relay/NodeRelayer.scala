@@ -100,7 +100,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
           case None =>
             log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length})")
             val paymentId = relay(paymentHash, upstream, nextPayload, nextPacket)
-            context become main(pendingIncoming - paymentHash, pendingOutgoing + (paymentHash -> PendingResult(upstream, nextPayload, paymentId, settled = false)))
+            context become main(pendingIncoming - paymentHash, pendingOutgoing + (paymentHash -> PendingResult(upstream, nextPayload, paymentId, fulfilledUpstream = false)))
         }
       case None => log.error("could not find pending incoming payment: payment will not be relayed: please investigate")
     }
@@ -108,18 +108,18 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     case Relayer.ForwardFulfill(fulfill, Origin.TrampolineRelayed(_, Some(paymentSender)), _) =>
       paymentSender ! fulfill
       val paymentHash = Crypto.sha256(fulfill.paymentPreimage)
-      pendingOutgoing.get(paymentHash).foreach(p => if (!p.settled) {
+      pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
         // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
         log.debug("trampoline payment successfully relayed")
         fulfillPayment(p.upstream, fulfill.paymentPreimage)
-        context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(settled = true)))
+        context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
       })
 
     case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
       log.debug(s"trampoline payment fully resolved downstream (id=$id)")
       pendingOutgoing.get(paymentHash).foreach(p => {
-        if (!p.settled) {
+        if (!p.fulfilledUpstream) {
           fulfillPayment(p.upstream, paymentPreimage)
         }
         val incoming = p.upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
@@ -130,7 +130,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
     case PaymentFailed(id, paymentHash, failures, _) =>
       log.debug(s"trampoline payment failed downstream (id=$id)")
-      pendingOutgoing.get(paymentHash).foreach(p => if (!p.settled) {
+      pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
         rejectPayment(p.upstream, translateError(failures, p.nextPayload.outgoingNodeId))
       })
       context become main(pendingIncoming, pendingOutgoing - paymentHash)
@@ -217,12 +217,12 @@ object NodeRelayer {
   /**
    * Once the payment is forwarded, we're waiting for fail/fulfill responses from downstream nodes.
    *
-   * @param upstream    complete HTLC set received.
-   * @param nextPayload relay instructions.
-   * @param paymentId   id of the outgoing payment.
-   * @param settled     true if we already settled the payment upstream.
+   * @param upstream          complete HTLC set received.
+   * @param nextPayload       relay instructions.
+   * @param paymentId         id of the outgoing payment.
+   * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  case class PendingResult(upstream: Upstream.TrampolineRelayed, nextPayload: Onion.NodeRelayPayload, paymentId: UUID, settled: Boolean)
+  case class PendingResult(upstream: Upstream.TrampolineRelayed, nextPayload: Onion.NodeRelayPayload, paymentId: UUID, fulfilledUpstream: Boolean)
 
   private def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
