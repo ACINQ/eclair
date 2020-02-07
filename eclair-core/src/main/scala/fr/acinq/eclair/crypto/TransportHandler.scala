@@ -144,7 +144,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
                 case (reader1, message, None) => {
                   // we're still in the middle of the handshake process and the other end must first received our next
                   // message before they can reply
-                  require(remainder.isEmpty, "unexpected additional data received during handshake")
+                  if (remainder.nonEmpty) throw UnexpectedDataDuringHandshake(ByteVector(remainder))
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
                   stay using HandshakeData(reader1, remainder)
                 }
@@ -313,6 +313,7 @@ object TransportHandler {
   val prefix: Byte = 0x00
 
   case class InvalidTransportPrefix(buffer: ByteVector) extends RuntimeException(s"invalid transport prefix first64=${buffer.take(64).toHex}")
+  case class UnexpectedDataDuringHandshake(buffer: ByteVector) extends RuntimeException(s"unexpected additional data received during handshake first64=${buffer.take(64).toHex}")
 
   val prologue = ByteVector.view("lightning".getBytes("UTF-8"))
 
