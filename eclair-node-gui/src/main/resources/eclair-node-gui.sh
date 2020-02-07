@@ -163,6 +163,10 @@ addDebugger () {
   addJava "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=$1"
 }
 
+addKanelaAgent () {
+  addJava "-javaagent:$lib_dir/kanela-agent-1.0.1.jar"
+}
+
 require_arg () {
   local type="$1"
   local opt="$2"
@@ -194,21 +198,17 @@ process_args () {
     case "$1" in
              --) shift && no_more_snp_opts=1 && break ;;
        -h|-help) usage; exit 1 ;;
-    -v|-verbose) verbose=1 && shift ;;
-      -d|-debug) debug=1 && shift ;;
-
-    -no-version-check) no_version_check=1 && shift ;;
-
-           -mem) echo "!! WARNING !! -mem option is ignored. Please use -J-Xmx and -J-Xms" && shift 2 ;;
-     -jvm-debug) require_arg port "$1" "$2" && addDebugger $2 && shift 2 ;;
-
-          -main) custom_mainclass="$2" && shift 2 ;;
-
-     -java-home) require_arg path "$1" "$2" && jre=`eval echo $2` && java_cmd="$jre/bin/java" && shift 2 ;;
-
- -D*|-agentlib*|-XX*) addJava "$1" && shift ;;
-                 -J*) addJava "${1:2}" && shift ;;
-                   *) addResidual "$1" && shift ;;
+       -v|-verbose) verbose=1 && shift ;;
+       -d|-debug) debug=1 && shift ;;
+       -no-version-check) no_version_check=1 && shift ;;
+       -mem) echo "!! WARNING !! -mem option is ignored. Please use -J-Xmx and -J-Xms" && shift 2 ;;
+       -with-kanela) addKanelaAgent && shift ;;
+       -jvm-debug) require_arg port "$1" "$2" && addDebugger $2 && shift 2 ;;
+       -main) custom_mainclass="$2" && shift 2 ;;
+       -java-home) require_arg path "$1" "$2" && jre=`eval echo $2` && java_cmd="$jre/bin/java" && shift 2 ;;
+       -D*|-agentlib*|-XX*) addJava "$1" && shift ;;
+                       -J*) addJava "${1:2}" && shift ;;
+                         *) addResidual "$1" && shift ;;
     esac
   done
 
