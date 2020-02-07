@@ -1,13 +1,11 @@
-rem Copyright (c) 2012, Joshua Suereth
-rem All rights reserved.
-rem
-rem Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
-rem
-rem Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
-rem Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
-rem THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
+@REM Copyright (c) 2012, Joshua Suereth
+@REM All rights reserved.
+@REM
+@REM Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+@REM
+@REM Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+@REM Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+@REM THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 @REM @@APP_NAME@@ launcher script
 @REM
 @REM Environment:
@@ -50,7 +48,9 @@ rem "-J" is stripped, "-D" is left as is, and everything is appended to JAVA_OPT
 set _JAVA_PARAMS=
 set _APP_ARGS=
 
-@@APP_DEFINES@@
+for /f %%i in ('dir /b %APP_LIB_DIR%\eclair-node-gui*') do set APP_ENTRYPOINT=%%i
+set MAIN_CLASS="fr.acinq.eclair.JavafxBoot"
+set APP_CLASSPATH="%APP_LIB_DIR%;%APP_LIB_DIR%/%APP_ENTRYPOINT%"
 
 rem Bundled JRE has priority over standard environment variables
 if defined BUNDLED_JVM (
