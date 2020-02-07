@@ -93,9 +93,9 @@ class PsqlChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channe
     }
   }
 
-  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
+  override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
     withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, commitmentNumber)
         statement.setString(3, paymentHash.toHex)

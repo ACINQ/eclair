@@ -25,8 +25,6 @@ import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 trait AuditDb extends Closeable {
 
-  def add(availableBalanceChanged: AvailableBalanceChanged)
-
   def add(channelLifecycle: ChannelLifecycleEvent)
 
   def add(paymentSent: PaymentSent)

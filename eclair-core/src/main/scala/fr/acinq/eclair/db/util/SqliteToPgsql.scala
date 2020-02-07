@@ -47,7 +47,7 @@ object SqliteToPgsql extends App {
   sqlite.audit.listNetworkFees(from, to).foreach { fee =>
     psql.audit.asInstanceOf[PsqlAuditDb].add(NetworkFeePaid(
       channel = null, remoteNodeId = fee.remoteNodeId, channelId = fee.channelId, tx = null, fee = fee.fee, txType = fee.txType
-    ), txId_opt = Some(fee.txId))
+    ), txId = fee.txId)
   }
 
   sqlite.audit.listReceived(from, to).foreach { received =>
@@ -67,7 +67,7 @@ object SqliteToPgsql extends App {
   sqlite.channels.listLocalChannels().foreach { hasCommitments =>
     psql.channels.addOrUpdateChannel(hasCommitments)
     sqlite.channels.asInstanceOf[SqliteChannelsDb].listHtlcInfos(hasCommitments.channelId).foreach { case (paymentHash, cltvExpiry, commitmentNumber) =>
-      psql.channels.addOrUpdateHtlcInfo(hasCommitments.channelId, commitmentNumber, paymentHash, cltvExpiry)
+      psql.channels.addHtlcInfo(hasCommitments.channelId, commitmentNumber, paymentHash, cltvExpiry)
     }
   }
 

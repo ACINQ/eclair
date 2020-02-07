@@ -77,8 +77,9 @@ object PsqlUtils extends JdbcUtils with Logging {
 
     override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
       inTransaction { connection =>
+        val res = f(connection)
         checkDatabaseOwnership(connection, instanceId, lockTimeout, lockExceptionHandler)
-        f(connection)
+        res
       }
     }
   }
@@ -177,7 +178,7 @@ object PsqlUtils extends JdbcUtils with Logging {
   }
 
   private def obtainDatabaseOwnership(instanceId: String, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
-    logger.info(s"Trying to acquire database ownership (attempt #$attempt) instance ID=${instanceId}")
+    logger.debug(s"Trying to acquire database ownership (attempt #$attempt) instance ID=${instanceId}")
 
     if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database ownership")
 
@@ -194,7 +195,7 @@ object PsqlUtils extends JdbcUtils with Logging {
             updateLease(instanceId, leaseDuration, insertNew = true)
         }
       }
-      logger.info("Database ownership was successfully acquired.")
+      logger.debug("Database ownership was successfully acquired.")
     } catch {
       case e: PSQLException if (e.getServerErrorMessage != null && e.getServerErrorMessage.getSQLState == "42P01") =>
         withConnection {

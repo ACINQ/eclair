@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.psql
 
-import java.sql.ResultSet
+import java.sql.{ResultSet, Statement}
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
@@ -43,7 +43,7 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
   import lock._
 
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 3
+  val CURRENT_VERSION = 4
 
   private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
   private val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)
@@ -54,10 +54,37 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
 
   inTransaction { psql =>
     using(psql.createStatement()) { statement =>
+
+      def migration34(statement: Statement): Int = {
+        // We add a recipient_amount_msat and payment_type columns, rename some columns and change column order.
+        statement.executeUpdate("DROP index sent_parent_id_idx")
+        statement.executeUpdate("DROP index sent_payment_hash_idx")
+        statement.executeUpdate("DROP index sent_created_idx")
+        statement.executeUpdate("ALTER TABLE sent_payments RENAME TO _sent_payments_old")
+        statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, payment_route BYTEA, failures BYTEA, created_at BIGINT NOT NULL, completed_at BIGINT)")
+        statement.executeUpdate("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_preimage, payment_type, amount_msat, fees_msat, recipient_amount_msat, recipient_node_id, payment_request, payment_route, failures, created_at, completed_at) SELECT id, parent_id, external_id, payment_hash, payment_preimage, 'Standard', amount_msat, fees_msat, amount_msat, target_node_id, payment_request, payment_route, failures, created_at, completed_at FROM _sent_payments_old")
+        statement.executeUpdate("DROP table _sent_payments_old")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_created_idx ON sent_payments(created_at)")
+
+        // We add payment_type column.
+        statement.executeUpdate("DROP index received_created_idx")
+        statement.executeUpdate("ALTER TABLE received_payments RENAME TO _received_payments_old")
+        statement.executeUpdate("CREATE TABLE received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
+        statement.executeUpdate("INSERT INTO received_payments (payment_hash, payment_type, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) SELECT payment_hash, 'Standard', payment_preimage, payment_request, received_msat, created_at, expire_at, received_at FROM _received_payments_old")
+        statement.executeUpdate("DROP table _received_payments_old")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_created_idx ON received_payments(created_at)")
+      }
+
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+        case 3 =>
+          logger.warn(s"migrating db $DB_NAME, found version=3 current=$CURRENT_VERSION")
+          migration34(statement)
+          setVersion(statement, DB_NAME, CURRENT_VERSION)
         case CURRENT_VERSION =>
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, target_node_id TEXT NOT NULL, created_at BIGINT NOT NULL, payment_request TEXT, completed_at BIGINT, payment_preimage TEXT, fees_msat BIGINT, payment_route BYTEA, failures BYTEA)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, payment_route BYTEA, failures BYTEA, created_at BIGINT NOT NULL, completed_at BIGINT)")
 
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
@@ -71,30 +98,32 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
     withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, sent.id.toString)
         statement.setString(2, sent.parentId.toString)
         statement.setString(3, sent.externalId.orNull)
         statement.setString(4, sent.paymentHash.toHex)
-        statement.setLong(5, sent.amount.toLong)
-        statement.setString(6, sent.targetNodeId.value.toHex)
-        statement.setLong(7, sent.createdAt)
-        statement.setString(8, sent.paymentRequest.map(PaymentRequest.write).orNull)
+        statement.setString(5, sent.paymentType)
+        statement.setLong(6, sent.amount.toLong)
+        statement.setLong(7, sent.recipientAmount.toLong)
+        statement.setString(8, sent.recipientNodeId.value.toHex)
+        statement.setLong(9, sent.createdAt)
+        statement.setString(10, sent.paymentRequest.map(PaymentRequest.write).orNull)
         statement.executeUpdate()
       }
     }
   }
 
-  def addOutgoingPayment(sent: (UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector])): Unit = {
-    val (id, parentId,externalId,paymentHash,amount,targetNodeId,createdAt,paymentRequest,completedAt,paymentPreimage, fees, route, failures) = sent
+  def addOutgoingPayment(sent: ((UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector],String,MilliSatoshi))): Unit = {
+    val (id, parentId,externalId,paymentHash,amount,recipient_node_id,createdAt,paymentRequest,completedAt,paymentPreimage, fees, route, failures, paymentType, recipientAmountMsat) = sent
     withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request,completed_at, payment_preimage,fees_msat,payment_route,failures) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, recipient_node_id, created_at, payment_request,completed_at, payment_preimage,fees_msat,payment_route,failures,payment_type,recipient_amount_msat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, id.toString)
         statement.setString(2, parentId.toString)
         statement.setString(3, externalId.orNull)
         statement.setString(4, paymentHash.toHex)
         statement.setLong(5, amount.toLong)
-        statement.setString(6, targetNodeId.value.toHex)
+        statement.setString(6, recipient_node_id.value.toHex)
         statement.setLong(7, createdAt)
         statement.setString(8, paymentRequest.map(PaymentRequest.write).orNull)
         completedAt.fold(statement.setNull(9, java.sql.Types.BIGINT))(statement.setLong(9, _))
@@ -102,6 +131,8 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
         fees.fold(statement.setNull(11, java.sql.Types.BIGINT))(x => statement.setLong(11, x.toLong))
         statement.setBytes(12, route.map(_.toByteArray).orNull)
         statement.setBytes(13, failures.map(_.toByteArray).orNull)
+        statement.setString(14, paymentType)
+        statement.setLong(15, recipientAmountMsat.toLong)
         statement.executeUpdate()
       }
     }
@@ -145,8 +176,10 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
       UUID.fromString(rs.getString("parent_id")),
       rs.getStringNullable("external_id"),
       rs.getByteVector32FromHex("payment_hash"),
+      rs.getString("payment_type"),
       MilliSatoshi(rs.getLong("amount_msat")),
-      PublicKey(rs.getByteVectorFromHex("target_node_id")),
+      MilliSatoshi(rs.getLong("recipient_amount_msat")),
+      PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
       rs.getLong("created_at"),
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
       status
@@ -232,29 +265,31 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
       }
     }
 
-  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32): Unit =
+  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit =
     withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?)")) { statement =>
+      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
         statement.setString(2, preimage.toHex)
-        statement.setString(3, PaymentRequest.write(pr))
-        statement.setLong(4, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
-        statement.setLong(5, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong)).seconds.toMillis)
+        statement.setString(3, paymentType)
+        statement.setString(4, PaymentRequest.write(pr))
+        statement.setLong(5, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
+        statement.setLong(6, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong)).seconds.toMillis)
         statement.executeUpdate()
       }
     }
 
-  def addIncomingPayment(payment: (ByteVector32,ByteVector32,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])): Unit = {
-    val (paymentHash,paymentPreimage,paymentRequest,received,createdAt,expireAt,receivedAt) = payment
+  def addIncomingPayment(payment: (ByteVector32,ByteVector32,String,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])): Unit = {
+    val (paymentHash,paymentPreimage,paymentType,paymentRequest,received,createdAt,expireAt,receivedAt) = payment
     withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, received_msat, received_at, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, paymentHash.toHex)
         statement.setString(2, paymentPreimage.toHex)
-        statement.setString(3, PaymentRequest.write(paymentRequest))
-        received.fold(statement.setNull(4, java.sql.Types.BIGINT))(x => statement.setLong(4, x.toLong))
-        statement.setLong(5, createdAt)
-        statement.setLong(6, expireAt)
-        receivedAt.fold(statement.setNull(7, java.sql.Types.BIGINT))(statement.setLong(7, _))
+        statement.setString(3, paymentType)
+        statement.setString(4, PaymentRequest.write(paymentRequest))
+        received.fold(statement.setNull(5, java.sql.Types.BIGINT))(x => statement.setLong(5, x.toLong))
+        receivedAt.fold(statement.setNull(6, java.sql.Types.BIGINT))(x => statement.setLong(6, x))
+        statement.setLong(7, createdAt)
+        statement.setLong(8, expireAt)
         statement.executeUpdate()
       }
     }
@@ -275,8 +310,10 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = rs.getString("payment_request")
-    IncomingPayment(PaymentRequest.read(paymentRequest),
+    IncomingPayment(
+      PaymentRequest.read(paymentRequest),
       rs.getByteVector32FromHex("payment_preimage"),
+      rs.getString("payment_type"),
       rs.getLong("created_at"),
       buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getLongNullable("received_at")))
   }
@@ -375,32 +412,32 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
           |    NULL as external_id,
           |    payment_hash,
           |    payment_preimage,
+          |    payment_type,
           |    received_msat as final_amount,
           |    payment_request,
-          |    NULL as target_node_id,
           |    created_at,
           |    received_at as completed_at,
           |    expire_at,
           |    NULL as order_trick
           |  FROM received_payments
-          |  WHERE final_amount > 0
+          |  WHERE received_msat > 0
           |UNION ALL
           |  SELECT 'sent' as type,
           |	   parent_id,
           |    external_id,
           |    payment_hash,
           |    payment_preimage,
+          |    payment_type,
           |    sum(amount_msat + fees_msat) as final_amount,
           |    payment_request,
-          |    target_node_id,
           |    created_at,
           |    completed_at,
           |    NULL as expire_at,
           |    MAX(coalesce(completed_at, created_at)) as order_trick
           |  FROM sent_payments
-          |  GROUP BY parent_id
-          |)
-          |ORDER BY coalesce(completed_at, created_at) DESC
+          |  GROUP BY parent_id,external_id,payment_hash,payment_preimage,payment_type,payment_request,created_at,completed_at
+          |) q
+          |ORDER BY coalesce(q.completed_at, q.created_at) DESC
           |LIMIT ?
       """.stripMargin
       )) { statement =>
@@ -410,7 +447,8 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
         while (rs.next()) {
           val parentId = rs.getUUIDNullable("parent_id")
           val externalId_opt = rs.getStringNullable("external_id")
-          val paymentHash = rs.getByteVector32("payment_hash")
+          val paymentHash = rs.getByteVector32FromHex("payment_hash")
+          val paymentType = rs.getString("payment_type")
           val paymentRequest_opt = rs.getStringNullable("payment_request")
           val amount_opt = rs.getMilliSatoshiNullable("final_amount")
           val createdAt = rs.getLong("created_at")
@@ -419,12 +457,12 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
 
           val p = if (rs.getString("type") == "received") {
             val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
-            PlainIncomingPayment(paymentHash, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
+            PlainIncomingPayment(paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
           } else {
             val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
             // note that the resulting status will not contain any details (routes, failures...)
             val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
-            PlainOutgoingPayment(parentId, externalId_opt, paymentHash, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
+            PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
           }
           q = q :+ p
         }

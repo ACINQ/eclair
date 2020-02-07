@@ -618,6 +618,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendAdd(d.commitments, c, origin(c), nodeParams.currentBlockHeight)) match {
         case Success(Right((commitments1, add))) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending add
         case Success(Left(error)) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate), Some(c)), c)
         case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, cause, origin(c), Some(d.channelUpdate), Some(c)), c)
@@ -633,6 +634,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
@@ -654,6 +656,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
@@ -665,6 +668,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFailMalformed(d.commitments, c)) match {
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we can clean up the command right away in case of failure
@@ -692,6 +696,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Try(Commitments.sendFee(d.commitments, c)) match {
         case Success((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fee
         case Failure(cause) => handleCommandError(cause, c)
       }
@@ -720,7 +725,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               trimmedHtlcs collect {
                 case DirectedHtlc(_, u) =>
                   log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
-                  nodeParams.db.channels.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
+                  nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.cltvExpiry)
               }
               if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
@@ -728,10 +733,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 self ! BroadcastChannelUpdate(AboveReserve)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
-              if (nextRemoteCommit.spec.toRemote != d.commitments.remoteCommit.spec.toRemote) {
-                // we send this event only when our balance changes (note that remoteCommit.toRemote == toLocal)
-                context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, nextRemoteCommit.spec.toRemote, commitments1))
-              }
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer = context.parent), timeout = nodeParams.revocationTimeout, repeat = false)
               handleCommandSuccess(sender, d.copy(commitments = commitments1)) storing() sending commit
@@ -750,6 +751,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
+          }
+          if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
+            // we send this event only when our balance changes
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1) storing() sending revocation
@@ -863,8 +868,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: DATA_NORMAL) => handleNewBlock(c, d)
 
-    case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
-      handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex, _), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val shortChannelId = ShortChannelId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
@@ -1134,8 +1138,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CurrentBlockCount, d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
-    case Event(c@CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
-      handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1205,7 +1208,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           log.info(s"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
           val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, commitments1, localCommitPublished.commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
           val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
-          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets))
+          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => {
+            require(commitments1.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
+            val remoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
+            Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, commitments1, remoteCommit, remoteCommitPublished.commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+          })
 
           def republish(): Unit = {
             localCommitPublished1.foreach(doPublish)
@@ -2294,7 +2301,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   initialize()
 
 }
-
 
 
 
