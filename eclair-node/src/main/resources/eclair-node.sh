@@ -318,6 +318,7 @@ Usage: $script_name [options]
   -no-version-check  Don't run the java version check.
   -main <classname>  Define a custom main class
   -jvm-debug <port>  Turn on JVM debugging, open at the given port.
+  -with-kanela       Turn on kanela, akka's monitoring agent
 
   # java version (default: java from PATH, currently $(java -version 2>&1 | grep version))
   -java-home <path>         alternate JAVA_HOME
