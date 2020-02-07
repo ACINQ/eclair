@@ -63,4 +63,4 @@ ENV JAVA_OPTS=
 RUN mkdir -p "$ECLAIR_DATADIR"
 VOLUME [ "/data" ]
 
-ENTRYPOINT $JAVA_OPTS bash eclair-node/bin/eclair-node.sh -Declair.datadir=$ECLAIR_DATADIR
+ENTRYPOINT $JAVA_OPTS eclair-node/bin/eclair-node.sh -Declair.datadir=$ECLAIR_DATADIR

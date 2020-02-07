@@ -28,6 +28,7 @@
         <include>eclair-node.sh</include>
         <include>eclair-node.bat</include>
       </includes>
+      <fileMode>0755</fileMode>
     </fileSet>
   </fileSets>
 </assembly>
