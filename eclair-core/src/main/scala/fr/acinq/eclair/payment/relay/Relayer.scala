@@ -25,6 +25,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -172,6 +173,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
         case Origin.Local(_, None) => postRestartCleaner forward ff
         case Origin.Local(_, Some(sender)) => sender ! fail
         case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
+          Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
           val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
         case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
@@ -183,6 +185,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
         case Origin.Local(_, None) => postRestartCleaner forward ff
         case Origin.Local(_, Some(sender)) => sender ! fail
         case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
+          Metrics.recordPaymentRelayFailed(Tags.FailureType.Malformed, Tags.RelayType.Channel)
           val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
         case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
