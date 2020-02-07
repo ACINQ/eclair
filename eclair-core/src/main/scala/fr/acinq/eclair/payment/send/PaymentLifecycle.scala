@@ -16,14 +16,17 @@
 
 package fr.acinq.eclair.payment.send
 
+import java.util.concurrent.TimeUnit
+
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{ChannelCommandResponse, CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
@@ -47,6 +50,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   val id = cfg.id
   val paymentHash = cfg.paymentHash
   val paymentsDb = nodeParams.db.payments
+  val start = Platform.currentTime
 
   private val span = Kamon.runWithContextEntry(MultiPartPaymentLifecycle.parentPaymentIdKey, cfg.parentId) {
     val spanBuilder = if (Kamon.currentSpan().isEmpty) {
@@ -55,10 +59,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       Kamon.spanBuilder("payment-part").asChildOf(Kamon.currentSpan())
     }
     spanBuilder
-      .tag("paymentId", cfg.id.toString)
-      .tag("paymentHash", paymentHash.toHex)
-      .tag("recipientNodeId", cfg.recipientNodeId.toString())
-      .tag("recipientAmount", cfg.recipientAmount.toLong)
+      .tag(Tags.PaymentId, cfg.id.toString)
+      .tag(Tags.PaymentHash, paymentHash.toHex)
+      .tag(Tags.RecipientNodeId, cfg.recipientNodeId.toString())
+      .tag(Tags.RecipientAmount, cfg.recipientAmount.toLong)
       .start()
   }
 
@@ -66,10 +70,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
-      span.tag("targetNodeId", c.targetNodeId.toString())
-      span.tag("amount", c.finalPayload.amount.toLong)
-      span.tag("totalAmount", c.finalPayload.totalAmount.toLong)
-      span.tag("expiry", c.finalPayload.expiry.toLong)
+      span.tag(Tags.TargetNodeId, c.targetNodeId.toString())
+      span.tag(Tags.Amount, c.finalPayload.amount.toLong)
+      span.tag(Tags.TotalAmount, c.finalPayload.totalAmount.toLong)
+      span.tag(Tags.Expiry, c.finalPayload.expiry.toLong)
       log.debug("sending {} to route {}", c.finalPayload.amount, c.hops.mkString("->"))
       val send = SendPayment(c.hops.last, c.finalPayload, maxAttempts = 1)
       router ! FinalizeRoute(c.hops, c.assistedRoutes)
@@ -79,10 +83,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
     case Event(c: SendPayment, WaitingForRequest) =>
-      span.tag("targetNodeId", c.targetNodeId.toString())
-      span.tag("amount", c.finalPayload.amount.toLong)
-      span.tag("totalAmount", c.finalPayload.totalAmount.toLong)
-      span.tag("expiry", c.finalPayload.expiry.toLong)
+      span.tag(Tags.TargetNodeId, c.targetNodeId.toString())
+      span.tag(Tags.Amount, c.finalPayload.amount.toLong)
+      span.tag(Tags.TotalAmount, c.finalPayload.totalAmount.toLong)
+      span.tag(Tags.Expiry, c.finalPayload.expiry.toLong)
       log.debug("sending {} to {}{}", c.finalPayload.amount, c.targetNodeId, c.routePrefix.mkString(" with route prefix ", "->", ""))
       // We don't want the router to try cycling back to nodes that are at the beginning of the route.
       val ignoredNodes = c.routePrefix.map(_.nodeId).toSet
@@ -108,6 +112,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, _, failures)) =>
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(LocalFailure(t))).increment()
       onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(t)))
       myStop()
   }
@@ -121,7 +126,14 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       myStop()
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
-      Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
+      val tryDecrypt = Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets)
+      tryDecrypt match {
+        case Success(e) =>
+          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(RemoteFailure(Nil, e))).increment()
+        case Failure(_) =>
+          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(UnreadableRemoteFailure(Nil))).increment()
+      }
+      tryDecrypt match {
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
@@ -203,6 +215,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
 
     case Event(fail: UpdateFailMalformedHtlc, _) =>
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.Malformed).increment()
       log.info(s"first node in the route couldn't parse our htlc: fail=$fail")
       // this is a corner case, that can only happen when the *first* node in the route cannot parse the onion
       // (if this happens higher up in the route, the error would be wrapped in an UpdateFailHtlc and handled above)
@@ -211,6 +224,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       stay
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(LocalFailure(t))).increment()
       // If the first hop was selected by the sender (in routePrefix) and it failed, it doesn't make sense to retry (we
       // will end up retrying over that same faulty channel).
       if (failures.size + 1 >= c.maxAttempts || c.routePrefix.nonEmpty) {
@@ -256,6 +270,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
     sender ! result
     if (cfg.publishEvent) context.system.eventStream.publish(result)
+    Metrics.SentPaymentDuration
+      .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
+      .withTag(Tags.Success, value = true)
+      .record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
   }
 
   def onFailure(sender: ActorRef, result: PaymentFailed): Unit = {
@@ -263,6 +281,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
     sender ! result
     if (cfg.publishEvent) context.system.eventStream.publish(result)
+    Metrics.SentPaymentDuration
+      .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
+      .withTag(Tags.Success, value = false)
+      .record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
   }
 
   override def mdc(currentMessage: Any): MDC = {
