@@ -65,25 +65,25 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 
 ### Installing Eclair
 
-Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a JAR (Java Archive) file. We provide 2 different packages, which internally use the same core libraries:
+Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive. We provide 2 different packages, which internally use the same core libraries:
 
 * eclair-node, which is a headless application that you can run on servers and desktops, and control from the command line
 * eclair-node-gui, which also includes a JavaFX GUI
 
 To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Other runtimes also work but we don't recommend using them.
 
-Then download our latest [release](https://github.com/ACINQ/eclair/releases) and depending on whether or not you want a GUI run the following command:
+Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and depending on whether or not you want a GUI run the following command:
 
 * with GUI:
 
 ```shell
-java -jar eclair-node-gui-<version>-<commit_id>.jar
+eclair-node-gui-<version>-<commit_id>/bin/eclair-node-gui.sh
 ```
 
 * without GUI:
 
 ```shell
-java -jar eclair-node-<version>-<commit_id>.jar
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
 
 ### Configuring Eclair

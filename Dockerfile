@@ -28,6 +28,8 @@ COPY pom.xml pom.xml
 COPY eclair-core/pom.xml eclair-core/pom.xml
 COPY eclair-node/pom.xml eclair-node/pom.xml
 COPY eclair-node-gui/pom.xml eclair-node-gui/pom.xml
+COPY eclair-node/modules/eclair-node.xml eclair-node/modules/eclair-node.xml
+COPY eclair-node-gui/modules/eclair-node-gui.xml eclair-node-gui/modules/eclair-node-gui.xml
 RUN mkdir -p eclair-core/src/main/scala && touch eclair-core/src/main/scala/empty.scala
 # Blank build. We only care about eclair-node, and we use install because eclair-node depends on eclair-core
 RUN mvn install -pl eclair-node -am
@@ -45,15 +47,15 @@ FROM openjdk:11.0.4-jre-slim
 WORKDIR /app
 
 # install jq for eclair-cli
-RUN apt-get update && apt-get install -y bash jq curl
+RUN apt-get update && apt-get install -y bash jq curl unzip
 
 # copy and install eclair-cli executable
 COPY --from=BUILD /usr/src/eclair-core/eclair-cli .
 RUN chmod +x eclair-cli && mv eclair-cli /sbin/eclair-cli
 
-# Eclair only needs the eclair-node-*.jar to run
-COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.jar .
-RUN ln `ls` eclair-node.jar
+# Eclair only needs the eclair-node.zip to run
+COPY --from=BUILD /usr/src/eclair-node/target/eclair-node_2.11-*.zip ./eclair-node.zip
+RUN unzip eclair-node.zip && mv eclair-node_2.11* eclair-node
 
 ENV ECLAIR_DATADIR=/data
 ENV JAVA_OPTS=
@@ -61,4 +63,4 @@ ENV JAVA_OPTS=
 RUN mkdir -p "$ECLAIR_DATADIR"
 VOLUME [ "/data" ]
 
-ENTRYPOINT java $JAVA_OPTS -Declair.datadir=$ECLAIR_DATADIR -jar eclair-node.jar
+ENTRYPOINT $JAVA_OPTS eclair-node/bin/eclair-node.sh -Declair.datadir=$ECLAIR_DATADIR
