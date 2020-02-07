@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
+import fr.acinq.eclair.crypto.ChaCha20Poly1305.InvalidMac
 import org.scalatest.FunSuite
 import scodec.bits._
 
@@ -50,7 +51,7 @@ class ChaCha20Poly1305Spec extends FunSuite {
     val check = ChaCha20Poly1305.decrypt(key, nonce, ciphertext, aad, mac)
     assert(check == plaintext)
 
-    intercept[IllegalArgumentException] {
+    intercept[InvalidMac] {
       val mac1 = mac.update(0, 0xff.toByte)
       ChaCha20Poly1305.decrypt(key, nonce, ciphertext, aad, mac1)
     }
