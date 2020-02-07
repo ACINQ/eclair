@@ -26,6 +26,7 @@
       <outputDirectory>bin</outputDirectory>
       <includes>
         <include>eclair-node.sh</include>
+        <include>eclair-node.bat</include>
       </includes>
     </fileSet>
   </fileSets>
