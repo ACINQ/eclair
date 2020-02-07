@@ -26,6 +26,7 @@ import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, _}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
@@ -38,18 +39,18 @@ import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
 
 /**
-  * see BOLT #8
-  * This class handles the transport layer:
-  * - initial handshake. upon completion we will have  a pair of cipher states (one for encryption, one for decryption)
-  * - encryption/decryption of messages
-  *
-  * Once the initial handshake has been completed successfully, the handler will create a listener actor with the
-  * provided factory, and will forward it all decrypted messages
-  *
-  * @param keyPair    private/public key pair for this node
-  * @param rs         remote node static public key (which must be known before we initiate communication)
-  * @param connection actor that represents the other node's
-  */
+ * see BOLT #8
+ * This class handles the transport layer:
+ * - initial handshake. upon completion we will have  a pair of cipher states (one for encryption, one for decryption)
+ * - encryption/decryption of messages
+ *
+ * Once the initial handshake has been completed successfully, the handler will create a listener actor with the
+ * provided factory, and will forward it all decrypted messages
+ *
+ * @param keyPair    private/public key pair for this node
+ * @param rs         remote node static public key (which must be known before we initiate communication)
+ * @param connection actor that represents the other node's
+ */
 class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
 
   // will hold the peer's public key once it is available (we don't know it right away in case of an incoming connection)
@@ -118,151 +119,160 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   startWith(Handshake, HandshakeData(reader))
 
   when(Handshake) {
-    case Event(Tcp.Received(data), HandshakeData(reader, buffer)) =>
-      connection ! Tcp.ResumeReading
-      log.debug("received {}", ByteVector(data))
-      val buffer1 = buffer ++ data
-      if (buffer1.length < expectedLength(reader))
-        stay using HandshakeData(reader, buffer1)
-      else {
-        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix first64=${ByteVector(buffer1.take(64))}")
-        val (payload, remainder) = buffer1.tail.splitAt(expectedLength(reader) - 1)
+    handleExceptions {
+      case Event(Tcp.Received(data), HandshakeData(reader, buffer)) =>
+        connection ! Tcp.ResumeReading
+        log.debug("received {}", ByteVector(data))
+        val buffer1 = buffer ++ data
+        if (buffer1.length < expectedLength(reader))
+          stay using HandshakeData(reader, buffer1)
+        else {
+          if (buffer1.head != TransportHandler.prefix) throw InvalidTransportPrefix(ByteVector(buffer1))
 
-        reader.read(ByteVector.view(payload.asByteBuffer)) match {
-          case (writer, _, Some((dec, enc, ck))) =>
-            val remoteNodeId = PublicKey(writer.rs)
-            remoteNodeId_opt = Some(remoteNodeId)
-            context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
-            val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
-            goto(WaitingForListener) using nextStateData
+          val (payload, remainder) = buffer1.tail.splitAt(expectedLength(reader) - 1)
 
-          case (writer, _, None) => {
-            writer.write(ByteVector.empty) match {
-              case (reader1, message, None) => {
-                // we're still in the middle of the handshake process and the other end must first received our next
-                // message before they can reply
-                require(remainder.isEmpty, "unexpected additional data received during handshake")
-                connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
-                stay using HandshakeData(reader1, remainder)
-              }
-              case (_, message, Some((enc, dec, ck))) => {
-                connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
-                val remoteNodeId = PublicKey(writer.rs)
-                remoteNodeId_opt = Some(remoteNodeId)
-                context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
-                val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
-                goto(WaitingForListener) using nextStateData
+          reader.read(ByteVector.view(payload.asByteBuffer)) match {
+            case (writer, _, Some((dec, enc, ck))) =>
+              val remoteNodeId = PublicKey(writer.rs)
+              remoteNodeId_opt = Some(remoteNodeId)
+              context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
+              val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
+              goto(WaitingForListener) using nextStateData
+
+            case (writer, _, None) => {
+              writer.write(ByteVector.empty) match {
+                case (reader1, message, None) => {
+                  // we're still in the middle of the handshake process and the other end must first received our next
+                  // message before they can reply
+                  if (remainder.nonEmpty) throw UnexpectedDataDuringHandshake(ByteVector(remainder))
+                  connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
+                  stay using HandshakeData(reader1, remainder)
+                }
+                case (_, message, Some((enc, dec, ck))) => {
+                  connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
+                  val remoteNodeId = PublicKey(writer.rs)
+                  remoteNodeId_opt = Some(remoteNodeId)
+                  context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
+                  val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
+                  goto(WaitingForListener) using nextStateData
+                }
               }
             }
           }
         }
-      }
+    }
   }
 
   when(WaitingForListener) {
-    case Event(Tcp.Received(data), d@WaitingForListenerData(_, dec)) =>
-      stay using d.copy(decryptor = dec.copy(buffer = dec.buffer ++ data))
+    handleExceptions {
+      case Event(Tcp.Received(data), d@WaitingForListenerData(_, dec)) =>
+        stay using d.copy(decryptor = dec.copy(buffer = dec.buffer ++ data))
 
-    case Event(Listener(listener), d@WaitingForListenerData(_, dec)) =>
-      context.watch(listener)
-      val (dec1, plaintextMessages) = dec.decrypt()
-      if (plaintextMessages.isEmpty) {
-        connection ! Tcp.ResumeReading
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived = Map.empty[T, Int], unackedSent = None)
-      } else {
-        log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
-        val unackedReceived = sendToListener(listener, plaintextMessages)
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived, unackedSent = None)
-      }
+      case Event(Listener(listener), d@WaitingForListenerData(_, dec)) =>
+        context.watch(listener)
+        val (dec1, plaintextMessages) = dec.decrypt()
+        if (plaintextMessages.isEmpty) {
+          connection ! Tcp.ResumeReading
+          goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived = Map.empty[T, Int], unackedSent = None)
+        } else {
+          log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
+          val unackedReceived = sendToListener(listener, plaintextMessages)
+          goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived, unackedSent = None)
+        }
+    }
   }
 
   when(Normal) {
-    case Event(Tcp.Received(data), d: NormalData[T]) =>
-      val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
-      if (plaintextMessages.isEmpty) {
-        connection ! Tcp.ResumeReading
-        stay using d.copy(decryptor = dec1)
-      } else {
-        log.debug(s"read {} messages, waiting for readacks", plaintextMessages.size)
-        val unackedReceived = sendToListener(d.listener, plaintextMessages)
-        stay using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
-      }
-
-    case Event(ReadAck(msg: T), d: NormalData[T]) =>
-      // how many occurences of this message are still unacked?
-      val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
-      // if all occurences have been acked then we remove the entry from the map
-      val unackedReceived1 = if (remaining > 0) d.unackedReceived + (msg -> remaining) else d.unackedReceived - msg
-      if (unackedReceived1.isEmpty) {
-        log.debug("last incoming message was acked, resuming reading")
-        connection ! Tcp.ResumeReading
-        stay using d.copy(unackedReceived = unackedReceived1)
-      } else {
-        stay using d.copy(unackedReceived = unackedReceived1)
-      }
-
-    case Event(t: T, d: NormalData[T]) =>
-      if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
-        log.warning(s"send buffer overrun, closing connection")
-        connection ! PoisonPill
-        stop(FSM.Normal)
-      } else if (d.unackedSent.isDefined) {
-        log.debug("buffering send data={}", t)
-        val sendBuffer1 = t match {
-          case _: ChannelAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-          case _: NodeAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-          case _: ChannelUpdate => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-          case _ => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
+    handleExceptions {
+      case Event(Tcp.Received(data), d: NormalData[T]) =>
+        val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
+        if (plaintextMessages.isEmpty) {
+          connection ! Tcp.ResumeReading
+          stay using d.copy(decryptor = dec1)
+        } else {
+          log.debug(s"read {} messages, waiting for readacks", plaintextMessages.size)
+          val unackedReceived = sendToListener(d.listener, plaintextMessages)
+          stay using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
         }
-        stay using d.copy(sendBuffer = sendBuffer1)
-      } else {
-        diag(t, "OUT")
-        val blob = codec.encode(t).require.toByteVector
-        val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-        connection ! Tcp.Write(buf(ciphertext), WriteAck)
-        stay using d.copy(encryptor = enc1, unackedSent = Some(t))
-      }
 
-    case Event(WriteAck, d: NormalData[T]) =>
-      def send(t: T) = {
-        diag(t, "OUT")
-        val blob = codec.encode(t).require.toByteVector
-        val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-        connection ! Tcp.Write(buf(ciphertext), WriteAck)
-        enc1
-      }
+      case Event(ReadAck(msg: T), d: NormalData[T]) =>
+        // how many occurences of this message are still unacked?
+        val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
+        // if all occurences have been acked then we remove the entry from the map
+        val unackedReceived1 = if (remaining > 0) d.unackedReceived + (msg -> remaining) else d.unackedReceived - msg
+        if (unackedReceived1.isEmpty) {
+          log.debug("last incoming message was acked, resuming reading")
+          connection ! Tcp.ResumeReading
+          stay using d.copy(unackedReceived = unackedReceived1)
+        } else {
+          stay using d.copy(unackedReceived = unackedReceived1)
+        }
 
-      d.sendBuffer.normalPriority.dequeueOption match {
-        case Some((t, normalPriority1)) =>
-          val enc1 = send(t)
-          stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
-        case None =>
-          d.sendBuffer.lowPriority.dequeueOption match {
-            case Some((t, lowPriority1)) =>
-              val enc1 = send(t)
-              stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
-            case None =>
-              stay using d.copy(unackedSent = None)
+      case Event(t: T, d: NormalData[T]) =>
+        if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
+          log.warning(s"send buffer overrun, closing connection")
+          connection ! PoisonPill
+          stop(FSM.Normal)
+        } else if (d.unackedSent.isDefined) {
+          log.debug("buffering send data={}", t)
+          val sendBuffer1 = t match {
+            case _: ChannelAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+            case _: NodeAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+            case _: ChannelUpdate => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+            case _ => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
           }
-      }
+          stay using d.copy(sendBuffer = sendBuffer1)
+        } else {
+          diag(t, "OUT")
+          val blob = codec.encode(t).require.toByteVector
+          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
+          connection ! Tcp.Write(buf(ciphertext), WriteAck)
+          stay using d.copy(encryptor = enc1, unackedSent = Some(t))
+        }
+
+      case Event(WriteAck, d: NormalData[T]) =>
+        def send(t: T) = {
+          diag(t, "OUT")
+          val blob = codec.encode(t).require.toByteVector
+          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
+          connection ! Tcp.Write(buf(ciphertext), WriteAck)
+          enc1
+        }
+
+        d.sendBuffer.normalPriority.dequeueOption match {
+          case Some((t, normalPriority1)) =>
+            val enc1 = send(t)
+            stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
+          case None =>
+            d.sendBuffer.lowPriority.dequeueOption match {
+              case Some((t, lowPriority1)) =>
+                val enc1 = send(t)
+                stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
+              case None =>
+                stay using d.copy(unackedSent = None)
+            }
+        }
+    }
   }
 
   whenUnhandled {
-    case Event(closed: Tcp.ConnectionClosed, _) =>
-      log.info(s"connection closed: $closed")
-      stop(FSM.Normal)
+    handleExceptions {
+      case Event(closed: Tcp.ConnectionClosed, _) =>
+        log.info(s"connection closed: $closed")
+        stop(FSM.Normal)
 
-    case Event(Terminated(actor), _) if actor == connection =>
-      log.info(s"connection terminated, stopping the transport")
-      // this can be the connection or the listener, either way it is a cause of death
-      stop(FSM.Normal)
+      case Event(Terminated(actor), _) if actor == connection =>
+        log.info(s"connection terminated, stopping the transport")
+        // this can be the connection or the listener, either way it is a cause of death
+        stop(FSM.Normal)
 
-    case Event(msg, d) =>
-      d match {
-        case n: NormalData[T] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
-        case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
-      }
-      stay
+      case Event(msg, d) =>
+        d match {
+          case n: NormalData[T] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
+          case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
+        }
+        stay
+    }
   }
 
   override def aroundPostStop(): Unit = connection ! Tcp.Close // attempts to gracefully close the connection when dying
@@ -272,6 +282,22 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
     Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt)
+  }
+
+  def handleExceptions(s: StateFunction): StateFunction = {
+    case event if s.isDefinedAt(event) =>
+      try {
+        s(event)
+      } catch {
+        case t: Throwable =>
+          t match {
+            // for well known crypto error, we don't display the stack trace
+            case _: InvalidTransportPrefix => log.error(s"crypto error: ${t.getMessage}")
+            case _: ChaCha20Poly1305Error => log.error(s"crypto error: ${t.getMessage}")
+            case _ => log.error(t, "")
+          }
+          throw t
+      }
   }
 
 }
@@ -286,14 +312,17 @@ object TransportHandler {
   // this prefix is prepended to all Noise messages sent during the handshake phase
   val prefix: Byte = 0x00
 
+  case class InvalidTransportPrefix(buffer: ByteVector) extends RuntimeException(s"invalid transport prefix first64=${buffer.take(64).toHex}")
+  case class UnexpectedDataDuringHandshake(buffer: ByteVector) extends RuntimeException(s"unexpected additional data received during handshake first64=${buffer.take(64).toHex}")
+
   val prologue = ByteVector.view("lightning".getBytes("UTF-8"))
 
   /**
-    * See BOLT #8: during the handshake phase we are expecting 3 messages of 50, 50 and 66 bytes (including the prefix)
-    *
-    * @param reader handshake state reader
-    * @return the size of the message the reader is expecting
-    */
+   * See BOLT #8: during the handshake phase we are expecting 3 messages of 50, 50 and 66 bytes (including the prefix)
+   *
+   * @param reader handshake state reader
+   * @return the size of the message the reader is expecting
+   */
   def expectedLength(reader: Noise.HandshakeStateReader) = reader.messages.length match {
     case 3 | 2 => 50
     case 1 => 66
@@ -310,11 +339,11 @@ object TransportHandler {
     Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
 
   /**
-    * extended cipher state which implements key rotation as per BOLT #8
-    *
-    * @param cs cipher state
-    * @param ck chaining key
-    */
+   * extended cipher state which implements key rotation as per BOLT #8
+   *
+   * @param cs cipher state
+   * @param ck chaining key
+   */
   case class ExtendedCipherState(cs: CipherState, ck: ByteVector) extends CipherState {
     override def cipher: CipherFunctions = cs.cipher
 
@@ -372,26 +401,26 @@ object TransportHandler {
 
   case class Encryptor(state: CipherState) {
     /**
-      * see BOLT #8
-      * +-------------------------------
-      * |2-byte encrypted message length|
-      * +-------------------------------
-      * |  16-byte MAC of the encrypted |
-      * |        message length         |
-      * +-------------------------------
-      * |                               |
-      * |                               |
-      * |     encrypted lightning       |
-      * |            message            |
-      * |                               |
-      * +-------------------------------
-      * |     16-byte MAC of the        |
-      * |      lightning message        |
-      * +-------------------------------
-      *
-      * @param plaintext plaintext
-      * @return a (cipherstate, ciphertext) tuple where ciphertext is encrypted according to BOLT #8
-      */
+     * see BOLT #8
+     * +-------------------------------
+     * |2-byte encrypted message length|
+     * +-------------------------------
+     * |  16-byte MAC of the encrypted |
+     * |        message length         |
+     * +-------------------------------
+     * |                               |
+     * |                               |
+     * |     encrypted lightning       |
+     * |            message            |
+     * |                               |
+     * +-------------------------------
+     * |     16-byte MAC of the        |
+     * |      lightning message        |
+     * +-------------------------------
+     *
+     * @param plaintext plaintext
+     * @return a (cipherstate, ciphertext) tuple where ciphertext is encrypted according to BOLT #8
+     */
     def encrypt(plaintext: ByteVector): (Encryptor, ByteVector) = {
       val (state1, ciphertext1) = state.encryptWithAd(ByteVector.empty, Protocol.writeUInt16(plaintext.length.toInt, ByteOrder.BIG_ENDIAN))
       val (state2, ciphertext2) = state1.encryptWithAd(ByteVector.empty, plaintext)
