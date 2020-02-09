@@ -30,6 +30,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
@@ -80,7 +81,7 @@ trait Eclair {
 
   def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
-  def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
+  def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], withExtraHops: Boolean)(implicit timeout: Timeout): Future[PaymentRequest]
 
   def newAddress(): Future[String]
 
@@ -196,9 +197,20 @@ class EclairImpl(appKit: Kit) extends Eclair {
     }
   }
 
-  override def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = {
+  override def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], withExtraHops: Boolean)(implicit timeout: Timeout): Future[PaymentRequest] = {
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
-    (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
+    if (withExtraHops) {
+      val amountThreshold = amount_opt.getOrElse(0 msat)
+      for {
+        allUsableBalances <- (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance)) // Enabled channels which are online right now
+        smallestShortIdsWhichChanReceive = allUsableBalances.filter(_.canReceive >= amountThreshold).sortBy(ub => ub.canSend + ub.canReceive).map(_.shortChannelId) // Smallest public channels which can still receive an amount
+        extraHops <- (appKit.router ? GetPublicChannelHints(smallestShortIdsWhichChanReceive, appKit.nodeParams.nodeId)).mapTo[List[List[ExtraHop]]] // Those where remote update is present
+        receive = ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, extraHops = extraHops, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)
+        pr <- (appKit.paymentHandler ? receive).mapTo[PaymentRequest]
+      } yield pr
+    } else {
+      (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
+    }
   }
 
   override def newAddress(): Future[String] = {
