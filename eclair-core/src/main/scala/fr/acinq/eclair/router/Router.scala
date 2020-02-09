@@ -52,7 +52,7 @@ import scala.util.{Random, Try}
  * Created by PM on 24/05/2016.
  */
 
-case class GetExtraHops(channels: Seq[ShortChannelId], localNodeId: PublicKey)
+case class GetPublicChannelHints(channels: Seq[ShortChannelId], localNodeId: PublicKey)
 
 case class RouterConf(randomizeRouteSelection: Boolean,
                       channelExcludeDuration: FiniteDuration,
@@ -338,14 +338,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! GetNetworkStatsResponse(d.stats)
       stay
 
-    case Event(GetExtraHops(shortIds, localNodeId), d: Data) =>
+    case Event(GetPublicChannelHints(shortIds, localNodeId), d: Data) =>
       val extraHops = for {
-        shortId <- shortIds.toList
+        shortId <- shortIds.toStream // Lazily collect channels where remote update is present until we obtain 4 such channels
         publicChannel <- d.channels.get(shortId)
         extraHop = publicChannel.getExtraHopFromRemoteUpdate(localNodeId)
         if extraHop.nonEmpty
       } yield extraHop
-      sender ! extraHops
+      sender ! extraHops.take(4).toList // Up to 4 hints to keep QR readable
       stay
 
     case Event(v@ValidateResult(c, _), d0) =>

@@ -202,10 +202,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
     if (withExtraHops) {
       val amountThreshold = amount_opt.getOrElse(0 msat)
       for {
-        allUsableBalances <- (appKit.relayer ? GetOutgoingChannels).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance)) // Enabled channels which are online right now
-        smallestShortIdsWhichChanReceive = allUsableBalances.filter(ub => ub.canReceive >= amountThreshold).sortBy(ub => ub.canSend + ub.canReceive).take(40).map(_.shortChannelId) // Smallest public channels which can still receive an amount
-        extraHops <- (appKit.router ? GetExtraHops(smallestShortIdsWhichChanReceive, appKit.nodeParams.nodeId)).mapTo[List[List[ExtraHop]]] // Those where remote update is present
-        receive = ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, extraHops = extraHops.take(4), fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt) // Limit to 4 to not make invoice QR unreadable
+        allUsableBalances <- (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance)) // Enabled channels which are online right now
+        smallestShortIdsWhichChanReceive = allUsableBalances.filter(_.canReceive >= amountThreshold).sortBy(ub => ub.canSend + ub.canReceive).map(_.shortChannelId) // Smallest public channels which can still receive an amount
+        extraHops <- (appKit.router ? GetPublicChannelHints(smallestShortIdsWhichChanReceive, appKit.nodeParams.nodeId)).mapTo[List[List[ExtraHop]]] // Those where remote update is present
+        receive = ReceivePayment(description = description, amount_opt = amount_opt, expirySeconds_opt = expire_opt, extraHops = extraHops, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)
         pr <- (appKit.paymentHandler ? receive).mapTo[PaymentRequest]
       } yield pr
     } else {
