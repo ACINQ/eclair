@@ -22,6 +22,7 @@ import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.ChannelLifecycleEvent
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import kamon.Kamon
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
@@ -37,59 +38,34 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
   override def receive: Receive = {
 
     case e: PaymentSent =>
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "sent")
-        .withTag("type", "amount")
-        .record(e.recipientAmount.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "sent")
-        .withTag("type", "fee")
-        .record(e.feesPaid.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "sent")
-        .withTag("type", "parts")
-        .record(e.parts.length)
+      Metrics.PaymentAmount.withTag(Tags.Direction, Tags.Directions.Sent).record(e.recipientAmount.truncateToSatoshi.toLong)
+      Metrics.PaymentFees.withTag(Tags.Direction, Tags.Directions.Sent).record(e.feesPaid.truncateToSatoshi.toLong)
+      Metrics.PaymentParts.withTag(Tags.Direction, Tags.Directions.Sent).record(e.parts.length)
       db.add(e)
 
     case _: PaymentFailed =>
-      Kamon
-        .counter("payment.failures.count")
-        .withTag("direction", "sent")
-        .increment()
+      Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Sent).increment()
 
     case e: PaymentReceived =>
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "received")
-        .withTag("type", "amount")
-        .record(e.amount.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "received")
-        .withTag("type", "parts")
-        .record(e.parts.length)
+      Metrics.PaymentAmount.withTag(Tags.Direction, Tags.Directions.Received).record(e.amount.truncateToSatoshi.toLong)
+      Metrics.PaymentParts.withTag(Tags.Direction, Tags.Directions.Received).record(e.parts.length)
       db.add(e)
 
     case e: PaymentRelayed =>
-      val relayType = e match {
-        case _: ChannelPaymentRelayed => "channel"
-        case _: TrampolinePaymentRelayed => "trampoline"
-      }
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "relayed")
-        .withTag("relay", relayType)
-        .withTag("type", "total")
+      Metrics.PaymentAmount
+        .withTag(Tags.Direction, Tags.Directions.Relayed)
+        .withTag(Tags.Relay, Tags.RelayType.get(e))
         .record(e.amountIn.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "relayed")
-        .withTag("relay", relayType)
-        .withTag("type", "fee")
+      Metrics.PaymentFees
+        .withTag(Tags.Direction, Tags.Directions.Relayed)
+        .withTag(Tags.Relay, Tags.RelayType.get(e))
         .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
+      e match {
+        case TrampolinePaymentRelayed(_, incoming, outgoing, _) =>
+          Metrics.PaymentParts.withTag(Tags.Direction, Tags.Directions.Received).record(incoming.length)
+          Metrics.PaymentParts.withTag(Tags.Direction, Tags.Directions.Sent).record(outgoing.length)
+        case _: ChannelPaymentRelayed =>
+      }
       db.add(e)
 
     case e: NetworkFeePaid => db.add(e)
