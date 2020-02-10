@@ -49,19 +49,25 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>com.github.chrisdchristo</groupId>
-                <artifactId>capsule-maven-plugin</artifactId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <finalName>${name}-${version}-${git.commit.id.abbrev}</finalName>
+                    <descriptors>
+                        <descriptor>modules/eclair-node-gui.xml</descriptor>
+                    </descriptors>
+                    <archive>
+                        <manifest>
+                            <mainClass>fr.acinq.eclair.JavafxBoot</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
                 <executions>
                     <execution>
+                        <phase>package</phase>
                         <goals>
-                            <goal>build</goal>
+                            <goal>single</goal>
                         </goals>
-                        <configuration>
-                            <appClass>fr.acinq.eclair.JavafxBoot</appClass>
-                            <type>fat</type>
-                            <fileName>${project.name}-${project.version}</fileName>
-                            <fileDesc>-${git.commit.id.abbrev}</fileDesc>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>

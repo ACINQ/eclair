@@ -49,25 +49,25 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>com.github.chrisdchristo</groupId>
-                <artifactId>capsule-maven-plugin</artifactId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <finalName>${name}-${version}-${git.commit.id.abbrev}</finalName>
+                    <descriptors>
+                        <descriptor>modules/eclair-node.xml</descriptor>
+                    </descriptors>
+                    <archive>
+                        <manifest>
+                            <mainClass>fr.acinq.eclair.Boot</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
                 <executions>
                     <execution>
+                        <phase>package</phase>
                         <goals>
-                            <goal>build</goal>
+                            <goal>single</goal>
                         </goals>
-                        <configuration>
-                            <appClass>fr.acinq.eclair.Boot</appClass>
-                            <type>fat</type>
-                            <fileName>${project.name}-${project.version}</fileName>
-                            <fileDesc>-${git.commit.id.abbrev}</fileDesc>
-                            <manifest>
-                                <entry>
-                                    <key>Java-Agents</key>
-                                    <value>kanela-agent-1.0.1.jar</value>
-                                </entry>
-                            </manifest>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -136,16 +136,6 @@
             <artifactId>kamon-jdbc_${scala.version.short}</artifactId>
             <version>${kamon.version}</version>
         </dependency>
-        <!--dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-annotation_${scala.version.short}</artifactId>
-            <version>2.0.0-RC1</version>
-        </dependency-->
-        <!--dependency>
-            <groupId>io.kamon</groupId>
-            <artifactId>kamon-akka-http_${scala.version.short}</artifactId>
-            <version>${kamon.version}</version>
-        </dependency-->
         <!-- test dependencies -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
