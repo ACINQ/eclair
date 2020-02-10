@@ -49,7 +49,7 @@ set _JAVA_PARAMS=
 set _APP_ARGS=
 
 for /f %%i in ('dir /b %APP_LIB_DIR%\eclair-node-gui*') do set APP_ENTRYPOINT=%%i
-set MAIN_CLASS="fr.acinq.eclair.JavafxBoot"
+set CUSTOM_MAIN_CLASS="fr.acinq.eclair.JavafxBoot"
 set APP_CLASSPATH="%APP_LIB_DIR%;%APP_LIB_DIR%/%APP_ENTRYPOINT%"
 
 rem Bundled JRE has priority over standard environment variables
@@ -110,7 +110,7 @@ if defined CUSTOM_MAIN_CLASS (
 )
 
 rem Call the application and pass all arguments unchanged.
-"%_JAVACMD%" !_JAVA_OPTS! !@@APP_ENV_NAME@@_OPTS! -cp "%APP_CLASSPATH%" %MAIN_CLASS% !_APP_ARGS!
+"%_JAVACMD%" !_JAVA_OPTS! !@@APP_ENV_NAME@@_OPTS! -cp %APP_CLASSPATH% %MAIN_CLASS% !_APP_ARGS!
 
 @endlocal
 
