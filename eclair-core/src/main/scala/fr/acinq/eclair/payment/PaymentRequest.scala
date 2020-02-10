@@ -391,7 +391,7 @@ object PaymentRequest {
       .\(1) {
         case a: PaymentHash => a: TaggedField
         case a: InvalidTag1 => a: TaggedField
-      }(choice(dataCodec(bytes32, expectedLength = Some(52)).as[PaymentHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag1].upcast[TaggedField]))
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[PaymentHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag1].upcast[TaggedField]))
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
@@ -409,7 +409,7 @@ object PaymentRequest {
       .\(16) {
         case a: PaymentSecret => a: TaggedField
         case a: InvalidTag16 => a: TaggedField
-      }(choice(dataCodec(bytes32, expectedLength = Some(52)).as[PaymentSecret].upcast[TaggedField], dataCodec(bits).as[InvalidTag16].upcast[TaggedField]))
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[PaymentSecret].upcast[TaggedField], dataCodec(bits).as[InvalidTag16].upcast[TaggedField]))
       .typecase(17, dataCodec(bits).as[UnknownTag17])
       .typecase(18, dataCodec(bits).as[UnknownTag18])
       .typecase(19, dataCodec(bits).as[UnknownTag19])
@@ -419,7 +419,7 @@ object PaymentRequest {
       .\(23) {
         case a: DescriptionHash => a: TaggedField
         case a: InvalidTag23 => a: TaggedField
-      }(choice(dataCodec(bytes32, expectedLength = Some(52)).as[DescriptionHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag23].upcast[TaggedField]))
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[DescriptionHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag23].upcast[TaggedField]))
       .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
       .typecase(25, dataCodec(bits).as[UnknownTag25])
       .typecase(26, dataCodec(bits).as[UnknownTag26])
