@@ -91,12 +91,6 @@
             <artifactId>eclair-core_${scala.version.short}</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <dependency>
-            <!-- for plugins -->
-            <groupId>org.clapper</groupId>
-            <artifactId>classutil_${scala.version.short}</artifactId>
-            <version>1.4.0</version>
-        </dependency>
         <!-- logging -->
         <dependency>
             <groupId>ch.qos.logback</groupId>

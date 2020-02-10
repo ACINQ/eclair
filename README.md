@@ -192,7 +192,8 @@ docker exec <container_name> eclair-cli -p foobar getinfo
 
 For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-compatible language.
 
-A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface.
+A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface, and 
+a manifest entry for `Main-Class` with the FQDN of the implementation.
 
 Here is how to run Eclair with plugins:
 
