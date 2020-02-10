@@ -133,7 +133,7 @@ eclair.printToConsole | Log to stdout (in addition to eclair.log)  |
 For example, to specify a different data directory you would run the following command:
 
 ```shell
-java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Declair.datadir=/tmp/node1
 ```
 
 #### Logging
@@ -141,7 +141,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
 
 ```shell
-java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile=/path/to/logback-custom.xml
 ```
 
 #### Backup
@@ -197,7 +197,7 @@ A valid plugin is a jar that contains an implementation of the [Plugin](eclair-n
 Here is how to run Eclair with plugins:
 
 ```shell
-java -jar eclair-node-<version>-<commit_id>.jar <plugin1.jar> <plugin2.jar> <...>
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
 ```
 
 ## Testnet usage
