@@ -29,6 +29,7 @@
         <include>eclair-node-gui.bat</include>
       </includes>
       <fileMode>0755</fileMode>
+      <lineEnding>unix</lineEnding>
     </fileSet>
   </fileSets>
 </assembly>
