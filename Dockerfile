@@ -53,9 +53,9 @@ RUN apt-get update && apt-get install -y bash jq curl unzip
 COPY --from=BUILD /usr/src/eclair-core/eclair-cli .
 RUN chmod +x eclair-cli && mv eclair-cli /sbin/eclair-cli
 
-# Eclair only needs the eclair-node.zip to run
-COPY --from=BUILD /usr/src/eclair-node/target/eclair-node_2.11-*.zip ./eclair-node.zip
-RUN unzip eclair-node.zip && mv eclair-node_2.11* eclair-node
+# we only need the eclair-node.zip to run
+COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.zip ./eclair-node.zip
+RUN unzip eclair-node.zip && mv eclair-node-* eclair-node
 
 ENV ECLAIR_DATADIR=/data
 ENV JAVA_OPTS=
