@@ -52,7 +52,7 @@ import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JArray
+import org.json4s.JsonAST.{JArray, JString}
 import scodec.bits.ByteVector
 
 import scala.concurrent._
@@ -247,11 +247,24 @@ class Setup(datadir: File,
           feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future
+      (zmqBlocks_opt, zmqTxs_opt) <- bitcoin match {
+        case Bitcoind(client) => client.invoke("getzmqnotifications").map {
+          case JArray(zmqInfos) =>
+            val blocksAddress = zmqInfos.find(_ \ "type" == JString("pubrawblock")).map(_.\("address").extract[String])
+            val txsAddress = zmqInfos.find(_ \ "type" == JString("pubrawtx")).map(_.\("address").extract[String])
+            if(blocksAddress.isEmpty || txsAddress.isEmpty){
+              throw new IllegalArgumentException("Unable to get zmq addresses, please make sure ZMQ is enabled in bitcoin.conf")
+            }
+            (blocksAddress, txsAddress)
+          case _ => throw new IllegalArgumentException("Unable to get zmq addresses, please make sure ZMQ is enabled in bitcoin.conf")
+        }
+        case _ => Future.successful((None, None))
+      }
 
       watcher = bitcoin match {
         case Bitcoind(bitcoinClient) =>
-          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
-          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
+          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(zmqBlocks_opt.get, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
+          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(zmqTxs_opt.get, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
           system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(blockCount, new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
         case Electrum(electrumClient) =>
           zmqBlockConnected.success(Done)
