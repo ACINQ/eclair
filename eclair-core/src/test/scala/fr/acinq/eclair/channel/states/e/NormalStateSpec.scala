@@ -2389,7 +2389,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // actual test starts here
     sender.send(alice, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
-    alice2bob.expectMsgType[ChannelUpdate]
+    alice2bob.expectNoMsg(1 second)
     channelUpdateListener.expectNoMsg(1 second)
   }
 
@@ -2409,9 +2409,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, INPUT_DISCONNECTED)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
-    val update2a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate === update2a)
-    assert(!Announcements.isEnabled(update2a.channelFlags))
+    assert(!Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags))
     awaitCond(alice.stateName == OFFLINE)
   }
 
