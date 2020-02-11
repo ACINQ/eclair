@@ -251,6 +251,8 @@ class RouterSpec extends BaseRouterSpec {
 
     sender.send(router, GetNetworkStats)
     val GetNetworkStatsResponse(Some(stats)) = sender.expectMsgType[GetNetworkStatsResponse]
+    // if you change this test update test "router returns Network Stats" in EclairImpSpec that mocks this call.
+    // else will break the networkstats API call
     assert(stats.channels === 4)
     assert(stats.nodes === 6)
     assert(stats.capacity.median === 1000000.sat)

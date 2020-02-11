@@ -157,7 +157,7 @@ class Setup(datadir: File,
               val stream = classOf[Setup].getResourceAsStream(addressesFile)
               ElectrumClientPool.readServerAddresses(stream, sslEnabled)
           }
-          val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
+          val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses, nodeParams.socksProxy_opt)), "electrum-client", SupervisorStrategy.Resume))
           Electrum(electrumClient)
         case _ => ???
       }
