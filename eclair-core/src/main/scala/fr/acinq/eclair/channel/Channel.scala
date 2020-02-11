@@ -1678,16 +1678,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         cancelTimer(RevocationTimeout.toString)
       }
 
-      // if channel is private, we send the channel_update directly to remote
-      // they need it "to learn the other end's forwarding parameters" (BOLT 7)
-      (stateData, nextStateData) match {
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
-          // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
+      (state, nextState, stateData, nextStateData) match {
+        // if channel is private, we send the channel_update directly to remote on each reconnect
+        // they need it "to learn the other end's forwarding parameters" (BOLT 7)
+        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
           forwarder ! d2.channelUpdate
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
-          // otherwise, we only send it when it is different, and tx is already buried
+        case (OFFLINE, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d2.buried =>
           forwarder ! d2.channelUpdate
-        case _ => ()
+        case _ =>
+          ()
       }
 
       (state, nextState, stateData, nextStateData) match {
