@@ -252,8 +252,11 @@ class Setup(datadir: File,
           case JArray(zmqInfos) =>
             val blocksAddress = zmqInfos.find(_ \ "type" == JString("pubrawblock")).map(_.\("address").extract[String])
             val txsAddress = zmqInfos.find(_ \ "type" == JString("pubrawtx")).map(_.\("address").extract[String])
+            if(blocksAddress.isEmpty || txsAddress.isEmpty){
+              throw new IllegalArgumentException("Unable to get zmq addresses, please make sure ZMQ is enabled in bitcoin.conf")
+            }
             (blocksAddress, txsAddress)
-          case _ => (None, None)
+          case _ => throw new IllegalArgumentException("Unable to get zmq addresses, please make sure ZMQ is enabled in bitcoin.conf")
         }
         case _ => Future.successful((None, None))
       }
