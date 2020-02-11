@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
+import fr.acinq.eclair.tor.Socks5ProxyParams
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -32,7 +33,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumServerAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
+class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumServerAddress], socksProxy_opt: Option[Socks5ProxyParams] = None)(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
   import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
@@ -112,7 +113,7 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
       pickAddress(serverAddresses, addresses.values.toSet) match {
         case Some(ElectrumServerAddress(address, ssl)) =>
           val resolved = new InetSocketAddress(address.getHostName, address.getPort)
-          val client = context.actorOf(Props(new ElectrumClient(resolved, ssl)))
+          val client = context.actorOf(Props(new ElectrumClient(resolved, ssl, socksProxy_opt)))
           client ! ElectrumClient.AddStatusListener(self)
           // we watch each electrum client, they will stop on disconnection
           context watch client
