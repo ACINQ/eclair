@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
+import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -144,19 +145,19 @@ class EclairImpl(appKit: Kit) extends Eclair {
       pushMsat = pushAmount_opt.getOrElse(0 msat),
       fundingTxFeeratePerKw_opt = fundingFeerateSatByte_opt.map(feerateByte2Kw),
       channelFlags = flags_opt.map(_.toByte),
-      timeout_opt = Some(openTimeout))).mapTo[String]
+      timeout_opt = Some(openTimeout))).mapTo[ChannelCommandResponse].map(_.toString)
   }
 
   override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[String] = {
-    sendToChannel(channelIdentifier, CMD_CLOSE(scriptPubKey_opt)).mapTo[String]
+    sendToChannel(channelIdentifier, CMD_CLOSE(scriptPubKey_opt)).mapTo[ChannelCommandResponse].map(_.toString)
   }
 
   override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[String] = {
-    sendToChannel(channelIdentifier, CMD_FORCECLOSE).mapTo[String]
+    sendToChannel(channelIdentifier, CMD_FORCECLOSE).mapTo[ChannelCommandResponse].map(_.toString)
   }
 
   override def updateRelayFee(channelIdentifier: Either[ByteVector32, ShortChannelId], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[String] = {
-    sendToChannel(channelIdentifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths)).mapTo[String]
+    sendToChannel(channelIdentifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths)).mapTo[ChannelCommandResponse].map(_.toString)
   }
 
   override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
