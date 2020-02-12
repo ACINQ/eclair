@@ -53,7 +53,9 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("take additional HTLC fee into account") { f =>
     import f._
-    val htlcOutputFee = 1720000 msat
+    // The fee for a single HTLC is 1720000 msat but the funder keeps an extra reserve to make sure we're able to handle
+    // an additional HTLC at twice the feerate (hence the multiplier).
+    val htlcOutputFee = 3 * 1720000 msat
     val a = 772760000 msat // initial balance alice
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -75,7 +77,8 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
 
     val fee = 1720000 msat // fee due to the additional htlc output
-    val a = (772760000 msat) - fee // initial balance alice
+    val funderFeeReserve = fee * 2 // extra reserve to handle future fee increase
+    val a = (772760000 msat) - fee - funderFeeReserve // initial balance alice
     val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
 
@@ -159,7 +162,8 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
 
     val fee = 1720000 msat // fee due to the additional htlc output
-    val a = (772760000 msat) - fee // initial balance alice
+    val funderFeeReserve = fee * 2 // extra reserve to handle future fee increase
+    val a = (772760000 msat) - fee - funderFeeReserve // initial balance alice
     val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
 
@@ -243,7 +247,8 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
 
     val fee = 1720000 msat // fee due to the additional htlc output
-    val a = (772760000 msat) - fee // initial balance alice
+    val funderFeeReserve = fee * 2 // extra reserve to handle future fee increase
+    val a = (772760000 msat) - fee - funderFeeReserve // initial balance alice
     val b = 190000000 msat // initial balance bob
     val p1 = 10000000 msat // a->b payment
     val p2 = 20000000 msat // a->b payment
@@ -384,6 +389,23 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val (ac16, _) = receiveRevocation(ac15, revocation6)
     assert(ac16.availableBalanceForSend == a - p1 + p3)
     assert(ac16.availableBalanceForReceive == b + p1 - p3)
+  }
+
+  // See https://github.com/lightningnetwork/lightning-rfc/issues/728
+  test("funder keeps additional reserve to avoid channel being stuck") { f =>
+    val isFunder = true
+    val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, 2500, 546 sat, isFunder)
+    val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
+    val Right((c1, _)) = sendAdd(c, cmdAdd, Local(UUID.randomUUID, None), f.currentBlockHeight)
+    assert(c1.availableBalanceForSend === 0.msat)
+
+    // We should be able to handle a fee increase.
+    val (c2, _) = sendFee(c1, CMD_UPDATE_FEE(3000))
+
+    // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
+    val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey.publicKey, f.currentBlockHeight)
+    val Left(e) = sendAdd(c2, cmdAdd1, Local(UUID.randomUUID, None), f.currentBlockHeight)
+    assert(e.isInstanceOf[InsufficientFunds])
   }
 
   test("can send availableForSend") { f =>
