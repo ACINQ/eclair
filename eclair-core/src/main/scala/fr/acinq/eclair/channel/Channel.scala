@@ -93,9 +93,9 @@ object Channel {
 
   sealed trait ChannelCommandResponse
   object ChannelCommandResponse {
-    case object Ok extends ChannelCommandResponse
-    case class ChannelOpened(channelId: ByteVector32) extends ChannelCommandResponse
-    case class ChannelClosed(channelId: ByteVector32) extends ChannelCommandResponse
+    case object Ok extends ChannelCommandResponse { override def toString  = "ok" }
+    case class ChannelOpened(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"created channel $channelId" }
+    case class ChannelClosed(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"closed channel $channelId" }
   }
   // @formatter:on
 
