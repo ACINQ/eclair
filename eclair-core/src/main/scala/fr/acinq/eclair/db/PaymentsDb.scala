@@ -178,6 +178,25 @@ object OutgoingPaymentStatus {
    */
   case class Failed(failures: Seq[FailureSummary], completedAt: Long) extends OutgoingPaymentStatus
 
+  /**
+   * Extract only the successful payments for a given payment id and reconstructs a [[PaymentSent]] event.
+   *
+   * @param parentId internal identifier of a parent payment.
+   * @param attempts outgoing payment attempts (e.g. from [[OutgoingPaymentsDb.listOutgoingPayments]]).
+   */
+  def asPaymentSent(parentId: UUID, attempts: Seq[OutgoingPayment]): Option[PaymentSent] = {
+    val succeeded = attempts.collect { case o: OutgoingPayment if o.parentId == parentId && o.status.isInstanceOf[Succeeded] => o }
+    val parts = succeeded.collect {
+      case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, Succeeded(_, fees, _, completedAt)) =>
+        PaymentSent.PartialPayment(id, amount, fees, ByteVector32.Zeroes, None, completedAt)
+    }
+    succeeded match {
+      case Nil => None
+      case OutgoingPayment(_, _, _, paymentHash, _, _, recipientAmount, recipientNodeId, _, _, Succeeded(preimage, _, _, _)) +: _ =>
+        Some(PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeId, parts))
+    }
+  }
+
 }
 
 /** A minimal representation of a hop in a payment route (suitable to store in a database). */
