@@ -401,7 +401,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     // can't update again once it's in a final state
     assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, s3.recipientAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32, None)))))
 
-    val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, 600 msat, carol, Seq(
+    val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, 600 msat, dave, Seq(
       PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32, None, 400),
       PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32, Some(Seq(hop_ab, hop_bc)), 410)
     ))
@@ -411,6 +411,11 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getOutgoingPayment(s1.id) === Some(ss1))
     assert(db.getOutgoingPayment(s2.id) === Some(ss2))
     assert(db.listOutgoingPayments(parentId) === Seq(ss1, ss2, ss3, ss4))
+    assert(OutgoingPaymentStatus.asPaymentSent(parentId, db.listOutgoingPayments(parentId)) === Some(PaymentSent(parentId, paymentHash1, preimage1, 600 msat, dave, Seq(
+      PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, ByteVector32.Zeroes, None, 400),
+      PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, ByteVector32.Zeroes, None, 410)
+    ))))
+    assert(OutgoingPaymentStatus.asPaymentSent(UUID.randomUUID(), db.listOutgoingPayments(parentId)) === None)
 
     // can't update again once it's in a final state
     assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentFailed(s1.id, s1.paymentHash, Nil)))
