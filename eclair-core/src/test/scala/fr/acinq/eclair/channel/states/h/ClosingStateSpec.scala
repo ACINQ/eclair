@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
@@ -457,7 +458,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[CommitSig]
     // note that bob doesn't receive the new sig!
     // then we make alice unilaterally close the channel
@@ -488,7 +489,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[CommitSig]
     // then we make alice believe bob unilaterally close the channel
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)

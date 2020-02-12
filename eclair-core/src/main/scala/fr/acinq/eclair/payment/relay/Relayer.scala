@@ -24,6 +24,7 @@ import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
@@ -191,7 +192,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
-    case "ok" => () // ignoring responses from channels
+    case ChannelCommandResponse.Ok => () // ignoring responses from channels
   }
 
   override def mdc(currentMessage: Any): MDC = {

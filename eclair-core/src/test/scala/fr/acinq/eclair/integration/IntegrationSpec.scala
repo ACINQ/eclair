@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypt
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
-import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
+import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, ChannelCommandResponse, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -179,7 +179,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       fundingTxFeeratePerKw_opt = None,
       channelFlags = None,
       timeout_opt = None))
-    assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
+    sender.expectMsgType[ChannelCommandResponse.ChannelOpened](10 seconds)
   }
 
   test("connect nodes") {
@@ -795,7 +795,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
     // we then have C unilateral close the channel (which will make F redeem the htlc onchain)
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond({
       sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
@@ -878,7 +878,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
     // then we have F unilateral close the channel
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we then generate one block so that the htlc success tx gets written to the blockchain
@@ -998,7 +998,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // then we ask F to unilaterally close the channel
     sender.send(nodes("F4").register, Forward(htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = sender.expectMsgType[JValue]
