@@ -20,6 +20,7 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -142,7 +143,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
-    case "ok" => // ignoring responses from channels
+    case ChannelCommandResponse.Ok => // ignoring responses from channels
   }
 
 }

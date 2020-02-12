@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.LocalError
+import fr.acinq.eclair.channel.Channel.{ChannelCommandResponse, LocalError}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.relay.CommandBuffer
@@ -276,7 +276,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice will receive neither the revocation nor the commit sig
@@ -361,7 +361,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // we make alice update here relay fee
     sender.send(alice, CMD_UPDATE_RELAY_FEE(4200 msat, 123456))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
 
     // alice doesn't broadcast the new channel_update yet
     channelUpdateListener.expectNoMsg(300 millis)
