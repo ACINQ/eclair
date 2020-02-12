@@ -22,6 +22,7 @@ import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}
@@ -104,7 +105,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       import scala.io.Source
       val script = Source.fromFile(file).getLines().filterNot(_.startsWith("#")).toList
       exec(script, a, b)
-    case "ok" => {}
+    case ChannelCommandResponse.Ok => {}
     case msg if sender() == a =>
       log.info(s"a -> b $msg")
       b forward msg
@@ -115,7 +116,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
   }
 
   def wait(a: ActorRef, b: ActorRef, script: List[String]): Receive = {
-    case "ok" => {}
+    case ChannelCommandResponse.Ok => {}
     case msg if sender() == a && script.head.startsWith("B:recv") =>
       log.info(s"a -> b $msg")
       b forward msg

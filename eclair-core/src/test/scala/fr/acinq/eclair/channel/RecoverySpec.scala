@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.WatchEventSpent
+import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.transactions.Scripts
@@ -12,7 +13,6 @@ import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, InputInfo
 import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, _}
 import org.scalatest.Outcome
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -47,7 +47,7 @@ class RecoverySpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice will receive neither the revocation nor the commit sig
