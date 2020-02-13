@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
 import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32, _}
 
 import scala.collection.immutable.Queue
 
@@ -67,12 +67,12 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
                 log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: payment secret doesn't match other HTLCs in the set")
                 rejectHtlc(add.id, add.channelId, add.amountMsat)
               } else {
-                relay.handler ! MultiPartPaymentFSM.MultiPartHtlc(outer.totalAmount, add)
+                relay.handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
                 context become main(pendingIncoming + (add.paymentHash -> relay.copy(htlcs = relay.htlcs :+ add)), pendingOutgoing)
               }
             case None =>
               val handler = context.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, outer.totalAmount, self))
-              handler ! MultiPartPaymentFSM.MultiPartHtlc(outer.totalAmount, add)
+              handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
               context become main(pendingIncoming + (add.paymentHash -> PendingRelay(Queue(add), secret, inner, next, handler)), pendingOutgoing)
           }
         }
@@ -80,15 +80,16 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
     // We always fail extraneous HTLCs. They are a spec violation from the sender, but harmless in the relay case.
     // By failing them fast (before the payment has reached the final recipient) there's a good chance the sender won't lose any money.
-    case MultiPartPaymentFSM.ExtraHtlcReceived(_, p, failure) => rejectHtlc(p.htlcId, p.payment.fromChannelId, p.payment.amount, failure)
+    // We don't expect to relay pay-to-open payments
+    case MultiPartPaymentFSM.ExtraPaymentReceived(_, p: MultiPartPaymentFSM.HtlcPart, failure) => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, failure)
 
-    case MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, failure, parts) =>
-      log.warning(s"could not relay payment (paidAmount=${parts.map(_.payment.amount).sum} failure=$failure)")
+    case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) =>
+      log.warning(s"could not relay payment (paidAmount=${parts.map(_.amount).sum} failure=$failure)")
       pendingIncoming.get(paymentHash).foreach(_.handler ! PoisonPill)
-      parts.foreach(p => rejectHtlc(p.htlcId, p.payment.fromChannelId, p.payment.amount, Some(failure)))
+      parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
       context become main(pendingIncoming - paymentHash, pendingOutgoing)
 
-    case MultiPartPaymentFSM.MultiPartHtlcSucceeded(paymentHash, parts) => pendingIncoming.get(paymentHash) match {
+    case MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) => pendingIncoming.get(paymentHash) match {
       case Some(PendingRelay(htlcs, _, nextPayload, nextPacket, handler)) =>
         val upstream = Upstream.TrampolineRelayed(htlcs)
         handler ! PoisonPill
@@ -122,9 +123,9 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
         if (!p.fulfilledUpstream) {
           fulfillPayment(p.upstream, paymentPreimage)
         }
-        val incoming = p.upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
-        val outgoing = parts.map(part => PaymentRelayed.Part(part.amountWithFees, part.toChannelId))
-        context.system.eventStream.publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing))
+          val incoming = p.upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
+          val outgoing = parts.map(part => PaymentRelayed.Part(part.amountWithFees, part.toChannelId))
+          context.system.eventStream.publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing))
       })
       context become main(pendingIncoming, pendingOutgoing - paymentHash)
 
@@ -186,9 +187,9 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case m: IncomingPacket.NodeRelayPacket => Some(m.add.paymentHash)
-      case m: MultiPartPaymentFSM.MultiPartHtlcFailed => Some(m.paymentHash)
-      case m: MultiPartPaymentFSM.MultiPartHtlcSucceeded => Some(m.paymentHash)
-      case m: MultiPartPaymentFSM.ExtraHtlcReceived => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.MultiPartPaymentFailed => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.MultiPartPaymentSucceeded => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.ExtraPaymentReceived => Some(m.paymentHash)
       case m: PaymentFailed => Some(m.paymentHash)
       case m: PaymentSent => Some(m.paymentHash)
       case _ => None

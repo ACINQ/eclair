@@ -32,10 +32,9 @@ trait ReceiveHandler {
 class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Actor with DiagnosticActorLogging {
 
   // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
-  private val multipartHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments, commandBuffer)
-  private val payToOpenHandler = new PayToOpenHandler(nodeParams, commandBuffer)
+  private val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments, commandBuffer)
 
-  override def receive: Receive = normal(payToOpenHandler.handle(context, log) orElse multipartHandler.handle(context, log))
+  override def receive: Receive = normal(defaultHandler.handle(context, log))
 
   def normal(handle: Receive): Receive = handle orElse {
     case handler: ReceiveHandler =>

@@ -19,13 +19,13 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, InetAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import org.scalatest.FunSuite
-import scodec.DecodeResult
+import scodec.{Codec, DecodeResult}
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 
 /**
@@ -413,6 +413,30 @@ class LightningMessageCodecsSpec extends FunSuite {
     assert(Announcements.checkSig(update, nodeId))
     val bin2 = ByteVector(lightningMessageCodec.encode(update).require.toByteArray)
     assert(bin === bin2)
+  }
+
+  test("non-reg pay-to-open") {
+    // we just need to make sure that old phoenix can decode new pay-to-open requests
+    case class OldPayToOpenRequest(chainHash: ByteVector32,
+                                   fundingSatoshis: Satoshi,
+                                   amountMsat: MilliSatoshi,
+                                   feeSatoshis: Satoshi,
+                                   paymentHash: ByteVector32)
+
+    import fr.acinq.eclair.wire.CommonCodecs._
+    import scodec.codecs._
+    val oldPayToOpenRequestCodec: Codec[OldPayToOpenRequest] = (
+      ("chainHash" | bytes32) ::
+        ("fundingSatoshis" | satoshi) ::
+        ("pushMsat" | millisatoshi) ::
+        ("feeSatoshis" | satoshi) ::
+        ("paymentHash" | bytes32)).as[OldPayToOpenRequest]
+
+    val p = PayToOpenRequest(randomBytes32, 12 mbtc, 12345 msat, 7 sat, randomBytes32, 1234567890L, Some(UpdateAddHtlc(randomBytes32, 42, 12345 msat, randomBytes32, CltvExpiry(420), TestConstants.emptyOnionPacket)))
+    val bits = payToOpenRequestCodec.encode(p).require
+    val DecodeResult(oldp, remainder) = oldPayToOpenRequestCodec.decode(bits).require
+    assert(oldp === OldPayToOpenRequest(p.chainHash, p.fundingSatoshis, p.amountMsat, p.feeSatoshis, p.paymentHash))
+    assert(remainder.nonEmpty)
   }
 
 }

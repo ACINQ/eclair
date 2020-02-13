@@ -75,8 +75,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     incomingMultiPart.dropRight(1).foreach(incoming => relayer.send(nodeRelayer, incoming))
 
     val sender = TestProbe()
-    val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.PendingPayment(i.add.id, PaymentReceived.PartialPayment(i.add.amountMsat, i.add.channelId)))
-    sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
+    val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.HtlcPart(i.innerPayload.totalAmount, i.add))
+    sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
 
     incomingMultiPart.dropRight(1).foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
     sender.expectNoMsg(100 millis)
@@ -87,10 +87,10 @@ class NodeRelayerSpec extends TestkitBaseClass {
     import f._
 
     val sender = TestProbe()
-    val partial = MultiPartPaymentFSM.PendingPayment(15, PaymentReceived.PartialPayment(100 msat, randomBytes32))
-    sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, partial, Some(InvalidRealm)))
+    val partial = MultiPartPaymentFSM.HtlcPart(42 msat, UpdateAddHtlc(randomBytes32, 15, 100 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket))
+    sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraPaymentReceived(paymentHash, partial, Some(InvalidRealm)))
 
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.payment.fromChannelId, CMD_FAIL_HTLC(partial.htlcId, Right(InvalidRealm), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.htlc.channelId, CMD_FAIL_HTLC(partial.htlc.id, Right(InvalidRealm), commit = true)))
     sender.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
@@ -216,7 +216,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     // Receive an upstream multi-part payment.
     incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
-    outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+    val sendMpp = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
     outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(PaymentError.BalanceTooLow) :: Nil))
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
@@ -230,7 +230,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     // Receive an upstream multi-part payment.
     incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
-    outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+    val sendMpp = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
     val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(RouteNotFound) :: Nil
@@ -246,7 +246,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     // Receive an upstream multi-part payment.
     incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
-    outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+    val sendMpp = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
     val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: LocalFailure(RouteNotFound) :: Nil
     outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, failures))

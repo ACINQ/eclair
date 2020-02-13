@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
+import fr.acinq.eclair._
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
@@ -300,13 +301,51 @@ case class PayToOpenRequest(chainHash: ByteVector32,
                             fundingSatoshis: Satoshi,
                             amountMsat: MilliSatoshi,
                             feeSatoshis: Satoshi,
-                            paymentHash: ByteVector32
-                           ) extends LightningMessage with HasChainHash
+                            paymentHash: ByteVector32,
+                            expireAt: Long,
+                            htlc_opt: Option[UpdateAddHtlc]
+                           ) extends LightningMessage with HasChainHash {
+  def denied: PayToOpenResponse = PayToOpenResponse(chainHash, paymentHash, ByteVector32.Zeroes) // preimage all-zero means user says no to the pay-to-open request
+}
+
+object PayToOpenRequest {
+
+  def computeFee(amount: MilliSatoshi) = {
+    if (amount.truncateToSatoshi < 10000.sat) {
+      // for tiny amounts there is no fee
+      0.sat
+    } else {
+      // NB: this fee is proportional, which allow us to sum them in case of multi-parts payments
+      amount.truncateToSatoshi * 0.005 // 0.5 % fee
+    }
+  }
+
+  def computeFunding(amount: MilliSatoshi, fee: Satoshi) = 100000.sat + (amount * 1.5D).truncateToSatoshi + fee
+
+  /**
+   * We use this method for non-trampoline multi-parts payments. The aggregation is done by Phoenix, which may receive
+   * several pay-to-open requests for the same payment. Combining the requests allows us to create a single channel, and
+   * protects us from some edge cases (e.g. since small payments are free, users could aggressively split their payments
+   * to stay below a certain threshold).
+   */
+  def combine(requests: Seq[PayToOpenRequest]) = {
+    require(requests.nonEmpty, "there needs to be at least one pay-to-open request")
+    val chainHash = requests.head.chainHash
+    val paymentHash = requests.head.paymentHash
+    val totalAmount = requests.map(_.amountMsat).sum
+    val feeAmount = PayToOpenRequest.computeFee(totalAmount)
+    val fundingAmount = PayToOpenRequest.computeFunding(totalAmount, feeAmount)
+    val expireAt = requests.map(_.expireAt).min // the aggregate request expires when the first of the underlying request expires
+    PayToOpenRequest(chainHash, fundingAmount, totalAmount, feeAmount, paymentHash, expireAt, None)
+  }
+
+}
 
 case class PayToOpenResponse(chainHash: ByteVector32,
                              paymentHash: ByteVector32,
-                             paymentPreimage: ByteVector32 // preimage all-zero means we say no to the pay-to-open request
+                             paymentPreimage: ByteVector32
                             ) extends LightningMessage with HasChainHash
+
 //
 case class SwapInRequest(chainHash: ByteVector32) extends LightningMessage with HasChainHash
 

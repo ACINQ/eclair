@@ -712,7 +712,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
   }
 
-  test("send a trampoline payment A->D (temporary remote failure at trampoline)") {
+  ignore("send a trampoline payment A->D (temporary remote failure at trampoline)") {
     val sender = TestProbe()
     val amount = 2000000000L.msat // B can forward to C, but C doesn't have that much outgoing capacity to D
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "I iz not Satoshi"))

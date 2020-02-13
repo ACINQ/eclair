@@ -21,13 +21,13 @@ import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -488,5 +488,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(error2.channelId === CHANNELID_ZERO)
     assert(new String(error2.data.toArray).startsWith("bad announcement sig! bin=0100"))
   }
+
+}
+
+object PeerSpec {
+
+  val preimage = randomBytes32
+  val paymentHash = Crypto.sha256(preimage)
 
 }

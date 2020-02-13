@@ -22,12 +22,17 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
+import fr.acinq.eclair.io.PayToOpenRequestEvent
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.{HtlcPart, PayToOpenPart}
 import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32, _}
 
+import scala.compat.Platform
+import scala.concurrent.Promise
+import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -87,10 +92,10 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
               log.info(s"received payment for amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
               pendingPayments.get(p.add.paymentHash) match {
                 case Some((_, handler)) =>
-                  handler ! MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
+                  handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
                 case None =>
                   val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
-                  handler ! MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
+                  handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
                   pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
               }
           }
@@ -100,41 +105,137 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         }
       }
 
-    case MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
+    case p: PayToOpenRequest if doHandle(p.paymentHash) =>
+      Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(p.paymentHash))) {
+        val totalAmount: MilliSatoshi = p.htlc_opt match {
+          case Some(htlc) =>
+            IncomingPacket.decrypt(htlc, nodeParams.privateKey, nodeParams.features) match {
+              case Right(i: IncomingPacket.FinalPacket) => i.payload.totalAmount
+              case Right(_) => p.amountMsat
+              case Left(_) => p.amountMsat
+            }
+          case None => p.amountMsat // in all failure cases we assume it is a single part payment
+        }
+        db.getIncomingPayment(p.paymentHash) match {
+          case Some(record) => validatePayToOpen(p, totalAmount, record) match {
+            case Some(payToOpenResponseDenied) =>
+              ctx.sender() ! payToOpenResponseDenied
+            case None =>
+              log.info(s"received pay-to-open payment for amount=${p.amountMsat} totalAmount=$totalAmount payToOpenRequest=$p")
+              pendingPayments.get(p.paymentHash) match {
+                case Some((_, handler)) =>
+                  handler ! MultiPartPaymentFSM.PayToOpenPart(totalAmount, p, ctx.sender())
+                case None =>
+                  val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, p.paymentHash, totalAmount, ctx.self))
+                  handler ! MultiPartPaymentFSM.PayToOpenPart(totalAmount, p, ctx.sender())
+                  pendingPayments = pendingPayments + (p.paymentHash -> (record.paymentPreimage, handler))
+              }
+          }
+          case None => ctx.sender() ! p.denied
+        }
+      }
+
+    case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.warning(s"payment with paidAmount=${parts.map(_.payment.amount).sum} failed ($failure)")
+        log.warning(s"payment with paidAmount=${parts.map(_.amount).sum} failed ($failure)")
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
-        parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true)))
+        parts.collect { case p: HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true)) }
+        parts.collectFirst { case p: PayToOpenPart => p.peer ! p.payToOpen.denied }
         pendingPayments = pendingPayments - paymentHash
       }
 
-    case MultiPartPaymentFSM.MultiPartHtlcSucceeded(paymentHash, parts) if doHandle(paymentHash) =>
+    case m@MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        val received = PaymentReceived(paymentHash, parts.map(_.payment))
+        pendingPayments.get(paymentHash).foreach {
+          case (_, handler: ActorRef) =>
+            handler ! PoisonPill
+            parts
+              .collect { case p: PayToOpenPart => p }
+              .toList match {
+              case Nil =>
+                // regular mpp payment, we just fulfill the upstream htlcs
+                ctx.self ! DoFulfill(m)
+              case payToOpenParts =>
+                // at least one part of this payment is a pay-to-open: we need an acknowledgment from the user
+                // amount is correct or was not specified in the payment request
+                // first we combine all pay-to-open requests into one
+                val summarizedPayToOpenRequest = PayToOpenRequest.combine(payToOpenParts.map(_.payToOpen))
+                // and we do as if we had received only that pay-to-open request (this is what will be written to db)
+                val parts1 = parts.collect { case h: HtlcPart => h } :+ PayToOpenPart(parts.head.totalAmount, summarizedPayToOpenRequest, payToOpenParts.head.peer)
+                log.info(s"received pay-to-open payment for amount=${summarizedPayToOpenRequest.amountMsat}")
+                if (summarizedPayToOpenRequest.feeSatoshis == 0.sat) {
+                  // we always say ok when fee is zero, without asking the user
+                  ctx.self ! DoFulfill(m)
+                } else {
+                  implicit val ec = ctx.dispatcher
+                  val decision = Promise[Boolean]()
+                  val delay = summarizedPayToOpenRequest.expireAt.seconds - Platform.currentTime.millisecond // there will be a race at timeout but it doesn't matter
+                  ctx.system.eventStream.publish(PayToOpenRequestEvent(payToOpenParts.head.peer, summarizedPayToOpenRequest, decision))
+                  ctx.system.scheduler.scheduleOnce(delay)(decision.tryFailure(new RuntimeException("pay-to-open timed out")))
+                  decision
+                    .future
+                    .recover { case _: Throwable => false }
+                    .foreach {
+                      case true =>
+                        // user said yes
+                        log.info(s"user said ok to pay-to-open request for amount=${summarizedPayToOpenRequest.amountMsat} fee=${summarizedPayToOpenRequest.feeSatoshis}")
+                        ctx.self ! DoFulfill(MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts1))
+                      case false =>
+                        // user said no or didn't answer
+                        log.info(s"user said no to pay-to-open request for amount=${summarizedPayToOpenRequest.amountMsat}")
+                        val failure = wire.UnknownNextPeer // default error for pay-to-open failures
+                        ctx.self ! MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts1)
+                    }
+                }
+            }
+        }
+      }
+
+    case DoFulfill(MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts)) if doHandle(paymentHash) =>
+      Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
+        val received = PaymentReceived(paymentHash, parts.map {
+          case p: HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
+          case p: PayToOpenPart => PaymentReceived.PartialPayment(p.amount - p.payToOpen.feeSatoshis, ByteVector32.Zeroes)
+        })
         log.info(s"received complete payment for amount=${received.amount}")
         // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
         db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
-        pendingPayments.get(paymentHash).foreach {
-          case (preimage: ByteVector32, handler: ActorRef) =>
-            handler ! PoisonPill
-            parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true)))
+        pendingPayments.get(paymentHash).collect {
+          case (preimage: ByteVector32, _) =>
+            parts.collect { case p: HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true)) }
+            parts.collectFirst { case p: PayToOpenPart => p.peer ! PayToOpenResponse(
+                chainHash = p.payToOpen.chainHash,
+                paymentHash = p.paymentHash,
+                paymentPreimage = preimage)
+            }
         }
         ctx.system.eventStream.publish(received)
         pendingPayments = pendingPayments - paymentHash
         onSuccess(received)
       }
 
-    case MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, p, failure) if doHandle(paymentHash) =>
+    case MultiPartPaymentFSM.ExtraPaymentReceived(paymentHash, p, failure) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         failure match {
-          case Some(failure) => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
+          case Some(failure) =>
+            p match {
+              case p: HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+              case p: PayToOpenPart => p.peer ! p.payToOpen.denied
+            }
           // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
           // expensive code path by fetching the preimage from DB.
-          case None => db.getIncomingPayment(paymentHash).foreach(record => {
-            commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true))
-            db.receiveIncomingPayment(paymentHash, p.payment.amount, p.payment.timestamp)
-            ctx.system.eventStream.publish(PaymentReceived(paymentHash, p.payment :: Nil))
-          })
+          case None =>
+            p match {
+              case p: HtlcPart =>
+                db.getIncomingPayment(paymentHash).foreach { record =>
+                  val preimage = record.paymentPreimage
+                  commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
+                  val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
+                  db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
+                  ctx.system.eventStream.publish(received)
+                }
+              case _: PayToOpenPart => // we don't do anything here because we have already previously either accepted or rejected which has settled the pay-to-open
+            }
         }
       }
 
@@ -152,6 +253,7 @@ object MultiPartHandler {
   // @formatter:off
   case object GetPendingPayments
   case class PendingPayments(paymentHashes: Set[ByteVector32])
+  case class DoFulfill(success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
   // @formatter:on
 
   /**
@@ -171,27 +273,27 @@ object MultiPartHandler {
                             fallbackAddress: Option[String] = None,
                             paymentPreimage: Option[ByteVector32] = None)
 
-  private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentStatus(amount: MilliSatoshi, totalAmount: MilliSatoshi, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
       log.warning(s"ignoring incoming payment for which has already been paid")
       false
     } else if (record.paymentRequest.isExpired) {
-      log.warning(s"received payment for expired amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning(s"received payment for expired amount=${amount} totalAmount=${totalAmount}")
       false
     } else {
       true
     }
   }
 
-  private def validatePaymentAmount(payment: IncomingPacket.FinalPacket, expectedAmount: MilliSatoshi)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentAmount(amount: MilliSatoshi, totalAmount: MilliSatoshi, expectedAmount: MilliSatoshi)(implicit log: LoggingAdapter): Boolean = {
     // The total amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
     // it must not be greater than two times the requested amount.
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
-    if (payment.payload.totalAmount < expectedAmount) {
-      log.warning(s"received payment with amount too small for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+    if (totalAmount < expectedAmount) {
+      log.warning(s"received payment with amount too small for amount=${amount} totalAmount=${totalAmount}")
       false
-    } else if (payment.payload.totalAmount > expectedAmount * 2) {
-      log.warning(s"received payment with amount too large for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+    } else if (totalAmount > expectedAmount * 2) {
+      log.warning(s"received payment with amount too large for amount=${amount} totalAmount=${totalAmount}")
       false
     } else {
       true
@@ -225,10 +327,16 @@ object MultiPartHandler {
   private def validatePayment(payment: IncomingPacket.FinalPacket, record: IncomingPayment, currentBlockHeight: Long)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, currentBlockHeight)), commit = true)
-    val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))
+    val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment.add.amountMsat, payment.payload.totalAmount, a))
     val paymentCltvOk = validatePaymentCltv(payment, record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry(currentBlockHeight))
-    val paymentStatusOk = validatePaymentStatus(payment, record)
+    val paymentStatusOk = validatePaymentStatus(payment.add.amountMsat, payment.payload.totalAmount, record)
     val paymentFeaturesOk = validateInvoiceFeatures(payment, record.paymentRequest)
     if (paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk) None else Some(cmdFail)
+  }
+
+  private def validatePayToOpen(p: PayToOpenRequest, totalAmount: MilliSatoshi, record: IncomingPayment)(implicit log: LoggingAdapter): Option[PayToOpenResponse] = {
+    val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(p.amountMsat, totalAmount, a))
+    val paymentStatusOk = validatePaymentStatus(p.amountMsat, totalAmount, record)
+    if (paymentAmountOk && paymentStatusOk) None else Some(p.denied)
   }
 }

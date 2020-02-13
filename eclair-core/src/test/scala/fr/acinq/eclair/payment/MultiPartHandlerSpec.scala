@@ -19,21 +19,26 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorSystem
 import akka.actor.Status.Failure
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.IncomingPaymentStatus
+import fr.acinq.eclair.io.PayToOpenRequestEvent
+import fr.acinq.eclair.payment.OutgoingPacket.buildOnion
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{GetPendingPayments, PendingPayments, ReceivePayment}
-import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.PendingPayment
+import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.{HtlcPart, PayToOpenPart}
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.{Outcome, fixture}
 import scodec.bits.HexStringSyntax
+import MultiPartHandlerSpec.secondsFromNow
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -356,7 +361,8 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     })
 
     // Extraneous HTLCs should be failed.
-    f.sender.send(handler, MultiPartPaymentFSM.ExtraHtlcReceived(pr1.paymentHash, PendingPayment(42, PartialPayment(200 msat, ByteVector32.One)), Some(PaymentTimeout)))
+    val extraHtlc = UpdateAddHtlc(ByteVector32.One, 42, 200 msat, pr1.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr1.paymentHash, HtlcPart(1000 msat, extraHtlc), Some(PaymentTimeout)))
     f.commandBuffer.expectMsg(CommandBuffer.CommandSend(ByteVector32.One, CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true)))
 
     // The payment should still be pending in DB.
@@ -400,7 +406,8 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     })
 
     // Extraneous HTLCs should be fulfilled.
-    f.sender.send(handler, MultiPartPaymentFSM.ExtraHtlcReceived(pr.paymentHash, PendingPayment(44, PartialPayment(200 msat, ByteVector32.One, 0)), None))
+    val extraHtlc = UpdateAddHtlc(ByteVector32.One, 44, 200 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr.paymentHash, HtlcPart(1000 msat, extraHtlc), None))
     f.commandBuffer.expectMsg(CommandBuffer.CommandSend(ByteVector32.One, CMD_FULFILL_HTLC(44, cmd1.cmd.r, commit = true)))
     assert(f.eventListener.expectMsgType[PaymentReceived].amount === 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
@@ -448,4 +455,266 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     })
   }
 
+  test("PaymentHandler should handle single-part payment success (htlc)") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
+
+    f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val add1 = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, IncomingPacket.FinalPacket(add1, Onion.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, pr.paymentSecret.get)))
+
+    val cmd1 = f.commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FULFILL_HTLC]]
+    assert(cmd1.cmd.id === add1.id)
+    assert(cmd1.channelId === add1.channelId)
+    assert(Crypto.sha256(cmd1.cmd.r) === pr.paymentHash)
+
+    f.sender.send(handler, CommandBuffer.CommandAck(add1.channelId, add1.id))
+    f.commandBuffer.expectMsg(CommandBuffer.CommandAck(add1.channelId, add1.id))
+
+    val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0))) === PaymentReceived(pr.paymentHash, PartialPayment(1000 msat, ByteVector32.One, 0) :: Nil))
+    val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
+    awaitCond({
+      f.sender.send(handler, GetPendingPayments)
+      f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+    })
+
+    // Extraneous HTLCs should be fulfilled.
+    val extraHtlc = UpdateAddHtlc(ByteVector32.One, 44, 200 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr.paymentHash, HtlcPart(1000 msat, extraHtlc), None))
+    f.commandBuffer.expectMsg(CommandBuffer.CommandSend(ByteVector32.One, CMD_FULFILL_HTLC(44, cmd1.cmd.r, commit = true)))
+    assert(f.eventListener.expectMsgType[PaymentReceived].amount === 200.msat)
+    val received2 = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1200.msat)
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  test("PaymentHandler should handle single-part payment success (pay-to-open, no user confirmation)") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
+
+    f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 1000 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None)
+    f.sender.send(handler, p1)
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(Crypto.sha256(r1.paymentPreimage) === p1.paymentHash)
+
+    val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0)).toList) === PaymentReceived(pr.paymentHash, PartialPayment(1000 msat, ByteVector32.Zeroes, 0) :: Nil))
+    val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
+    awaitCond({
+      f.sender.send(handler, GetPendingPayments)
+      f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+    })
+
+    // Extraneous pay-to-opens will be ignored
+    val pExtra = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 200 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None)
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr.paymentHash, PayToOpenPart(1000 msat, pExtra, f.sender.ref), None))
+    f.sender.expectNoMsg()
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  test("PaymentHandler should handle single-part payment success (pay-to-open, with user confirmation)") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
+
+    val amount = 20000000 msat
+    val fee = PayToOpenRequest.computeFee(amount)
+    val funding = PayToOpenRequest.computeFunding(amount, fee)
+
+    f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None)
+    f.sender.send(handler, p1)
+
+    val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
+    assert(e1.payToOpenRequest === p1)
+    assert(e1.peer === f.sender.ref)
+    e1.decision.success(true)
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(Crypto.sha256(r1.paymentPreimage) === p1.paymentHash)
+
+    val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0)).toList) === PaymentReceived(pr.paymentHash, PartialPayment(amount - fee, ByteVector32.Zeroes, 0) :: Nil))
+    val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === amount - fee)
+    awaitCond({
+      f.sender.send(handler, GetPendingPayments)
+      f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+    })
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  test("PaymentHandler should handle single-part payment success (pay-to-open, user says no)") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
+
+    val amount = 20000000 msat
+    val fee = PayToOpenRequest.computeFee(amount)
+    val funding = PayToOpenRequest.computeFunding(amount, fee)
+
+    f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None)
+    f.sender.send(handler, p1)
+
+    val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
+    assert(e1.payToOpenRequest === p1)
+    assert(e1.peer === f.sender.ref)
+    e1.decision.success(false) // user says no
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(r1.paymentPreimage === ByteVector32.Zeroes)
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  test("PaymentHandler should handle single-part payment success (pay-to-open, timeout)") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
+
+    val amount = 20000000 msat
+    val fee = PayToOpenRequest.computeFee(amount)
+    val funding = PayToOpenRequest.computeFunding(amount, fee)
+
+    f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(2), None)
+    f.sender.send(handler, p1)
+
+    val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
+    assert(e1.payToOpenRequest === p1)
+    assert(e1.peer === f.sender.ref)
+    Thread.sleep(3000) // timeout
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(r1.paymentPreimage === ByteVector32.Zeroes)
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  def mixPaymentSuccess(f: FixtureParam, invoiceAmount: Option[MilliSatoshi]) = {
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
+
+    f.sender.send(handler, ReceivePayment(invoiceAmount, "1 bò bún"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val add1 = UpdateAddHtlc(randomBytes32, 0, 20000000 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, IncomingPacket.FinalPacket(add1, Onion.createMultiPartPayload(add1.amountMsat, 100000000 msat, add1.cltvExpiry, pr.paymentSecret.get)))
+
+    val add2 = UpdateAddHtlc(randomBytes32, 0, 30000000 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, IncomingPacket.FinalPacket(add2, Onion.createMultiPartPayload(add2.amountMsat, 100000000 msat, add2.cltvExpiry, pr.paymentSecret.get)))
+
+    val amount1 = 20000000 msat
+    val fee1 = PayToOpenRequest.computeFee(amount1)
+    val funding1 = PayToOpenRequest.computeFunding(amount1, fee1)
+    val payload1 = Onion.createMultiPartPayload(amount1, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
+    val onion1 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload1 :: Nil, pr.paymentHash).packet
+    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload1.amount, pr.paymentHash, payload1.expiry, onion1)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding1, amount1, fee1, pr.paymentHash, secondsFromNow(45), Some(htlc1))
+    f.sender.send(handler, p1)
+
+    val amount2 = 20000000 msat
+    val fee2 = PayToOpenRequest.computeFee(amount2)
+    val funding2 = PayToOpenRequest.computeFunding(amount2, fee1)
+    val payload2 = Onion.createMultiPartPayload(amount2, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
+    val onion2 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload2 :: Nil, pr.paymentHash).packet
+    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload2.amount, pr.paymentHash, payload2.expiry, onion2)
+    val p2 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding2, amount2, fee2, pr.paymentHash, secondsFromNow(50), Some(htlc2))
+    f.sender.send(handler, p2)
+
+    val amount3 = 10000000 msat
+    val fee3 = PayToOpenRequest.computeFee(amount3)
+    val funding3 = PayToOpenRequest.computeFunding(amount1, fee1)
+    val payload3 = Onion.createMultiPartPayload(amount3, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
+    val onion3 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload3 :: Nil, pr.paymentHash).packet
+    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload3.amount, pr.paymentHash, payload3.expiry, onion3)
+    val p3 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding3, amount3, fee3, pr.paymentHash, secondsFromNow(60), Some(htlc3))
+    f.sender.send(handler, p3)
+
+    val payToOpenAmount = amount1 + amount2 + amount3
+    val payToOpenFee = PayToOpenRequest.computeFee(payToOpenAmount)
+    val payToOpenFunding = PayToOpenRequest.computeFunding(payToOpenAmount, payToOpenFee)
+
+    val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
+    assert(e1.payToOpenRequest === PayToOpenRequest(
+      chainHash = p1.chainHash,
+      fundingSatoshis = payToOpenFunding,
+      amountMsat = payToOpenAmount,
+      feeSatoshis = payToOpenFee,
+      paymentHash = p1.paymentHash,
+      expireAt = p1.expireAt,
+      htlc_opt = None
+    ))
+    assert(e1.peer === f.sender.ref)
+    e1.decision.success(true)
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(Crypto.sha256(r1.paymentPreimage) === p1.paymentHash)
+    // we only send one response
+    f.sender.expectNoMsg()
+
+    val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0)).toList) ===
+      PaymentReceived(pr.paymentHash,
+        PartialPayment(20000000 msat, add1.channelId, 0) ::
+          PartialPayment(30000000 msat, add2.channelId, 0) ::
+          PartialPayment(payToOpenAmount - payToOpenFee, ByteVector32.Zeroes, 0) :: Nil))
+    val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === add1.amountMsat + add2.amountMsat + payToOpenAmount - payToOpenFee)
+    awaitCond({
+      f.sender.send(handler, GetPendingPayments)
+      f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+    })
+  }
+
+  test("PaymentHandler should handle single-part payment success (mix of htlc and pay-to-open, with user confirmation)") { f =>
+    mixPaymentSuccess(f, Some(100000000 msat))
+  }
+
+  test("PaymentHandler should handle single-part payment success (amountless invoice, mix of htlc and pay-to-open, with user confirmation)") { f =>
+    mixPaymentSuccess(f, None)
+  }
+
+}
+
+object MultiPartHandlerSpec {
+
+  /**
+   * @param s number of seconds in the future
+   * @return a unix timestamp
+   */
+  def secondsFromNow(s: Int): Long  = (Platform.currentTime.milliseconds + s.seconds).toSeconds
 }

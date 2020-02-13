@@ -313,11 +313,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       }
       stay
 
-    case Event(payToOpen: Peer.PayToOpen, d: ConnectedData) =>
-      d.transport ! payToOpen.payToOpenRequest
-      val existing = d.payToOpenReqs.getOrElse(payToOpen.payToOpenRequest.paymentHash, Nil)
-      stay using d.copy(payToOpenReqs = d.payToOpenReqs + (payToOpen.payToOpenRequest.paymentHash -> (payToOpen +: existing)))
-
     case Event(payToOpenRequest: PayToOpenRequest, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(payToOpenRequest)
       paymentHandler forward payToOpenRequest
