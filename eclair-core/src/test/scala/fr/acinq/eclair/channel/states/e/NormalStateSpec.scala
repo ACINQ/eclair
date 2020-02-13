@@ -2484,7 +2484,7 @@ NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(Announcements.isEnabled(update1a.channelFlags) == true)
+    assert(Announcements.isEnabled(update1a.channelFlags))
 
     // actual test starts here
     sender.send(alice, INPUT_DISCONNECTED)
@@ -2509,9 +2509,7 @@ NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, INPUT_DISCONNECTED)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
     assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
-    val update2a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate === update2a)
-    assert(!Announcements.isEnabled(update2a.channelFlags))
+    assert(!Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags))
     awaitCond(alice.stateName == OFFLINE)
   }
 

@@ -91,7 +91,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.request.totalAmount, channels, d.networkStats, d.request, randomize = false)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.request.totalAmount} with our current balance")
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(BalanceTooLow) :: Nil, Set.empty)
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(PaymentError.BalanceTooLow) :: Nil, Set.empty)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size)
         Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
@@ -149,7 +149,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize = true) // we randomize channel selection when we retry
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(BalanceTooLow), d.pending.keySet)
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(PaymentError.BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
         pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
@@ -259,7 +259,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (isFromFinalRecipient) {
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
-      val failure = LocalFailure(RetryExhausted)
+      val failure = LocalFailure(PaymentError.RetryExhausted)
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
     } else {
       None
@@ -304,11 +304,6 @@ object MultiPartPaymentLifecycle {
                                   additionalTlvs: Seq[OnionTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
-
-  // @formatter:off
-  object BalanceTooLow extends RuntimeException("outbound capacity is too low")
-  object RetryExhausted extends RuntimeException("payment attempts exhausted without success")
-  // @formatter:on
 
   // @formatter:off
   sealed trait State

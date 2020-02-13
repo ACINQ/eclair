@@ -67,15 +67,15 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
       authenticating.get(transport) match {
         case Some(pendingAuth) =>
           // we send an error only when we are the initiator
-          pendingAuth.origin_opt.map(origin => origin ! Status.Failure(AuthenticationFailed(pendingAuth.address)))
+          pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(AuthenticationFailed(pendingAuth.address)))
           context become ready(switchboard, authenticating - transport)
         case None => ()
       }
 
   }
 
-  // we should not restart a failing transport-handler
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
+  // we should not restart a failing transport-handler (NB: logging is handled in the transport)
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false) { case _ => SupervisorStrategy.Stop }
 
   override def mdc(currentMessage: Any): MDC = {
     val remoteNodeId_opt = currentMessage match {

@@ -21,9 +21,9 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteV
 import fr.acinq.eclair.Features.{PaymentSecret => PaymentSecretF, _}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
-import scodec.Codec
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
+import scodec.{Codec, Err}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -160,9 +160,11 @@ object PaymentRequest {
 
   sealed trait UnknownTaggedField extends TaggedField
 
+  sealed trait InvalidTaggedField extends TaggedField
+
   // @formatter:off
   case class UnknownTag0(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag1(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag1(data: BitVector) extends InvalidTaggedField
   case class UnknownTag2(data: BitVector) extends UnknownTaggedField
   case class UnknownTag4(data: BitVector) extends UnknownTaggedField
   case class UnknownTag7(data: BitVector) extends UnknownTaggedField
@@ -172,12 +174,14 @@ object PaymentRequest {
   case class UnknownTag12(data: BitVector) extends UnknownTaggedField
   case class UnknownTag14(data: BitVector) extends UnknownTaggedField
   case class UnknownTag15(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag16(data: BitVector) extends InvalidTaggedField
   case class UnknownTag17(data: BitVector) extends UnknownTaggedField
   case class UnknownTag18(data: BitVector) extends UnknownTaggedField
   case class UnknownTag19(data: BitVector) extends UnknownTaggedField
   case class UnknownTag20(data: BitVector) extends UnknownTaggedField
   case class UnknownTag21(data: BitVector) extends UnknownTaggedField
   case class UnknownTag22(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag23(data: BitVector) extends InvalidTaggedField
   case class UnknownTag25(data: BitVector) extends UnknownTaggedField
   case class UnknownTag26(data: BitVector) extends UnknownTaggedField
   case class UnknownTag27(data: BitVector) extends UnknownTaggedField
@@ -377,11 +381,17 @@ object PaymentRequest {
 
     val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
 
-    def dataCodec[A](valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(dataLengthCodec, valueCodec, multipleForPadding = 5)
+    def dataCodec[A](valueCodec: Codec[A], expectedLength: Option[Long] = None): Codec[A] = paddedVarAlignedBits(
+      dataLengthCodec.narrow(l => if (expectedLength.getOrElse(l) == l) Attempt.successful(l) else Attempt.failure(Err(s"invalid length $l")), l => l),
+      valueCodec,
+      multipleForPadding = 5)
 
     val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField].by(ubyte(5))
       .typecase(0, dataCodec(bits).as[UnknownTag0])
-      .typecase(1, dataCodec(bytes32).as[PaymentHash])
+      .\(1) {
+        case a: PaymentHash => a: TaggedField
+        case a: InvalidTag1 => a: TaggedField
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[PaymentHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag1].upcast[TaggedField]))
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
@@ -396,14 +406,20 @@ object PaymentRequest {
       .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
       .typecase(14, dataCodec(bits).as[UnknownTag14])
       .typecase(15, dataCodec(bits).as[UnknownTag15])
-      .typecase(16, dataCodec(bytes32).as[PaymentSecret])
+      .\(16) {
+        case a: PaymentSecret => a: TaggedField
+        case a: InvalidTag16 => a: TaggedField
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[PaymentSecret].upcast[TaggedField], dataCodec(bits).as[InvalidTag16].upcast[TaggedField]))
       .typecase(17, dataCodec(bits).as[UnknownTag17])
       .typecase(18, dataCodec(bits).as[UnknownTag18])
       .typecase(19, dataCodec(bits).as[UnknownTag19])
       .typecase(20, dataCodec(bits).as[UnknownTag20])
       .typecase(21, dataCodec(bits).as[UnknownTag21])
       .typecase(22, dataCodec(bits).as[UnknownTag22])
-      .typecase(23, dataCodec(bytes32).as[DescriptionHash])
+      .\(23) {
+        case a: DescriptionHash => a: TaggedField
+        case a: InvalidTag23 => a: TaggedField
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[DescriptionHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag23].upcast[TaggedField]))
       .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
       .typecase(25, dataCodec(bits).as[UnknownTag25])
       .typecase(26, dataCodec(bits).as[UnknownTag26])

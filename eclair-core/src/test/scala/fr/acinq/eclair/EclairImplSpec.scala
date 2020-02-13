@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
-import fr.acinq.eclair.router.{Announcements, PublicChannel, Router, GetNetworkStats, NetworkStats, Stats}
+import fr.acinq.eclair.router.{Announcements, GetNetworkStats, GetNetworkStatsResponse, NetworkStats, PublicChannel, Router, Stats}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{Outcome, ParallelTestExecution, fixture}
@@ -215,7 +215,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val fResp = eclair.networkStats()
     f.router.expectMsg(GetNetworkStats)
 
-    f.router.reply(Some(new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat)))
+    f.router.reply(GetNetworkStatsResponse(Some(new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat))))
 
     awaitCond({
       fResp.value match {

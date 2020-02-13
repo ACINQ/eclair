@@ -19,25 +19,23 @@ package fr.acinq.eclair.api
 import java.util.UUID
 
 import akka.util.Timeout
-import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
-import fr.acinq.eclair._
-import fr.acinq.eclair.db._
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
-import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi, _}
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{FunSuite, FunSuiteLike, Matchers}
+import org.scalatest.{FunSuite, Matchers}
 import scodec.bits._
-import spray.http.{BasicHttpCredentials, FormData, HttpResponse}
-import spray.routing.{HttpService, Route, RoutingSettings}
-import spray.testkit.{RouteTest, ScalatestRouteTest}
 import spray.http.StatusCodes._
-import spray.httpx.unmarshalling.{Deserializer, FromResponseUnmarshaller}
+import spray.http.{BasicHttpCredentials, FormData, HttpResponse}
+import spray.httpx.unmarshalling.Deserializer
+import spray.routing.HttpService
+import spray.testkit.{RouteTest, ScalatestRouteTest}
 
 import scala.concurrent.Future
 import scala.concurrent.duration._

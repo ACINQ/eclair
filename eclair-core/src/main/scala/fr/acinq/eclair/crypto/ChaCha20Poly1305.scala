@@ -19,6 +19,7 @@ package fr.acinq.eclair.crypto
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.{ByteVector32, Protocol}
+import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
 import grizzled.slf4j.Logger
 import grizzled.slf4j.Logging
 import org.spongycastle.crypto.engines.ChaCha7539Engine
@@ -64,10 +65,10 @@ object ChaCha20 {
         // skip 1 block == set counter to 1 instead of 0
         val dummy = new Array[Byte](64)
         engine.processBytes(new Array[Byte](64), 0, 64, dummy, 0)
-      case _ => throw new RuntimeException(s"chacha20 counter must be 0 or 1")
+      case _ => throw InvalidCounter()
     }
     val len = engine.processBytes(plaintext.toArray, 0, plaintext.length.toInt, ciphertext, 0)
-    require(len == plaintext.length, "ChaCha20 encryption failed")
+    if (len != plaintext.length) throw EncryptionError()
     ByteVector.view(ciphertext)
   }
 
@@ -81,10 +82,10 @@ object ChaCha20 {
         // skip 1 block == set counter to 1 instead of 0
         val dummy = new Array[Byte](64)
         engine.processBytes(new Array[Byte](64), 0, 64, dummy, 0)
-      case _ => throw new RuntimeException(s"chacha20 counter must be 0 or 1")
+      case _ => throw InvalidCounter()
     }
     val len = engine.processBytes(ciphertext.toArray, 0, ciphertext.length.toInt, plaintext, 0)
-    require(len == ciphertext.length, "ChaCha20 decryption failed")
+    if (len != ciphertext.length) throw DecryptionError()
     ByteVector.view(plaintext)
   }
 }
@@ -96,6 +97,12 @@ object ChaCha20 {
   * This what we should be using (see BOLT #8)
   */
 object ChaCha20Poly1305 extends Logging {
+
+  abstract class ChaCha20Poly1305Error(msg: String) extends RuntimeException(msg)
+  case class InvalidMac() extends ChaCha20Poly1305Error("invalid mac")
+  case class DecryptionError() extends ChaCha20Poly1305Error("decryption error")
+  case class EncryptionError() extends ChaCha20Poly1305Error("encryption error")
+  case class InvalidCounter() extends ChaCha20Poly1305Error("chacha20 counter must be 0 or 1")
 
   // This logger is used to dump encryption keys to enable traffic analysis by the lightning-dissector.
   // See https://github.com/nayutaco/lightning-dissector for more details.
@@ -135,7 +142,7 @@ object ChaCha20Poly1305 extends Logging {
   def decrypt(key: ByteVector, nonce: ByteVector, ciphertext: ByteVector, aad: ByteVector, mac: ByteVector): ByteVector = {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
-    require(tag == mac, "invalid mac")
+    if (tag != mac) throw InvalidMac()
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
 
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
