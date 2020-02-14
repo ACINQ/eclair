@@ -19,12 +19,18 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.payment.relay.Origin
-import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{ChannelUpdate, Error, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 
 /**
  * Created by PM on 11/04/2017.
  */
+
+// @formatter:off
+sealed trait ChannelOpenError
+case class LocalError(t: Throwable) extends ChannelOpenError
+case class RemoteError(e: Error) extends ChannelOpenError
+// @formatter:on
 
 class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)
 
