@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -430,13 +430,13 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     val extraHop4 = ExtraHop(d, ShortChannelId(4), 50.sat.toMilliSatoshi, 0, CltvExpiryDelta(42))
     val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
 
-    val amount = 900 sat // below RoutingHeuristics.CAPACITY_CHANNEL_LOW
+    val amount = 90000 sat // below RoutingHeuristics.CAPACITY_CHANNEL_LOW
     val assistedChannels = Router.toAssistedChannels(extraHops, e, amount.toMilliSatoshi)
 
-    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, 1050.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 1200.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 1400.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 1426.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, 100050.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 100200.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 100400.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 101416.sat.toMilliSatoshi))
   }
 
   test("blacklist routes") {
