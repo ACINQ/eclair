@@ -20,7 +20,6 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.channel.Channel.ChannelOpenError
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 

@@ -22,7 +22,6 @@ import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}

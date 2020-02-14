@@ -21,8 +21,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{ChannelCommandResponse, CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
