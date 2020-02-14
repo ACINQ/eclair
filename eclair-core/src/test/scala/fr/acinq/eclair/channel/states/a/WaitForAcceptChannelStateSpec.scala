@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Future, Promise}
@@ -43,18 +43,30 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val noopWallet = new TestWallet {
       override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future // will never be completed
     }
-    val setup = if (test.tags.contains("mainnet")) {
-      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = noopWallet)
-    } else {
-      init(wallet = noopWallet)
-    }
+
+    import com.softwaremill.quicklens._
+    val aliceNodeParams = TestConstants.Alice.nodeParams
+      .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
+      .modify(_.minDepthBlocks).setToIf(test.tags.contains("min-depth"))(6)
+
+    val bobNodeParams = TestConstants.Bob.nodeParams
+      .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
+      .modify(_.minDepthBlocks).setToIf(test.tags.contains("min-depth"))(6)
+
+    val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
+
     import setup._
     val channelVersion = ChannelVersion.STANDARD
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+      val fundingAmount = if(test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -145,6 +157,21 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage))
     awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("min-depth"), Tag("max-funding-size"))  { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
+    bob2alice.forward(alice, accept)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+
+    assert(alice.underlyingActor.minDepthForFunding(Btc(1)) == 6)  // 4 conf would be enough but we use min-depth=6
+    assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 16)  // we use scaling_factor=15 and a fixed block reward of 6.25BTC
+    assert(alice.underlyingActor.minDepthForFunding(Btc(12.50)) == 31)
+    assert(alice.underlyingActor.minDepthForFunding(Btc(12.60)) == 32)
+    assert(alice.underlyingActor.minDepthForFunding(Btc(30)) == 73)
+    assert(alice.underlyingActor.minDepthForFunding(Btc(50)) == 121)
   }
 
   test("recv Error") { f =>
