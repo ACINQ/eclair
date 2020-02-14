@@ -18,7 +18,6 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.ChannelLifecycleEvent

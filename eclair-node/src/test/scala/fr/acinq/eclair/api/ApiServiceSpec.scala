@@ -30,6 +30,7 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.ChannelCommandResponse
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -192,7 +193,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
 
     val eclair = mock[Eclair]
-    eclair.close(any, any)(any[Timeout]) returns Future.successful(aliceNodeId.toString())
+    eclair.close(any, any)(any[Timeout]) returns Future.successful(ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId)))
     val mockService = new MockService(eclair)
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
@@ -203,7 +204,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        assert(resp.contains(aliceNodeId.toString))
         eclair.close(Right(ShortChannelId(shortChannelIdSerialized)), None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
@@ -216,7 +216,6 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        assert(resp.contains(aliceNodeId.toString))
         eclair.close(Left(ByteVector32.fromValidHex(channelId)), None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }

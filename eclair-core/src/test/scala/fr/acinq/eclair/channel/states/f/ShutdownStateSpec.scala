@@ -61,7 +61,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val expiry1 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
       val cmd1 = OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID), h1, ChannelHop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount1, expiry1))._1.copy(commit = false)
       sender.send(alice, cmd1)
-      sender.expectMsg("ok")
+      sender.expectMsg(ChannelCommandResponse.Ok)
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: Nil)
@@ -71,13 +71,13 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val expiry2 = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
       val cmd2 = OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID), h2, ChannelHop(null, TestConstants.Bob.nodeParams.nodeId, null) :: Nil, FinalLegacyPayload(amount2, expiry2))._1.copy(commit = false)
       sender.send(alice, cmd2)
-      sender.expectMsg("ok")
+      sender.expectMsg(ChannelCommandResponse.Ok)
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
       // alice signs
       sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
+      sender.expectMsg(ChannelCommandResponse.Ok)
       alice2bob.expectMsgType[CommitSig]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[RevokeAndAck]
@@ -118,7 +118,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -200,7 +200,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FAIL_HTLC(1, Right(PermanentChannelFailure)))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -230,7 +230,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -329,7 +329,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[CommitSig]
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
   }
@@ -346,10 +346,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
     val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.left.toOption.get
@@ -365,11 +365,11 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
@@ -417,7 +417,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
     val sender = TestProbe()
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
@@ -442,11 +442,11 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
@@ -482,11 +482,11 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FAIL_HTLC(1, Right(PermanentChannelFailure)))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
@@ -508,11 +508,11 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.view("should be htlc.onionRoutingPacket".getBytes())), FailureMessageCodecs.BADONION))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
@@ -535,7 +535,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(alice, CMD_UPDATE_FEE(20000))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -716,7 +716,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then signs
     val sender = TestProbe()
     sender.send(bob, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]

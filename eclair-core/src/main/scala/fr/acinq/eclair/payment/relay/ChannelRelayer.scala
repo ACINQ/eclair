@@ -74,7 +74,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
-    case "ok" => // ignoring responses from channels
+    case ChannelCommandResponse.Ok => // ignoring responses from channels
   }
 
   override def mdc(currentMessage: Any): MDC = {
