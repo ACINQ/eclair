@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorSt
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -278,7 +278,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val channelVersion = ChannelVersion.STANDARD
           val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
           // TODO: maybe also check uniqueness of temporary channel id
-          val minimumDepth = nodeParams.minDepthBlocks
+          val minimumDepth = minDepthForFunding(open.fundingSatoshis)
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
@@ -436,8 +436,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           // NB: we don't send a ChannelSignatureSent for the first commit
           log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
+          val watchMinDepth = minDepthForFunding(fundingAmount)
           blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, watchMinDepth, BITCOIN_FUNDING_DEPTHOK)
           context.system.scheduler.scheduleOnce(FUNDING_TIMEOUT_FUNDEE, self, BITCOIN_FUNDING_TIMEOUT)
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, now, None, Right(fundingSigned)) storing() sending fundingSigned
       }
@@ -2231,6 +2232,22 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = Try { // this may fail with an NPE in tests because context has been cleaned up, but it's not a big deal
     log.info(s"paid feeSatoshi=${fee.toLong} for txid=${tx.txid} desc=$desc")
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
+  }
+
+  /**
+    * Returns the number of confirmations needed to safely handle the funding transaction,
+    * we make sure the cumulative block reward largely exceeds the channel size.
+    *
+    * @param fundingSatoshis funding amount of the channel
+    * @return number of confirmations needed
+    */
+  def minDepthForFunding(fundingSatoshis: Satoshi): Long = fundingSatoshis match {
+    case funding if funding <= MAX_FUNDING => nodeParams.minDepthBlocks
+    case funding if funding > MAX_FUNDING =>
+      val blockReward = 6.25
+      val scalingFactor = 15
+      val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
+      nodeParams.minDepthBlocks.max(blocksToReachFunding)
   }
 
   implicit def state2mystate(state: FSM.State[fr.acinq.eclair.channel.State, Data]): MyState = MyState(state)
