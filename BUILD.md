@@ -8,15 +8,14 @@
 
 ## Build
 
-Eclair supports deterministic builds for the eclair-core submodule, this is the 'core' of the eclair application
-and its artifact can be deterministically built achieving byte-to-byte equality for each build. To build the exact 
-same artifacts that we release, you must use the build environment (OS, JDK, maven...) that we specify in our 
-release notes.
+Eclair is packaged as a compressed archive with a launcher script, the archives are built deterministically
+so it's possible to reproduce the build and verify its equality byte-by-byte. To build the exact same artifacts 
+that we release, you must use the build environment (OS, JDK, maven...) that we specify in our release notes.
 
 To build the project and run the tests, simply run:
 
 ```shell
-mvn install
+mvn package
 ```
 
 ### Other build options
@@ -24,13 +23,13 @@ mvn install
 To skip all tests, run:
 
 ```shell
-mvn install -DskipTests
+mvn package -DskipTests
 ```
 
 To only build the `eclair-node` module, run:
 
 ```shell
-mvn install -pl eclair-node -am -DskipTests
+mvn package -pl eclair-node -am -DskipTests
 ```
 
 To run the tests, run:
