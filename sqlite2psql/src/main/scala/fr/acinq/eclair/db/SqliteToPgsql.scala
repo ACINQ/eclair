@@ -1,4 +1,4 @@
-package fr.acinq.eclair.db.util
+package fr.acinq.eclair.db
 
 import java.io.File
 import java.util.Date
@@ -6,7 +6,6 @@ import java.util.Date
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.NetworkFeePaid
-import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.db.psql.{PsqlAuditDb, PsqlPaymentsDb}
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePaymentsDb}
 
