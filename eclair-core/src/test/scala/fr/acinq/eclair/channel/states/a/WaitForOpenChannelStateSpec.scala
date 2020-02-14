@@ -17,13 +17,14 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -36,7 +37,10 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = test.tags.toList match {
+      case "wumbo" :: Nil => init(nodeParamsB = Bob.nodeParams.copy(features = ByteVector.fromValidHex("80000"))) // optional wumbo
+      case _ => init()
+    }
     import setup._
     val channelVersion = ChannelVersion.STANDARD
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
@@ -175,6 +179,15 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     // we check that the error uses the temporary channel id
     assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, pushMsat, (open.channelReserveSatoshis - 1.sat).toMilliSatoshi, open.channelReserveSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (wumbo size)", Tag("wumbo")) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val highFundingSat = Btc(1).toSatoshi
+    bob ! open.copy(fundingSatoshis = highFundingSat)
+    bob2alice.expectMsgType[AcceptChannel]
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }
 
   test("recv Error") { f =>
