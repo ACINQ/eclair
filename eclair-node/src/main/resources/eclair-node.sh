@@ -277,13 +277,12 @@ loadConfigFile() {
 }
 
 # Now check to see if it's a good enough version
-# TODO - Check to see if we have a configured default java version, otherwise use 1.6
 java_version_check() {
   readonly java_version=$("$java_cmd" -version 2>&1 | awk -F '"' '/version/ {print $2}')
   if [[ "$java_version" == "" ]]; then
     echo
     echo No java installations was detected.
-    echo Please go to http://www.java.com/getjava/ and download
+    echo Please go to https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot and download
     echo
     exit 1
   else
@@ -291,14 +290,13 @@ java_version_check() {
     if [[ "$major" -eq "1" ]]; then
      local major=$(echo "$java_version" | cut -d'.' -f2)
     fi
-    if [[ "$major" -lt "6" ]]; then
+    if [[ "$major" -lt "8" ]]; then
       echo
-      echo The java installation you have is not up to date
-      echo $app_name requires at least version 1.6+, you have
-      echo version $java_version
+      echo The java installation you have is not up to date, eclair-node requires
+      echo at least version 1.8+ \(version 11 recommended\) buy you have version $java_version
       echo
-      echo Please go to http://www.java.com/getjava/ and download
-      echo a valid Java Runtime and install before running $app_name.
+      echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
+      echo a valid Java Runtime and install before running eclair-node.
       echo
       exit 1
     fi
