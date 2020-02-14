@@ -20,7 +20,6 @@ import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelUpdates, NodeChannels, OutgoingChannel}

@@ -25,10 +25,9 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}

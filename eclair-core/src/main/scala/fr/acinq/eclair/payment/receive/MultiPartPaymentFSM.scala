@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment.receive
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
+import fr.acinq.eclair.channel.ChannelCommandResponse
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}

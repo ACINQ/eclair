@@ -21,7 +21,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.channel.{Channel, ChannelErrorOccurred, NetworkFeePaid}
+import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.ChannelCodecs
@@ -96,7 +96,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        
+
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
@@ -186,8 +186,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   override def add(e: ChannelErrorOccurred): Unit =
     using(sqlite.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       val (errorName, errorMessage) = e.error match {
-        case Channel.LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
-        case Channel.RemoteError(error) => ("remote", error.toAscii)
+        case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
+        case RemoteError(error) => ("remote", error.toAscii)
       }
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)

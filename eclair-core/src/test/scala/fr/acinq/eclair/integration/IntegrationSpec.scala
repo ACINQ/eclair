@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypt
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
-import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, ChannelCommandResponse, PeriodicRefresh}
+import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket

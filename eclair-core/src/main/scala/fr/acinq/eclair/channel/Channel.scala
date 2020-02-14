@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ChannelReestablish, _}
+import fr.acinq.eclair.wire._
 
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -85,19 +85,6 @@ object Channel {
 
   // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitly specify the peer to allow for testing)
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef)
-
-  // @formatter:off
-  sealed trait ChannelOpenError
-  case class LocalError(t: Throwable) extends ChannelOpenError
-  case class RemoteError(e: Error) extends ChannelOpenError
-
-  sealed trait ChannelCommandResponse
-  object ChannelCommandResponse {
-    case object Ok extends ChannelCommandResponse { override def toString  = "ok" }
-    case class ChannelOpened(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"created channel $channelId" }
-    case class ChannelClosed(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"closed channel $channelId" }
-  }
-  // @formatter:on
 
   def ackPendingFailsAndFulfills(updates: List[UpdateMessage], relayer: ActorRef): Unit = updates.collect {
     case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
@@ -276,7 +263,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying ChannelCommandResponse.Ok
 
     case Event(TickChannelOpenTimeout, _) =>
-      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })
 
@@ -360,19 +347,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      replyToUser(Right(ChannelCommandResponse.ChannelClosed(d.lastSent.temporaryChannelId)))
+      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.lastSent.temporaryChannelId)))
       goto(CLOSED) replying ChannelCommandResponse.Ok
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      replyToUser(Left(RemoteError(e)))
+      channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) =>
-      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, _) =>
-      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })
 
@@ -397,23 +384,23 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       log.error(t, s"wallet returned error: ")
-      replyToUser(Left(LocalError(t)))
+      channelOpenReplyToUser(Left(LocalError(t)))
       handleLocalError(ChannelFundingError(d.temporaryChannelId), d, None) // we use a generic exception and don't send the internal error to the peer
 
     case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      replyToUser(Right(ChannelCommandResponse.ChannelClosed(d.temporaryChannelId)))
+      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.temporaryChannelId)))
       goto(CLOSED) replying ChannelCommandResponse.Ok
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      replyToUser(Left(RemoteError(e)))
+      channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) =>
-      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, _) =>
-      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })
 
@@ -472,7 +459,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
-          replyToUser(Left(LocalError(cause)))
+          channelOpenReplyToUser(Left(LocalError(cause)))
           handleLocalError(InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx), d, Some(msg))
         case Success(_) =>
           val commitInput = localCommitTx.input
@@ -496,12 +483,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               case Success(true) =>
                 // NB: funding tx isn't confirmed at this point, so technically we didn't really pay the network fee yet, so this is a (fair) approximation
                 feePaid(fundingTxFee, fundingTx, "funding", commitments.channelId)
-                replyToUser(Right(ChannelCommandResponse.ChannelOpened(channelId)))
+                channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelOpened(channelId)))
               case Success(false) =>
-                replyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
+                channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
                 self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
               case Failure(t) =>
-                replyToUser(Left(LocalError(t)))
+                channelOpenReplyToUser(Left(LocalError(t)))
                 log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
             }
           }
@@ -511,25 +498,25 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      replyToUser(Right(ChannelCommandResponse.ChannelClosed(d.channelId)))
+      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.channelId)))
       goto(CLOSED) replying ChannelCommandResponse.Ok
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      replyToUser(Left(RemoteError(e)))
+      channelOpenReplyToUser(Left(RemoteError(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      replyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      replyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
       goto(CLOSED)
   })
 
@@ -1729,7 +1716,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   /**
    * This function is used to return feedback to user at channel opening
    */
-  def replyToUser(message: Either[ChannelOpenError, ChannelCommandResponse]): Unit = {
+  def channelOpenReplyToUser(message: Either[ChannelOpenError, ChannelCommandResponse]): Unit = {
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
       case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))

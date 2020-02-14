@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.WatchEventSpent
-import fr.acinq.eclair.channel.Channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.transactions.Scripts
