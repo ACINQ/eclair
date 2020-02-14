@@ -31,5 +31,14 @@
       <fileMode>0755</fileMode>
       <lineEnding>unix</lineEnding>
     </fileSet>
+    <fileSet>  <!-- Include eclair-cli -->
+      <directory>../eclair-core/</directory>
+      <outputDirectory>bin</outputDirectory>
+      <includes>
+        <include>eclair-cli</include>
+      </includes>
+      <fileMode>0755</fileMode>
+      <lineEnding>unix</lineEnding>
+    </fileSet>
   </fileSets>
 </assembly>
