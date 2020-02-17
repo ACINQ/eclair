@@ -148,7 +148,7 @@ case class RouteRequest(source: PublicKey,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
                         routeParams: Option[RouteParams] = None)
 
-case class FinalizeRoute(hops: Seq[PublicKey])
+case class FinalizeRoute(hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
 case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
   require(allowEmpty || hops.nonEmpty, "route cannot be empty")
@@ -533,9 +533,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! d
       stay
 
-    case Event(FinalizeRoute(partialHops), d) =>
+    case Event(FinalizeRoute(partialHops, assistedRoutes), d) =>
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, partialHops.last, 0 msat)).toMap
+      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
+      val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
       // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-      partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2) }.toList match {
+      partialHops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
         case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
           val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
           val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
@@ -1299,11 +1302,12 @@ object Router {
 
   /**
    * Build a `reply_channel_range` message
-   * @param chunk chunk of scids
-   * @param chainHash chain hash
+   *
+   * @param chunk           chunk of scids
+   * @param chainHash       chain hash
    * @param defaultEncoding default encoding
-   * @param queryFlags_opt query flag set by the requester
-   * @param channels channels map
+   * @param queryFlags_opt  query flag set by the requester
+   * @param channels        channels map
    * @return a ReplyChannelRange object
    */
   def buildReplyChannelRange(chunk: ShortChannelIdsChunk, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
