@@ -431,6 +431,70 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  def listIncomingPayments(): Seq[(ByteVector32,ByteVector32,String,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])] = {
+    using(sqlite.prepareStatement("SELECT * FROM received_payments ORDER BY created_at")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[(ByteVector32,ByteVector32,String,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])] = Queue()
+      while (rs.next()) {
+        val paymentHash: ByteVector32 = rs.getByteVector32("payment_hash")
+        val paymentPreimage: ByteVector32 = rs.getByteVector32("payment_preimage")
+        val paymentType: String = rs.getString("payment_type")
+        val paymentRequest: PaymentRequest = PaymentRequest.read(rs.getString("payment_request"))
+        val received: Option[MilliSatoshi] = rs.getLongNullable("received_msat").map(MilliSatoshi(_))
+        val createdAt: Long = rs.getLong("created_at")
+        val expireAt: Long = rs.getLong("expire_at")
+        val receivedAt: Option[Long] = rs.getLongNullable("received_at")
+        q = q :+ (paymentHash,paymentPreimage,paymentType,paymentRequest,received,createdAt,expireAt,receivedAt)
+      }
+      q
+    }
+  }
+
+  def listOutgoingPayments(): Seq[(UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector],String,MilliSatoshi)] = {
+    // id TEXT NOT NULL PRIMARY KEY,
+    // parent_id TEXT NOT NULL,
+    // external_id TEXT,
+    // payment_hash BLOB NOT NULL,
+    // payment_preimage BLOB,
+    // payment_type TEXT NOT NULL,
+    // amount_msat INTEGER NOT NULL,
+    // fees_msat INTEGER,
+    // recipient_amount_msat INTEGER NOT NULL,
+    // recipient_node_id BLOB NOT NULL,
+    // payment_request TEXT,
+    // payment_route BLOB,
+    // failures BLOB,
+    // created_at INTEGER NOT NULL,
+    // completed_at INTEGER
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments ORDER BY created_at")) { statement =>
+      val rs = statement.executeQuery()
+      var q: Queue[(UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector],String,MilliSatoshi)] = Queue()
+      while (rs.next()) {
+        val id: UUID = UUID.fromString(rs.getString("id"))
+        val parentId: UUID = UUID.fromString(rs.getString("parent_id"))
+        val external_id: Option[String] =  rs.getStringNullable("external_id")
+        val payment_hash: ByteVector32 = rs.getByteVector32("payment_hash")
+        val payment_preimage: Option[ByteVector32] = rs.getByteVector32Nullable("payment_preimage")
+        val payment_type: String = rs.getString("payment_type")
+        val amount_msat: MilliSatoshi = MilliSatoshi(rs.getLong("amount_msat"))
+        val fees_msat: Option[MilliSatoshi] = rs.getLongNullable("fees_msat").map(MilliSatoshi.apply)
+
+        val recipient_amount_msat: MilliSatoshi = MilliSatoshi(rs.getLong("recipient_amount_msat"))
+        val recipient_node_id: PublicKey = PublicKey(rs.getByteVector("recipient_node_id"))
+        val payment_request: Option[PaymentRequest] = rs.getStringNullable("payment_request").map(PaymentRequest.read)
+        val route: Option[BitVector] = rs.getBitVectorOpt("payment_route")
+        val failures: Option[BitVector] = rs.getBitVectorOpt("failures")
+
+        val created_at: Long = rs.getLong("created_at")
+        val completed_at: Option[Long] = rs.getLongNullable("completed_at")
+
+        q = q :+ (id,parentId,external_id,payment_hash,amount_msat,recipient_node_id,created_at,payment_request,completed_at,payment_preimage, fees_msat, route, failures, payment_type, recipient_amount_msat)
+      }
+      q
+    }
+
+  }
+
   // used by mobile apps
   override def close(): Unit = sqlite.close()
 
