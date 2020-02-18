@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorSt
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -285,7 +285,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val channelVersion = ChannelVersion.STANDARD
           val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
           // TODO: maybe also check uniqueness of temporary channel id
-          val minimumDepth = nodeParams.minDepthBlocks
+          val minimumDepth = minDepthForFunding(open.fundingSatoshis)
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
@@ -2248,6 +2248,24 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = Try { // this may fail with an NPE in tests because context has been cleaned up, but it's not a big deal
     log.info(s"paid feeSatoshi=${fee.toLong} for txid=${tx.txid} desc=$desc")
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
+  }
+
+  /**
+    * Returns the amount of confirmation needed to safely handle the funding transaction,
+    * we makes sure the cumulative block reward exceeds the channel size.
+    *
+    * @param fundingSatoshis funding amount of the channel
+    * @return number of confirmation needed
+    */
+  def minDepthForFunding(fundingSatoshis:Satoshi): Long = fundingSatoshis match {
+    // if this is not a wumbo channel or we're not on mainnet use the default
+    case f if f <= MAX_FUNDING || nodeParams.chainHash != Block.LivenetGenesisBlock.hash =>
+      nodeParams.minDepthBlocks
+    case f if f > MAX_FUNDING =>
+      // pre halving each block yields 12.5BTC, post 6.25BTC
+      val blockReward = if(nodeParams.currentBlockHeight <= 630000) 12.5 else 6.25
+      val blocksToReachFunding = ((f.toBtc.toDouble / blockReward).ceil + 1).toInt
+      nodeParams.minDepthBlocks.max(blocksToReachFunding)
   }
 
   implicit def state2mystate(state: FSM.State[fr.acinq.eclair.channel.State, Data]): MyState = MyState(state)

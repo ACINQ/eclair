@@ -24,7 +24,7 @@ import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, Btc, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
@@ -49,7 +49,7 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32, ToMilliSatoshiConversion}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
@@ -149,10 +149,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     import collection.JavaConversions._
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.features" -> "028a8a", "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15)).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.features" -> "0a8a8a", "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15)).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
-    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085)).withFallback(commonConfig))
+    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.features" -> "0a8a8a")).withFallback(commonConfig))
     instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086)).withFallback(commonConfig))
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088)).withFallback(commonConfig))
@@ -199,7 +199,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat)
     connect(nodes("B"), nodes("E"), 10000000 sat, 0 msat)
     connect(nodes("E"), nodes("C"), 10000000 sat, 0 msat)
-    connect(nodes("C"), nodes("F1"), 5000000 sat, 0 msat)
+    connect(nodes("C"), nodes("F1"), 1 btc, 0 msat)
     connect(nodes("C"), nodes("F2"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("F3"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("F4"), 5000000 sat, 0 msat)
@@ -403,6 +403,20 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val sendReq = SendPaymentRequest(300000000 msat, pr.paymentHash, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[UUID]
+  }
+
+  test("send a large HTCL C->F1") {
+    val sender = TestProbe()
+    // first we retrieve a payment hash from F1 for 0.4BTC
+    val amountMsat = Btc(0.4).toMilliSatoshi
+    sender.send(nodes("F1").paymentHandler, ReceivePayment(Some(amountMsat), "1 expensive coffee"))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    //
+    val sendReq = SendPaymentRequest(amountMsat, pr.paymentHash, nodes("F1").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    sender.send(nodes("C").paymentInitiator, sendReq)
+    sender.expectMsgType[UUID]
+    sender.expectMsgType[PaymentSent]
   }
 
   test("send multiple HTLCs A->D with a failover when a channel gets exhausted") {

@@ -16,8 +16,10 @@
 
 package fr.acinq.eclair.channel.states.a
 
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
@@ -26,7 +28,7 @@ import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Future, Promise}
@@ -43,19 +45,33 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val noopWallet = new TestWallet {
       override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future // will never be completed
     }
-    val setup = if (test.tags.contains("mainnet")) {
-      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), wallet = noopWallet)
-    } else {
-      init(wallet = noopWallet)
-    }
+
+    import com.softwaremill.quicklens._
+    val aliceNodeParams = TestConstants.Alice.nodeParams
+      .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
+
+    val bobNodeParams = TestConstants.Bob.nodeParams
+      .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
+
+    val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
+
     import setup._
     val channelVersion = ChannelVersion.STANDARD
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
+      if(test.tags.contains("wumbo")){
+        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, Btc(50), TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
+      } else {
+        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
+      }
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
@@ -143,6 +159,29 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage))
     awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("mainnet"), Tag("max-funding-size"))  { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    assert(accept.minimumDepth == 5) // 5 conf because: blockHeight < 630000, blockReward = 12.5BTC and fundingSatoshi=50BTC
+    bob2alice.forward(alice, accept)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+
+    assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 3)  // 2 would be enough but nodeParams.minDepth == 3
+    assert(alice.underlyingActor.minDepthForFunding(Btc(12.50)) == 3) // blockReward * 2 + 1
+    assert(alice.underlyingActor.minDepthForFunding(Btc(30)) == 4)    // blockReward * 3 + 1
+
+    val alicePostHalving = TestFSMRef(new Channel(TestConstants.Alice.nodeParams.copy(
+      chainHash = Block.LivenetGenesisBlock.hash,
+      features = hex"80000",
+      blockCount = new AtomicLong(650000)
+    ), new TestWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, TestProbe().ref))
+
+    assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(6.25)) == 3)  // 2 would be enough but nodeParams.minDepth == 3
+    assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(12.50)) == 3) // blockReward * 2 + 1
+    assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(12.60)) == 4) // blockReward * 3 + 1
+    assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(30)) == 6)    // blockReward * 5 + 1
   }
 
   test("recv Error") { f =>
