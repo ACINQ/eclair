@@ -50,10 +50,12 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val aliceNodeParams = TestConstants.Alice.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
 
     val bobNodeParams = TestConstants.Bob.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
 
     val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
 
@@ -159,14 +161,14 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("mainnet")) { f =>
+  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("mainnet"), Tag("max-funding-size"))  { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.minimumDepth == 5) // 5 conf because: blockHeight < 630000, blockReward = 12.5BTC and fundingSatoshi=50BTC
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
 
-    assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 3)  // 2 would be enough but nodeParams.minDept == 3
+    assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 3)  // 2 would be enough but nodeParams.minDepth == 3
     assert(alice.underlyingActor.minDepthForFunding(Btc(12.50)) == 3) // blockReward * 2 + 1
     assert(alice.underlyingActor.minDepthForFunding(Btc(30)) == 4)    // blockReward * 3 + 1
 
@@ -176,7 +178,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       blockCount = new AtomicLong(650000)
     ), new TestWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, TestProbe().ref))
 
-    assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(6.25)) == 3)  // 2 would be enough but nodeParams.minDept == 3
+    assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(6.25)) == 3)  // 2 would be enough but nodeParams.minDepth == 3
     assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(12.50)) == 3) // blockReward * 2 + 1
     assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(12.60)) == 4) // blockReward * 3 + 1
     assert(alicePostHalving.underlyingActor.minDepthForFunding(Btc(30)) == 6)    // blockReward * 5 + 1
