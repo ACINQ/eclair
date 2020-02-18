@@ -21,7 +21,7 @@ import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
-import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType}
 import fr.acinq.eclair.io.PayToOpenRequestEvent
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.{HtlcPart, PayToOpenPart}
@@ -59,7 +59,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
   def onSuccess(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
       Try {
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
         val paymentHash = Crypto.sha256(paymentPreimage)
@@ -75,7 +75,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
-        db.addIncomingPayment(paymentRequest, paymentPreimage)
+        db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
         paymentRequest
       } match {
         case Success(paymentRequest) => ctx.sender ! paymentRequest
@@ -271,7 +271,8 @@ object MultiPartHandler {
                             expirySeconds_opt: Option[Long] = None,
                             extraHops: List[List[ExtraHop]] = Nil,
                             fallbackAddress: Option[String] = None,
-                            paymentPreimage: Option[ByteVector32] = None)
+                            paymentPreimage: Option[ByteVector32] = None,
+                            paymentType: String = PaymentType.Standard)
 
   private def validatePaymentStatus(amount: MilliSatoshi, totalAmount: MilliSatoshi, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {

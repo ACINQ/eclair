@@ -116,6 +116,29 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(failureMessage == "Not all the nodes in the supplied route are connected with public channels")
   }
 
+  test("send to route (routing hints)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+
+    val recipient = randomKey.publicKey
+    val routingHint = Seq(Seq(ExtraHop(c, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144))))
+    val request = SendPaymentToRoute(Seq(a, b, c, recipient), FinalLegacyPayload(defaultAmountMsat, defaultExpiry), routingHint)
+
+    sender.send(paymentFSM, request)
+    routerForwarder.expectMsg(FinalizeRoute(Seq(a, b, c, recipient), routingHint))
+    val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
+
+    routerForwarder.forward(routerFixture.router)
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+
+    // Payment accepted by the recipient.
+    sender.send(paymentFSM, UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash))
+
+    val ps = sender.expectMsgType[PaymentSent]
+    assert(ps.id === parentId)
+    awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+  }
+
   test("send with route prefix") { _ =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
