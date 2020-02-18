@@ -21,7 +21,7 @@ import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{Block, Btc, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
@@ -66,6 +66,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(0.9))
 
     if (test.tags.contains("with_node_announcements")) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
@@ -312,6 +314,21 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big, you must enable wumbo to use funding above ${Channel.MAX_FUNDING}")
   }
+
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("max-funding-satoshis"), Tag("wumbo")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Btc(1).toSatoshi
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis'")
+  }
+
 
   test("use correct fee rates when spawning a channel") { f =>
     import f._
