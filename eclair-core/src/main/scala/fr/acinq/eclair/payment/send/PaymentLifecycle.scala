@@ -72,7 +72,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       span.tag("expiry", c.finalPayload.expiry.toLong)
       log.debug("sending {} to route {}", c.finalPayload.amount, c.hops.mkString("->"))
       val send = SendPayment(c.hops.last, c.finalPayload, maxAttempts = 1)
-      router ! FinalizeRoute(c.hops)
+      router ! FinalizeRoute(c.hops, c.assistedRoutes)
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
@@ -282,7 +282,7 @@ object PaymentLifecycle {
    * @param hops         payment route to use.
    * @param finalPayload onion payload for the target node.
    */
-  case class SendPaymentToRoute(hops: Seq[PublicKey], finalPayload: FinalPayload) {
+  case class SendPaymentToRoute(hops: Seq[PublicKey], finalPayload: FinalPayload, assistedRoutes: Seq[Seq[ExtraHop]] = Nil) {
     require(hops.nonEmpty, s"payment route must not be empty")
     val targetNodeId = hops.last
   }
