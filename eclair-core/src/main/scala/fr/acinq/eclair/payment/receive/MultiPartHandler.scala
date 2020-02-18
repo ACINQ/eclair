@@ -49,6 +49,31 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
   def doHandle(paymentHash: ByteVector32): Boolean = true
 
   /**
+   * Fulfill all parts of an incoming payment.
+   * Can be overridden for a more fine-grained control of when and how to fulfill.
+   */
+  def doFulfill(ctx: ActorContext, preimage: ByteVector32, e: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Unit = {
+    val received = PaymentReceived(e.paymentHash, e.parts.map {
+      case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
+    })
+    // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
+    db.receiveIncomingPayment(e.paymentHash, received.amount, received.timestamp)
+    e.parts.collect {
+      case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
+    }
+    onSuccess(received)
+    ctx.system.eventStream.publish(received)
+  }
+
+  /**
+   * Fail all parts of an incoming payment.
+   * Can be overridden for a more fine-grained control of when and how to fail.
+   */
+  def doFail(e: MultiPartPaymentFSM.MultiPartPaymentFailed): Unit = e.parts.collect {
+    case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(e.failure), commit = true))
+  }
+
+  /**
    * Can be overridden to do custom processing on successfully received payments.
    */
   def onSuccess(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
@@ -87,10 +112,10 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
               log.info(s"received payment for amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
               pendingPayments.get(p.add.paymentHash) match {
                 case Some((_, handler)) =>
-                  handler ! MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
+                  handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
                 case None =>
                   val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
-                  handler ! MultiPartPaymentFSM.MultiPartHtlc(p.payload.totalAmount, p.add)
+                  handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
                   pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
               }
           }
@@ -100,41 +125,41 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         }
       }
 
-    case MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
+    case e@MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.warning(s"payment with paidAmount=${parts.map(_.payment.amount).sum} failed ($failure)")
+        log.warning(s"payment with paidAmount=${parts.map(_.amount).sum} failed ($failure)")
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
-        parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true)))
+        doFail(e)
         pendingPayments = pendingPayments - paymentHash
       }
 
-    case MultiPartPaymentFSM.MultiPartHtlcSucceeded(paymentHash, parts) if doHandle(paymentHash) =>
+    case e@MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        val received = PaymentReceived(paymentHash, parts.map(_.payment))
-        log.info(s"received complete payment for amount=${received.amount}")
-        // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
-        db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
+        log.info(s"received complete payment for amount=${parts.map(_.amount).sum}")
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
-            parts.foreach(p => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FULFILL_HTLC(p.htlcId, preimage, commit = true)))
+            doFulfill(ctx, preimage, e)
         }
-        ctx.system.eventStream.publish(received)
         pendingPayments = pendingPayments - paymentHash
-        onSuccess(received)
       }
 
-    case MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, p, failure) if doHandle(paymentHash) =>
+    case MultiPartPaymentFSM.ExtraPaymentReceived(paymentHash, p, failure) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         failure match {
-          case Some(failure) => commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FAIL_HTLC(p.htlcId, Right(failure), commit = true))
-          // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
-          // expensive code path by fetching the preimage from DB.
-          case None => db.getIncomingPayment(paymentHash).foreach(record => {
-            commandBuffer ! CommandBuffer.CommandSend(p.payment.fromChannelId, CMD_FULFILL_HTLC(p.htlcId, record.paymentPreimage, commit = true))
-            db.receiveIncomingPayment(paymentHash, p.payment.amount, p.payment.timestamp)
-            ctx.system.eventStream.publish(PaymentReceived(paymentHash, p.payment :: Nil))
-          })
+          case Some(failure) => p match {
+            case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+          }
+          case None => p match {
+            // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
+            // expensive code path by fetching the preimage from DB.
+            case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
+              commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
+              val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
+              db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
+              ctx.system.eventStream.publish(received)
+            })
+          }
         }
       }
 
