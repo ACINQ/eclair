@@ -362,7 +362,7 @@ class Setup(datadir: File,
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqliteJDBC(chaindir)
           case "psql" =>
-            val psql = Databases.setupPsqlDatabases(dbConfig, { ex =>
+            val psql = Databases.setupPsqlDatabases(dbConfig, datadir, { ex =>
               logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
               sys.exit(-2)
             })

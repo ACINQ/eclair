@@ -19,7 +19,7 @@ object SqliteToPgsql extends App {
   val dbConfig = config.getConfig("db")
 
   val sqlite = Databases.sqliteJDBC(chaindir)
-  val psql = Databases.setupPsqlDatabases(dbConfig, { _ => () })
+  val psql = Databases.setupPsqlDatabases(dbConfig, datadir, { _ => () })
 
   println(s"Transferring data from ${chaindir} to ${dbConfig.getString("psql.database")} at ${dbConfig.getString("psql.host")}")
 

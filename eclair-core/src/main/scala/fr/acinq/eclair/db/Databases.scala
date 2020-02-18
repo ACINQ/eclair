@@ -18,9 +18,9 @@ package fr.acinq.eclair.db
 
 import java.io.File
 import java.lang.management.ManagementFactory
-import java.nio.file.{Files, StandardCopyOption}
 import java.sql.{Connection, DriverManager}
 import java.util.concurrent.atomic.AtomicLong
+import java.nio.file._
 
 import com.typesafe.config.Config
 import fr.acinq.eclair.db.psql.PsqlUtils.LockType.LockType
@@ -90,15 +90,17 @@ object Databases extends Logging {
                    databaseLeaseInterval: FiniteDuration = 5.minutes,
                    lockTimeout: FiniteDuration = 5.seconds,
                    lockExceptionHandler: LockExceptionHandler = { _ => () },
-                   lockType: LockType = LockType.NONE): Databases = {
+                   lockType: LockType = LockType.NONE, datadir: File = new File(File.separator + "tmp")): Databases = {
+    val url = s"jdbc:postgresql://${host}:${port}/${database}"
+
+    checkIfDatabaseUrlIsUnchanged(url, datadir)
+
     implicit val lock: DatabaseLock = lockType match {
       case LockType.NONE => NoLock
       case LockType.OPTIMISTIC => OptimisticLock(new AtomicLong(0L), lockExceptionHandler)
       case LockType.EXCLUSIVE => ExclusiveLock(instanceId, databaseLeaseInterval, lockTimeout, lockExceptionHandler)
       case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
     }
-
-    val url = s"jdbc:postgresql://${host}:${port}/${database}"
 
     import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 
@@ -156,7 +158,7 @@ object Databases extends Logging {
     override def obtainExclusiveLock(): Unit = ()
   }
 
-  def setupPsqlDatabases(dbConfig: Config, lockExceptionHandler: LockExceptionHandler): Databases = {
+  def setupPsqlDatabases(dbConfig: Config, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
     val database = dbConfig.getString("psql.database")
     val host = dbConfig.getString("psql.host")
     val port = dbConfig.getInt("psql.port")
@@ -186,8 +188,24 @@ object Databases extends Logging {
       username = username, password = password,
       poolProperties = properties,
       databaseLeaseInterval = leaseInterval, lockTimeout = lockTimeout,
-      lockExceptionHandler = lockExceptionHandler, lockType = lockType
+      lockExceptionHandler = lockExceptionHandler, lockType = lockType, datadir = datadir
     )
+  }
+
+  private def checkIfDatabaseUrlIsUnchanged(url: String, datadir: File ): Unit = {
+    val urlFile = new File(datadir, "last_jdbcurl")
+
+    def readString(path: Path): String = Files.readAllLines(path).get(0)
+
+    def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))
+
+    if (urlFile.exists()) {
+      val oldUrl = readString(urlFile.toPath)
+      if (oldUrl != url)
+        throw new RuntimeException(s"The database URL has changed since the last start. It was `$oldUrl`, now it's `$url`")
+    } else {
+      writeString(urlFile.toPath, url)
+    }
   }
 
 }
