@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
+import fr.acinq.eclair.channel.{Channel, ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -297,6 +297,20 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
+  }
+
+  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big, you must enable wumbo to use funding above ${Channel.MAX_FUNDING}")
   }
 
   test("use correct fee rates when spawning a channel") { f =>
