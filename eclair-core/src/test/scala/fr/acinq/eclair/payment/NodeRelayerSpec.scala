@@ -75,8 +75,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     incomingMultiPart.dropRight(1).foreach(incoming => relayer.send(nodeRelayer, incoming))
 
     val sender = TestProbe()
-    val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.PendingPayment(i.add.id, PaymentReceived.PartialPayment(i.add.amountMsat, i.add.channelId)))
-    sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
+    val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.HtlcPart(incomingAmount, i.add))
+    sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
 
     incomingMultiPart.dropRight(1).foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
     sender.expectNoMsg(100 millis)
@@ -87,10 +87,10 @@ class NodeRelayerSpec extends TestkitBaseClass {
     import f._
 
     val sender = TestProbe()
-    val partial = MultiPartPaymentFSM.PendingPayment(15, PaymentReceived.PartialPayment(100 msat, randomBytes32))
-    sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, partial, Some(InvalidRealm)))
+    val partial = MultiPartPaymentFSM.HtlcPart(incomingAmount, UpdateAddHtlc(randomBytes32, 15, 100 msat, paymentHash, CltvExpiry(42000), TestConstants.emptyOnionPacket))
+    sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraPaymentReceived(paymentHash, partial, Some(InvalidRealm)))
 
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.payment.fromChannelId, CMD_FAIL_HTLC(partial.htlcId, Right(InvalidRealm), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.htlc.channelId, CMD_FAIL_HTLC(partial.htlc.id, Right(InvalidRealm), commit = true)))
     sender.expectNoMsg(100 millis)
     outgoingPayFSM.expectNoMsg(100 millis)
   }
