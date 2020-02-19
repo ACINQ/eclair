@@ -36,7 +36,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.{Outcome, fixture}
 import scodec.bits.HexStringSyntax
-import MultiPartHandlerSpec.secondsFromNow
+import MultiPartHandlerSpec._
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -502,7 +502,7 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 1000 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 1000 msat, 0 sat, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(60), None)
     f.sender.send(handler, p1)
 
     val r1 = f.sender.expectMsgType[PayToOpenResponse]
@@ -519,7 +519,7 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     })
 
     // Extraneous pay-to-opens will be ignored
-    val pExtra = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 200 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None)
+    val pExtra = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 200 msat, 0 sat, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(60), None)
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr.paymentHash, PayToOpenPart(1000 msat, pExtra, f.sender.ref), None))
     f.sender.expectNoMsg()
 
@@ -534,13 +534,13 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
 
     val amount = 20000000 msat
-    val fee = PayToOpenRequest.computeFee(amount)
+    val fee = PayToOpenRequest.computeFee(amount, 10000 sat, 1000)
     val funding = PayToOpenRequest.computeFunding(amount, fee)
 
     f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(60), None)
     f.sender.send(handler, p1)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
@@ -572,13 +572,13 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
 
     val amount = 20000000 msat
-    val fee = PayToOpenRequest.computeFee(amount)
+    val fee = PayToOpenRequest.computeFee(amount, 10000 sat, 1000)
     val funding = PayToOpenRequest.computeFunding(amount, fee)
 
     f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(60), None)
     f.sender.send(handler, p1)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
@@ -600,13 +600,13 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
 
     val amount = 20000000 msat
-    val fee = PayToOpenRequest.computeFee(amount)
+    val fee = PayToOpenRequest.computeFee(amount, 10000 sat, 1000)
     val funding = PayToOpenRequest.computeFunding(amount, fee)
 
     f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(2), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(2), None)
     f.sender.send(handler, p1)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
@@ -637,34 +637,34 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     f.sender.send(handler, IncomingPacket.FinalPacket(add2, Onion.createMultiPartPayload(add2.amountMsat, 100000000 msat, add2.cltvExpiry, pr.paymentSecret.get)))
 
     val amount1 = 20000000 msat
-    val fee1 = PayToOpenRequest.computeFee(amount1)
+    val fee1 = PayToOpenRequest.computeFee(amount1, 10000 sat, 1000)
     val funding1 = PayToOpenRequest.computeFunding(amount1, fee1)
     val payload1 = Onion.createMultiPartPayload(amount1, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
     val onion1 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload1 :: Nil, pr.paymentHash).packet
     val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload1.amount, pr.paymentHash, payload1.expiry, onion1)
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding1, amount1, fee1, pr.paymentHash, secondsFromNow(45), Some(htlc1))
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding1, amount1, fee1, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(45), Some(htlc1))
     f.sender.send(handler, p1)
 
     val amount2 = 20000000 msat
-    val fee2 = PayToOpenRequest.computeFee(amount2)
+    val fee2 = PayToOpenRequest.computeFee(amount2, 10000 sat, 1000)
     val funding2 = PayToOpenRequest.computeFunding(amount2, fee1)
     val payload2 = Onion.createMultiPartPayload(amount2, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
     val onion2 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload2 :: Nil, pr.paymentHash).packet
     val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload2.amount, pr.paymentHash, payload2.expiry, onion2)
-    val p2 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding2, amount2, fee2, pr.paymentHash, secondsFromNow(50), Some(htlc2))
+    val p2 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding2, amount2, fee2, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(50), Some(htlc2))
     f.sender.send(handler, p2)
 
     val amount3 = 10000000 msat
-    val fee3 = PayToOpenRequest.computeFee(amount3)
+    val fee3 = PayToOpenRequest.computeFee(amount3, 10000 sat, 1000)
     val funding3 = PayToOpenRequest.computeFunding(amount1, fee1)
     val payload3 = Onion.createMultiPartPayload(amount3, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
     val onion3 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload3 :: Nil, pr.paymentHash).packet
     val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload3.amount, pr.paymentHash, payload3.expiry, onion3)
-    val p3 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding3, amount3, fee3, pr.paymentHash, secondsFromNow(60), Some(htlc3))
+    val p3 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding3, amount3, fee3, pr.paymentHash, payToOpenFeeThresholdSatoshis, payToOpenFeeProportionalMillionths, secondsFromNow(60), Some(htlc3))
     f.sender.send(handler, p3)
 
     val payToOpenAmount = amount1 + amount2 + amount3
-    val payToOpenFee = PayToOpenRequest.computeFee(payToOpenAmount)
+    val payToOpenFee = PayToOpenRequest.computeFee(payToOpenAmount, 10000 sat, 1000)
     val payToOpenFunding = PayToOpenRequest.computeFunding(payToOpenAmount, payToOpenFee)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
@@ -674,6 +674,8 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
       amountMsat = payToOpenAmount,
       feeSatoshis = payToOpenFee,
       paymentHash = p1.paymentHash,
+      feeThresholdSatoshis = payToOpenFeeThresholdSatoshis,
+      feeProportionalMillionths = payToOpenFeeProportionalMillionths,
       expireAt = p1.expireAt,
       htlc_opt = None
     ))
@@ -717,4 +719,7 @@ object MultiPartHandlerSpec {
    * @return a unix timestamp
    */
   def secondsFromNow(s: Int): Long  = (Platform.currentTime.milliseconds + s.seconds).toSeconds
+
+  val payToOpenFeeThresholdSatoshis = 10000 sat
+  val payToOpenFeeProportionalMillionths = 1000
 }

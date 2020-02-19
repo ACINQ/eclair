@@ -432,7 +432,7 @@ class LightningMessageCodecsSpec extends FunSuite {
         ("feeSatoshis" | satoshi) ::
         ("paymentHash" | bytes32)).as[OldPayToOpenRequest]
 
-    val p = PayToOpenRequest(randomBytes32, 12 mbtc, 12345 msat, 7 sat, randomBytes32, 1234567890L, Some(UpdateAddHtlc(randomBytes32, 42, 12345 msat, randomBytes32, CltvExpiry(420), TestConstants.emptyOnionPacket)))
+    val p = PayToOpenRequest(randomBytes32, 12 mbtc, 12345 msat, 7 sat, randomBytes32, 10000 sat, 1000, 1234567890L, Some(UpdateAddHtlc(randomBytes32, 42, 12345 msat, randomBytes32, CltvExpiry(420), TestConstants.emptyOnionPacket)))
     val bits = payToOpenRequestCodec.encode(p).require
     val DecodeResult(oldp, remainder) = oldPayToOpenRequestCodec.decode(bits).require
     assert(oldp === OldPayToOpenRequest(p.chainHash, p.fundingSatoshis, p.amountMsat, p.feeSatoshis, p.paymentHash))
