@@ -16,22 +16,22 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, Command, HasHtlcIdCommand}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.{randomBytes, randomBytes32}
 import org.scalatest.FunSuite
 
 /**
-  * Created by PM on 31/05/2016.
-  */
+ * Created by PM on 31/05/2016.
+ */
 
 class CommandCodecsSpec extends FunSuite {
 
   test("encode/decode all channel messages") {
-    val msgs: List[HasHtlcIdCommand] =
+    val msgs: List[Command with HasHtlcId] =
       CMD_FULFILL_HTLC(1573L, randomBytes32) ::
-      CMD_FAIL_HTLC(42456L, Left(randomBytes(145))) ::
-      CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure)) ::
-      CMD_FAIL_MALFORMED_HTLC(7984, randomBytes32, FailureMessageCodecs.BADONION) :: Nil
+        CMD_FAIL_HTLC(42456L, Left(randomBytes(145))) ::
+        CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure)) ::
+        CMD_FAIL_MALFORMED_HTLC(7984, randomBytes32, FailureMessageCodecs.BADONION) :: Nil
 
     msgs.foreach {
       msg =>

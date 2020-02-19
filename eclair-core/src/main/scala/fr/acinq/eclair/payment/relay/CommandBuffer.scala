@@ -62,7 +62,7 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
 object CommandBuffer {
 
-  case class CommandSend(channelId: ByteVector32, cmd: HasHtlcIdCommand)
+  case class CommandSend[T <: Command with HasHtlcId](channelId: ByteVector32, cmd: T)
 
   case class CommandAck(channelId: ByteVector32, htlcId: Long)
 

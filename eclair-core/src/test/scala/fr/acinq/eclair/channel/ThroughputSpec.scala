@@ -34,7 +34,6 @@ import org.scalatest.FunSuite
 import scala.concurrent.duration._
 import scala.util.Random
 
-
 class ThroughputSpec extends FunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem("test")
@@ -67,13 +66,13 @@ class ThroughputSpec extends FunSuite {
     val registerB = TestProbe()
     val commandBufferA = system.actorOf(Props(new CommandBuffer(Alice.nodeParams, registerA.ref)))
     val commandBufferB = system.actorOf(Props(new CommandBuffer(Bob.nodeParams, registerB.ref)))
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, commandBufferA, paymentHandler))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, commandBufferB, paymentHandler))
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, TestProbe().ref, registerA.ref, commandBufferA, paymentHandler))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, TestProbe().ref, registerB.ref, commandBufferB, paymentHandler))
     val wallet = new TestWallet
     val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, blockchain, ???, relayerA, None), "a")
     val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, blockchain, ???, relayerB, None), "b")
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val aliceInit = Init(Alice.channelParams.features)
+    val bobInit = Init(Bob.channelParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
 

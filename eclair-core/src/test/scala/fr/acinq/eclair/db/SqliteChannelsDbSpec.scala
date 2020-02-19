@@ -47,7 +47,7 @@ class SqliteChannelsDbSpec extends FunSuite {
     val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
     val cltvExpiry2 = CltvExpiry(656)
 
-    intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
+    intercept[SQLiteException](db.addHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
     assert(db.listLocalChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
@@ -55,8 +55,8 @@ class SqliteChannelsDbSpec extends FunSuite {
     assert(db.listLocalChannels() === List(channel))
 
     assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
-    db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
-    db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash2, cltvExpiry2)
+    db.addHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
+    db.addHtlcInfo(channel.channelId, commitNumber, paymentHash2, cltvExpiry2)
     assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == List((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
     assert(db.listHtlcInfos(channel.channelId, 43).toList == Nil)
 

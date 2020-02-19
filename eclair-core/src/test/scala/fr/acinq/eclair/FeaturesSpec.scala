@@ -21,46 +21,84 @@ import org.scalatest.FunSuite
 import scodec.bits._
 
 /**
-  * Created by PM on 27/01/2017.
-  */
+ * Created by PM on 27/01/2017.
+ */
 
 class FeaturesSpec extends FunSuite {
 
   test("'initial_routing_sync' feature") {
-    assert(hasFeature(hex"08", Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL))
+    assert(hasFeature(hex"08", InitialRoutingSync, Some(FeatureSupport.Optional)))
+    assert(!hasFeature(hex"08", InitialRoutingSync, Some(FeatureSupport.Mandatory)))
   }
 
   test("'data_loss_protect' feature") {
-    assert(hasFeature(hex"01", Features.OPTION_DATA_LOSS_PROTECT_MANDATORY))
-    assert(hasFeature(hex"02", Features.OPTION_DATA_LOSS_PROTECT_OPTIONAL))
+    assert(hasFeature(hex"01", OptionDataLossProtect, Some(FeatureSupport.Mandatory)))
+    assert(hasFeature(hex"02", OptionDataLossProtect, Some(FeatureSupport.Optional)))
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
     val features = hex"010a"
-    assert(areSupported(features) && hasFeature(features, OPTION_DATA_LOSS_PROTECT_OPTIONAL) && hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL) && hasFeature(features, VARIABLE_LENGTH_ONION_MANDATORY))
+    assert(areSupported(features))
+    assert(hasFeature(features, OptionDataLossProtect))
+    assert(hasFeature(features, InitialRoutingSync, None))
+    assert(hasFeature(features, VariableLengthOnion))
   }
 
   test("'variable_length_onion' feature") {
-    assert(hasFeature(hex"0100", Features.VARIABLE_LENGTH_ONION_MANDATORY))
-    assert(hasVariableLengthOnion(hex"0100"))
-    assert(hasFeature(hex"0200", Features.VARIABLE_LENGTH_ONION_OPTIONAL))
-    assert(hasVariableLengthOnion(hex"0200"))
+    assert(hasFeature(hex"0100", VariableLengthOnion))
+    assert(hasFeature(hex"0100", VariableLengthOnion, Some(FeatureSupport.Mandatory)))
+    assert(hasFeature(hex"0200", VariableLengthOnion, None))
+    assert(hasFeature(hex"0200", VariableLengthOnion, Some(FeatureSupport.Optional)))
+  }
+
+  test("features dependencies") {
+    val testCases = Map(
+      bin"                        " -> true,
+      bin"                00000000" -> true,
+      bin"                01011000" -> true,
+      // gossip_queries_ex depend on gossip_queries
+      bin"000000000000100000000000" -> false,
+      bin"000000000000010000000000" -> false,
+      bin"000000000000100010000000" -> true,
+      bin"000000000000100001000000" -> true,
+      // payment_secret depends on var_onion_optin, but we allow not setting it to be compatible with Phoenix
+      bin"000000001000000000000000" -> true,
+      bin"000000000100000000000000" -> true,
+      bin"000000000100001000000000" -> true,
+      // basic_mpp depends on payment_secret
+      bin"000000100000000000000000" -> false,
+      bin"000000010000000000000000" -> false,
+      bin"000000101000000000000000" -> true, // we allow not setting var_onion_optin
+      bin"000000011000000000000000" -> true, // we allow not setting var_onion_optin
+      bin"000000011000001000000000" -> true,
+      bin"000000100100000100000000" -> true
+    )
+
+    for ((testCase, valid) <- testCases) {
+      if (valid) {
+        assert(validateFeatureGraph(testCase) === None)
+        assert(validateFeatureGraph(testCase.bytes) === None)
+      } else {
+        assert(validateFeatureGraph(testCase).nonEmpty)
+        assert(validateFeatureGraph(testCase.bytes).nonEmpty)
+      }
+    }
   }
 
   test("features compatibility") {
-    assert(areSupported(ByteVector.fromLong(1L << INITIAL_ROUTING_SYNC_BIT_OPTIONAL)))
-    assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_MANDATORY)))
-    assert(areSupported(ByteVector.fromLong(1L << OPTION_DATA_LOSS_PROTECT_OPTIONAL)))
-    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_BIT_MANDATORY)))
-    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)))
-    assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_OPTIONAL)))
-    assert(areSupported(ByteVector.fromLong(1L << VARIABLE_LENGTH_ONION_MANDATORY)))
-    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)))
-    assert(areSupported(ByteVector.fromLong(1L << CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL)))
-    assert(areSupported(ByteVector.fromLong(1L << PAYMENT_SECRET_MANDATORY)))
-    assert(areSupported(ByteVector.fromLong(1L << PAYMENT_SECRET_OPTIONAL)))
-    assert(areSupported(ByteVector.fromLong(1L << BASIC_MULTI_PART_PAYMENT_MANDATORY)))
-    assert(areSupported(ByteVector.fromLong(1L << BASIC_MULTI_PART_PAYMENT_OPTIONAL)))
+    assert(areSupported(ByteVector.fromLong(1L << InitialRoutingSync.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << OptionDataLossProtect.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << OptionDataLossProtect.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueries.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueries.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << VariableLengthOnion.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << VariableLengthOnion.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueriesExtended.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueriesExtended.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << PaymentSecret.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << PaymentSecret.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << BasicMultiPartPayment.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << BasicMultiPartPayment.optional)))
 
     val testCases = Map(
       bin"            00000000000000001011" -> true,

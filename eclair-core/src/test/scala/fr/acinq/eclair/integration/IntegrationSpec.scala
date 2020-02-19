@@ -32,14 +32,16 @@ import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTrampolinePaymentRequest}
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
@@ -55,6 +57,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
+import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -144,17 +147,17 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("starting eclair nodes") {
     import collection.JavaConversions._
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082)).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083)).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.features" -> "028a8a", "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15)).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
     instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085)).withFallback(commonConfig))
     instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086)).withFallback(commonConfig))
-    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087)).withFallback(commonConfig))
+    instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088)).withFallback(commonConfig))
     instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089)).withFallback(commonConfig))
-    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102)).withFallback(commonConfig))
+    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
     val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").commandBuffer))
@@ -248,7 +251,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("wait for network announcements") {
-    val sender = TestProbe()
     // generating more blocks so that all funding txes are buried under at least 6 blocks
     generateBlocks(bitcoincli, 4)
     // A requires private channels, as a consequence:
@@ -432,38 +434,46 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     awaitCond({
       sender.expectMsgType[PaymentEvent](10 seconds) match {
         case PaymentFailed(_, _, failures, _) => failures == Seq.empty // if something went wrong fail with a hint
-        case PaymentSent(_, _, _, part :: Nil) => part.route.get.exists(_.nodeId == nodes("G").nodeParams.nodeId)
+        case PaymentSent(_, _, _, _, _, part :: Nil) => part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)
         case _ => false
       }
     }, max = 30 seconds, interval = 10 seconds)
   }
 
   test("send a multi-part payment B->D") {
+    val start = Platform.currentTime
     val sender = TestProbe()
     val amount = 1000000000L.msat
-    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill", allowMultiPart = true))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
     sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 5, paymentRequest = Some(pr)))
     val paymentId = sender.expectMsgType[UUID](30 seconds)
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
-    assert(paymentSent.id === paymentId)
-    assert(paymentSent.paymentHash === pr.paymentHash)
-    assert(paymentSent.parts.length > 1)
-    assert(paymentSent.amount === amount)
-    assert(paymentSent.feesPaid > 0.msat)
-    assert(paymentSent.parts.forall(p => p.id != paymentSent.id))
-    assert(paymentSent.parts.forall(p => p.route.isDefined))
+    assert(paymentSent.id === paymentId, paymentSent)
+    assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
+    assert(paymentSent.parts.length > 1, paymentSent)
+    assert(paymentSent.recipientNodeId === nodes("D").nodeParams.nodeId, paymentSent)
+    assert(paymentSent.recipientAmount === amount, paymentSent)
+    assert(paymentSent.feesPaid > 0.msat, paymentSent)
+    assert(paymentSent.parts.forall(p => p.id != paymentSent.id), paymentSent)
+    assert(paymentSent.parts.forall(p => p.route.isDefined), paymentSent)
 
     val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(paymentParts.length == paymentSent.parts.length)
-    assert(paymentParts.map(_.amount).sum === amount)
-    assert(paymentParts.forall(p => p.parentId == paymentId))
-    assert(paymentParts.forall(p => p.parentId != p.id))
-    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat))
+    assert(paymentParts.length == paymentSent.parts.length, paymentParts)
+    assert(paymentParts.map(_.amount).sum === amount, paymentParts)
+    assert(paymentParts.forall(p => p.parentId == paymentId), paymentParts)
+    assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
+    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
 
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
+    val sent = nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime)
+    assert(sent.length === 1, sent)
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
+
+    awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
   }
 
@@ -473,7 +483,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // There is enough channel capacity to route this payment, but D doesn't have enough incoming capacity to receive it
     // (the link C->D has too much capacity on D's side).
     val amount = 2000000000L.msat
-    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "well that's an expensive restaurant bill", allowMultiPart = true))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "well that's an expensive restaurant bill"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
@@ -484,9 +494,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 1, paymentRequest = Some(pr)))
     val paymentId = sender.expectMsgType[UUID](30 seconds)
     val paymentFailed = sender.expectMsgType[PaymentFailed](45 seconds)
-    assert(paymentFailed.id === paymentId)
-    assert(paymentFailed.paymentHash === pr.paymentHash)
-    assert(paymentFailed.failures.length > 1)
+    assert(paymentFailed.id === paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash === pr.paymentHash, paymentFailed)
+    assert(paymentFailed.failures.length > 1, paymentFailed)
 
     assert(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
@@ -500,26 +510,27 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val sender = TestProbe()
     // This amount is greater than any channel capacity between D and C, so it should be split.
     val amount = 5100000000L.msat
-    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow some money", allowMultiPart = true))
+    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow some money"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
     sender.send(nodes("D").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("C").nodeParams.nodeId, 3, paymentRequest = Some(pr)))
     val paymentId = sender.expectMsgType[UUID](30 seconds)
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
-    assert(paymentSent.id === paymentId)
-    assert(paymentSent.paymentHash === pr.paymentHash)
-    assert(paymentSent.parts.length > 1)
-    assert(paymentSent.amount === amount)
-    assert(paymentSent.feesPaid === 0.msat) // no fees when using direct channels
+    assert(paymentSent.id === paymentId, paymentSent)
+    assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
+    assert(paymentSent.parts.length > 1, paymentSent)
+    assert(paymentSent.recipientAmount === amount, paymentSent)
+    assert(paymentSent.feesPaid === 0.msat, paymentSent) // no fees when using direct channels
 
     val paymentParts = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(paymentParts.map(_.amount).sum === amount)
-    assert(paymentParts.forall(p => p.parentId == paymentId))
-    assert(paymentParts.forall(p => p.parentId != p.id))
-    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid == 0.msat))
+    assert(paymentParts.map(_.amount).sum === amount, paymentParts)
+    assert(paymentParts.forall(p => p.parentId == paymentId), paymentParts)
+    assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
+    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid == 0.msat), paymentParts)
 
-    val Some(IncomingPayment(_, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
   }
 
@@ -527,7 +538,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val sender = TestProbe()
     // This amount is greater than the current capacity between D and C.
     val amount = 10000000000L.msat
-    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow more money", allowMultiPart = true))
+    sender.send(nodes("C").paymentHandler, ReceivePayment(Some(amount), "lemme borrow more money"))
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
@@ -538,15 +549,196 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.send(nodes("D").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("C").nodeParams.nodeId, 1, paymentRequest = Some(pr)))
     val paymentId = sender.expectMsgType[UUID](30 seconds)
     val paymentFailed = sender.expectMsgType[PaymentFailed](30 seconds)
-    assert(paymentFailed.id === paymentId)
-    assert(paymentFailed.paymentHash === pr.paymentHash)
+    assert(paymentFailed.id === paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash === pr.paymentHash, paymentFailed)
 
-    assert(nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    val incoming = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(incoming.get.status === IncomingPaymentStatus.Pending, incoming)
 
     sender.send(nodes("D").relayer, GetOutgoingChannels())
     val canSend2 = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     // Fee updates may impact balances, but it shouldn't have changed much.
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
+  }
+
+  test("send a trampoline payment B->F3 with retry (via trampoline G)") {
+    val start = Platform.currentTime
+    val sender = TestProbe()
+    val amount = 4000000000L.msat
+    sender.send(nodes("F3").paymentHandler, ReceivePayment(Some(amount), "like trampoline much?"))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+    assert(pr.features.allowTrampoline)
+
+    // The first attempt should fail, but the second one should succeed.
+    val attempts = (1000 msat, CltvExpiryDelta(42)) :: (1000000 msat, CltvExpiryDelta(288)) :: Nil
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("G").nodeParams.nodeId, attempts)
+    sender.send(nodes("B").paymentInitiator, payment)
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId, paymentSent)
+    assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
+    assert(paymentSent.recipientNodeId === nodes("F3").nodeParams.nodeId, paymentSent)
+    assert(paymentSent.recipientAmount === amount, paymentSent)
+    assert(paymentSent.feesPaid === 1000000.msat, paymentSent)
+    assert(paymentSent.nonTrampolineFees === 0.msat, paymentSent)
+
+    awaitCond(nodes("F3").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F3").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(receivedAmount === amount)
+
+    awaitCond({
+      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      relayed.nonEmpty && relayed.head.amountOut >= amount
+    })
+    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
+    assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
+
+    val outgoingSuccess = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    outgoingSuccess.foreach { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
+      assert(recipientNodeId === nodes("F3").nodeParams.nodeId, p)
+      assert(route.lastOption === Some(HopSummary(nodes("G").nodeParams.nodeId, nodes("F3").nodeParams.nodeId)), p)
+    }
+    assert(outgoingSuccess.map(_.amount).sum === amount + 1000000.msat, outgoingSuccess)
+  }
+
+  test("send a trampoline payment D->B (via trampoline C)") {
+    val start = Platform.currentTime
+    val sender = TestProbe()
+    val amount = 2500000000L.msat
+    sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), "trampoline-MPP is so #reckless"))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+    assert(pr.features.allowTrampoline)
+
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((300000 msat, CltvExpiryDelta(144))))
+    sender.send(nodes("D").paymentInitiator, payment)
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId, paymentSent)
+    assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
+    assert(paymentSent.recipientAmount === amount, paymentSent)
+    assert(paymentSent.feesPaid === 300000.msat, paymentSent)
+    assert(paymentSent.nonTrampolineFees === 0.msat, paymentSent)
+
+    awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(receivedAmount === amount)
+
+    awaitCond({
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      relayed.nonEmpty && relayed.head.amountOut >= amount
+    })
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
+    assert(relayed.amountIn - relayed.amountOut < 300000.msat, relayed)
+
+    val outgoingSuccess = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    outgoingSuccess.foreach { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
+      assert(recipientNodeId === nodes("B").nodeParams.nodeId, p)
+      assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)), p)
+    }
+    assert(outgoingSuccess.map(_.amount).sum === amount + 300000.msat, outgoingSuccess)
+
+    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
+    val sent = nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime)
+    assert(sent.length === 1, sent)
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
+  }
+
+  test("send a trampoline payment F3->A (via trampoline C, non-trampoline recipient)") {
+    // The A -> B channel is not announced.
+    val start = Platform.currentTime
+    val sender = TestProbe()
+    sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
+    val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
+    val routingHints = List(List(ExtraHop(nodes("B").nodeParams.nodeId, channelUpdate_ba.shortChannelId, channelUpdate_ba.feeBaseMsat, channelUpdate_ba.feeProportionalMillionths, channelUpdate_ba.cltvExpiryDelta)))
+
+    val amount = 3000000000L.msat
+    sender.send(nodes("A").paymentHandler, ReceivePayment(Some(amount), "trampoline to non-trampoline is so #vintage", extraHops = routingHints))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+    assert(!pr.features.allowTrampoline)
+
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((1000000 msat, CltvExpiryDelta(432))))
+    sender.send(nodes("F3").paymentInitiator, payment)
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
+    assert(paymentSent.id === paymentId, paymentSent)
+    assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
+    assert(paymentSent.recipientAmount === amount, paymentSent)
+    assert(paymentSent.trampolineFees === 1000000.msat, paymentSent)
+
+    awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
+    assert(receivedAmount === amount)
+
+    awaitCond({
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      relayed.nonEmpty && relayed.head.amountOut >= amount
+    })
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
+    assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
+
+    val outgoingSuccess = nodes("F3").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    outgoingSuccess.foreach { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
+      assert(recipientNodeId === nodes("A").nodeParams.nodeId, p)
+      assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("A").nodeParams.nodeId)), p)
+    }
+    assert(outgoingSuccess.map(_.amount).sum === amount + 1000000.msat, outgoingSuccess)
+  }
+
+  test("send a trampoline payment B->D (temporary local failure at trampoline)") {
+    val sender = TestProbe()
+
+    // We put most of the capacity C <-> D on D's side.
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(8000000000L msat), "plz send everything"))
+    val pr1 = sender.expectMsgType[PaymentRequest](15 seconds)
+    sender.send(nodes("C").paymentInitiator, SendPaymentRequest(8000000000L msat, pr1.paymentHash, nodes("D").nodeParams.nodeId, 3, paymentRequest = Some(pr1)))
+    sender.expectMsgType[UUID](30 seconds)
+    sender.expectMsgType[PaymentSent](30 seconds)
+
+    // Now we try to send more than C's outgoing capacity to D.
+    val amount = 2000000000L.msat
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "I iz Satoshi"))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+    assert(pr.features.allowTrampoline)
+
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(144))))
+    sender.send(nodes("B").paymentInitiator, payment)
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentFailed = sender.expectMsgType[PaymentFailed](30 seconds)
+    assert(paymentFailed.id === paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash === pr.paymentHash, paymentFailed)
+
+    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    val outgoingPayments = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId)
+    assert(outgoingPayments.nonEmpty, outgoingPayments)
+    assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
+  }
+
+  test("send a trampoline payment A->D (temporary remote failure at trampoline)") {
+    val sender = TestProbe()
+    val amount = 2000000000L.msat // B can forward to C, but C doesn't have that much outgoing capacity to D
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "I iz not Satoshi"))
+    val pr = sender.expectMsgType[PaymentRequest](15 seconds)
+    assert(pr.features.allowMultiPart)
+    assert(pr.features.allowTrampoline)
+
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("B").nodeParams.nodeId, Seq((450000 msat, CltvExpiryDelta(288))))
+    sender.send(nodes("A").paymentInitiator, payment)
+    val paymentId = sender.expectMsgType[UUID](30 seconds)
+    val paymentFailed = sender.expectMsgType[PaymentFailed](30 seconds)
+    assert(paymentFailed.id === paymentId, paymentFailed)
+    assert(paymentFailed.paymentHash === pr.paymentHash, paymentFailed)
+
+    assert(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
+    val outgoingPayments = nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId)
+    assert(outgoingPayments.nonEmpty, outgoingPayments)
+    assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
   }
 
   /**
@@ -987,6 +1179,31 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
+  }
+
+  /** Handy way to check what the channel balances are before adding new tests. */
+  def debugChannelBalances(): Unit = {
+    val sender = TestProbe()
+    sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
+    sender.send(nodes("C").relayer, Relayer.GetOutgoingChannels())
+
+    logger.info(s"A -> ${nodes("A").nodeParams.nodeId}")
+    logger.info(s"B -> ${nodes("B").nodeParams.nodeId}")
+    logger.info(s"C -> ${nodes("C").nodeParams.nodeId}")
+    logger.info(s"D -> ${nodes("D").nodeParams.nodeId}")
+    logger.info(s"E -> ${nodes("E").nodeParams.nodeId}")
+    logger.info(s"F1 -> ${nodes("F1").nodeParams.nodeId}")
+    logger.info(s"F2 -> ${nodes("F2").nodeParams.nodeId}")
+    logger.info(s"F3 -> ${nodes("F3").nodeParams.nodeId}")
+    logger.info(s"F4 -> ${nodes("F4").nodeParams.nodeId}")
+    logger.info(s"F5 -> ${nodes("F5").nodeParams.nodeId}")
+    logger.info(s"G -> ${nodes("G").nodeParams.nodeId}")
+
+    val channels1 = sender.expectMsgType[Relayer.OutgoingChannels]
+    val channels2 = sender.expectMsgType[Relayer.OutgoingChannels]
+
+    logger.info(channels1.channels.map(_.toUsableBalance))
+    logger.info(channels2.channels.map(_.toUsableBalance))
   }
 
 }

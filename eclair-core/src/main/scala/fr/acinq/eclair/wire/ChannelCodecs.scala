@@ -70,8 +70,7 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[LocalParams]
+      ("features" | combinedFeaturesCodec)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
@@ -86,8 +85,7 @@ object ChannelCodecs extends Logging {
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
-      ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[RemoteParams]
+      ("features" | combinedFeaturesCodec)).as[RemoteParams]
 
   val directionCodec: Codec[Direction] = Codec[Direction](
     (dir: Direction) => bool.encode(dir == IN),
@@ -193,10 +191,16 @@ object ChannelCodecs extends Logging {
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
+    listOfN(uint16, bytes32 ~ int64) ::
+      ("sender" | provide(Option.empty[ActorRef]))
+    ).as[Origin.TrampolineRelayed]
+
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x03, localCodec) // backward compatible
     .typecase(0x01, provide(Origin.Local(UNKNOWN_UUID, None)))
     .typecase(0x02, relayedCodec)
+    .typecase(0x04, trampolineRelayedCodec)
 
   val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
 

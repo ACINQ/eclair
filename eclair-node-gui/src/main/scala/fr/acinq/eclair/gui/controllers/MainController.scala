@@ -310,7 +310,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       override def onChanged(c: Change[_ <: PaymentSentRecord]) = updateTabHeader(paymentSentTab, "Sent", paymentSentList)
     })
     paymentSentAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, String], ObservableValue[String]]() {
-      def call(record: CellDataFeatures[PaymentSentRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(record.getValue.event.amount, FxApp.getUnit, withUnit = true))
+      def call(record: CellDataFeatures[PaymentSentRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(record.getValue.event.recipientAmount, FxApp.getUnit, withUnit = true))
     })
     paymentSentFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, String], ObservableValue[String]]() {
       def call(record: CellDataFeatures[PaymentSentRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(record.getValue.event.feesPaid, FxApp.getUnit, withUnit = true))

@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
-import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, TxCoordinates}
 
@@ -97,7 +97,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case watch@WatchConfirmed(_, txid, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-confirmed on txid=$txid scriptHash=$scriptHash")
-      client ! ElectrumClient.GetScriptHashHistory(scriptHash)
+      client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
       context.watch(watch.channel)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
@@ -117,7 +117,8 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case ElectrumClient.GetScriptHashHistoryResponse(_, history) =>
       // we retrieve the transaction before checking watches
-      history.filter(_.height >= 0).foreach { item => client ! ElectrumClient.GetTransaction(item.tx_hash, Some(item)) }
+      // NB: height=-1 means that the tx is unconfirmed and at least one of its inputs is also unconfirmed. we need to take them into consideration if we want to handle unconfirmed txes (which is the case for turbo channels)
+      history.filter(_.height >= -1).foreach { item => client ! ElectrumClient.GetTransaction(item.tx_hash, Some(item)) }
 
     case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem)) =>
       // this is for WatchSpent/WatchSpendBasic
@@ -133,9 +134,16 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
           channel ! WatchEventSpentBasic(event)
           Some(w)
       }).flatten
+
       // this is for WatchConfirmed
-      watches.collect {
-        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid =>
+      val watchConfirmedTriggered = watches.collect {
+        case w@WatchConfirmed(channel, txid, _, minDepth, BITCOIN_FUNDING_DEPTHOK) if txid == tx.txid && minDepth == 0 =>
+          // special case for mempool watches (min depth = 0)
+          val (dummyHeight, dummyTxIndex) = ElectrumWatcher.makeDummyShortChannelId(txid)
+          channel ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, dummyHeight, dummyTxIndex, tx)
+          Some(w)
+        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid && minDepth > 0 =>
+          // min depth > 0 here
           val txheight = item.height
           val confirmations = height - txheight + 1
           log.info(s"txid=$txid was confirmed at height=$txheight and now has confirmations=$confirmations (currentHeight=$height)")
@@ -143,8 +151,10 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
             // we need to get the tx position in the block
             client ! ElectrumClient.GetMerkle(txid, txheight, Some(tx))
           }
-      }
-      context become running(height, tip, watches -- watchSpentTriggered, scriptHashStatus, block2tx, sent)
+          None
+      }.flatten
+
+      context become running(height, tip, watches -- watchSpentTriggered -- watchConfirmedTriggered, scriptHashStatus, block2tx, sent)
 
     case ElectrumClient.GetMerkleResponse(tx_hash, _, txheight, pos, Some(tx: Transaction)) =>
       val confirmations = height - txheight + 1
@@ -211,4 +221,25 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
   }
 
+}
+
+object ElectrumWatcher {
+  /**
+   *
+   * @param txid funding transaction id
+   * @return a (blockHeight, txIndex) tuple that is extracted from the input source
+   *         This is used to create unique "dummy" short channel ids for zero-conf channels
+   */
+  def makeDummyShortChannelId(txid: ByteVector32): (Int, Int) = {
+    // we use a height of 0
+    // - to make sure that the tx will be marked as "confirmed"
+    // - to easily identify scids linked to 0-conf channels
+    //
+    // this gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
+    // collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed)
+    // if this ever becomes a problem we could just extract some bits for our dummy height instead of just returning 0
+    val height = 0
+    val txIndex = txid.bits.sliceToInt(0, 16, false)
+    (height, txIndex)
+  }
 }

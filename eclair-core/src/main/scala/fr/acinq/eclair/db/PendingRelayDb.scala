@@ -16,8 +16,10 @@
 
 package fr.acinq.eclair.db
 
+import java.io.Closeable
+
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.HasHtlcIdCommand
+import fr.acinq.eclair.channel.{Command, HasHtlcId}
 
 /**
  * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream
@@ -31,13 +33,13 @@ import fr.acinq.eclair.channel.HasHtlcIdCommand
  * to handle all corner cases.
  *
  */
-trait PendingRelayDb {
+trait PendingRelayDb extends Closeable {
 
-  def addPendingRelay(channelId: ByteVector32, cmd: HasHtlcIdCommand)
+  def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId)
 
   def removePendingRelay(channelId: ByteVector32, htlcId: Long)
 
-  def listPendingRelay(channelId: ByteVector32): Seq[HasHtlcIdCommand]
+  def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId]
 
   def listPendingRelay(): Set[(ByteVector32, Long)]
 
