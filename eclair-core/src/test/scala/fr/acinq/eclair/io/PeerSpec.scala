@@ -312,7 +312,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
 
-    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big, you must enable wumbo to use funding above ${Channel.MAX_FUNDING}")
+    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
 
   test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("max-funding-satoshis"), Tag("wumbo")) { f =>
@@ -326,7 +326,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
 
-    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis'")
+    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
 
 

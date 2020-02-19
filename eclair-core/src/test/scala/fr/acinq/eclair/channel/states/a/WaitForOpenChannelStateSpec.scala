@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 
@@ -37,10 +37,13 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = test.tags.toList match {
-      case "wumbo" :: Nil => init(nodeParamsB = Bob.nodeParams.copy(features = ByteVector.fromValidHex("80000"))) // optional wumbo
-      case _ => init()
-    }
+    import com.softwaremill.quicklens._
+    val bobNodeParams = Bob.nodeParams
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
+
+    val setup = init(nodeParamsB = bobNodeParams)
+
     import setup._
     val channelVersion = ChannelVersion.STANDARD
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
@@ -95,7 +98,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   test("recv OpenChannel (fundingSatoshis > max-funding-satoshis)", Tag("wumbo")) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val highFundingSat = Btc(2).toSatoshi // bob has max-funding-satoshis = 1BTC
+    val highFundingSat = Bob.nodeParams.maxFundingSatoshis + Btc(1)
     bob ! open.copy(fundingSatoshis = highFundingSat)
     val error = bob2alice.expectMsgType[Error]
     assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingSat, Bob.nodeParams.minFundingSatoshis, Bob.nodeParams.maxFundingSatoshis).getMessage).toAscii)
@@ -190,7 +193,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel (wumbo size)", Tag("wumbo")) { f =>
+  test("recv OpenChannel (wumbo size)", Tag("wumbo"), Tag("max-funding-satoshis")) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val highFundingSat = Btc(1).toSatoshi

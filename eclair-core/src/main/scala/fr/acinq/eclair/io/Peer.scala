@@ -309,12 +309,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      if (c.fundingSatoshis > Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
-        sender() ! s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable wumbo to use funding above ${Channel.MAX_FUNDING}"
-        stay()
+      if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
+        sender ! s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"
+        stay
       } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
-        sender() ! s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis'"
-        stay()
+        sender ! s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"
+        stay
       } else {
         val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
         c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))

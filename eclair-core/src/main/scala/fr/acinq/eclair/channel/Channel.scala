@@ -2251,19 +2251,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * Returns the amount of confirmation needed to safely handle the funding transaction,
-    * we makes sure the cumulative block reward exceeds the channel size.
+    * Returns the number of confirmations needed to safely handle the funding transaction,
+    * we make sure the cumulative block reward largely exceeds the channel size.
     *
     * @param fundingSatoshis funding amount of the channel
     * @return number of confirmation needed
     */
-  def minDepthForFunding(fundingSatoshis:Satoshi): Long = fundingSatoshis match {
+  def minDepthForFunding(fundingSatoshis: Satoshi): Long = fundingSatoshis match {
     // if this is not a wumbo channel or we're not on mainnet use the default
     case f if f <= MAX_FUNDING || nodeParams.chainHash != Block.LivenetGenesisBlock.hash =>
       nodeParams.minDepthBlocks
     case f if f > MAX_FUNDING =>
       // pre halving each block yields 12.5BTC, post 6.25BTC
-      val blockReward = if(nodeParams.currentBlockHeight <= 630000) 12.5 else 6.25
+      val blockReward = if (nodeParams.currentBlockHeight <= 630000) 12.5 else 6.25
       val blocksToReachFunding = ((f.toBtc.toDouble / blockReward).ceil + 1).toInt
       nodeParams.minDepthBlocks.max(blocksToReachFunding)
   }
