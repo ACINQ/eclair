@@ -115,7 +115,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
           Some(PaymentRequest.Features(f1 ++ f2 ++ f3: _*))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
-        log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
+        log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         db.addIncomingPayment(paymentRequest, paymentPreimage)
         paymentRequest
       } match {
@@ -130,7 +130,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
             case Some(cmdFail) =>
               commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
             case None =>
-              log.info(s"received payment for amount=${p.add.amountMsat} totalAmount=${p.payload.totalAmount}")
+              log.info("received payment for amount={} totalAmount={}", p.add.amountMsat, p.payload.totalAmount)
               pendingPayments.get(p.add.paymentHash) match {
                 case Some((_, handler)) =>
                   handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
@@ -148,7 +148,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
 
     case e@MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.warning(s"payment with paidAmount=${parts.map(_.amount).sum} failed ($failure)")
+        log.warning("payment with paidAmount={} failed ({})", parts.map(_.amount).sum, failure)
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
         doFail(e)
         pendingPayments = pendingPayments - paymentHash
@@ -156,7 +156,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
 
     case e@MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.info(s"received complete payment for amount=${parts.map(_.amount).sum}")
+        log.info("received complete payment for amount={}", parts.map(_.amount).sum)
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
@@ -205,10 +205,10 @@ object MultiPartHandler {
 
   private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
-      log.warning(s"ignoring incoming payment for which has already been paid")
+      log.warning("ignoring incoming payment for which has already been paid")
       false
     } else if (record.paymentRequest.isExpired) {
-      log.warning(s"received payment for expired amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received payment for expired amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {
       true
@@ -220,10 +220,10 @@ object MultiPartHandler {
     // it must not be greater than two times the requested amount.
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
     if (payment.payload.totalAmount < expectedAmount) {
-      log.warning(s"received payment with amount too small for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received payment with amount too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else if (payment.payload.totalAmount > expectedAmount * 2) {
-      log.warning(s"received payment with amount too large for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received payment with amount too large for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {
       true
@@ -232,7 +232,7 @@ object MultiPartHandler {
 
   private def validatePaymentCltv(payment: IncomingPacket.FinalPacket, minExpiry: CltvExpiry)(implicit log: LoggingAdapter): Boolean = {
     if (payment.add.cltvExpiry < minExpiry) {
-      log.warning(s"received payment with expiry too small for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {
       true
@@ -241,13 +241,13 @@ object MultiPartHandler {
 
   private def validateInvoiceFeatures(payment: IncomingPacket.FinalPacket, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
     if (payment.payload.amount < payment.payload.totalAmount && !pr.features.allowMultiPart) {
-      log.warning(s"received multi-part payment but invoice doesn't support it for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else if (payment.payload.amount < payment.payload.totalAmount && pr.paymentSecret != payment.payload.paymentSecret) {
-      log.warning(s"received multi-part payment with invalid secret=${payment.payload.paymentSecret} for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received multi-part payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else if (payment.payload.paymentSecret.isDefined && pr.paymentSecret != payment.payload.paymentSecret) {
-      log.warning(s"received payment with invalid secret=${payment.payload.paymentSecret} for amount=${payment.add.amountMsat} totalAmount=${payment.payload.totalAmount}")
+      log.warning("received payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {
       true
