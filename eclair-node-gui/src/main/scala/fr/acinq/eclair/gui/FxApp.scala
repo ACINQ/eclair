@@ -114,6 +114,7 @@ class FxApp extends Application with Logging {
                   primaryStage.setHeight(640)
                   primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
                     override def handle(event: WindowEvent) {
+                      logger.info(s"Close Requested")
                       System.exit(0)
                     }
                   })
