@@ -45,7 +45,7 @@ object Graph {
    * We favor older channels, with bigger capacity and small cltv delta.
    */
   case class WeightRatios(cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) {
-    require(0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1, "The sum of heuristics ratios must be between 0 and 1 (included)")
+    require(cltvDeltaFactor >= 0 && ageFactor >= 0 && capacityFactor >= 0 && 0 < cltvDeltaFactor + ageFactor + capacityFactor && cltvDeltaFactor + ageFactor + capacityFactor <= 1, s"The sum of heuristics ratios must be between 0 and 1 (included) $cltvDeltaFactor $ageFactor $capacityFactor")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
