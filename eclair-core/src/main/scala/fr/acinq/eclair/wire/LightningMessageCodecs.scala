@@ -16,22 +16,30 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.{KamonExt, wire}
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.{KamonExt, wire}
 import kamon.Kamon
 import kamon.tag.TagSet
-import scodec.bits.BitVector
-import scodec.{Attempt, Codec}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
+import scodec.{Attempt, Codec, DecodeResult}
 
 /**
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
 
-  val initCodec: Codec[Init] = (
+  /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
+  val combinedFeaturesCodec: Codec[ByteVector] = (
     ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[Init]
+      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[ByteVector](
+    { case (gf, lf) =>
+      val length = gf.length.max(lf.length)
+      gf.padLeft(length) | lf.padLeft(length)
+    },
+    { features => (ByteVector.empty, features) })
+
+  val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 
   val errorCodec: Codec[Error] = (
     ("channelId" | bytes32) ::
@@ -51,7 +59,30 @@ object LightningMessageCodecs {
       ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
       ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
 
-  val openChannelCodec: Codec[OpenChannel] = (
+  // Legacy nodes may encode an empty upfront_shutdown_script (0x0000) even if we didn't advertise support for option_upfront_shutdown_script.
+  // To allow extending all messages with TLV streams, the upfront_shutdown_script field was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.
+  // This codec decodes both legacy and new versions, while always encoding with an upfront_shutdown_script (of length 0 if none actually provided).
+  private val shutdownScriptGuard = Codec[Boolean](
+    // Similar to bitsRemaining but encodes 0x0000 for an empty upfront_shutdown_script.
+    (included: Boolean) => if (included) Attempt.Successful(BitVector.empty) else Attempt.Successful(hex"0000".bits),
+    // Bolt 2 specifies that upfront_shutdown_scripts must be P2PKH/P2SH or segwit-v0 P2WPK/P2WSH.
+    // The length of such scripts will always start with 0x00.
+    // On top of that, since TLV records start with a varint, a TLV stream will never start with 0x00 unless the spec
+    // assigns TLV type 0 to a new record. If that happens, that record should be the upfront_shutdown_script to allow
+    // easy backwards-compatibility (as proposed here: https://github.com/lightningnetwork/lightning-rfc/pull/714).
+    // That means we can discriminate on byte 0x00 to know whether we're decoding an upfront_shutdown_script or a TLV
+    // stream.
+    (b: BitVector) => Attempt.successful(DecodeResult(b.startsWith(hex"00".bits), b))
+  )
+
+  private def emptyToNone(script: Option[ByteVector]): Option[ByteVector] = script match {
+    case Some(s) if s.nonEmpty => script
+    case _ => None
+  }
+
+  private val upfrontShutdownScript = optional(shutdownScriptGuard, variableSizeBytes(uint16, bytes)).xmap(emptyToNone, emptyToNone)
+
+  private def openChannelCodec_internal(upfrontShutdownScriptCodec: Codec[Option[ByteVector]]): Codec[OpenChannel] = (
     ("chainHash" | bytes32) ::
       ("temporaryChannelId" | bytes32) ::
       ("fundingSatoshis" | satoshi) ::
@@ -69,7 +100,20 @@ object LightningMessageCodecs {
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
       ("firstPerCommitmentPoint" | publicKey) ::
-      ("channelFlags" | byte)).as[OpenChannel]
+      ("channelFlags" | byte) ::
+      ("upfront_shutdown_script" | upfrontShutdownScriptCodec) ::
+      ("tlvStream_opt" | optional(bitsRemaining, OpenTlv.openTlvCodec))).as[OpenChannel]
+
+  val openChannelCodec = Codec[OpenChannel](
+    (open: OpenChannel) => {
+      // Phoenix versions <= 1.1.0 don't support the upfront_shutdown_script field (they interpret it as a tlv stream
+      // with an unknown tlv record). For these channels we use an encoding that omits the upfront_shutdown_script for
+      // backwards-compatibility (once enough Phoenix users have upgraded, we can remove work-around).
+      val upfrontShutdownScriptCodec = if (open.tlvStream_opt.isDefined) provide(Option.empty[ByteVector]) else upfrontShutdownScript
+      openChannelCodec_internal(upfrontShutdownScriptCodec).encode(open)
+    },
+    (bits: BitVector) => openChannelCodec_internal(upfrontShutdownScript).decode(bits)
+  )
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | bytes32) ::
@@ -85,7 +129,8 @@ object LightningMessageCodecs {
       ("paymentBasepoint" | publicKey) ::
       ("delayedPaymentBasepoint" | publicKey) ::
       ("htlcBasepoint" | publicKey) ::
-      ("firstPerCommitmentPoint" | publicKey)).as[AcceptChannel]
+      ("firstPerCommitmentPoint" | publicKey) ::
+      ("upfront_shutdown_script" | upfrontShutdownScript)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | bytes32) ::
@@ -217,8 +262,14 @@ object LightningMessageCodecs {
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
-      .\(0) { case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
-      .\(1) { case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      .\(0) {
+        case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
+        case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
+      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      .\(1) {
+        case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
+      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(
@@ -239,10 +290,10 @@ object LightningMessageCodecs {
         ("firstBlockNum" | uint32) ::
         ("numberOfBlocks" | uint32) ::
         ("tlvStream" | QueryChannelRangeTlv.codec)
-      ).as[QueryChannelRange]
+    ).as[QueryChannelRange]
   }
 
-  val replyChannelRangeCodec: Codec[ReplyChannelRange] =  {
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] = {
     Codec(
       ("chainHash" | bytes32) ::
         ("firstBlockNum" | uint32) ::
@@ -250,7 +301,7 @@ object LightningMessageCodecs {
         ("complete" | byte) ::
         ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
         ("tlvStream" | ReplyChannelRangeTlv.codec)
-      ).as[ReplyChannelRange]
+    ).as[ReplyChannelRange]
   }
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (

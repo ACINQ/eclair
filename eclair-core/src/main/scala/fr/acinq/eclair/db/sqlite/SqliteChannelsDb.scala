@@ -101,8 +101,8 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  def addOrUpdateHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+  def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
       statement.setBytes(3, paymentHash.toArray)
@@ -123,4 +123,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       q
     }
   }
+
+  // used by mobile apps
+  override def close(): Unit = sqlite.close()
 }

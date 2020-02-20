@@ -109,15 +109,16 @@ object Transactions {
   val mainPenaltyWeight = 484
   val htlcPenaltyWeight = 578 // based on spending an HTLC-Success output (would be 571 with HTLC-Timeout)
 
-  def weight2fee(feeratePerKw: Long, weight: Int) = Satoshi((feeratePerKw * weight) / 1000)
+  def weight2feeMsat(feeratePerKw: Long, weight: Int) = MilliSatoshi(feeratePerKw * weight)
+
+  def weight2fee(feeratePerKw: Long, weight: Int): Satoshi = weight2feeMsat(feeratePerKw, weight).truncateToSatoshi
 
   /**
-   *
    * @param fee    tx fee
    * @param weight tx weight
    * @return the fee rate (in Satoshi/Kw) for this tx
    */
-  def fee2rate(fee: Satoshi, weight: Int) = (fee.toLong * 1000L) / weight
+  def fee2rate(fee: Satoshi, weight: Int): Long = (fee.toLong * 1000L) / weight
 
   /** Offered HTLCs below this amount will be trimmed. */
   def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = dustLimit + weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
@@ -142,14 +143,22 @@ object Transactions {
   }
 
   /** Fee for an un-trimmed HTLC. */
-  def htlcOutputFee(feeratePerKw: Long): Satoshi = weight2fee(feeratePerKw, htlcOutputWeight)
+  def htlcOutputFee(feeratePerKw: Long): MilliSatoshi = weight2feeMsat(feeratePerKw, htlcOutputWeight)
 
-  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
+  /**
+   * While fees are generally computed in Satoshis (since this is the smallest on-chain unit), it may be useful in some
+   * cases to calculate it in MilliSatoshi to avoid rounding issues.
+   * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
+   * down to Satoshi.
+   */
+  def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec): MilliSatoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
     val weight = commitWeight + htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2fee(spec.feeratePerKw, weight)
+    weight2feeMsat(spec.feeratePerKw, weight)
   }
+
+  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = commitTxFeeMsat(dustLimit, spec).truncateToSatoshi
 
   /**
    *

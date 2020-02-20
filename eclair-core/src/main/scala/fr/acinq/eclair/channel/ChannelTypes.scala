@@ -110,15 +110,18 @@ object Upstream {
   final case class Local(id: UUID) extends Upstream
   /** Our node forwarded a single incoming HTLC to an outgoing channel. */
   final case class Relayed(add: UpdateAddHtlc) extends Upstream
+  /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
+  final case class TrampolineRelayed(adds: Seq[UpdateAddHtlc]) extends Upstream {
+    val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
+    val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+  }
 }
 
 sealed trait Command
-sealed trait HasHtlcIdCommand extends Command {
-  def id: Long
-}
-final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends HasHtlcIdCommand
-final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends HasHtlcIdCommand
-final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends HasHtlcIdCommand
+sealed trait HasHtlcId { def id: Long }
+final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command with HasHtlcId
+final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command with HasHtlcId
+final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_ADD_HTLC(amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Upstream, commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
@@ -209,8 +212,7 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
-                             globalFeatures: ByteVector,
-                             localFeatures: ByteVector)
+                             features: ByteVector)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
@@ -224,8 +226,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               paymentBasepoint: PublicKey,
                               delayedPaymentBasepoint: PublicKey,
                               htlcBasepoint: PublicKey,
-                              globalFeatures: ByteVector,
-                              localFeatures: ByteVector)
+                              features: ByteVector)
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte

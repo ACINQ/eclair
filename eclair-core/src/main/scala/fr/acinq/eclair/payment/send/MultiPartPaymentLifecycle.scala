@@ -22,7 +22,7 @@ import akka.actor.{ActorRef, FSM, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.Commitments
+import fr.acinq.eclair.channel.{Commitments, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -55,11 +55,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   require(cfg.id == cfg.parentId, "multi-part payment cannot have a parent payment")
 
   val id = cfg.id
+  val paymentHash = cfg.paymentHash
 
   private val span = Kamon.spanBuilder("multi-part-payment")
     .tag("parentPaymentId", cfg.parentId.toString)
-    .tag("paymentHash", cfg.paymentHash.toHex)
-    .tag("targetNodeId", cfg.targetNodeId.toString())
+    .tag("paymentHash", paymentHash.toHex)
+    .tag("recipientNodeId", cfg.recipientNodeId.toString())
+    .tag("recipientAmount", cfg.recipientAmount.toLong)
     .start()
 
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
@@ -89,7 +91,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.request.totalAmount, channels, d.networkStats, d.request, randomize = false)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.request.totalAmount} with our current balance")
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(BalanceTooLow) :: Nil, Set.empty)
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(PaymentError.BalanceTooLow) :: Nil, Set.empty)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size)
         Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
@@ -137,7 +139,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.id)
+      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id)
   }
 
   when(RETRY_WITH_UPDATED_BALANCES) {
@@ -147,7 +149,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize = true) // we randomize channel selection when we retry
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(BalanceTooLow), d.pending.keySet)
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(PaymentError.BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
         pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
@@ -166,7 +168,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.id)
+      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id)
   }
 
   when(PAYMENT_ABORTED) {
@@ -174,7 +176,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val failures = d.failures ++ pf.failures
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.sender, Left(PaymentFailed(id, d.request.paymentHash, failures)))
+        myStop(d.sender, Left(PaymentFailed(id, paymentHash, failures)))
       } else {
         stay using d.copy(failures = failures, pending = pending)
       }
@@ -183,17 +185,17 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     // This is a spec violation and is too bad for them, we obtained a proof of payment without paying the full amount.
     case Event(ps: PaymentSent, d: PaymentAborted) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
-      log.warning(s"payment recipient fulfilled incomplete multi-part payment (id=${ps.id})")
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending - ps.id)
+      log.warning(s"payment recipient fulfilled incomplete multi-part payment (id=${ps.parts.head.id})")
+      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id)
   }
 
   when(PAYMENT_SUCCEEDED) {
     case Event(ps: PaymentSent, d: PaymentSucceeded) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       val parts = d.parts ++ ps.parts
-      val pending = d.pending - ps.id
+      val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.sender, Right(PaymentSent(id, d.request.paymentHash, d.preimage, parts)))
+        myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, parts)))
       } else {
         stay using d.copy(parts = parts, pending = pending)
       }
@@ -204,7 +206,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.sender, Right(PaymentSent(id, d.request.paymentHash, d.preimage, d.parts)))
+        myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
       } else {
         stay using d.copy(pending = pending)
       }
@@ -213,19 +215,23 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   onTransition {
     case _ -> PAYMENT_ABORTED => nextStateData match {
       case d: PaymentAborted if d.pending.isEmpty =>
-        myStop(d.sender, Left(PaymentFailed(id, d.request.paymentHash, d.failures)))
+        myStop(d.sender, Left(PaymentFailed(id, paymentHash, d.failures)))
       case _ =>
     }
 
     case _ -> PAYMENT_SUCCEEDED => nextStateData match {
       case d: PaymentSucceeded if d.pending.isEmpty =>
-        myStop(d.sender, Right(PaymentSent(id, d.request.paymentHash, d.preimage, d.parts)))
+        myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
       case _ =>
     }
   }
 
   def spawnChildPaymentFsm(childId: UUID): ActorRef = {
-    val childCfg = cfg.copy(id = childId, publishEvent = false)
+    val upstream = cfg.upstream match {
+      case Upstream.Local(_) => Upstream.Local(childId)
+      case _ => cfg.upstream
+    }
+    val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream)
     context.actorOf(PaymentLifecycle.props(nodeParams, childCfg, router, register))
   }
 
@@ -253,7 +259,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (isFromFinalRecipient) {
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
-      val failure = LocalFailure(RetryExhausted)
+      val failure = LocalFailure(PaymentError.RetryExhausted)
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
     } else {
       None
@@ -261,7 +267,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id), paymentHash_opt = Some(cfg.paymentHash))
+    Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), parentPaymentId_opt = Some(cfg.parentId), paymentId_opt = Some(id), paymentHash_opt = Some(paymentHash))
   }
 
   initialize()
@@ -274,22 +280,30 @@ object MultiPartPaymentLifecycle {
 
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, relayer: ActorRef, router: ActorRef, register: ActorRef) = Props(new MultiPartPaymentLifecycle(nodeParams, cfg, relayer, router, register))
 
-  case class SendMultiPartPayment(paymentHash: ByteVector32,
-                                  paymentSecret: ByteVector32,
+  /**
+   * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
+   * algorithm will run to find suitable payment routes.
+   *
+   * @param paymentSecret  payment secret to protect against probing (usually from a Bolt 11 invoice).
+   * @param targetNodeId   target node (may be the final recipient when using source-routing, or the first trampoline
+   *                       node when using trampoline).
+   * @param totalAmount    total amount to send to the target node.
+   * @param targetExpiry   expiry at the target node (CLTV for the target node's received HTLCs).
+   * @param maxAttempts    maximum number of retries.
+   * @param assistedRoutes routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams    parameters to fine-tune the routing algorithm.
+   * @param additionalTlvs when provided, additional tlvs that will be added to the onion sent to the target node.
+   */
+  case class SendMultiPartPayment(paymentSecret: ByteVector32,
                                   targetNodeId: PublicKey,
                                   totalAmount: MilliSatoshi,
-                                  finalExpiry: CltvExpiry,
+                                  targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                   routeParams: Option[RouteParams] = None,
                                   additionalTlvs: Seq[OnionTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
-
-  // @formatter:off
-  object BalanceTooLow extends RuntimeException("outbound capacity is too low")
-  object RetryExhausted extends RuntimeException("payment attempts exhausted without success")
-  // @formatter:on
 
   // @formatter:off
   sealed trait State
@@ -390,9 +404,8 @@ object MultiPartPaymentLifecycle {
 
   private def createChildPayment(nodeParams: NodeParams, request: SendMultiPartPayment, childAmount: MilliSatoshi, channel: OutgoingChannel): SendPayment = {
     SendPayment(
-      request.paymentHash,
       request.targetNodeId,
-      Onion.createMultiPartPayload(childAmount, request.totalAmount, request.finalExpiry, request.paymentSecret, request.additionalTlvs),
+      Onion.createMultiPartPayload(childAmount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs),
       request.maxAttempts,
       request.assistedRoutes,
       request.routeParams,
@@ -499,12 +512,11 @@ object MultiPartPaymentLifecycle {
     })
 
     // Otherwise we need to split the amount based on network statistics and pessimistic fees estimates.
-    // We filter out unannounced channels: they are very likely leading to a non-routing node.
     // Note that this will be handled more gracefully once this logic is migrated inside the router.
     val channels = if (randomize) {
-      Random.shuffle(localChannels.filter(p => p.commitments.announceChannel && p.nextNodeId != request.targetNodeId))
+      Random.shuffle(localChannels.filter(p => p.nextNodeId != request.targetNodeId))
     } else {
-      localChannels.filter(p => p.commitments.announceChannel && p.nextNodeId != request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
+      localChannels.filter(p => p.nextNodeId != request.targetNodeId).sortBy(_.commitments.availableBalanceForSend)
     }
     val remotePayments = split(toSend - directPayments.map(_.finalPayload.amount).sum, Seq.empty, channels, (remaining: MilliSatoshi, channel: OutgoingChannel) => {
       // We re-generate a split threshold for each channel to randomize the amounts.

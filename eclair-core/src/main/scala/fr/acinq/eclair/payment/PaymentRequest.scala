@@ -18,12 +18,12 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.Features._
+import fr.acinq.eclair.Features.{PaymentSecret => PaymentSecretF, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
-import scodec.Codec
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
+import scodec.{Codec, Err}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -45,9 +45,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  if (features.allowMultiPart) {
-    require(features.allowPaymentSecret, "there must be a payment secret when using multi-part")
-  }
+  private val featuresErr = validateFeatureGraph(features.bitmask)
+  require(featuresErr.isEmpty, featuresErr.map(_.message))
   if (features.allowPaymentSecret) {
     require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
   }
@@ -130,7 +129,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[Features] = Some(Features(PAYMENT_SECRET_OPTIONAL))): PaymentRequest = {
+            features: Option[Features] = Some(Features(VariableLengthOnion.optional, PaymentSecretF.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
@@ -161,9 +160,11 @@ object PaymentRequest {
 
   sealed trait UnknownTaggedField extends TaggedField
 
+  sealed trait InvalidTaggedField extends TaggedField
+
   // @formatter:off
   case class UnknownTag0(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag1(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag1(data: BitVector) extends InvalidTaggedField
   case class UnknownTag2(data: BitVector) extends UnknownTaggedField
   case class UnknownTag4(data: BitVector) extends UnknownTaggedField
   case class UnknownTag7(data: BitVector) extends UnknownTaggedField
@@ -173,12 +174,14 @@ object PaymentRequest {
   case class UnknownTag12(data: BitVector) extends UnknownTaggedField
   case class UnknownTag14(data: BitVector) extends UnknownTaggedField
   case class UnknownTag15(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag16(data: BitVector) extends InvalidTaggedField
   case class UnknownTag17(data: BitVector) extends UnknownTaggedField
   case class UnknownTag18(data: BitVector) extends UnknownTaggedField
   case class UnknownTag19(data: BitVector) extends UnknownTaggedField
   case class UnknownTag20(data: BitVector) extends UnknownTaggedField
   case class UnknownTag21(data: BitVector) extends UnknownTaggedField
   case class UnknownTag22(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag23(data: BitVector) extends InvalidTaggedField
   case class UnknownTag25(data: BitVector) extends UnknownTaggedField
   case class UnknownTag26(data: BitVector) extends UnknownTaggedField
   case class UnknownTag27(data: BitVector) extends UnknownTaggedField
@@ -330,12 +333,19 @@ object PaymentRequest {
    */
   case class Features(bitmask: BitVector) extends TaggedField {
     lazy val supported: Boolean = areSupported(bitmask)
-    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_MANDATORY) || hasFeature(bitmask, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
-    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY) || hasFeature(bitmask, PAYMENT_SECRET_OPTIONAL)
-    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PAYMENT_SECRET_MANDATORY)
-    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TRAMPOLINE_PAYMENT_MANDATORY) || hasFeature(bitmask, TRAMPOLINE_PAYMENT_OPTIONAL)
+    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment)
+    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF)
+    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(FeatureSupport.Mandatory))
+    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment)
 
     override def toString: String = s"Features(${bitmask.toBin})"
+
+    // When converting from BitVector to ByteVector, scodec pads right instead of left so we have to do this ourselves.
+    // We also want to enforce a minimal encoding of the feature bytes.
+    def toByteVector: ByteVector = {
+      val pad = if (bitmask.length % 8 == 0) 0 else 8 - bitmask.length % 8
+      bitmask.padLeft(bitmask.length + pad).bytes.dropWhile(_ == 0)
+    }
   }
 
   object Features {
@@ -371,11 +381,17 @@ object PaymentRequest {
 
     val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
 
-    def dataCodec[A](valueCodec: Codec[A]): Codec[A] = paddedVarAlignedBits(dataLengthCodec, valueCodec, multipleForPadding = 5)
+    def dataCodec[A](valueCodec: Codec[A], expectedLength: Option[Long] = None): Codec[A] = paddedVarAlignedBits(
+      dataLengthCodec.narrow(l => if (expectedLength.getOrElse(l) == l) Attempt.successful(l) else Attempt.failure(Err(s"invalid length $l")), l => l),
+      valueCodec,
+      multipleForPadding = 5)
 
     val taggedFieldCodec: Codec[TaggedField] = discriminated[TaggedField].by(ubyte(5))
       .typecase(0, dataCodec(bits).as[UnknownTag0])
-      .typecase(1, dataCodec(bytes32).as[PaymentHash])
+      .\(1) {
+        case a: PaymentHash => a: TaggedField
+        case a: InvalidTag1 => a: TaggedField
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[PaymentHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag1].upcast[TaggedField]))
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
@@ -390,14 +406,20 @@ object PaymentRequest {
       .typecase(13, dataCodec(alignedBytesCodec(utf8)).as[Description])
       .typecase(14, dataCodec(bits).as[UnknownTag14])
       .typecase(15, dataCodec(bits).as[UnknownTag15])
-      .typecase(16, dataCodec(bytes32).as[PaymentSecret])
+      .\(16) {
+        case a: PaymentSecret => a: TaggedField
+        case a: InvalidTag16 => a: TaggedField
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[PaymentSecret].upcast[TaggedField], dataCodec(bits).as[InvalidTag16].upcast[TaggedField]))
       .typecase(17, dataCodec(bits).as[UnknownTag17])
       .typecase(18, dataCodec(bits).as[UnknownTag18])
       .typecase(19, dataCodec(bits).as[UnknownTag19])
       .typecase(20, dataCodec(bits).as[UnknownTag20])
       .typecase(21, dataCodec(bits).as[UnknownTag21])
       .typecase(22, dataCodec(bits).as[UnknownTag22])
-      .typecase(23, dataCodec(bytes32).as[DescriptionHash])
+      .\(23) {
+        case a: DescriptionHash => a: TaggedField
+        case a: InvalidTag23 => a: TaggedField
+      }(choice(dataCodec(bytes32, expectedLength = Some(52 * 5)).as[DescriptionHash].upcast[TaggedField], dataCodec(bits).as[InvalidTag23].upcast[TaggedField]))
       .typecase(24, dataCodec(bits).as[MinFinalCltvExpiry])
       .typecase(25, dataCodec(bits).as[UnknownTag25])
       .typecase(26, dataCodec(bits).as[UnknownTag26])
@@ -489,15 +511,14 @@ object PaymentRequest {
       timestamp = bolt11Data.timestamp,
       nodeId = pub,
       tags = bolt11Data.taggedFields,
-      signature = bolt11Data.signature
-    )
+      signature = bolt11Data.signature)
   }
 
   private def readBoltData(input: String): Bolt11Data = {
     val lowercaseInput = input.toLowerCase
     val separatorIndex = lowercaseInput.lastIndexOf('1')
     val hrp = lowercaseInput.take(separatorIndex)
-    val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    if (!prefixes.values.exists(prefix => hrp.startsWith(prefix))) throw new RuntimeException("unknown prefix")
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     Codecs.bolt11DataCodec.decode(data).require.value
   }

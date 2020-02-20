@@ -21,7 +21,7 @@ import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
-import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb}
+import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
@@ -54,7 +54,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
   def onSuccess(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, allowMultiPart) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
       Try {
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
         val paymentHash = Crypto.sha256(paymentPreimage)
@@ -62,14 +62,15 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
-          val f1 = Seq(Features.PAYMENT_SECRET_OPTIONAL)
-          val f2 = if (allowMultiPart) Seq(Features.BASIC_MULTI_PART_PAYMENT_OPTIONAL) else Nil
-          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TRAMPOLINE_PAYMENT_OPTIONAL) else Nil
+          val f1 = Seq(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+          val allowMultiPart = Features.hasFeature(nodeParams.features, Features.BasicMultiPartPayment)
+          val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
+          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
           Some(PaymentRequest.Features(f1 ++ f2 ++ f3: _*))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug(s"generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
-        db.addIncomingPayment(paymentRequest, paymentPreimage)
+        db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
         paymentRequest
       } match {
         case Success(paymentRequest) => ctx.sender ! paymentRequest
@@ -162,7 +163,6 @@ object MultiPartHandler {
    * @param extraHops         routing hints to help the payer.
    * @param fallbackAddress   fallback Bitcoin address.
    * @param paymentPreimage   payment preimage.
-   * @param allowMultiPart    allow multi-part payments.
    */
   case class ReceivePayment(amount_opt: Option[MilliSatoshi],
                             description: String,
@@ -170,7 +170,7 @@ object MultiPartHandler {
                             extraHops: List[List[ExtraHop]] = Nil,
                             fallbackAddress: Option[String] = None,
                             paymentPreimage: Option[ByteVector32] = None,
-                            allowMultiPart: Boolean = false)
+                            paymentType: String = PaymentType.Standard)
 
   private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {

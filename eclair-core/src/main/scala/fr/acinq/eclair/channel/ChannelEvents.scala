@@ -53,7 +53,7 @@ case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remo
 case class NetworkFeePaid(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, tx: Transaction, fee: Satoshi, txType: String) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available
-case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, localBalance: MilliSatoshi, commitments: Commitments) extends ChannelEvent
+case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, commitments: Commitments) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: Data) extends ChannelEvent
 

@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
+import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPacket._
@@ -34,7 +34,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import scodec.Attempt
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 /**
  * Created by PM on 31/05/2016.
@@ -68,7 +68,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(onion.packet.payload.length === Sphinx.PaymentPacket.PayloadLength)
 
     // let's peel the onion
-    val features = if (legacy) ByteVector.empty else TestConstants.globalFeatures
+    val features = if (legacy) ByteVector.empty else variableLengthOnionFeature
     testPeelOnion(onion.packet, features)
   }
 
@@ -121,7 +121,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   test("build a command including the onion") {
-    val (add, _) = buildCommand(UUID.randomUUID, paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (add, _) = buildCommand(Upstream.Local(UUID.randomUUID), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     assert(add.amount > finalAmount)
     assert(add.cltvExpiry === finalExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
@@ -132,7 +132,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
   }
 
   test("build a command with no hops") {
-    val (add, _) = buildCommand(UUID.randomUUID(), paymentHash, hops.take(1), FinalLegacyPayload(finalAmount, finalExpiry))
+    val (add, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops.take(1), FinalLegacyPayload(finalAmount, finalExpiry))
     assert(add.amount === finalAmount)
     assert(add.cltvExpiry === finalExpiry)
     assert(add.paymentHash === paymentHash)
@@ -168,7 +168,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(payload_b === RelayLegacyPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc))
 
     val add_c = UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c)
-    val Right(NodeRelayPacket(add_c2, outer_c, inner_c, packet_d)) = decrypt(add_c, priv_c.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(add_c2, outer_c, inner_c, packet_d)) = decrypt(add_c, priv_c.privateKey, variableLengthOnionFeature)
     assert(add_c2 === add_c)
     assert(outer_c.amount === amount_bc)
     assert(outer_c.totalAmount === amount_bc)
@@ -185,7 +185,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(amount_d === amount_cd)
     assert(expiry_d === expiry_cd)
     val add_d = UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet)
-    val Right(NodeRelayPacket(add_d2, outer_d, inner_d, packet_e)) = decrypt(add_d, priv_d.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(add_d2, outer_d, inner_d, packet_e)) = decrypt(add_d, priv_d.privateKey, variableLengthOnionFeature)
     assert(add_d2 === add_d)
     assert(outer_d.amount === amount_cd)
     assert(outer_d.totalAmount === amount_cd)
@@ -202,7 +202,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(amount_e === amount_de)
     assert(expiry_e === expiry_de)
     val add_e = UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet)
-    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, TestConstants.globalFeatures)
+    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, variableLengthOnionFeature)
     assert(add_e2 === add_e)
     assert(payload_e === FinalTlvPayload(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(paymentSecret, finalAmount * 3))))
   }
@@ -214,7 +214,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     // a -> b -> c      d -> e
 
     val routingHints = List(List(PaymentRequest.ExtraHop(randomKey.publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
-    val invoiceFeatures = Features(PAYMENT_SECRET_OPTIONAL, BASIC_MULTI_PART_PAYMENT_OPTIONAL)
+    val invoiceFeatures = Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)
     val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, "#reckless", None, None, routingHints, features = Some(invoiceFeatures))
     val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalLegacyPayload(finalAmount, finalExpiry))
     assert(amount_ac === amount_bc)
@@ -228,7 +228,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, ByteVector.empty)
 
     val add_c = UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c)
-    val Right(NodeRelayPacket(_, outer_c, inner_c, packet_d)) = decrypt(add_c, priv_c.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, outer_c, inner_c, packet_d)) = decrypt(add_c, priv_c.privateKey, variableLengthOnionFeature)
     assert(outer_c.amount === amount_bc)
     assert(outer_c.totalAmount === amount_bc)
     assert(outer_c.expiry === expiry_bc)
@@ -245,7 +245,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(amount_d === amount_cd)
     assert(expiry_d === expiry_cd)
     val add_d = UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet)
-    val Right(NodeRelayPacket(_, outer_d, inner_d, _)) = decrypt(add_d, priv_d.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, outer_d, inner_d, _)) = decrypt(add_d, priv_d.privateKey, variableLengthOnionFeature)
     assert(outer_d.amount === amount_cd)
     assert(outer_d.totalAmount === amount_cd)
     assert(outer_d.expiry === expiry_cd)
@@ -255,7 +255,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     assert(inner_d.outgoingNodeId === e)
     assert(inner_d.totalAmount === finalAmount)
     assert(inner_d.paymentSecret === invoice.paymentSecret)
-    assert(inner_d.invoiceFeatures === Some(invoiceFeatures.bitmask.bytes))
+    assert(inner_d.invoiceFeatures === Some(hex"028200")) // var_onion_optin, payment_secret, basic_mpp
     assert(inner_d.invoiceRoutingInfo === Some(routingHints))
   }
 
@@ -270,7 +270,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
   test("fail to decrypt when the onion is invalid") {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     val add = UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet.copy(payload = onion.packet.payload.reverse))
-    val Left(failure) = decrypt(add, priv_b.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(add, priv_b.privateKey, variableLengthOnionFeature)
     assert(failure.isInstanceOf[InvalidOnionHmac])
   }
 
@@ -280,14 +280,14 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val add_b = UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet)
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(add_b, priv_b.privateKey, ByteVector.empty)
     val add_c = UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c)
-    val Left(failure) = decrypt(add_c, priv_c.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(add_c, priv_c.privateKey, variableLengthOnionFeature)
     assert(failure.isInstanceOf[InvalidOnionHmac])
   }
 
   test("fail to decrypt when payment hash doesn't match associated data") {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash.reverse, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     val add = UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet)
-    val Left(failure) = decrypt(add, priv_b.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(add, priv_b.privateKey, variableLengthOnionFeature)
     assert(failure.isInstanceOf[InvalidOnionHmac])
   }
 
@@ -316,14 +316,14 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val (amount_ac, expiry_ac, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret))
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, trampolineChannelHops, Onion.createTrampolinePayload(amount_ac, amount_ac, expiry_ac, randomBytes32, trampolineOnion.packet))
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey, ByteVector.empty)
-    val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey, variableLengthOnionFeature)
     // c forwards the trampoline payment to d.
     val (amount_d, expiry_d, onion_d) = buildPacket(Sphinx.PaymentPacket)(paymentHash, ChannelHop(c, d, channelUpdate_cd) :: Nil, Onion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32, packet_d))
-    val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey, variableLengthOnionFeature)
     // d forwards an invalid amount to e (the outer total amount doesn't match the inner amount).
     val invalidTotalAmount = amount_de + 100.msat
     val (amount_e, expiry_e, onion_e) = buildPacket(Sphinx.PaymentPacket)(paymentHash, ChannelHop(d, e, channelUpdate_de) :: Nil, Onion.createTrampolinePayload(amount_de, invalidTotalAmount, expiry_de, randomBytes32, packet_e))
-    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey, variableLengthOnionFeature)
     assert(failure === FinalIncorrectHtlcAmount(invalidTotalAmount))
   }
 
@@ -331,14 +331,14 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val (amount_ac, expiry_ac, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret))
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, trampolineChannelHops, Onion.createTrampolinePayload(amount_ac, amount_ac, expiry_ac, randomBytes32, trampolineOnion.packet))
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey, ByteVector.empty)
-    val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey, variableLengthOnionFeature)
     // c forwards the trampoline payment to d.
     val (amount_d, expiry_d, onion_d) = buildPacket(Sphinx.PaymentPacket)(paymentHash, ChannelHop(c, d, channelUpdate_cd) :: Nil, Onion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32, packet_d))
-    val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey, variableLengthOnionFeature)
     // d forwards an invalid expiry to e (the outer expiry doesn't match the inner expiry).
     val invalidExpiry = expiry_de - CltvExpiryDelta(12)
     val (amount_e, expiry_e, onion_e) = buildPacket(Sphinx.PaymentPacket)(paymentHash, ChannelHop(d, e, channelUpdate_de) :: Nil, Onion.createTrampolinePayload(amount_de, amount_de, invalidExpiry, randomBytes32, packet_e))
-    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey, variableLengthOnionFeature)
     assert(failure === FinalIncorrectCltvExpiry(invalidExpiry))
   }
 
@@ -346,13 +346,13 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val (amount_ac, expiry_ac, trampolineOnion) = buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, Onion.createSinglePartPayload(finalAmount, finalExpiry)) // no payment secret
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, trampolineChannelHops, Onion.createTrampolinePayload(amount_ac, amount_ac, expiry_ac, randomBytes32, trampolineOnion.packet))
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey, ByteVector.empty)
-    val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey, variableLengthOnionFeature)
     // c forwards the trampoline payment to d.
     val (amount_d, expiry_d, onion_d) = buildPacket(Sphinx.PaymentPacket)(paymentHash, ChannelHop(c, d, channelUpdate_cd) :: Nil, Onion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32, packet_d))
-    val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey, TestConstants.globalFeatures)
+    val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32, 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey, variableLengthOnionFeature)
     // d forwards the trampoline payment to e.
     val (amount_e, expiry_e, onion_e) = buildPacket(Sphinx.PaymentPacket)(paymentHash, ChannelHop(d, e, channelUpdate_de) :: Nil, Onion.createTrampolinePayload(amount_de, amount_de, expiry_de, randomBytes32, packet_e))
-    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey, variableLengthOnionFeature)
     assert(failure === InvalidOnionPayload(UInt64(8), 0))
   }
 
@@ -361,7 +361,7 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, trampolineChannelHops, Onion.createTrampolinePayload(amount_ac, amount_ac, expiry_ac, randomBytes32, trampolineOnion.packet))
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey, ByteVector.empty)
     // A trampoline relay is very similar to a final node: it can validate that the HTLC amount matches the onion outer amount.
-    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc - 100.msat, paymentHash, expiry_bc, packet_c), priv_c.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc - 100.msat, paymentHash, expiry_bc, packet_c), priv_c.privateKey, variableLengthOnionFeature)
     assert(failure === FinalIncorrectHtlcAmount(amount_bc - 100.msat))
   }
 
@@ -370,13 +370,15 @@ class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, trampolineChannelHops, Onion.createTrampolinePayload(amount_ac, amount_ac, expiry_ac, randomBytes32, trampolineOnion.packet))
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32, 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey, ByteVector.empty)
     // A trampoline relay is very similar to a final node: it can validate that the HTLC expiry matches the onion outer expiry.
-    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc - CltvExpiryDelta(12), packet_c), priv_c.privateKey, TestConstants.globalFeatures)
+    val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32, 2, amount_bc, paymentHash, expiry_bc - CltvExpiryDelta(12), packet_c), priv_c.privateKey, variableLengthOnionFeature)
     assert(failure === FinalIncorrectCltvExpiry(expiry_bc - CltvExpiryDelta(12)))
   }
 
 }
 
 object PaymentPacketSpec {
+
+  val variableLengthOnionFeature = ByteVector.fromLong(1L << VariableLengthOnion.optional)
 
   /** Build onion from arbitrary tlv stream (potentially invalid). */
   def buildTlvOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[TlvStream[OnionTlv]], associatedData: ByteVector32): OnionRoutingPacket = {

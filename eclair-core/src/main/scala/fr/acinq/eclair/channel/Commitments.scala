@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
-import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -55,7 +54,7 @@ case class Commitments(channelVersion: ChannelVersion,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, the id of the previous channel
+                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
@@ -92,7 +91,7 @@ case class Commitments(channelVersion: ChannelVersion,
     val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0 msat)
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
-      val commitFees = commitTxFee(remoteParams.dustLimit, reduced).toMilliSatoshi
+      val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
         // htlc will be trimmed
@@ -115,7 +114,7 @@ case class Commitments(channelVersion: ChannelVersion,
       balanceNoFees
     } else {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
-      val commitFees = commitTxFee(localParams.dustLimit, reduced).toMilliSatoshi
+      val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
         // htlc will be trimmed
@@ -142,6 +141,13 @@ object Commitments {
 
   private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
+
+  def alreadyProposed(changes: List[UpdateMessage], id: Long): Boolean = changes.exists {
+    case u: UpdateFulfillHtlc => id == u.id
+    case u: UpdateFailHtlc => id == u.id
+    case u: UpdateFailMalformedHtlc => id == u.id
+    case _ => false
+  }
 
   /**
    *
@@ -244,24 +250,17 @@ object Commitments {
     commitments1
   }
 
-  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = {
-    val remoteSigned = commitments.localCommit.spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal && htlc.add.id == htlcId)
-    val localSigned = commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit)
-      .spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal.opposite && htlc.add.id == htlcId)
-    for {
-      htlc_out <- remoteSigned
-      htlc_in <- localSigned
-    } yield htlc_in.add
+  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findHtlcById(htlcId, directionRelativeToLocal.opposite)
+    remoteSigned <- commitments.localCommit.spec.findHtlcById(htlcId, directionRelativeToLocal)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
@@ -281,12 +280,7 @@ object Commitments {
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
@@ -311,12 +305,7 @@ object Commitments {
       throw InvalidFailureCode(commitments.channelId)
     }
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if commitments.localChanges.proposed.exists {
-        case u: UpdateFulfillHtlc if htlc.id == u.id => true
-        case u: UpdateFailHtlc if htlc.id == u.id => true
-        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
-        case _ => false
-      } =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(_) =>
@@ -540,12 +529,12 @@ object Commitments {
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
-            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
             Relayer.ForwardFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
-            val add = commitments.remoteCommit.spec.htlcs.find(p => p.direction == IN && p.add.id == fail.id).map(_.add).get
+            val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
             Relayer.ForwardFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation

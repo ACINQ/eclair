@@ -58,8 +58,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val feeEstimator = new TestFeeEstimator
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayer))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayer))
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    val aliceInit = Init(Alice.channelParams.features)
+    val bobInit = Init(Bob.channelParams.features)
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(10000))
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)

@@ -43,10 +43,10 @@ import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
-import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.payment.Auditor
+import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -170,7 +170,7 @@ class Setup(datadir: File,
       assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
-        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
+        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a p2sh-segwit or bech32 address to use Eclair (check out our README for more details).")
       }
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
@@ -181,12 +181,14 @@ class Setup(datadir: File,
         case true =>
           val host = config.getString("electrum.host")
           val port = config.getInt("electrum.port")
-          val ssl = config.getString("electrum.ssl") match {
-            case "off" => SSL.OFF
-            case "loose" => SSL.LOOSE
-            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
-          }
           val address = InetSocketAddress.createUnresolved(host, port)
+          val ssl = config.getString("electrum.ssl") match {
+              case _ if address.getHostName.endsWith(".onion") => SSL.OFF // Tor already adds end-to-end encryption, adding TLS on top doesn't add anything
+              case "off" => SSL.OFF
+              case "loose" => SSL.LOOSE
+              case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
+          }
+
           logger.info(s"override electrum default with server=$address ssl=$ssl")
           Set(ElectrumServerAddress(address, ssl))
         case false =>
@@ -198,7 +200,7 @@ class Setup(datadir: File,
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
           ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses, nodeParams.socksProxy_opt)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 
@@ -210,6 +212,7 @@ class Setup(datadir: File,
       zmqTxConnected = Promise[Done]()
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
+      postRestartCleanUpInitialized = Promise[Done]()
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
@@ -227,7 +230,7 @@ class Setup(datadir: File,
       }
       minFeeratePerByte = config.getLong("min-feerate")
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
-      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.SECONDS), TimeUnit.MILLISECONDS)
+      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
@@ -284,8 +287,11 @@ class Setup(datadir: File,
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, commandBuffer), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, commandBuffer, paymentHandler), "relayer", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, commandBuffer, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
+      // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
+      // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
+      _ <- postRestartCleanUpInitialized.future
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, relayer, register), "payment-initiator", SupervisorStrategy.Restart))

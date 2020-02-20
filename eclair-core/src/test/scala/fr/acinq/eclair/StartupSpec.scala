@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import java.util.concurrent.atomic.AtomicLong
 
-import com.typesafe.config.{ConfigFactory, ConfigValue}
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.FunSuite
@@ -28,20 +28,22 @@ import scala.util.Try
 
 class StartupSpec extends FunSuite {
 
-  test("check configuration") {
+  val defaultConf = ConfigFactory.parseResources("reference.conf").getConfig("eclair")
+
+  def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
     val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
-    val conf = ConfigFactory.load().getConfig("eclair")
-    assert(Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)).isSuccess)
+    val feeEstimator = new TestConstants.TestFeeEstimator
+    val db = TestConstants.inMemoryDb()
+    NodeParams.makeNodeParams(conf, keyManager, None, db, blockCount, feeEstimator)
+  }
 
-    val conf1 = conf.withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42)))
-    intercept[RuntimeException] {
-      NodeParams.makeNodeParams(conf1, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator)
-    }
+  test("check configuration") {
+    assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair"))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair").withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42))))).isFailure)
   }
 
   test("NodeParams should fail if the alias is illegal (over 32 bytes)") {
-
     val threeBytesUTFChar = '\u20AC' // €
     val baseUkraineAlias = "BitcoinLightningNodeUkraine"
 
@@ -55,14 +57,29 @@ class StartupSpec extends FunSuite {
     assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated
 
     val illegalAliasConf = ConfigFactory.parseString(s"node-alias = $goUkraineGo")
-    val conf = illegalAliasConf.withFallback(ConfigFactory.parseResources("reference.conf").getConfig("eclair"))
-    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val conf = illegalAliasConf.withFallback(defaultConf)
 
-    val blockCount = new AtomicLong(0)
-
-    // try to create a NodeParams instance with a conf that contains an illegal alias
-    val nodeParamsAttempt = Try(NodeParams.makeNodeParams(conf, keyManager, None, TestConstants.inMemoryDb(), blockCount, new TestConstants.TestFeeEstimator))
+    val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
+  }
+
+  test("NodeParams should fail with deprecated global-features or local-features") {
+    for (deprecated <- Seq("global-features", "local-features")) {
+      val illegalGlobalFeaturesConf = ConfigFactory.parseString(deprecated + " = \"0200\"")
+      val conf = illegalGlobalFeaturesConf.withFallback(defaultConf)
+
+      val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
+      assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains(deprecated))
+    }
+  }
+
+  test("NodeParams should fail if features are inconsistent") {
+    val legalFeaturesConf = ConfigFactory.parseString("features = \"028a8a\"")
+    val illegalButAllowedFeaturesConf = ConfigFactory.parseString("features = \"028000\"") // basic_mpp without var_onion_optin
+    val illegalFeaturesConf = ConfigFactory.parseString("features = \"020000\"") // basic_mpp without payment_secret
+    assert(Try(makeNodeParamsWithDefaults(legalFeaturesConf.withFallback(defaultConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(illegalButAllowedFeaturesConf.withFallback(defaultConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(illegalFeaturesConf.withFallback(defaultConf))).isFailure)
   }
 
 }

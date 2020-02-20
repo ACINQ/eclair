@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import java.util.UUID
+
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import akka.util.Timeout
@@ -30,9 +32,9 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
-import fr.acinq.eclair.router.{Announcements, PublicChannel, Router, GetNetworkStats, NetworkStats, Stats}
+import fr.acinq.eclair.router.{Announcements, GetNetworkStats, GetNetworkStatsResponse, NetworkStats, PublicChannel, Router, Stats}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{Outcome, ParallelTestExecution, fixture}
@@ -101,8 +103,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = None)
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send.externalId === None)
-    assert(send.targetNodeId === nodeId)
-    assert(send.amount === 123.msat)
+    assert(send.recipientNodeId === nodeId)
+    assert(send.recipientAmount === 123.msat)
     assert(send.paymentHash === ByteVector32.Zeroes)
     assert(send.paymentRequest === None)
     assert(send.assistedRoutes === Seq.empty)
@@ -114,8 +116,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(Some(externalId1), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice1))
     val send1 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send1.externalId === Some(externalId1))
-    assert(send1.targetNodeId === nodeId)
-    assert(send1.amount === 123.msat)
+    assert(send1.recipientNodeId === nodeId)
+    assert(send1.recipientAmount === 123.msat)
     assert(send1.paymentHash === ByteVector32.Zeroes)
     assert(send1.paymentRequest === Some(invoice1))
     assert(send1.assistedRoutes === hints)
@@ -126,8 +128,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(Some(externalId2), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice2))
     val send2 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send2.externalId === Some(externalId2))
-    assert(send2.targetNodeId === nodeId)
-    assert(send2.amount === 123.msat)
+    assert(send2.recipientNodeId === nodeId)
+    assert(send2.recipientAmount === 123.msat)
     assert(send2.paymentHash === ByteVector32.Zeroes)
     assert(send2.paymentRequest === Some(invoice2))
     assert(send2.finalExpiryDelta === CltvExpiryDelta(96))
@@ -136,8 +138,8 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = None, feeThreshold_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
     val send3 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send3.externalId === None)
-    assert(send3.targetNodeId === nodeId)
-    assert(send3.amount === 123.msat)
+    assert(send3.recipientNodeId === nodeId)
+    assert(send3.recipientAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
     assert(send3.routeParams.get.maxFeeBase === 123000.msat) // conversion sat -> msat
     assert(send3.routeParams.get.maxFeePct === 4.20)
@@ -204,18 +206,18 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     })
   }
 
-  test("router returns Network Stats") { f=>
+  test("router returns Network Stats") { f =>
     import f._
 
-    val capStat=Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
-    val cltvStat=Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
-    val feeBaseStat=Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat=Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
+    val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
+    val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
+    val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
+    val feePropStat = Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
     val eclair = new EclairImpl(kit)
     val fResp = eclair.networkStats()
     f.router.expectMsg(GetNetworkStats)
 
-    f.router.reply(Some(new NetworkStats(1,2,capStat,cltvStat,feeBaseStat,feePropStat)))
+    f.router.reply(GetNetworkStatsResponse(Some(new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat))))
 
     awaitCond({
       fResp.value match {
@@ -252,16 +254,15 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None, allowMultiPart = true)
+    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amount_opt === Some(123 msat))
     assert(receive.expirySeconds_opt === Some(456))
     assert(receive.fallbackAddress === Some(fallBackAddressRaw))
-    assert(receive.allowMultiPart)
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None, allowMultiPart = false))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
@@ -271,7 +272,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage), allowMultiPart = false)
+    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage))
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
@@ -314,18 +315,15 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
   test("sendtoroute should pass the parameters correctly") { f =>
     import f._
 
-    val route = Seq(PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"))
     val eclair = new EclairImpl(kit)
+    val route = Seq(randomKey.publicKey)
+    val trampolines = Seq(randomKey.publicKey, randomKey.publicKey)
+    val parentId = UUID.randomUUID()
+    val secret = randomBytes32
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey, "Some invoice")
-    eclair.sendToRoute(Some("42"), route, 1234 msat, ByteVector32.One, CltvExpiryDelta(123), Some(pr))
+    eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
 
-    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
-    assert(send.externalId === Some("42"))
-    assert(send.predefinedRoute === route)
-    assert(send.amount === 1234.msat)
-    assert(send.finalExpiryDelta === CltvExpiryDelta(123))
-    assert(send.paymentHash === ByteVector32.One)
-    assert(send.paymentRequest === Some(pr))
+    paymentInitiator.expectMsg(SendPaymentToRouteRequest(1000 msat, 1200 msat, Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
   }
 
 }

@@ -23,22 +23,21 @@ import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import kamon.Kamon
 import scodec.Attempt
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.Random
 
 /**
  * Created by PM on 26/08/2016.
@@ -101,11 +100,26 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! TransportHandler.Listener(self)
       context watch transport
-      val localInit = nodeParams.overrideFeatures.get(remoteNodeId) match {
-        case Some((gf, lf)) => wire.Init(globalFeatures = gf, localFeatures = lf)
-        case None => wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      val localFeatures = nodeParams.overrideFeatures.get(remoteNodeId) match {
+        case Some(f) => f
+        case None =>
+          // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
+          // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
+          // We use a long enough mask to account for future features.
+          // TODO: remove that once eclair-mobile is patched.
+          val tweakedFeatures = BitVector.bits(nodeParams.features.bits.reverse.toIndexedSeq.zipWithIndex.map {
+            // we disable those bits if they are set...
+            case (true, 14) => false
+            case (true, 15) => false
+            case (true, 16) => false
+            case (true, 17) => false
+            // ... and leave the others untouched
+            case (value, _) => value
+          }).reverse.bytes.dropWhile(_ == 0)
+          tweakedFeatures
       }
-      log.info(s"using globalFeatures=${localInit.globalFeatures.toBin} and localFeatures=${localInit.localFeatures.toBin}")
+      log.info(s"using features=${localFeatures.toBin}")
+      val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       transport ! localInit
 
       val address_opt = if (outgoing) {
@@ -135,21 +149,27 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     case Event(remoteInit: wire.Init, d: InitializingData) =>
       d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using globalFeatures=${remoteInit.globalFeatures.toBin} and localFeatures=${remoteInit.localFeatures.toBin}")
+      log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
 
-      if (Features.areSupported(remoteInit.localFeatures)) {
+      if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(nodeParams.chainHash)) {
+        log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+        d.transport ! PoisonPill
+        stay
+      } else if (!Features.areSupported(remoteInit.features)) {
+        log.warning("incompatible features, disconnecting")
+        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+        d.transport ! PoisonPill
+        stay
+      } else {
         d.origin_opt.foreach(origin => origin ! "connected")
 
-        import Features._
+        def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
 
-        def hasLocalFeature(bit: Int) = Features.hasFeature(d.localInit.localFeatures, bit)
+        def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
 
-        def hasRemoteFeature(bit: Int) = Features.hasFeature(remoteInit.localFeatures, bit)
-
-        val canUseChannelRangeQueries = (hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_BIT_MANDATORY))
-
-        val canUseChannelRangeQueriesEx = (hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasLocalFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY)) && (hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_OPTIONAL) || hasRemoteFeature(CHANNEL_RANGE_QUERIES_EX_BIT_MANDATORY))
-
+        val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
+        val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           // if they support channel queries we don't send routing info yet, if they want it they will query us
           // we will query them, using extended queries if supported
@@ -160,7 +180,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
           } else {
             log.info("not syncing with this peer")
           }
-        } else if (hasRemoteFeature(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
+        } else if (remoteHasFeature(Features.InitialRoutingSync)) {
           // "old" nodes, do as before
           log.info("peer requested a full routing table dump")
           router ! GetRoutingState
@@ -172,11 +192,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
         log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
         goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay) forMax (30 seconds) // forMax will trigger a StateTimeout
-      } else {
-        log.warning(s"incompatible features, disconnecting")
-        d.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        d.transport ! PoisonPill
-        stay
       }
 
     case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
@@ -363,11 +378,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       /**
        * Send and count in a single iteration
        */
-      def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[ActorRef]]): Int = msgs.foldLeft(0) {
-        case (count, (_, origins)) if origins.contains(self) =>
+      def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[GossipOrigin]]): Int = msgs.foldLeft(0) {
+        case (count, (_, origins)) if origins.contains(RemoteGossip(self)) =>
           // the announcement came from this peer, we don't send it back
           count
-        case (count, (msg, _)) if !timestampInRange(msg, d.gossipTimestampFilter) =>
+        case (count, (msg, origins)) if !timestampInRange(msg, origins, d.gossipTimestampFilter) =>
           // the peer has set up a filter on timestamp and this message is out of range
           count
         case (count, (msg, _)) =>
@@ -548,7 +563,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   }
 
   onTermination {
-    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+    case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
       Metrics.connectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
@@ -576,6 +591,31 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
   // TODO gets the first of the list, improve selection?
   def getPeerAddressFromNodeAnnouncement: Option[InetSocketAddress] = {
     nodeParams.db.network.getNode(remoteNodeId).flatMap(_.addresses.headOption.map(_.socketAddress))
+  }
+
+  /**
+   * Peer may want to filter announcements based on timestamp.
+   *
+   * @param gossipTimestampFilter_opt optional gossip timestamp range
+   * @return
+   *         - true if this is our own gossip
+   *         - true if there is a filter and msg has no timestamp, or has one that matches the filter
+   *         - false otherwise
+   */
+  def timestampInRange(msg: RoutingMessage, origins: Set[GossipOrigin], gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
+    // For our own gossip, we should ignore the peer's timestamp filter.
+    val isOurGossip = msg match {
+      case n: NodeAnnouncement if n.nodeId == nodeParams.nodeId => true
+      case _ if origins.contains(LocalGossip) => true
+      case _ => false
+    }
+    // Otherwise we check if this message has a timestamp that matches the timestamp filter.
+    val matchesFilter = (msg, gossipTimestampFilter_opt) match {
+      case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
+    }
+    isOurGossip || matchesFilter
   }
 
   // a failing channel won't be restarted, it should handle its states
@@ -685,25 +725,7 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
-      globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
-  }
-
-  /**
-   * Peer may want to filter announcements based on timestamp
-   *
-   * @param gossipTimestampFilter_opt optional gossip timestamp range
-   * @return
-   *           - true if there is a filter and msg has no timestamp, or has one that matches the filter
-   *           - false otherwise
-   */
-  def timestampInRange(msg: RoutingMessage, gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
-    // check if this message has a timestamp that matches our timestamp filter
-    (msg, gossipTimestampFilter_opt) match {
-      case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
-      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
-      case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
-    }
+      features = nodeParams.features)
   }
 
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
@@ -711,7 +733,7 @@ object Peer {
   /**
    * This helps preventing peers reconnection loops due to synchronization of reconnection attempts.
    */
-  def randomizeDelay(initialRandomReconnectDelay: FiniteDuration): FiniteDuration = Random.nextInt(initialRandomReconnectDelay.toMillis.toInt).millis
+  def randomizeDelay(initialRandomReconnectDelay: FiniteDuration): FiniteDuration = Random.nextInt(initialRandomReconnectDelay.toMillis.toInt).millis.max(200 milliseconds)
 
   /**
    * Exponential backoff retry with a finite max

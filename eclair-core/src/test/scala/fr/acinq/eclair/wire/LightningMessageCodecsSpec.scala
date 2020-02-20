@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
-import ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import org.scalatest.FunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -43,6 +43,41 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
+  test("encode/decode init message") {
+    case class TestCase(encoded: ByteVector, features: ByteVector, networks: List[ByteVector32], valid: Boolean, reEncoded: Option[ByteVector] = None)
+    val chainHash1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
+    val chainHash2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
+    val testCases = Seq(
+      TestCase(hex"0000 0000", hex"", Nil, valid = true), // no features
+      TestCase(hex"0000 0002088a", hex"088a", Nil, valid = true), // no global features
+      TestCase(hex"00020200 0000", hex"0200", Nil, valid = true, Some(hex"0000 00020200")), // no local features
+      TestCase(hex"00020200 0002088a", hex"0a8a", Nil, valid = true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
+      TestCase(hex"00020200 0003020002", hex"020202", Nil, valid = true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
+      TestCase(hex"00020a02 0002088a", hex"0a8a", Nil, valid = true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
+      TestCase(hex"00022200 000302aaa2", hex"02aaa2", Nil, valid = true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
+      TestCase(hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, valid = true), // unknown odd records
+      TestCase(hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, valid = false), // unknown even records
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, valid = false), // invalid tlv stream
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), valid = true), // single network
+      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), valid = true), // multiple networks
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010103012a", hex"088a", List(chainHash1), valid = true), // network and unknown odd records
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a", hex"088a", Nil, valid = false) // network and unknown even records
+    )
+
+    for (testCase <- testCases) {
+      if (testCase.valid) {
+        val init = initCodec.decode(testCase.encoded.bits).require.value
+        assert(init.features === testCase.features)
+        assert(init.networks === testCase.networks)
+        val encoded = initCodec.encode(init).require
+        assert(encoded.bytes === testCase.reEncoded.getOrElse(testCase.encoded))
+        assert(initCodec.decode(encoded).require.value === init)
+      } else {
+        assert(initCodec.decode(testCase.encoded.bits).isFailure)
+      }
+    }
+  }
+
   test("encode/decode live node_announcements") {
     val ann = hex"a58338c9660d135fd7d087eb62afd24a33562c54507a9334e79f0dc4f17d407e6d7c61f0e2f3d0d38599502f61704cf1ae93608df027014ade7ff592f27ce2690001025acdf50702d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec00841122116c6e302e646563656e7465722e776f726c64000000000000000000000000000000130200000000000000000000ffffae8a0b082607"
     val bin = ann.bits
@@ -50,6 +85,75 @@ class LightningMessageCodecsSpec extends FunSuite {
     val node = nodeAnnouncementCodec.decode(bin).require.value
     val bin2 = nodeAnnouncementCodec.encode(node).require
     assert(bin === bin2)
+  }
+
+  test("encode/decode open_channel") {
+    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    // Default encoding that completely omits the upfront_shutdown_script and trailing tlv stream.
+    // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714
+    val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
+    case class TestCase(encoded: ByteVector, decoded: OpenChannel, reEncoded: Option[ByteVector] = None)
+    val testCases = Seq(
+      // legacy encoding without upfront_shutdown_script
+      TestCase(defaultEncoded, defaultOpen, Some(defaultEncoded ++ hex"0000")),
+      // empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000", defaultOpen),
+      // non-empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultOpen.copy(upfrontShutdownScript = Some(hex"01abcdef"))),
+      // missing upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0302002a 050102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))))),
+      // empty upfront_shutdown_script + unknown odd tlv records: we don't encode the upfront_shutdown_script when a tlv stream is provided
+      TestCase(defaultEncoded ++ hex"0000 0302002a 050102", defaultOpen.copy(tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02"))))), Some(defaultEncoded ++ hex"0302002a 050102")),
+      // non-empty upfront_shutdown_script + unknown odd tlv records: we don't encode the upfront_shutdown_script when a tlv stream is provided
+      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultOpen.copy(upfrontShutdownScript = Some(hex"1234"), tlvStream_opt = Some(TlvStream(Nil, Seq(GenericTlv(UInt64(3), hex"010203"))))), Some(defaultEncoded ++ hex"0303010203"))
+    )
+
+    for (testCase <- testCases) {
+      val decoded = openChannelCodec.decode(testCase.encoded.bits).require.value
+      assert(decoded === testCase.decoded)
+      val reEncoded = openChannelCodec.encode(decoded).require.bytes
+      assert(reEncoded === testCase.reEncoded.getOrElse(testCase.encoded))
+    }
+  }
+
+  test("decode invalid open_channel") {
+    val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
+    val testCases = Seq(
+      defaultEncoded ++ hex"00", // truncated length
+      defaultEncoded ++ hex"01", // truncated length
+      defaultEncoded ++ hex"0004 123456", // truncated script
+      defaultEncoded ++ hex"0000 02012a", // invalid tlv stream (unknown even record)
+      defaultEncoded ++ hex"0000 01012a 030201", // invalid tlv stream (truncated)
+      defaultEncoded ++ hex"02012a", // invalid tlv stream (unknown even record)
+      defaultEncoded ++ hex"01012a 030201" // invalid tlv stream (truncated)
+    )
+
+    for (testCase <- testCases) {
+      assert(openChannelCodec.decode(testCase.bits).isFailure, testCase.toHex)
+    }
+  }
+
+  test("encode/decode accept_channel") {
+    val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
+    // Default encoding that completely omits the upfront_shutdown_script (nodes were supposed to encode it only if both
+    // sides advertised support for option_upfront_shutdown_script).
+    // To allow extending all messages with TLV streams, the upfront_shutdown_script was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714
+    val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
+    case class TestCase(encoded: ByteVector, decoded: AcceptChannel, reEncoded: Option[ByteVector] = None)
+    val testCases = Seq(
+      TestCase(defaultEncoded, defaultAccept, Some(defaultEncoded ++ hex"0000")), // legacy encoding without upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000", defaultAccept), // empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0004 01abcdef", defaultAccept.copy(upfrontShutdownScript = Some(hex"01abcdef"))), // non-empty upfront_shutdown_script
+      TestCase(defaultEncoded ++ hex"0000 010202a 030102", defaultAccept, Some(defaultEncoded ++ hex"0000")), // empty upfront_shutdown_script + unknown odd tlv records
+      TestCase(defaultEncoded ++ hex"0002 1234 0303010203", defaultAccept.copy(upfrontShutdownScript = Some(hex"1234")), Some(defaultEncoded ++ hex"0002 1234")) // non-empty upfront_shutdown_script + unknown odd tlv records
+    )
+
+    for (testCase <- testCases) {
+      val decoded = acceptChannelCodec.decode(testCase.encoded.bits).require.value
+      assert(decoded === testCase.decoded)
+      val reEncoded = acceptChannelCodec.encode(decoded).require.bytes
+      assert(reEncoded === testCase.reEncoded.getOrElse(testCase.encoded))
+    }
   }
 
   test("encode/decode all channel messages") {
@@ -77,7 +181,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
       100000,
       1500,
-      TlvStream(QueryChannelRangeTlv.QueryFlags((QueryChannelRangeTlv.QueryFlags.WANT_ALL)) :: Nil, unknownTlv :: Nil))
+      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
@@ -127,7 +231,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_channel_range_timestamps_checksums = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
       35000,
       100,
-      TlvStream(QueryChannelRangeTlv.QueryFlags((QueryChannelRangeTlv.QueryFlags.WANT_ALL))))
+      TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 756230, 1500, 1,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None, None)
     val reply_channel_range_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 1600, 110, 1,
@@ -144,8 +248,6 @@ class LightningMessageCodecsSpec extends FunSuite {
     val query_short_channel_id_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(4564), ShortChannelId(178622), ShortChannelId(4564676))), TlvStream.empty)
     val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
     val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
-
-
 
     val refs = Map(
       query_channel_range -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",
