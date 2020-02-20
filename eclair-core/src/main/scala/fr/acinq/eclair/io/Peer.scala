@@ -24,6 +24,7 @@ import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
+import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
@@ -308,14 +309,22 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
-      c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
-      val temporaryChannelId = randomBytes32
-      val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-      log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
-      stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+      if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
+        sender ! s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"
+        stay
+      } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
+        sender ! s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"
+        stay
+      } else {
+        val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
+        c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
+        val temporaryChannelId = randomBytes32
+        val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+        val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+        log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
+        channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.transport, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
+        stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+      }
 
     case Event(msg: wire.OpenChannel, d: ConnectedData) =>
       d.transport ! TransportHandler.ReadAck(msg)
@@ -678,7 +687,6 @@ object Peer {
   case class Disconnect(nodeId: PublicKey)
   case object ResumeAnnouncements
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
-    require(fundingSatoshis < Channel.MAX_FUNDING, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING}")
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
     require(pushMsat >= 0.msat, s"pushMsat must be positive")
