@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -67,7 +65,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      val fundingAmount = if(test.tags.contains("wumbo")) Btc(1).toSatoshi else TestConstants.fundingSatoshis
+      val fundingAmount = if(test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
@@ -162,10 +160,11 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("min-depth"), Tag("max-funding-size"))  { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.minimumDepth == 6) // 4 conf would be enough for fundingSatoshis=1BTC but we use conf min-depth=6
+    assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
 
+    assert(alice.underlyingActor.minDepthForFunding(Btc(1)) == 6)  // 4 conf would be enough but we use min-depth=6
     assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 16)  // we use scaling_factor=15 and a fixed block reward of 6.25BTC
     assert(alice.underlyingActor.minDepthForFunding(Btc(12.50)) == 31)
     assert(alice.underlyingActor.minDepthForFunding(Btc(12.60)) == 32)
