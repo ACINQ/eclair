@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
-import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
+import akka.actor.{ActorContext, ActorRef, ActorSystem, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
@@ -52,7 +52,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
    * Fulfill all parts of an incoming payment.
    * Can be overridden for a more fine-grained control of when and how to fulfill.
    */
-  def doFulfill(ctx: ActorContext, preimage: ByteVector32, e: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Unit = {
+  def doFulfill(system: ActorSystem, preimage: ByteVector32, e: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Unit = {
     val received = PaymentReceived(e.paymentHash, e.parts.map {
       case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
     })
@@ -62,7 +62,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
       case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
     }
     onSuccess(received)
-    ctx.system.eventStream.publish(received)
+    system.eventStream.publish(received)
   }
 
   /**
@@ -78,7 +78,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
    * This is a spec violation by the sender, but it's a risk-less one: only the sender may lose money because of this.
    * Can be overridden for a more fine-grained control of what actions to take.
    */
-  def doHandleExtraPayment(ctx: ActorContext, e: MultiPartPaymentFSM.ExtraPaymentReceived): Unit = e.failure match {
+  def doHandleExtraPayment(system: ActorSystem, e: MultiPartPaymentFSM.ExtraPaymentReceived): Unit = e.failure match {
     case Some(failure) => e.payment match {
       case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
     }
@@ -89,7 +89,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
         val received = PaymentReceived(e.paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
         db.receiveIncomingPayment(e.paymentHash, p.amount, received.timestamp)
-        ctx.system.eventStream.publish(received)
+        system.eventStream.publish(received)
       })
     }
   }
@@ -160,14 +160,14 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
-            doFulfill(ctx, preimage, e)
+            doFulfill(ctx.system, preimage, e)
         }
         pendingPayments = pendingPayments - paymentHash
       }
 
     case e: MultiPartPaymentFSM.ExtraPaymentReceived if doHandle(e.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(e.paymentHash))) {
-        doHandleExtraPayment(ctx, e)
+        doHandleExtraPayment(ctx.system, e)
       }
 
     case GetPendingPayments => ctx.sender ! PendingPayments(pendingPayments.keySet)

@@ -44,14 +44,14 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
-      log.warning(s"multi-part payment timed out (received ${d.paidAmount} expected $totalAmount)")
+      log.warning("multi-part payment timed out (received {} expected {})", d.paidAmount, totalAmount)
       goto(PAYMENT_FAILED) using PaymentFailed(wire.PaymentTimeout, d.parts)
 
     case Event(part: PaymentPart, d: WaitingForHtlc) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
       val updatedParts = d.parts :+ part
       if (totalAmount != part.totalAmount) {
-        log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now ${part.totalAmount}")
+        log.warning("multi-part payment total amount mismatch: previously {}, now {}", totalAmount, part.totalAmount)
         goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(part.totalAmount, nodeParams.currentBlockHeight), updatedParts)
       } else if (d.paidAmount + part.amount >= totalAmount) {
         goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
@@ -66,7 +66,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // intermediate nodes will be able to fulfill that htlc anyway. This is a harmless spec violation.
     case Event(part: PaymentPart, _) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
-      log.info(s"received extraneous payment part with amount=${part.amount}")
+      log.info("received extraneous payment part with amount={}", part.amount)
       parent ! ExtraPaymentReceived(paymentHash, part, None)
       stay
   }
@@ -76,7 +76,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // The LocalPaymentHandler will create a new instance of MultiPartPaymentHandler to handle a new attempt.
     case Event(part: PaymentPart, PaymentFailed(failure, _)) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
-      log.info(s"received extraneous payment part for payment hash $paymentHash")
+      log.info("received extraneous payment part for payment hash {}", paymentHash)
       parent ! ExtraPaymentReceived(paymentHash, part, Some(failure))
       stay
   }
@@ -97,7 +97,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           parent ! MultiPartPaymentSucceeded(paymentHash, parts)
         case d =>
-          log.error(s"unexpected payment success data ${d.getClass.getSimpleName}")
+          log.error("unexpected payment success data {}", d.getClass.getSimpleName)
       }
     case _ -> PAYMENT_FAILED =>
       nextStateData match {
@@ -105,7 +105,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           parent ! MultiPartPaymentFailed(paymentHash, failure, parts)
         case d =>
-          log.error(s"unexpected payment failure data ${d.getClass.getSimpleName}")
+          log.error("unexpected payment failure data {}", d.getClass.getSimpleName)
       }
   }
 

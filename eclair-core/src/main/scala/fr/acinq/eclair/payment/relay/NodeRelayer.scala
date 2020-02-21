@@ -54,17 +54,17 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     // We make sure we receive all payment parts before forwarding to the next trampoline node.
     case IncomingPacket.NodeRelayPacket(add, outer, inner, next) => outer.paymentSecret match {
       case None =>
-        log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: missing payment secret")
+        log.warning("rejecting htlcId={} channelId={}: missing payment secret", add.id, add.channelId)
         rejectHtlc(add.id, add.channelId, add.amountMsat)
       case Some(secret) =>
         pendingOutgoing.get(add.paymentHash) match {
           case Some(outgoing) =>
-            log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: already relayed out with id=${outgoing.paymentId}")
+            log.warning("rejecting htlcId={} channelId={}: already relayed out with id={}", add.id, add.channelId, outgoing.paymentId)
             rejectHtlc(add.id, add.channelId, add.amountMsat)
           case None => pendingIncoming.get(add.paymentHash) match {
             case Some(relay) =>
               if (relay.secret != secret) {
-                log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: payment secret doesn't match other HTLCs in the set")
+                log.warning("rejecting htlcId={} channelId={}: payment secret doesn't match other HTLCs in the set", add.id, add.channelId)
                 rejectHtlc(add.id, add.channelId, add.amountMsat)
               } else {
                 relay.handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
@@ -83,7 +83,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     case MultiPartPaymentFSM.ExtraPaymentReceived(_, p: MultiPartPaymentFSM.HtlcPart, failure) => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, failure)
 
     case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) =>
-      log.warning(s"could not relay payment (paidAmount=${parts.map(_.amount).sum} failure=$failure)")
+      log.warning("could not relay payment (paidAmount={} failure={})", parts.map(_.amount).sum, failure)
       pendingIncoming.get(paymentHash).foreach(_.handler ! PoisonPill)
       parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
       context become main(pendingIncoming - paymentHash, pendingOutgoing)
@@ -117,7 +117,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
     case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
-      log.debug(s"trampoline payment fully resolved downstream (id=$id)")
+      log.debug("trampoline payment fully resolved downstream (id={})", id)
       pendingOutgoing.get(paymentHash).foreach(p => {
         if (!p.fulfilledUpstream) {
           fulfillPayment(p.upstream, paymentPreimage)
@@ -129,7 +129,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       context become main(pendingIncoming, pendingOutgoing - paymentHash)
 
     case PaymentFailed(id, paymentHash, failures, _) =>
-      log.debug(s"trampoline payment failed downstream (id=$id)")
+      log.debug("trampoline payment failed downstream (id={})", id)
       pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
         rejectPayment(p.upstream, translateError(failures, p.nextPayload.outgoingNodeId))
       })
