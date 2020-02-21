@@ -34,7 +34,7 @@ import scala.util.Try
  */
 
 // @formatter:off
-sealed trait LightningMessage
+sealed trait LightningMessage extends Serializable
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage

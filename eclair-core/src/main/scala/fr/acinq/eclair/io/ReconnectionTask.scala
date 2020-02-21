@@ -18,7 +18,10 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{ActorRef, Props}
+import akka.cluster.Cluster
+import akka.cluster.pubsub.DistributedPubSub
+import akka.cluster.pubsub.DistributedPubSubMediator.Send
 import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -84,7 +87,8 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
         val (initialDelay, firstNextReconnectionDelay) = (previousPeerData, d.previousData) match {
           case (Peer.Nothing, _) =>
             // When restarting, we add some randomization before the first reconnection attempt to avoid herd effect
-            val initialDelay = randomizeDelay(nodeParams.initialRandomReconnectDelay)
+            // We also add a fixed delay to give time to the front to boot up
+            val initialDelay = nodeParams.initialRandomReconnectDelay + randomizeDelay(nodeParams.initialRandomReconnectDelay)
             // When restarting, we will ~immediately reconnect, but then:
             // - we don't want all the subsequent reconnection attempts to be synchronized (herd effect)
             // - we don't want to go through the exponential backoff delay, because we were offline, not them, so there is no
@@ -105,7 +109,8 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
             // Randomizing the initial delay is important in the case of a reconnection. If both peers have a public
             // address, they may attempt to simultaneously connect back to each other, which could result in reconnection loop,
             // given that each new connection will cause the previous one to be killed.
-            val initialDelay = randomizeDelay(nodeParams.initialRandomReconnectDelay)
+            // We also add a fixed delay to give time to the front to boot up
+            val initialDelay = nodeParams.initialRandomReconnectDelay + randomizeDelay(nodeParams.initialRandomReconnectDelay)
             val firstNextReconnectionDelay = nextReconnectionDelay(initialDelay, nodeParams.maxReconnectInterval)
             log.info("peer is disconnected, next reconnection in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
@@ -141,9 +146,17 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
   private def setReconnectTimer(delay: FiniteDuration): Unit = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
 
+  // activate the extension only on demand, so that tests pass
+  lazy val mediator = DistributedPubSub(context.system).mediator
+
   private def connect(address: InetSocketAddress, origin: ActorRef): Unit = {
     log.info(s"connecting to $address")
-    context.system.eventStream.publish(ClientSpawner.ConnectionRequest(address, remoteNodeId, origin))
+    val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin)
+    if (context.system.hasExtension(Cluster) && !address.getHostName.endsWith("onion")) {
+      mediator ! Send(path = "/user/client-spawner", msg = req, localAffinity = false)
+    } else {
+      context.system.eventStream.publish(req)
+    }
     Metrics.ReconnectionsAttempts.withoutTags().increment()
   }
 

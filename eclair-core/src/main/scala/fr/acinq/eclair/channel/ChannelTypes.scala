@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import java.util.UUID
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -94,7 +94,7 @@ case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
 case class INPUT_RESTORED(data: HasCommitments)
 
-sealed trait BitcoinEvent
+sealed trait BitcoinEvent extends PossiblyHarmful
 case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
 case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
 case object BITCOIN_FUNDING_DEEPLYBURIED extends BitcoinEvent
@@ -166,7 +166,7 @@ object Origin {
 }
 
 /** should not be used directly */
-sealed trait Command
+sealed trait Command extends PossiblyHarmful
 sealed trait HasReplyToCommand extends Command { def replyTo: ActorRef }
 sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option[ActorRef] }
 
@@ -254,7 +254,7 @@ object ChannelOpenResponse {
       8888888P" d88P     888     888  d88P     888
  */
 
-sealed trait Data {
+sealed trait Data extends PossiblyHarmful {
   def channelId: ByteVector32
 }
 

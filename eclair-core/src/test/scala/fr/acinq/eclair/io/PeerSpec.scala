@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, ServerSocket, Socket}
-import java.util.concurrent.Executors
-
 import akka.actor.FSM
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -38,6 +35,8 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
+import java.net.{InetAddress, ServerSocket, Socket}
+import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 

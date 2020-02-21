@@ -22,6 +22,8 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
+import fr.acinq.eclair.router.Router.RouterConf
 
 /**
  * Ties network connections to peers.
@@ -78,6 +80,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
 
     case Symbol("peers") => sender ! context.children
 
+    case GetRouterPeerConf => sender ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
   }
 
   /**
@@ -114,5 +117,8 @@ object Switchboard {
   def props(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, watcher, relayer, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
+
+  case object GetRouterPeerConf extends RemoteTypes
+  case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
 }

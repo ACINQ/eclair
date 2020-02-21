@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
+import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -505,11 +506,11 @@ object PeerConnection {
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
-  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
-  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features, doSync: Boolean)
-  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
+  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features, doSync: Boolean) extends RemoteTypes
+  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init) extends RemoteTypes
 
-  sealed trait ConnectionResult
+  sealed trait ConnectionResult extends RemoteTypes
   object ConnectionResult {
     sealed trait Success extends ConnectionResult
     sealed trait Failure extends ConnectionResult

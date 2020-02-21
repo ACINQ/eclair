@@ -144,7 +144,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // auto reconnect
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData0: WaitingData) = monitor.expectMsgType[TransitionWithData]
     assert(waitingData0.nextReconnectionDelay >= (200 milliseconds))
-    assert(waitingData0.nextReconnectionDelay <= (10 seconds))
+    assert(waitingData0.nextReconnectionDelay <= (20 seconds))
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect) // we send it manually in order to not have to actually wait (duplicates don't matter since we look at transitions sequentially)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
