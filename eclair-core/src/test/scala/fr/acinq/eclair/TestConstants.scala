@@ -107,7 +107,7 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
-      maxFundingSatoshis = 16777216 sat,
+      maxFundingSatoshis = 16777215 sat,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
@@ -187,7 +187,7 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
-      maxFundingSatoshis = 16777216 sat,
+      maxFundingSatoshis = 16777215 sat,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
