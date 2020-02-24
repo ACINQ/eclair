@@ -190,6 +190,8 @@ object Commitments {
     } else if (missingForReceiver < 0.msat) {
       if (commitments.localParams.isFunder) {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      } else if (missingForReceiver + commitments1.localParams.channelReserve > 0.msat && outgoingHtlcs.size <= 1) {
+        // receiver is funder; it is allowed to dip into its channel reserve to pay the fee for a single non-dust HTLC
       } else {
         return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
       }
@@ -230,10 +232,12 @@ object Commitments {
     if (missingForSender < 0.sat) {
       throw InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = if (commitments1.localParams.isFunder) 0.sat else fees)
     } else if (missingForReceiver < 0.sat) {
-      if (commitments.localParams.isFunder) {
-        throw CannotAffordFees(commitments.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees)
-      } else {
+      if (!commitments.localParams.isFunder) {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      } else if (missingForReceiver + commitments1.remoteParams.channelReserve > 0.msat && incomingHtlcs.size <= 1) {
+        // receiver is funder; it is allowed to dip into its channel reserve to pay the fee for a single non-dust HTLC
+      } else {
+        throw CannotAffordFees(commitments.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees)
       }
     }
 

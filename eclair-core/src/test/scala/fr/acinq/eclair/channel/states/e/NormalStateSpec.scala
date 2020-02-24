@@ -216,10 +216,21 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // actual test begins
     // at this point alice has the minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
-    val add = CMD_ADD_HTLC(120000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    // alice should be allowed to dip into her reserve to pay for the commit tx fee increase (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+    sender.send(bob, CMD_ADD_HTLC(85000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.expectMsg("ok")
+    val htlc = bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.forward(alice)
+
+    // but only one pending HTLC is allowed to dip into alice's reserve; bob must wait for that HTLC to settle before sending another one
+    val add = CMD_ADD_HTLC(80000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, add)
-    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680 sat, 10000 sat, 10680 sat)
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 3400 sat, 10000 sat, 12400 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(add))))
+    bob2alice.expectNoMsg(100 millis)
+
+    // alice should accept the first incoming htlc
+    awaitCond(alice.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
   }
 
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { f =>
