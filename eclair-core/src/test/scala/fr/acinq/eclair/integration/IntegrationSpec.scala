@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{Disconnect, GetPeerInfo, PeerInfo, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -49,7 +49,7 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, ToMilliSatoshiConversion, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
@@ -61,6 +61,7 @@ import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 15/03/2017.
@@ -262,17 +263,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   test("open a wumbo channel and wait for longer than the default min_depth") {
     // we open a 5BTC channel and check that we scale `min_depth` up to 13 confirmations
-    val node1 = nodes("C")
-    val node2 = nodes("F1")
+    val funder = nodes("C")
+    val fundee = nodes("F1")
     val sender = TestProbe()
-    val address = node2.nodeParams.publicAddresses.head
-    sender.send(node1.switchboard, Peer.Connect(
-      nodeId = node2.nodeParams.nodeId,
-      address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))
-    ))
-    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
-    sender.send(node1.switchboard, Peer.OpenChannel(
-      remoteNodeId = node2.nodeParams.nodeId,
+    sender.send(funder.switchboard, Peer.OpenChannel(
+      remoteNodeId = fundee.nodeParams.nodeId,
       fundingSatoshis = 5.btc,
       pushMsat = 0.msat,
       fundingTxFeeratePerKw_opt = None,
@@ -285,23 +280,63 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // mine the funding tx
     generateBlocks(bitcoincli, 2)
 
+    // get the channelId
+    sender.send(fundee.register, 'channels)
+    val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
+    sender.send(fundeeChannel, CMD_GETSTATEDATA)
+    val channelId = sender.expectMsgType[HasCommitments].channelId
+
     awaitCond({
-      sender.send(node1.register, Forward(tempChannelId, CMD_GETSTATE))
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
       sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED
     })
 
     generateBlocks(bitcoincli, 6)
 
-    // after 8 blocks we're still waiting for the funding_locked
-    sender.send(node1.register, Forward(tempChannelId, CMD_GETSTATE))
-    sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED
+    // after 8 blocks the fundee is still waiting for more confirmations
+    sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+    assert(sender.expectMsgType[State] == WAIT_FOR_FUNDING_CONFIRMED)
+
+    // after 8 blocks the funder is still waiting for funding_locked from the fundee
+    sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+    assert(sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED)
+
+    // simulate a disconnection
+    sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
+    assert(sender.expectMsgType[String] == "disconnecting")
+
+    awaitCond({
+      sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+      Try(sender.expectMsgType[State]) == Success(OFFLINE)
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      Try(sender.expectMsgType[State]) == Success(OFFLINE)
+    })
+
+    // reconnection
+    sender.send(fundee.switchboard, Peer.Connect(
+      nodeId = funder.nodeParams.nodeId,
+      address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
+    ))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected", "reconnection in progress")
+
+    // fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
+    awaitCond({
+      sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+      val fundeeState = sender.expectMsgType[State]
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      val funderState = sender.expectMsgType[State]
+      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
+    })
 
     // 5 extra blocks make it 13, just the amount of confirmations needed
     generateBlocks(bitcoincli, 5)
 
     awaitCond({
-      sender.send(node1.register, Forward(tempChannelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == NORMAL
+      sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+      val fundeeState = sender.expectMsgType[State]
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      val funderState = sender.expectMsgType[State]
+      fundeeState == NORMAL && funderState == NORMAL
     })
 
     awaitAnnouncements(nodes.filterKeys(_ == "A"), 10, 13, 28)
