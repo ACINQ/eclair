@@ -252,20 +252,20 @@ object Commitments {
     commitments1
   }
 
-  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[(UpdateAddHtlc, Option[Origin])] = for {
+  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = for {
     localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findHtlcById(htlcId, directionRelativeToLocal.opposite)
     remoteSigned <- commitments.localCommit.spec.findHtlcById(htlcId, directionRelativeToLocal)
   } yield {
     require(localSigned.add == remoteSigned.add)
-    (localSigned.add, commitments.originChannels.get(htlcId))
+    localSigned.add
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): Try[(Commitments, UpdateFulfillHtlc)] =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some((htlc, _)) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Failure(UnknownHtlcId(commitments.channelId, cmd.id))
-      case Some((htlc, _)) if htlc.paymentHash == sha256(cmd.r) =>
+      case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
         Success((commitments1, fulfill))
@@ -275,17 +275,17 @@ object Commitments {
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(commitments, OUT, fulfill.id) match {
-      case Some((htlc, Some(origin))) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Success((addRemoteProposal(commitments, fulfill), origin, htlc))
+      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Success((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
       case Some(_) => Failure(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
       case None => Failure(UnknownHtlcId(commitments.channelId, fulfill.id))
     }
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Try[(Commitments, UpdateFailHtlc)] =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some((htlc, _)) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
+      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Failure(UnknownHtlcId(commitments.channelId, cmd.id))
-      case Some((htlc, _)) =>
+      case Some(htlc) =>
         // we need the shared secret to build the error packet
         Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
           case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
@@ -307,7 +307,7 @@ object Commitments {
       Failure(InvalidFailureCode(commitments.channelId))
     } else {
       getHtlcCrossSigned(commitments, IN, cmd.id) match {
-        case Some((htlc, _)) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
+        case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
           // we have already sent a fail/fulfill for this htlc
           Failure(UnknownHtlcId(commitments.channelId, cmd.id))
         case Some(_) =>
@@ -321,8 +321,8 @@ object Commitments {
 
   def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(commitments, OUT, fail.id) match {
-      case Some((htlc, Some(origin))) => Success((addRemoteProposal(commitments, fail), origin, htlc))
-      case _ => Failure(UnknownHtlcId(commitments.channelId, fail.id))
+      case Some(htlc) => Success((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
+      case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
     }
 
   def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] = {
@@ -331,8 +331,8 @@ object Commitments {
       Failure(InvalidFailureCode(commitments.channelId))
     } else {
       getHtlcCrossSigned(commitments, OUT, fail.id) match {
-        case Some((htlc, Some(origin))) => Success((addRemoteProposal(commitments, fail), origin, htlc))
-        case _ => Failure(UnknownHtlcId(commitments.channelId, fail.id))
+        case Some(htlc) => Success((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
+        case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
       }
     }
   }
