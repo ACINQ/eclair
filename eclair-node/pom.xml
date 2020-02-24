@@ -54,7 +54,7 @@
                 <configuration>
                     <finalName>${project.name}-${project.version}-${git.commit.id.abbrev}</finalName>
                     <descriptors>
-                        <descriptor>modules/eclair-node.xml</descriptor>
+                        <descriptor>modules/assembly.xml</descriptor>
                     </descriptors>
                     <archive>
                         <manifest>
