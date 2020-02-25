@@ -19,6 +19,7 @@ package fr.acinq.eclair.io
 import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.Status.Failure
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Btc, Satoshi}
@@ -312,7 +313,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
 
-    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
 
   test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("max-funding-satoshis"), Tag("wumbo")) { f =>
@@ -326,7 +327,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
 
-    probe.expectMsg(s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
 
 
