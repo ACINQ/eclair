@@ -123,7 +123,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
     val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId, currentBlockHeight)
     sender.send(s, cmd)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
@@ -133,7 +133,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
     sender.send(s, CMD_FULFILL_HTLC(id, R))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
@@ -145,7 +145,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
     val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[HasCommitments].commitments)
     sender.send(s, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     s2r.expectMsgType[CommitSig]
     s2r.forward(r)
     r2s.expectMsgType[RevokeAndAck]
