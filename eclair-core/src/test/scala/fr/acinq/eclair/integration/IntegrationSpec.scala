@@ -325,7 +325,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
       val funderState = sender.expectMsgType[State]
       fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
-    })
+    }, max = 30 seconds, interval = 5 seconds)
 
     // 5 extra blocks make it 13, just the amount of confirmations needed
     generateBlocks(bitcoincli, 5)
