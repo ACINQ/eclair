@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import java.io.File
+import java.io.{File, FilenameFilter}
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -37,7 +37,7 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    val plugins = Plugin.loadPlugins(args.map(new File(_)))
+    val plugins = Plugin.loadPlugins(datadir)
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher

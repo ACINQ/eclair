@@ -194,11 +194,8 @@ For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-c
 
 A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface.
 
-Here is how to run Eclair with plugins:
-
-```shell
-eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
-```
+Eclair will use any compatible plugin that is found in the directory `<datadir>/plugins`, to run eclair with your
+favourite plugin place its jar file in that folder.
 
 ## Testnet usage
 
