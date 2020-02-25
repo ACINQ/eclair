@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
+import fr.acinq.eclair.channel.ChannelCommandResponse.ChannelOpened
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -273,9 +274,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       fundingTxFeeratePerKw_opt = None,
       channelFlags = None,
       timeout_opt = None))
-    val channelCreated = sender.expectMsgType[String](10 seconds)
-    assert(channelCreated.startsWith("created channel"))
-    val tempChannelId = ByteVector32.fromValidHex(channelCreated.split(" ").last)
+    val tempChannelId = sender.expectMsgType[ChannelOpened](10 seconds).channelId
 
     // mine the funding tx
     generateBlocks(bitcoincli, 2)
