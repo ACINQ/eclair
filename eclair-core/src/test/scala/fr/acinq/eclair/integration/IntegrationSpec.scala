@@ -321,11 +321,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
     awaitCond({
       sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
-      val fundeeState = sender.expectMsgType[State]
+      val fundeeState = sender.expectMsgType[State](max = 30 seconds)
       sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
-      val funderState = sender.expectMsgType[State]
+      val funderState = sender.expectMsgType[State](max = 30 seconds)
+      println(s"FUNDER=$fundeeState FUNDEE=$fundeeState")
       fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
-    }, max = 30 seconds, interval = 5 seconds)
+    }, max = 30 seconds, interval = 10 seconds)
 
     // 5 extra blocks make it 13, just the amount of confirmations needed
     generateBlocks(bitcoincli, 5)
