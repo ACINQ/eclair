@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
+import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -168,7 +169,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-        channelFlags = channelFlags)
+        channelFlags = channelFlags,
+        // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
+        // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _), Nothing) if !localParams.isFunder =>
@@ -292,7 +296,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             paymentBasepoint = keyManager.paymentPoint(channelKeyPath).publicKey,
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-            firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0))
+            firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+            // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
+            // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
