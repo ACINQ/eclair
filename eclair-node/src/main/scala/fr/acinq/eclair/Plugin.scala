@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import java.io.File
+import java.io.{File, FilenameFilter}
 import java.net.{URL, URLClassLoader}
 
 import org.clapper.classutil.ClassFinder
@@ -31,15 +31,35 @@ trait Plugin {
 
 object Plugin {
 
-  def loadPlugins(jars: Seq[File]): Seq[Plugin] = {
-      val finder = ClassFinder(jars)
-      val classes = finder.getClasses
-      val urls = jars.map(f => new URL(s"file:${f.getCanonicalPath}"))
-      val loader = new URLClassLoader(urls.toArray, ClassLoader.getSystemClassLoader)
-      classes
-        .filter(_.isConcrete)
-        .filter(_.implements(classOf[Plugin].getName))
-        .map(c => Class.forName(c.name, true, loader).getDeclaredConstructor().newInstance().asInstanceOf[Plugin])
-        .toList
+  /**
+    * Attempts to load all *.jar found in the datadir/plugin/ directory as Plugin(s)
+    *
+    * @param datadir
+    * @return
+    */
+  def loadPlugins(datadir: File): Seq[Plugin] = {
+    val jars = getPluginFiles(datadir)
+    val finder = ClassFinder(jars)
+    val classes = finder.getClasses
+    val urls = jars.map(f => new URL(s"file:${f.getCanonicalPath}"))
+    val loader = new URLClassLoader(urls.toArray, ClassLoader.getSystemClassLoader)
+    classes
+      .filter(_.isConcrete)
+      .filter(_.implements(classOf[Plugin].getName))
+      .map(c => Class.forName(c.name, true, loader).getDeclaredConstructor().newInstance().asInstanceOf[Plugin])
+      .toList
+  }
+
+  def getPluginFiles(datadir: File): List[File] = {
+    if (!datadir.exists() || !datadir.isDirectory) {
+      List.empty
+    } else {
+      val pluginDir = new File(datadir.getAbsolutePath + "/plugins")
+      pluginDir.listFiles(new FilenameFilter { def accept(file: File, s: String) = s.endsWith(".jar") }) match {
+        case null => List.empty
+        case arr => arr.toList
+      }
     }
+  }
+
 }
