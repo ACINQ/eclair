@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
+import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -168,7 +169,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-        channelFlags = channelFlags)
+        channelFlags = channelFlags,
+        // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
+        // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _), Nothing) if !localParams.isFunder =>
@@ -292,7 +296,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             paymentBasepoint = keyManager.paymentPoint(channelKeyPath).publicKey,
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-            firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0))
+            firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+            // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
+            // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
@@ -1387,8 +1394,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
-        yourLastPerCommitmentSecret = Some(PrivateKey(yourLastPerCommitmentSecret)),
-        myCurrentPerCommitmentPoint = Some(myCurrentPerCommitmentPoint)
+        yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
       )
 
       // we update local/remote connection-local global/local features, we don't persist it right now
@@ -1450,7 +1457,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       var sendQueue = Queue.empty[LightningMessage]
       val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
       channelReestablish match {
-        case ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), _) if !Helpers.checkLocalCommit(d, nextRemoteRevocationNumber) =>
+        case ChannelReestablish(_, _, nextRemoteRevocationNumber, yourLastPerCommitmentSecret, _) if !Helpers.checkLocalCommit(d, nextRemoteRevocationNumber) =>
           // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
           // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
           if (keyManager.commitmentSecret(channelKeyPath, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
@@ -2040,7 +2047,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
     // if we are in this state, then this field is defined
-    val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint.get
+    val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
 
