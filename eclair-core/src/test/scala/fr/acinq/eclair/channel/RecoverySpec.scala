@@ -98,13 +98,13 @@ class RecoverySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val fundingPubKey = Seq(PublicKey(pub1), PublicKey(pub2)).find {
       pub =>
         val channelKeyPath = KeyManager.channelKeyPath(pub)
-        val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint.get)
+        val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
         localPubkey.hash160 == pubKeyHash
     } get
 
     // compute our to-remote pubkey
     val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
-    val ourToRemotePubKey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint.get)
+    val ourToRemotePubKey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
 
     // spend our output
     val tx = Transaction(version = 2,
@@ -115,7 +115,7 @@ class RecoverySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val sig = keyManager.sign(
       ClaimP2WPKHOutputTx(InputInfo(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
       keyManager.paymentPoint(channelKeyPath),
-      ce.myCurrentPerCommitmentPoint.get)
+      ce.myCurrentPerCommitmentPoint)
     val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
     Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }

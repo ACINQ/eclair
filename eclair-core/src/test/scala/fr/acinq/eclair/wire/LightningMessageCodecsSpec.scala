@@ -190,7 +190,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     )
     val ping = Ping(100, bin(10, 1))
     val pong = Pong(bin(10, 1))
-    val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L)
+    val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::

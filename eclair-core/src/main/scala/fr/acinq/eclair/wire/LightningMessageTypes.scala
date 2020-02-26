@@ -64,8 +64,8 @@ case class Pong(data: ByteVector) extends SetupMessage
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
-                              yourLastPerCommitmentSecret: Option[PrivateKey] = None,
-                              myCurrentPerCommitmentPoint: Option[PublicKey] = None) extends ChannelMessage with HasChannelId
+                              yourLastPerCommitmentSecret: PrivateKey,
+                              myCurrentPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,

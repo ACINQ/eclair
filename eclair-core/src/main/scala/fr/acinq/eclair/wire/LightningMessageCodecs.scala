@@ -56,8 +56,8 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("nextLocalCommitmentNumber" | uint64overflow) ::
       ("nextRemoteRevocationNumber" | uint64overflow) ::
-      ("yourLastPerCommitmentSecret" | optional(bitsRemaining, privateKey)) ::
-      ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, publicKey))).as[ChannelReestablish]
+      ("yourLastPerCommitmentSecret" | privateKey) ::
+      ("myCurrentPerCommitmentPoint" | publicKey)).as[ChannelReestablish]
 
   // Legacy nodes may encode an empty upfront_shutdown_script (0x0000) even if we didn't advertise support for option_upfront_shutdown_script.
   // To allow extending all messages with TLV streams, the upfront_shutdown_script field was made mandatory in https://github.com/lightningnetwork/lightning-rfc/pull/714.

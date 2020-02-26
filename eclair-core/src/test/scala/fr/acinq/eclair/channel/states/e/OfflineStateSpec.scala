@@ -97,9 +97,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
 
     // a didn't receive any update or sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
     // b didn't receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(bobCurrentPerCommitmentPoint)))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -184,9 +184,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
     // b did receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(bobCurrentPerCommitmentPoint)))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -341,7 +341,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice then finds out bob is lying
     bob2alice.send(alice, ba_reestablish_forged)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret.get).getMessage)
+    assert(new String(error.data.toArray) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret).getMessage)
   }
 
   test("change relay fee while offline") { f =>
