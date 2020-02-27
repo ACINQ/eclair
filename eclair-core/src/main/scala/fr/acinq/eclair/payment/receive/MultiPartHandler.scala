@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
-import akka.actor.{ActorContext, ActorRef, ActorSystem, PoisonPill, Status}
+import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
@@ -28,7 +28,6 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
-import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -49,36 +48,8 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
    */
   def doHandle(paymentHash: ByteVector32): Boolean = true
 
-  /** Can be overridden to do custom pre-processing on successfully received payments. */
-  def preFulfill(preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Future[DoFulfill] = Future.successful(DoFulfill(preimage, success))
-
   /** Can be overridden to do custom post-processing on successfully received payments. */
   def postFulfill(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
-
-  /** Fail all parts of an incoming payment. */
-  def doFail(failed: MultiPartPaymentFSM.MultiPartPaymentFailed): Unit = failed.parts.collect {
-    case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failed.failure), commit = true))
-  }
-
-  /**
-   * Handle an extraneous payment received after we reached a final state (succeeded or failed).
-   * This is a spec violation by the sender, but it's a risk-less one: only the sender may lose money because of this.
-   */
-  def doHandleExtraPayment(system: ActorSystem, e: MultiPartPaymentFSM.ExtraPaymentReceived): Unit = e.failure match {
-    case Some(failure) => e.payment match {
-      case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
-    }
-    case None => e.payment match {
-      // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
-      // expensive code path by fetching the preimage from DB.
-      case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(e.paymentHash).foreach(record => {
-        commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
-        val received = PaymentReceived(e.paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
-        db.receiveIncomingPayment(e.paymentHash, p.amount, received.timestamp)
-        system.eventStream.publish(received)
-      })
-    }
-  }
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
@@ -127,11 +98,13 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         }
       }
 
-    case f@MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
+    case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         log.warning("payment with paidAmount={} failed ({})", parts.map(_.amount).sum, failure)
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
-        doFail(f)
+        parts.collect {
+          case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+        }
         pendingPayments = pendingPayments - paymentHash
       }
 
@@ -141,14 +114,28 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
-            preFulfill(preimage, s).map(ctx.self ! _)(ctx.dispatcher)
+            ctx.self ! DoFulfill(preimage, s)
         }
         pendingPayments = pendingPayments - paymentHash
       }
 
     case e: MultiPartPaymentFSM.ExtraPaymentReceived if doHandle(e.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(e.paymentHash))) {
-        doHandleExtraPayment(ctx.system, e)
+        e.failure match {
+          case Some(failure) => e.payment match {
+            case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+          }
+          case None => e.payment match {
+            // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
+            // expensive code path by fetching the preimage from DB.
+            case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(e.paymentHash).foreach(record => {
+              commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
+              val received = PaymentReceived(e.paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
+              db.receiveIncomingPayment(e.paymentHash, p.amount, received.timestamp)
+              ctx.system.eventStream.publish(received)
+            })
+          }
+        }
       }
 
     case DoFulfill(preimage, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts)) if doHandle(paymentHash) =>
