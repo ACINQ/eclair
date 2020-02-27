@@ -48,21 +48,12 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
    */
   def doHandle(paymentHash: ByteVector32): Boolean = true
 
-  /** Can be overridden to do custom pre-processing on successfully received payments. */
-  def preFulfill(success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): MultiPartPaymentFSM.MultiPartPaymentSucceeded = success
-
-  /** Fulfill all parts of an incoming payment. */
-  def doFulfill(system: ActorSystem, preimage: ByteVector32, succeeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): PaymentReceived = {
-    val received = PaymentReceived(succeeded.paymentHash, succeeded.parts.map {
-      case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
-    })
-    // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
-    db.receiveIncomingPayment(succeeded.paymentHash, received.amount, received.timestamp)
-    succeeded.parts.collect {
-      case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
-    }
-    system.eventStream.publish(received)
-    received
+  /**
+   * Can be overridden to do custom pre-processing on successfully received payments.
+   * Must send a [[DoFulfill]] message for the payment to actually be fulfilled upstream.
+   */
+  def preFulfill(ctx: ActorContext, preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Unit = {
+    ctx.self ! DoFulfill(preimage, success)
   }
 
   /** Can be overridden to do custom post-processing on successfully received payments. */
@@ -154,7 +145,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
-            postFulfill(doFulfill(ctx.system, preimage, preFulfill(s)))
+            preFulfill(ctx, preimage, s)
         }
         pendingPayments = pendingPayments - paymentHash
       }
@@ -162,6 +153,20 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
     case e: MultiPartPaymentFSM.ExtraPaymentReceived if doHandle(e.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(e.paymentHash))) {
         doHandleExtraPayment(ctx.system, e)
+      }
+
+    case DoFulfill(preimage, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts)) if doHandle(paymentHash) =>
+      Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
+        log.info("fulfilling payment for amount={}", parts.map(_.amount).sum)
+        val received = PaymentReceived(paymentHash, parts.map {
+          case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
+        })
+        db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
+        parts.collect {
+          case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
+        }
+        postFulfill(received)
+        ctx.system.eventStream.publish(received)
       }
 
     case GetPendingPayments => ctx.sender ! PendingPayments(pendingPayments.keySet)
@@ -176,6 +181,8 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
 object MultiPartHandler {
 
   // @formatter:off
+  case class DoFulfill(preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
+
   case object GetPendingPayments
   case class PendingPayments(paymentHashes: Set[ByteVector32])
   // @formatter:on
