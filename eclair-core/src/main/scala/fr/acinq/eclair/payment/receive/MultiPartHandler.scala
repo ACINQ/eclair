@@ -119,19 +119,19 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         pendingPayments = pendingPayments - paymentHash
       }
 
-    case e: MultiPartPaymentFSM.ExtraPaymentReceived if doHandle(e.paymentHash) =>
-      Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(e.paymentHash))) {
-        e.failure match {
-          case Some(failure) => e.payment match {
+    case MultiPartPaymentFSM.ExtraPaymentReceived(paymentHash, p, failure) if doHandle(paymentHash) =>
+      Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
+        failure match {
+          case Some(failure) => p match {
             case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
           }
-          case None => e.payment match {
+          case None => p match {
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
             // expensive code path by fetching the preimage from DB.
-            case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(e.paymentHash).foreach(record => {
+            case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
               commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
-              val received = PaymentReceived(e.paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
-              db.receiveIncomingPayment(e.paymentHash, p.amount, received.timestamp)
+              val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
+              db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
               ctx.system.eventStream.publish(received)
             })
           }
