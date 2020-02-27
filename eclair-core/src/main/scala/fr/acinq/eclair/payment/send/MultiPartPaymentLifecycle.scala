@@ -95,7 +95,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.request.totalAmount, channels, d.networkStats, d.request, randomize = false)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.request.totalAmount} with our current balance")
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(LocalFailure(PaymentError.BalanceTooLow)))
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(PaymentError.BalanceTooLow)))
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(PaymentError.BalanceTooLow) :: Nil, Set.empty)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size)
@@ -154,7 +154,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize = true) // we randomize channel selection when we retry
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(LocalFailure(PaymentError.BalanceTooLow)))
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(PaymentError.BalanceTooLow)))
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(PaymentError.BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
@@ -270,7 +270,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
       val failure = LocalFailure(PaymentError.RetryExhausted)
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(failure))
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure))
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
     } else {
       None

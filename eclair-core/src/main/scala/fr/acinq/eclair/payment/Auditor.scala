@@ -53,11 +53,11 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: PaymentRelayed =>
       Metrics.PaymentAmount
         .withTag(Tags.Direction, Tags.Directions.Relayed)
-        .withTag(Tags.Relay, Tags.RelayType.get(e))
+        .withTag(Tags.Relay, Tags.RelayType(e))
         .record(e.amountIn.truncateToSatoshi.toLong)
       Metrics.PaymentFees
         .withTag(Tags.Direction, Tags.Directions.Relayed)
-        .withTag(Tags.Relay, Tags.RelayType.get(e))
+        .withTag(Tags.Relay, Tags.RelayType(e))
         .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
       e match {
         case TrampolinePaymentRelayed(_, incoming, outgoing, _) =>

@@ -47,7 +47,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
     case RelayHtlc(r, previousFailures, channelUpdates, node2channels) =>
       handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
         case RelayFailure(cmdFail) =>
-          Metrics.recordPaymentRelayFailed(Tags.FailureType.get(cmdFail), Tags.RelayType.Channel)
+          Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
           commandBuffer ! CommandBuffer.CommandSend(r.add.channelId, cmdFail)
         case RelaySuccess(selectedShortChannelId, cmdAdd) =>
@@ -58,7 +58,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
     case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
-      Metrics.recordPaymentRelayFailed(Tags.FailureType.get(cmdFail), Tags.RelayType.Channel)
+      Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
       commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
 
     case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
@@ -69,7 +69,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
         case _ =>
           val failure = translateError(addFailed)
           val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
-          Metrics.recordPaymentRelayFailed(Tags.FailureType.get(cmdFail), Tags.RelayType.Channel)
+          Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #$originHtlcId from channelId=$originChannelId reason=${cmdFail.reason}")
           commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmdFail)
       }

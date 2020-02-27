@@ -112,7 +112,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, _, failures)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(LocalFailure(t))).increment()
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(t))).increment()
       onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(t)))
       myStop()
   }
@@ -126,14 +126,14 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       myStop()
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
-      val tryDecrypt = Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets)
-      tryDecrypt match {
-        case Success(e) =>
-          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(RemoteFailure(Nil, e))).increment()
-        case Failure(_) =>
-          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(UnreadableRemoteFailure(Nil))).increment()
-      }
-      tryDecrypt match {
+      (Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
+        case success@Success(e) =>
+          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(Nil, e))).increment()
+          success
+        case failure@Failure(_) =>
+          Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(Nil))).increment()
+          failure
+      }) match {
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // if destination node returns an error, we fail the payment immediately
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
@@ -224,7 +224,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       stay
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.get(LocalFailure(t))).increment()
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(t))).increment()
       // If the first hop was selected by the sender (in routePrefix) and it failed, it doesn't make sense to retry (we
       // will end up retrying over that same faulty channel).
       if (failures.size + 1 >= c.maxAttempts || c.routePrefix.nonEmpty) {

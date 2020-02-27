@@ -65,7 +65,7 @@ object Monitoring {
       val Channel = "channel"
       val Trampoline = "trampoline"
 
-      def get(e: PaymentRelayed): String = e match {
+      def apply(e: PaymentRelayed): String = e match {
         case _: ChannelPaymentRelayed => Channel
         case _: TrampolinePaymentRelayed => Trampoline
       }
@@ -86,12 +86,12 @@ object Monitoring {
       val Remote = "Remote"
       val Malformed = "MalformedHtlc"
 
-      def get(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
+      def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
         case Left(_) => Remote
         case Right(f) => f.getClass.getSimpleName
       }
 
-      def get(pf: PaymentFailure): String = pf match {
+      def apply(pf: PaymentFailure): String = pf match {
         case LocalFailure(t) => t.getClass.getSimpleName
         case RemoteFailure(_, e) => e.failureMessage.getClass.getSimpleName
         case UnreadableRemoteFailure(_) => "UnreadableRemoteFailure"

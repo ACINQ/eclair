@@ -236,7 +236,7 @@ object PostRestartHtlcCleaner {
     val PendingNotRelayed = pending.withTag(Relayed, value = false)
     val PendingRelayedOut = pending.withTag(Relayed, value = true)
     val Resolved = Kamon.counter("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
-    val Unhandled = Kamon.counter("payment.broken-htlcs.unhandled", "TODO") // TODO
+    val Unhandled = Kamon.counter("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
 
   }
 

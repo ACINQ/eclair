@@ -1403,11 +1403,6 @@ object Router {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    val timer = Metrics.FindRouteDuration
-      .withTag(Tags.NumberOfRoutes, numRoutes)
-      .withTag(Tags.Amount, Tags.amountBucket(amount))
-      .start()
-
     def feeBaseOk(fee: MilliSatoshi): Boolean = fee <= routeParams.maxFeeBase
 
     def feePctOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = {
@@ -1425,8 +1420,9 @@ object Router {
       feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
-    timer.stop()
+    val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
+      Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
+    }
     foundRoutes match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
         Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)

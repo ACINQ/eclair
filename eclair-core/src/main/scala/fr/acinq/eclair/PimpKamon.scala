@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import fr.acinq.eclair.payment.{LocalFailure, PaymentFailure, RemoteFailure, UnreadableRemoteFailure}
 import kamon.Kamon
+import kamon.metric.Timer
 import kamon.tag.TagSet
 import kamon.trace.Span
 
@@ -31,6 +32,15 @@ object KamonExt {
       f
     } finally {
       timer.stop()
+    }
+  }
+
+  def time[T](timer: Timer)(f: => T): T = {
+    val started = timer.start()
+    try {
+      f
+    } finally {
+      started.stop()
     }
   }
 

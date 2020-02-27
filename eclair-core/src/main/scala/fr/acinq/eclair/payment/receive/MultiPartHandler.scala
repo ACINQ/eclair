@@ -81,7 +81,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         db.getIncomingPayment(p.add.paymentHash) match {
           case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
             case Some(cmdFail) =>
-              Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType.get(cmdFail)).increment()
+              Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
               commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
             case None =>
               log.info("received payment for amount={} totalAmount={}", p.add.amountMsat, p.payload.totalAmount)
