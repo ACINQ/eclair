@@ -45,22 +45,17 @@ object Plugin extends Logging {
     */
   def loadPlugins(jars: Seq[File]): Seq[Plugin] = {
     val eclairVersion = Option(getClass.getPackage.getImplementationVersion)
-    val urls = jars.flatMap(f =>
-      getOrNone(new URL(s"jar:file:${f.getCanonicalPath}!/").openConnection().asInstanceOf[JarURLConnection], s"unable to load plugin file:${f.getAbsolutePath} ")
-    )
+    val urls = jars.flatMap(openJar)
     val loader = new URLClassLoader(urls.map(_.getJarFileURL).toArray, ClassLoader.getSystemClassLoader)
     val (supported, unsupported) = urls.partition { jar =>
       val supportedVersions = Option(jar.getMainAttributes.getValue("X-Eclair-Supported-Versions")).map(_.split(",")).toSeq.flatten
       val versionOk = eclairVersion.isEmpty || supportedVersions.exists(v => versionEquals(v, eclairVersion.get))
       val mainClassOk = Option(jar.getMainAttributes.getValue("Main-Class")).isDefined
-
       versionOk && mainClassOk
     }
 
-    unsupported.foreach { jar =>
-      logger.warn(s"found unsupported plugin ${jar.getJarFile.getName}")
-    }
-    logger.info(s"loading ${supported.size} plugins")
+    unsupported.foreach(jar => logger.warn(s"found unsupported plugin ${jar.getJarFile.getName}"))
+    supported.foreach(jar => logger.info(s"loading plugin ${jar.getJarFile.getName}"))
 
     val pluginClasses = supported
       .map(_.getMainAttributes.getValue("Main-Class"))
@@ -70,12 +65,11 @@ object Plugin extends Logging {
     pluginClasses
   }
 
-  def getOrNone[T](f: => T, errMsg: String): Option[T] = Try(f) match {
-    case Failure(exception) =>
-      logger.error(errMsg, exception)
-      None
-    case Success(value) => Some(value)
-  }
+  def openJar(jar: File): Option[JarURLConnection] =
+    Try(new URL(s"jar:file:${jar.getCanonicalPath}!/").openConnection().asInstanceOf[JarURLConnection]) match {
+      case Success(url) => Some(url)
+      case Failure(t) => logger.error(s"unable to load plugin file:${jar.getAbsolutePath} ", t); None
+    }
 
   /**
     * Compares two versions ignoring the prerelease tag.
