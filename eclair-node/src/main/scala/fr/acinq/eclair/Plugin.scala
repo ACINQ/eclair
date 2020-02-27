@@ -33,23 +33,40 @@ trait Plugin {
 
 object Plugin extends Logging {
 
+  val versionRegex = """^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)([-SNAPSHOT]*)""".r
+
   /**
     * The files passed to this function must be jars containing a manifest entry for "Main-Class" with the
     * FQDN of the entry point of the plugin. The entry point is the implementation of the interface "fr.acinq.eclair.Plugin"
+    * The manifest must also contain a comma separated list of supported eclair versions.
+    *
     * @param jars
     * @return
     */
   def loadPlugins(jars: Seq[File]): Seq[Plugin] = {
+    val eclairVersion = Option(getClass.getPackage.getImplementationVersion)
     val urls = jars.flatMap(f =>
       getOrNone(new URL(s"jar:file:${f.getCanonicalPath}!/").openConnection().asInstanceOf[JarURLConnection], s"unable to load plugin file:${f.getAbsolutePath} ")
     )
     val loader = new URLClassLoader(urls.map(_.getJarFileURL).toArray, ClassLoader.getSystemClassLoader)
-    val pluginClasses = urls
-        .map(_.getMainAttributes.getValue("Main-Class"))
-        .flatMap(classFQDN => getOrNone[Class[_]](loader.loadClass(classFQDN), s"error loading $classFQDN "))
-        .flatMap(c => getOrNone[Plugin](c.getDeclaredConstructor().newInstance().asInstanceOf[Plugin], s"${c.getCanonicalName} does not implement $Plugin "))
+    val (supported, unsupported) = urls.partition { jar =>
+      val supportedVersions = Option(jar.getMainAttributes.getValue("X-Eclair-Supported-Versions")).map(_.split(",")).toSeq.flatten
+      val versionOk = eclairVersion.isEmpty || supportedVersions.exists(v => versionEquals(v, eclairVersion.get))
+      val mainClassOk = Option(jar.getMainAttributes.getValue("Main-Class")).isDefined
 
-    logger.info(s"loading ${pluginClasses.size} plugins")
+      versionOk && mainClassOk
+    }
+
+    unsupported.foreach { jar =>
+      logger.warn(s"found unsupported plugin ${jar.getJarFile.getName}")
+    }
+    logger.info(s"loading ${supported.size} plugins")
+
+    val pluginClasses = supported
+      .map(_.getMainAttributes.getValue("Main-Class"))
+      .map(loader.loadClass)
+      .map(_.getDeclaredConstructor().newInstance().asInstanceOf[Plugin])
+
     pluginClasses
   }
 
@@ -58,6 +75,15 @@ object Plugin extends Logging {
       logger.error(errMsg, exception)
       None
     case Success(value) => Some(value)
+  }
+
+  /**
+    * Compares two versions ignoring the prerelease tag.
+    */
+  def versionEquals(a: String, b: String): Boolean = {
+    val strippedA = a match { case versionRegex(major, minor, patch, _) => s"$major.$minor.$patch" }
+    val strippedB = b match { case versionRegex(major, minor, patch, _) => s"$major.$minor.$patch" }
+    strippedA == strippedB
   }
 
 }
