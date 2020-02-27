@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
+import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -48,13 +49,8 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
    */
   def doHandle(paymentHash: ByteVector32): Boolean = true
 
-  /**
-   * Can be overridden to do custom pre-processing on successfully received payments.
-   * Must send a [[DoFulfill]] message for the payment to actually be fulfilled upstream.
-   */
-  def preFulfill(ctx: ActorContext, preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Unit = {
-    ctx.self ! DoFulfill(preimage, success)
-  }
+  /** Can be overridden to do custom pre-processing on successfully received payments. */
+  def preFulfill(preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)(implicit log: LoggingAdapter): Future[DoFulfill] = Future.successful(DoFulfill(preimage, success))
 
   /** Can be overridden to do custom post-processing on successfully received payments. */
   def postFulfill(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
@@ -145,7 +141,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         pendingPayments.get(paymentHash).foreach {
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
-            preFulfill(ctx, preimage, s)
+            preFulfill(preimage, s).map(ctx.self ! _)(ctx.dispatcher)
         }
         pendingPayments = pendingPayments - paymentHash
       }
