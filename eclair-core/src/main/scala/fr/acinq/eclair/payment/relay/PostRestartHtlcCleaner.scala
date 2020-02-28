@@ -103,11 +103,17 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       Metrics.PendingNotRelayed.update(notRelayed1.size)
       context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
 
-    case Relayer.ForwardFulfill(fulfill, to, add) => handleDownstreamFulfill(brokenHtlcs, to, add, fulfill.paymentPreimage)
+    case Relayer.ForwardFulfill(fulfill, to, add) =>
+      log.info("htlc fulfilled downstream: ({},{})", fulfill.channelId, fulfill.id)
+      handleDownstreamFulfill(brokenHtlcs, to, add, fulfill.paymentPreimage)
 
-    case Relayer.ForwardFail(_, to, add) => handleDownstreamFailure(brokenHtlcs, to, add)
+    case Relayer.ForwardFail(_, to, add) =>
+      log.info("htlc failed downstream: ({},{})", add.channelId, add.id)
+      handleDownstreamFailure(brokenHtlcs, to, add)
 
-    case Relayer.ForwardFailMalformed(_, to, add) => handleDownstreamFailure(brokenHtlcs, to, add)
+    case Relayer.ForwardFailMalformed(_, to, add) =>
+      log.info("htlc failed (malformed) downstream: ({},{})", add.channelId, add.id)
+      handleDownstreamFailure(brokenHtlcs, to, add)
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
@@ -308,6 +314,8 @@ object PostRestartHtlcCleaner {
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
+    log.debug("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
+    log.debug("relayedOut={}", relayedOut.values.toSeq)
     BrokenHtlcs(notRelayed, relayedOut, Set.empty)
   }
 
