@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.{Btc, Transaction}
+import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing._
@@ -26,6 +27,16 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 
 class HelpersSpec extends FunSuite {
+
+  test("compute the funding tx min depth according to funding amount") {
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(1)) == 4)
+    assert(Helpers.minDepthForFunding(nodeParams.copy(minDepthBlocks = 6), Btc(1)) == 6)  // 4 conf would be enough but we use min-depth=6
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(6.25)) == 16)  // we use scaling_factor=15 and a fixed block reward of 6.25BTC
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(12.50)) == 31)
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(12.60)) == 32)
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(30)) == 73)
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(50)) == 121)
+  }
 
   test("compute refresh delay") {
     import org.scalatest.Matchers._

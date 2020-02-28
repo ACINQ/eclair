@@ -165,13 +165,6 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-
-    assert(alice.underlyingActor.minDepthForFunding(Btc(1)) == 6)  // 4 conf would be enough but we use min-depth=6
-    assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 16)  // we use scaling_factor=15 and a fixed block reward of 6.25BTC
-    assert(alice.underlyingActor.minDepthForFunding(Btc(12.50)) == 31)
-    assert(alice.underlyingActor.minDepthForFunding(Btc(12.60)) == 32)
-    assert(alice.underlyingActor.minDepthForFunding(Btc(30)) == 73)
-    assert(alice.underlyingActor.minDepthForFunding(Btc(50)) == 121)
   }
 
   test("recv Error") { f =>
