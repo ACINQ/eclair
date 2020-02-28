@@ -40,24 +40,21 @@ object Plugin extends Logging {
     * @return
     */
   def loadPlugins(jars: Seq[File]): Seq[Plugin] = {
-    val urls = jars.flatMap(f =>
-      getOrNone(new URL(s"jar:file:${f.getCanonicalPath}!/").openConnection().asInstanceOf[JarURLConnection], s"unable to load plugin file:${f.getAbsolutePath} ")
-    )
+    val urls = jars.flatMap(openJar)
     val loader = new URLClassLoader(urls.map(_.getJarFileURL).toArray, ClassLoader.getSystemClassLoader)
     val pluginClasses = urls
-        .map(_.getMainAttributes.getValue("Main-Class"))
-        .flatMap(classFQDN => getOrNone[Class[_]](loader.loadClass(classFQDN), s"error loading $classFQDN "))
-        .flatMap(c => getOrNone[Plugin](c.getDeclaredConstructor().newInstance().asInstanceOf[Plugin], s"${c.getCanonicalName} does not implement $Plugin "))
+        .flatMap(j => Option(j.getMainAttributes.getValue("Main-Class")))
+        .flatMap(classFQDN => Try[Class[_]](loader.loadClass(classFQDN)).toOption)
+        .flatMap(c => Try(c.getDeclaredConstructor().newInstance().asInstanceOf[Plugin]).toOption)
 
     logger.info(s"loading ${pluginClasses.size} plugins")
     pluginClasses
   }
 
-  def getOrNone[T](f: => T, errMsg: String): Option[T] = Try(f) match {
-    case Failure(exception) =>
-      logger.error(errMsg, exception)
-      None
-    case Success(value) => Some(value)
-  }
+  def openJar(jar: File): Option[JarURLConnection] =
+    Try(new URL(s"jar:file:${jar.getCanonicalPath}!/").openConnection().asInstanceOf[JarURLConnection]) match {
+      case Success(url) => Some(url)
+      case Failure(t) => logger.error(s"unable to load plugin file:${jar.getAbsolutePath} ", t); None
+    }
 
 }
