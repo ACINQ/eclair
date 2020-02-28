@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.router
 
+import fr.acinq.bitcoin.Btc
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
@@ -351,8 +351,8 @@ object Graph {
     val BLOCK_TIME_TWO_MONTHS = 8640
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW = (1000 sat).toMilliSatoshi
-    val CAPACITY_CHANNEL_HIGH = Channel.MAX_FUNDING.toMilliSatoshi
+    val CAPACITY_CHANNEL_LOW = Btc(0.001).toMilliSatoshi
+    val CAPACITY_CHANNEL_HIGH = Btc(1).toMilliSatoshi
 
     // Low/High bound for CLTV channel value
     val CLTV_LOW = 9

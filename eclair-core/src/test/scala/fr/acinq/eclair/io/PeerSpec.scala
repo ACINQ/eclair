@@ -19,15 +19,16 @@ package fr.acinq.eclair.io
 import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.Status.Failure
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{Block, Btc, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
+import fr.acinq.eclair.channel.{Channel, ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -66,6 +67,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
 
     if (test.tags.contains("with_node_announcements")) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
@@ -245,7 +248,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       (bin"        1000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
       (bin"        0100101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
       (bin"000000101000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp
-      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and 19
+      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and large_channel_support (optional)
     )
 
     for ((configuredFeatures, sentFeatures) <- testCases) {
@@ -298,6 +301,49 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
   }
+
+  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+  }
+
+  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag("wumbo")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) // Bob doesn't support wumbo, Alice does
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
+  }
+
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag("wumbo")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Btc(1).toSatoshi
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, remoteInit = wire.Init(hex"80000")) // Bob supports wumbo
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
+  }
+
 
   test("use correct fee rates when spawning a channel") { f =>
     import f._
