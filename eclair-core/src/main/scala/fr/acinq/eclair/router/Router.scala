@@ -1438,7 +1438,7 @@ object Router {
         // At this point 'routes' cannot be empty
         val randomizedRoutes = if (routeParams.randomize) Random.shuffle(routes) else routes
         val route = randomizedRoutes.head.path.map(graphEdgeToHop)
-        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(route.length)
         route
     }
   }
