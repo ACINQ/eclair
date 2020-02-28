@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
-import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -65,7 +65,9 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
 
   test("recv AcceptChannel") { f =>
     import f._
-    bob2alice.expectMsgType[AcceptChannel]
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
+    assert(accept.tlvStream === TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
   }

@@ -21,9 +21,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
+import fr.acinq.eclair.wire.{ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.Outcome
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -52,7 +53,9 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
 
   test("recv OpenChannel") { f =>
     import f._
-    alice2bob.expectMsgType[OpenChannel]
+    val open = alice2bob.expectMsgType[OpenChannel]
+    // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
+    assert(open.tlvStream === TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }

@@ -21,13 +21,14 @@ import java.util.UUID
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
@@ -806,8 +807,14 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
+    val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
+      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+      bobCommitments.localCommit.index)
+
     val sender = TestProbe()
-    sender.send(alice, ChannelReestablish(channelId(bob), 42, 42))
+    sender.send(alice, ChannelReestablish(channelId(bob), 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data.toArray) === FundingTxSpent(channelId(alice), initialState.spendingTxes.head).getMessage)
   }
