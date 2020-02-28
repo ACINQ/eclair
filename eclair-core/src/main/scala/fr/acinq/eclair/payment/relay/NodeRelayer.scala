@@ -23,6 +23,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
@@ -84,6 +85,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
     case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) =>
       log.warning("could not relay payment (paidAmount={} failure={})", parts.map(_.amount).sum, failure)
+      Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
       pendingIncoming.get(paymentHash).foreach(_.handler ! PoisonPill)
       parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
       context become main(pendingIncoming - paymentHash, pendingOutgoing)
@@ -175,8 +177,10 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
   }
 
-  private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage] = None): Unit =
+  private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage]): Unit = {
+    Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
     upstream.adds.foreach(add => rejectHtlc(add.id, add.channelId, upstream.amountIn, failure))
+  }
 
   private def fulfillPayment(upstream: Upstream.TrampolineRelayed, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
