@@ -89,9 +89,10 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   test("encode/decode open_channel") {
     val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
-    // Default encoding that completely omits the upfront_shutdown_script and trailing tlv stream.
+    // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
-    // in https://github.com/lightningnetwork/lightning-rfc/pull/714.
+    // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
+    // We don't make it mandatory at the codec level: it's the job of the actor creating the message to include it.
     val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a00"
     val testCases = Map(
       // legacy encoding without upfront_shutdown_script
@@ -135,9 +136,10 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   test("encode/decode accept_channel") {
     val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
-    // Default encoding that completely omits the upfront_shutdown_script and trailing tlv stream.
+    // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
-    // in https://github.com/lightningnetwork/lightning-rfc/pull/714.
+    // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
+    // We don't make it mandatory at the codec level: it's the job of the actor creating the message to include it.
     val defaultEncoded = hex"000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000001000000000000000100000000000000010000000100010001031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076602531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe33703462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f703f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a"
     val testCases = Map(
       defaultEncoded -> defaultAccept, // legacy encoding without upfront_shutdown_script
