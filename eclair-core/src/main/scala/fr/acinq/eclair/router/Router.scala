@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
+import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import kamon.Kamon
@@ -1419,18 +1420,26 @@ object Router {
       feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
-      case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
-      case Nil => throw RouteNotFound
-      case routes => routes.find(_.path.size == 1) match {
-        case Some(directRoute) => directRoute :: Nil
-        case _ => routes
-      }
+    val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
+      Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
     }
-
-    // At this point 'foundRoutes' cannot be empty
-    val randomizedRoutes = if (routeParams.randomize) Random.shuffle(foundRoutes) else foundRoutes
-    randomizedRoutes.head.path.map(graphEdgeToHop)
+    foundRoutes match {
+      case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
+        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
+      case Nil =>
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
+        throw RouteNotFound
+      case foundRoutes =>
+        val routes = foundRoutes.find(_.path.size == 1) match {
+          case Some(directRoute) => directRoute :: Nil
+          case _ => foundRoutes
+        }
+        // At this point 'routes' cannot be empty
+        val randomizedRoutes = if (routeParams.randomize) Random.shuffle(routes) else routes
+        val route = randomizedRoutes.head.path.map(graphEdgeToHop)
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
+        route
+    }
   }
 }
