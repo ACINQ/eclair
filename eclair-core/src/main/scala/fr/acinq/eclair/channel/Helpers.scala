@@ -83,6 +83,23 @@ object Helpers {
   }
 
   /**
+    * Returns the number of confirmations needed to safely handle the funding transaction,
+    * we make sure the cumulative block reward largely exceeds the channel size.
+    *
+    * @param nodeParams
+    * @param fundingSatoshis funding amount of the channel
+    * @return number of confirmations needed
+    */
+  def minDepthForFunding(nodeParams: NodeParams, fundingSatoshis: Satoshi): Long = fundingSatoshis match {
+    case funding if funding <= Channel.MAX_FUNDING => nodeParams.minDepthBlocks
+    case funding if funding > Channel.MAX_FUNDING =>
+      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+      val scalingFactor = 15
+      val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
+      nodeParams.minDepthBlocks.max(blocksToReachFunding)
+  }
+
+  /**
    * Called by the fundee
    */
   def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {

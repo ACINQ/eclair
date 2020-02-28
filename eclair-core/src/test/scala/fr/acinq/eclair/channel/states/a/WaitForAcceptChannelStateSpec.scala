@@ -48,14 +48,12 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     val aliceNodeParams = TestConstants.Alice.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
-      .modify(_.minDepthBlocks).setToIf(test.tags.contains("min-depth"))(6)
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
 
     val bobNodeParams = TestConstants.Bob.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-size"))(Btc(100))
-      .modify(_.minDepthBlocks).setToIf(test.tags.contains("min-depth"))(6)
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
 
     val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
 
@@ -159,19 +157,12 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("min-depth"), Tag("max-funding-size"))  { f =>
+  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("high-max-funding-size"))  { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-
-    assert(alice.underlyingActor.minDepthForFunding(Btc(1)) == 6)  // 4 conf would be enough but we use min-depth=6
-    assert(alice.underlyingActor.minDepthForFunding(Btc(6.25)) == 16)  // we use scaling_factor=15 and a fixed block reward of 6.25BTC
-    assert(alice.underlyingActor.minDepthForFunding(Btc(12.50)) == 31)
-    assert(alice.underlyingActor.minDepthForFunding(Btc(12.60)) == 32)
-    assert(alice.underlyingActor.minDepthForFunding(Btc(30)) == 73)
-    assert(alice.underlyingActor.minDepthForFunding(Btc(50)) == 121)
   }
 
   test("recv Error") { f =>
