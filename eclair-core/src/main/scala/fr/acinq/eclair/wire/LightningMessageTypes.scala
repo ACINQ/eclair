@@ -64,8 +64,8 @@ case class Pong(data: ByteVector) extends SetupMessage
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
-                              yourLastPerCommitmentSecret: Option[PrivateKey] = None,
-                              myCurrentPerCommitmentPoint: Option[PublicKey] = None) extends ChannelMessage with HasChannelId
+                              yourLastPerCommitmentSecret: PrivateKey,
+                              myCurrentPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
@@ -85,8 +85,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte,
-                       upfrontShutdownScript: Option[ByteVector] = None,
-                       tlvStream_opt: Option[TlvStream[OpenTlv]] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
@@ -102,7 +101,7 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          delayedPaymentBasepoint: PublicKey,
                          htlcBasepoint: PublicKey,
                          firstPerCommitmentPoint: PublicKey,
-                         upfrontShutdownScript: Option[ByteVector] = None) extends ChannelMessage with HasTemporaryChannelId
+                         tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,
