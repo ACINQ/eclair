@@ -68,7 +68,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(0.9))
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
 
     if (test.tags.contains("with_node_announcements")) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
@@ -316,13 +316,27 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
 
-  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("max-funding-satoshis"), Tag("wumbo")) { f =>
+  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag("wumbo")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) // Bob doesn't support wumbo, Alice does
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo.")
+  }
+
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag("wumbo")) { f =>
     import f._
 
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, remoteInit = wire.Init(hex"80000")) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
