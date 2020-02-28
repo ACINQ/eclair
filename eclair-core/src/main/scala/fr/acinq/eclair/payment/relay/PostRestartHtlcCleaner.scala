@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
@@ -67,6 +68,9 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
     checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features)
   }
 
+  Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
+  Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.size)
+
   override def receive: Receive = main(brokenHtlcs)
 
   // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
@@ -83,9 +87,11 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
             preimage match {
               case Some(preimage) =>
                 log.info(s"fulfilling broken htlc=$htlc")
+                Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
                 channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
               case None =>
                 log.info(s"failing not relayed htlc=$htlc")
+                Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
                 channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
             }
             false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
@@ -93,13 +99,21 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
             true // the htlc has already been settled, we can forget about it now
         }
       acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.add.id} channelId=${htlc.add.channelId}"))
-      context become main(brokenHtlcs.copy(notRelayed = brokenHtlcs.notRelayed diff acked))
+      val notRelayed1 = brokenHtlcs.notRelayed diff acked
+      Metrics.PendingNotRelayed.update(notRelayed1.size)
+      context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
 
-    case Relayer.ForwardFulfill(fulfill, to, add) => handleDownstreamFulfill(brokenHtlcs, to, add, fulfill.paymentPreimage)
+    case Relayer.ForwardFulfill(fulfill, to, add) =>
+      log.info("htlc fulfilled downstream: ({},{})", fulfill.channelId, fulfill.id)
+      handleDownstreamFulfill(brokenHtlcs, to, add, fulfill.paymentPreimage)
 
-    case Relayer.ForwardFail(_, to, add) => handleDownstreamFailure(brokenHtlcs, to, add)
+    case Relayer.ForwardFail(_, to, add) =>
+      log.info("htlc failed downstream: ({},{})", add.channelId, add.id)
+      handleDownstreamFailure(brokenHtlcs, to, add)
 
-    case Relayer.ForwardFailMalformed(_, to, add) => handleDownstreamFailure(brokenHtlcs, to, add)
+    case Relayer.ForwardFailMalformed(_, to, add) =>
+      log.info("htlc failed (malformed) downstream: ({},{})", add.channelId, add.id)
+      handleDownstreamFailure(brokenHtlcs, to, add)
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
@@ -136,12 +150,14 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
           // instead spread across multiple local origins) so we can now forget this origin.
+          Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
         case Origin.TrampolineRelayed(origins, _) =>
           // We fulfill upstream as soon as we have the payment preimage available.
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
             log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${origins.length} HTLCs upstream")
             origins.foreach { case (channelId, htlcId) =>
+              Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = true).increment()
               commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
             }
           }
@@ -150,14 +166,17 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
             log.info(s"payment with paymentHash=${fulfilledHtlc.paymentHash} successfully relayed")
             // We could emit a TrampolinePaymentRelayed event but that requires more book-keeping on incoming HTLCs.
             // It seems low priority so isn't done at the moment but can be added when we feel we need it.
+            Metrics.PendingRelayedOut.decrement()
             context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin, settledUpstream = brokenHtlcs.settledUpstream - origin))
           } else {
             context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut + (origin -> relayedOut1), settledUpstream = brokenHtlcs.settledUpstream + origin))
           }
         case _: Origin.Relayed =>
+          Metrics.Unhandled.withTag(Metrics.Hint, origin.getClass.getSimpleName).increment()
           log.error(s"unsupported origin: ${origin.getClass.getSimpleName}")
       }
       case None =>
+        Metrics.Unhandled.withTag(Metrics.Hint, "MissingOrigin").increment()
         log.error(s"received fulfill with unknown origin $origin for htlcId=${fulfilledHtlc.id}, channelId=${fulfilledHtlc.channelId}: cannot forward upstream")
     }
 
@@ -185,20 +204,24 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               case Origin.TrampolineRelayed(origins, _) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} upstream HTLCs")
                 origins.foreach { case (channelId, htlcId) =>
+                  Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
                   commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
                 }
               case _: Origin.Relayed =>
+                Metrics.Unhandled.withTag(Metrics.Hint, origin.getClass.getSimpleName).increment()
                 log.error(s"unsupported origin: ${origin.getClass.getSimpleName}")
             }
           }
           // We can forget about this payment since it has been fully settled downstream and upstream.
+          Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin, settledUpstream = brokenHtlcs.settledUpstream - origin))
         } else {
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut + (origin -> relayedOut1)))
         }
       case None =>
+        Metrics.Unhandled.withTag(Metrics.Hint, "MissingOrigin").increment()
         log.error(s"received failure with unknown origin $origin for htlcId=${failedHtlc.id}, channelId=${failedHtlc.channelId}")
     }
 
@@ -207,6 +230,21 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 object PostRestartHtlcCleaner {
 
   def props(nodeParams: NodeParams, commandBuffer: ActorRef, initialized: Option[Promise[Done]] = None) = Props(classOf[PostRestartHtlcCleaner], nodeParams, commandBuffer, initialized)
+
+  object Metrics {
+
+    import kamon.Kamon
+
+    val Relayed = "relayed"
+    val Hint = "hint"
+
+    private val pending = Kamon.gauge("payment.broken-htlcs.pending", "Broken HTLCs because of a node restart")
+    val PendingNotRelayed = pending.withTag(Relayed, value = false)
+    val PendingRelayedOut = pending.withTag(Relayed, value = true)
+    val Resolved = Kamon.counter("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
+    val Unhandled = Kamon.counter("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
+
+  }
 
   /**
    * @param add      incoming HTLC that was committed upstream.
@@ -276,6 +314,8 @@ object PostRestartHtlcCleaner {
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
+    log.debug("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
+    log.debug("relayedOut={}", relayedOut.values.toSeq)
     BrokenHtlcs(notRelayed, relayedOut, Set.empty)
   }
 
