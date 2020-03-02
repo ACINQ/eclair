@@ -69,7 +69,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
   }
 
   Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
-  Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.size)
+  Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
 
   override def receive: Receive = main(brokenHtlcs)
 
@@ -78,7 +78,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
-    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
+    case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
+      log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == data.channelId) // only consider htlcs related to this channel
         .filter {
@@ -241,8 +242,8 @@ object PostRestartHtlcCleaner {
     private val pending = Kamon.gauge("payment.broken-htlcs.pending", "Broken HTLCs because of a node restart")
     val PendingNotRelayed = pending.withTag(Relayed, value = false)
     val PendingRelayedOut = pending.withTag(Relayed, value = true)
-    val Resolved = Kamon.counter("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
-    val Unhandled = Kamon.counter("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
+    val Resolved = Kamon.gauge("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
+    val Unhandled = Kamon.gauge("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
 
   }
 
@@ -315,7 +316,7 @@ object PostRestartHtlcCleaner {
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
     log.debug("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
-    log.debug("relayedOut={}", relayedOut.values.toSeq)
+    log.debug("relayedOut={}", relayedOut)
     BrokenHtlcs(notRelayed, relayedOut, Set.empty)
   }
 
