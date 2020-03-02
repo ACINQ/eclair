@@ -16,14 +16,18 @@
 
 package fr.acinq.eclair.payment.receive
 
+import java.util.concurrent.TimeUnit
+
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
 
 import scala.collection.immutable.Queue
+import scala.compat.Platform
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -38,6 +42,8 @@ import scala.collection.immutable.Queue
 class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, parent: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentFSM.State, MultiPartPaymentFSM.Data] {
 
   import MultiPartPaymentFSM._
+
+  val start = Platform.currentTime
 
   setTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry, repeat = false)
 
@@ -97,6 +103,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         case PaymentSucceeded(parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           parent ! MultiPartPaymentSucceeded(paymentHash, parts)
+          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = true).record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
         case d =>
           log.error("unexpected payment success data {}", d.getClass.getSimpleName)
       }
@@ -105,6 +112,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         case PaymentFailed(failure, parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           parent ! MultiPartPaymentFailed(paymentHash, failure, parts)
+          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = false).record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
         case d =>
           log.error("unexpected payment failure data {}", d.getClass.getSimpleName)
       }

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.payment.send
 
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 import akka.actor.{ActorRef, FSM, Props}
 import akka.event.Logging.MDC
@@ -24,6 +25,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{Commitments, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
@@ -38,6 +40,7 @@ import kamon.context.Context
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
+import scala.compat.Platform
 import scala.util.Random
 
 /**
@@ -56,12 +59,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   val id = cfg.id
   val paymentHash = cfg.paymentHash
+  val start = Platform.currentTime
 
   private val span = Kamon.spanBuilder("multi-part-payment")
-    .tag("parentPaymentId", cfg.parentId.toString)
-    .tag("paymentHash", paymentHash.toHex)
-    .tag("recipientNodeId", cfg.recipientNodeId.toString())
-    .tag("recipientAmount", cfg.recipientAmount.toLong)
+    .tag(Tags.ParentId, cfg.parentId.toString)
+    .tag(Tags.PaymentHash, paymentHash.toHex)
+    .tag(Tags.RecipientNodeId, cfg.recipientNodeId.toString())
+    .tag(Tags.RecipientAmount, cfg.recipientAmount.toLong)
     .start()
 
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
@@ -91,6 +95,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.request.totalAmount, channels, d.networkStats, d.request, randomize = false)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.request.totalAmount} with our current balance")
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(PaymentError.BalanceTooLow)))
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(PaymentError.BalanceTooLow) :: Nil, Set.empty)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size)
@@ -149,6 +154,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize = true) // we randomize channel selection when we retry
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(PaymentError.BalanceTooLow)))
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(PaymentError.BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
@@ -245,6 +251,10 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         log.info("multi-part payment succeeded")
         reply(origin, paymentSent)
     }
+    Metrics.SentPaymentDuration
+      .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
+      .withTag(Tags.Success, value = event.isRight)
+      .record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
     span.finish()
     stop(FSM.Normal)
   }
@@ -260,6 +270,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
       val failure = LocalFailure(PaymentError.RetryExhausted)
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure))
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
     } else {
       None
