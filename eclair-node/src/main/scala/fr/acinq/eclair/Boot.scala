@@ -28,6 +28,8 @@ import kamon.Kamon
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
+import collection.JavaConverters._
+
 
 /**
   * Created by PM on 25/01/2016.
@@ -37,18 +39,23 @@ object Boot extends App with Logging {
   val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    val plugins = Plugin.loadPlugins(args.map(new File(_)))
-    plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node")
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
+    val pluginPathsByArg = args.toList
+    val pluginPathsByConf = setup.config.getStringList("plugin-paths").asScala.toList
+    val pluginFiles = (pluginPathsByArg ++ pluginPathsByConf).distinct.map(new File(_)) // we use distinct to remove possible duplicates
+    val plugins = Plugin.loadPlugins(pluginFiles)
+    plugins.foreach { plugin =>
+      logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}")
+      plugin.onSetup(setup)
+    }
 
     if (setup.config.getBoolean("enable-kamon")) {
       Kamon.init(setup.appConfig)
     }
 
-    plugins.foreach(_.onSetup(setup))
-    setup.bootstrap onComplete {
+    setup.bootstrap.onComplete {
       case Success(kit) =>
         startApiServiceIfEnabled(setup.config, kit)
         plugins.foreach(_.onKit(kit))
