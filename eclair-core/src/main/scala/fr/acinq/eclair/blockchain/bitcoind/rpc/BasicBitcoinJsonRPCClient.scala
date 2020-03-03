@@ -25,7 +25,7 @@ import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(user: String, password: String, walletName: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
 
   val scheme = if (ssl) "https" else "http"
   implicit val formats = DefaultFormats.withBigDecimal
@@ -43,7 +43,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     KamonExt.timeFuture("bitcoin.rpc.basic.invoke.time") {
     for {
       res <- sttp
-        .post(uri"$scheme://$host:$port/wallet/") // wallet/ specifies to use the default bitcoind wallet, named ""
+        .post(uri"$scheme://$host:$port/wallet/$walletName")
         .body(requests)
         .auth.basic(user, password)
         .response(asJson[Seq[JsonRPCResponse]])

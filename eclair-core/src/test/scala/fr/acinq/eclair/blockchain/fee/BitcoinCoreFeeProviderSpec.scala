@@ -84,6 +84,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
 
@@ -115,6 +116,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     val mockBitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport")) {
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
