@@ -62,6 +62,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
 

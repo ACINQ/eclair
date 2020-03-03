@@ -78,6 +78,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
       val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
         password = config.getString("bitcoind.rpcpassword"),
+        walletName = config.getString("bitcoind.walletname"),
         host = config.getString("bitcoind.host"),
         port = config.getInt("bitcoind.rpcport")) {
 
@@ -105,6 +106,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
     val wallet = new BitcoinCoreWallet(bitcoinClient)
@@ -138,6 +140,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
     val wallet = new BitcoinCoreWallet(bitcoinClient)
@@ -198,6 +201,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
     val wallet = new BitcoinCoreWallet(bitcoinClient)
@@ -239,6 +243,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
+      walletName = config.getString("bitcoind.walletname"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
     val wallet = new BitcoinCoreWallet(bitcoinClient)

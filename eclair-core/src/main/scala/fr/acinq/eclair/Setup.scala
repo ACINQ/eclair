@@ -140,6 +140,7 @@ class Setup(datadir: File,
       val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
         password = config.getString("bitcoind.rpcpassword"),
+        walletName = config.getString("bitcoind.walletname"),
         host = config.getString("bitcoind.host"),
         port = config.getInt("bitcoind.rpcport"))
       implicit val timeout = Timeout(30 seconds)
@@ -380,7 +381,7 @@ case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could
 
 case object BitcoinRPCConnectionException extends RuntimeException("could not connect to bitcoind using json-rpc")
 
-case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
+case object BitcoinWalletDisabledException extends RuntimeException("wrong wallet name or wallet disabled")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
 
