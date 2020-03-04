@@ -82,4 +82,9 @@ class StartupSpec extends FunSuite {
     assert(Try(makeNodeParamsWithDefaults(illegalFeaturesConf.withFallback(defaultConf))).isFailure)
   }
 
+  test("NodeParams should fail if htlc-minimum-msat is set to 0") {
+    val noHtlcMinimumConf = ConfigFactory.parseString("htlc-minimum-msat = 0")
+    assert(Try(makeNodeParamsWithDefaults(noHtlcMinimumConf.withFallback(defaultConf))).isFailure)
+  }
+
 }
