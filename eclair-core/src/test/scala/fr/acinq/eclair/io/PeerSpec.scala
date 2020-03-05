@@ -22,8 +22,8 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, Btc, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, Btc}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
@@ -389,6 +389,21 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(transport.expectMsgType[Pong].data.size === ping.pongLength)
   }
 
+  test("send a ping if no message received for 30s") { f =>
+    import f._
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    // we make the transport send a message, this will delay the sending of a ping
+    val dummy = updates.head
+    for (_ <- 1 to 5) { // the goal of this loop is to make sure that we don't send pings when we receive messages
+      // we make the transport send a message, this will delay the sending of a ping --again
+      transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+      transport.send(peer, dummy)
+    }
+    // ~30s without an incoming message: peer should send a ping
+    transport.expectMsgType[Ping](35 seconds)
+    transport.expectNoMsg()
+  }
+
   test("ignore malicious ping") { f =>
     import f._
     val probe = TestProbe()
@@ -419,7 +434,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peer, rebroadcast)
-    transport.expectNoMsg(10 seconds)
+    transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -473,7 +488,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     transport.expectMsg(updates(6))
     transport.expectMsg(updates(10))
     transport.expectMsg(nodes(4))
-    transport.expectNoMsg(10 seconds)
+    transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("react to peer's bad behavior") { f =>
