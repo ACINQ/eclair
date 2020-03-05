@@ -22,6 +22,7 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType}
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
@@ -80,6 +81,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         db.getIncomingPayment(p.add.paymentHash) match {
           case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
             case Some(cmdFail) =>
+              Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
               commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
             case None =>
               log.info("received payment for amount={} totalAmount={}", p.add.amountMsat, p.payload.totalAmount)
@@ -93,6 +95,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
               }
           }
           case None =>
+            Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
             val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
             commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
         }
@@ -100,6 +103,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
 
     case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
+        Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, failure.getClass.getSimpleName).increment()
         log.warning("payment with paidAmount={} failed ({})", parts.map(_.amount).sum, failure)
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
         parts.collect {
