@@ -164,7 +164,7 @@ addDebugger () {
 }
 
 addKanelaAgent () {
-  addJava "-javaagent:$lib_dir/kanela-agent-1.0.1.jar"
+  addJava "-javaagent:$lib_dir/kanela-agent-1.0.5.jar"
 }
 
 require_arg () {
