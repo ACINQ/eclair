@@ -78,7 +78,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
-    case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
+    case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
       log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == data.channelId) // only consider htlcs related to this channel
@@ -89,11 +89,15 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               case Some(preimage) =>
                 log.info(s"fulfilling broken htlc=$htlc")
                 Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
-                channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+                if (e.currentState != CLOSED) {
+                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+                }
               case None =>
                 log.info(s"failing not relayed htlc=$htlc")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
-                channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+                if (e.currentState != CLOSING && e.currentState != CLOSED) {
+                  channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+                }
             }
             false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
           case _ =>
