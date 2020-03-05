@@ -394,7 +394,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     // we make the transport send a message, this will delay the sending of a ping
     val dummy = updates.head
-    for (_ <- 1 to 5) {
+    for (_ <- 1 to 5) { // the goal of this loop is to make sure that we don't send pings when we receive messages
       // we make the transport send a message, this will delay the sending of a ping --again
       transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
       transport.send(peer, dummy)

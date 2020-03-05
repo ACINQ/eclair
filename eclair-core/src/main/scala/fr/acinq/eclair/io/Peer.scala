@@ -192,7 +192,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
         val rebroadcastDelay = Random.nextInt(nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
         log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
-        scheduleNextPing()
         goto(CONNECTED) using ConnectedData(d.address_opt, d.transport, d.localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) }, rebroadcastDelay)
       }
 
@@ -238,7 +237,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
     heartbeat {
       case Event(SendPing, d: ConnectedData) =>
         if (d.expectedPong_opt.isEmpty) {
-          log.debug(s"sending a ping request")
           // no need to use secure random here
           val pingSize = Random.nextInt(1000)
           val pongSize = Random.nextInt(1000)
@@ -278,6 +276,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
             val latency = Platform.currentTime - timestamp
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
+            // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
           case None =>
             log.debug(s"received unexpected pong with size=${data.length}")
         }
