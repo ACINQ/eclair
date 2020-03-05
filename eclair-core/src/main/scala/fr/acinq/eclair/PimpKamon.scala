@@ -27,11 +27,11 @@ import scala.concurrent.{ExecutionContext, Future}
 object KamonExt {
 
   def time[T](name: String, tags: TagSet = TagSet.Empty)(f: => T): T = {
-    val timer = Kamon.timer(name).withTags(tags).start()
+    val started = Kamon.timer(name).withTags(tags).start()
     try {
       f
     } finally {
-      timer.stop()
+      started.stop()
     }
   }
 
@@ -45,9 +45,9 @@ object KamonExt {
   }
 
   def timeFuture[T](name: String, tags: TagSet = TagSet.Empty)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
-    val timer = Kamon.timer(name).withTags(tags).start()
+    val started = Kamon.timer(name).withTags(tags).start()
     val res = f
-    res onComplete (_ => timer.stop)
+    res onComplete (_ => started.stop)
     res
   }
 
