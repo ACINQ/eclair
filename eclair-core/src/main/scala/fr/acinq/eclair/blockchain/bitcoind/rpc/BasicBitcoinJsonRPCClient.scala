@@ -43,7 +43,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     KamonExt.timeFuture("bitcoin.rpc.basic.invoke.time") {
     for {
       res <- sttp
-        .post(uri"$scheme://$host:$port")
+        .post(uri"$scheme://$host:$port/wallet/") // wallet/ specifies to use the default bitcoind wallet, named ""
         .body(requests)
         .auth.basic(user, password)
         .response(asJson[Seq[JsonRPCResponse]])
