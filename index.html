@@ -307,6 +307,9 @@
                   <li>
                     <a href="#allupdates" class="toc-h2 toc-link" data-title="AllUpdates">AllUpdates</a>
                   </li>
+                  <li>
+                    <a href="#networkstats" class="toc-h2 toc-link" data-title="NetworkStats">NetworkStats</a>
+                  </li>
               </ul>
           </li>
           <li>
@@ -1193,6 +1196,58 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 <td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
+<h2 id='networkstats'>NetworkStats</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/networkstats"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli networkstats
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+   </span><span class="s2">"channels"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"nodes"</span><span class="p">:</span><span class="mi">2</span><span class="p">,</span><span class="w">
+   </span><span class="s2">"capacity"</span><span class="p">:{</span><span class="w">
+      </span><span class="s2">"median"</span><span class="p">:</span><span class="mi">30</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile5"</span><span class="p">:</span><span class="mi">12</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile10"</span><span class="p">:</span><span class="mi">14</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile25"</span><span class="p">:</span><span class="mi">20</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile75"</span><span class="p">:</span><span class="mi">40</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile90"</span><span class="p">:</span><span class="mi">46</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile95"</span><span class="p">:</span><span class="mi">48</span><span class="w">
+   </span><span class="p">},</span><span class="w">
+   </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:{</span><span class="w">
+      </span><span class="s2">"median"</span><span class="p">:</span><span class="mi">32</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile5"</span><span class="p">:</span><span class="mi">11</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile10"</span><span class="p">:</span><span class="mi">13</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile25"</span><span class="p">:</span><span class="mi">22</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile75"</span><span class="p">:</span><span class="mi">42</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile90"</span><span class="p">:</span><span class="mi">51</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile95"</span><span class="p">:</span><span class="mi">53</span><span class="w">
+   </span><span class="p">},</span><span class="w">
+   </span><span class="s2">"feeBase"</span><span class="p">:{</span><span class="w">
+      </span><span class="s2">"median"</span><span class="p">:</span><span class="mi">32</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile5"</span><span class="p">:</span><span class="mi">11</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile10"</span><span class="p">:</span><span class="mi">13</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile25"</span><span class="p">:</span><span class="mi">22</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile75"</span><span class="p">:</span><span class="mi">42</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile90"</span><span class="p">:</span><span class="mi">51</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile95"</span><span class="p">:</span><span class="mi">53</span><span class="w">
+   </span><span class="p">},</span><span class="w">
+   </span><span class="s2">"feeProportional"</span><span class="p">:{</span><span class="w">
+      </span><span class="s2">"median"</span><span class="p">:</span><span class="mi">32</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile5"</span><span class="p">:</span><span class="mi">11</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile10"</span><span class="p">:</span><span class="mi">13</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile25"</span><span class="p">:</span><span class="mi">22</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile75"</span><span class="p">:</span><span class="mi">42</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile90"</span><span class="p">:</span><span class="mi">51</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"percentile95"</span><span class="p">:</span><span class="mi">53</span><span class="w">
+   </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<p>Returns the median and percentiles statistics about the network graph such as fees, cltvExpiry and capacity.</p>
+<h3 id='http-request-14'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/networkstats</code></p>
 <h1 id='payments'>Payments</h1>
 <p>Interfaces for sending and receiving payments through eclair.</p>
 <h2 id='createinvoice'>CreateInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">description</span><span class="o">=</span>&lt;some_description&gt; <span class="se">\</span>
@@ -1216,7 +1271,7 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Create a <strong>BOLT11</strong> payment invoice.</p>
-<h3 id='http-request-14'>HTTP Request</h3>
+<h3 id='http-request-15'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/createinvoice</code></p>
 <h3 id='parameters-12'>Parameters</h3>
 <table><thead>
@@ -1277,7 +1332,7 @@ eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Returns detailed information about the given invoice.</p>
-<h3 id='http-request-15'>HTTP Request</h3>
+<h3 id='http-request-16'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/parseinvoice</code></p>
 <h3 id='parameters-13'>Parameters</h3>
 <table><thead>
@@ -1309,7 +1364,7 @@ eclair-cli payinvoice --invoice<span class="o">=</span>&lt;some_invoice&gt;
 default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller. It&#39;s possible to add an
 extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
-<h3 id='http-request-16'>HTTP Request</h3>
+<h3 id='http-request-17'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/payinvoice</code></p>
 <h3 id='parameters-14'>Parameters</h3>
 <table><thead>
@@ -1372,7 +1427,7 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
 default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller.It&#39;s possible to add an
 extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
-<h3 id='http-request-17'>HTTP Request</h3>
+<h3 id='http-request-18'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
 <h3 id='parameters-15'>Parameters</h3>
 <table><thead>
@@ -1452,7 +1507,7 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 
 <p>This command may also be used to send multipart payments with your own splitting algorithm.
 Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on how to do that.</p>
-<h3 id='http-request-18'>HTTP Request</h3>
+<h3 id='http-request-19'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtoroute</code></p>
 <h3 id='parameters-16'>Parameters</h3>
 <table><thead>
@@ -1599,7 +1654,7 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 <p>Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment
 attempt. If the attempt was unsuccessful the <code>status</code> field contains a non empty array of detailed failures descriptions.
 The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
-<h3 id='http-request-19'>HTTP Request</h3>
+<h3 id='http-request-20'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getsentinfo</code></p>
 <h3 id='parameters-17'>Parameters</h3>
 <table><thead>
@@ -1654,7 +1709,7 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
 </span></code></pre>
 <p>Check whether a payment corresponding to the given <code>paymentHash</code> has been received, it is possible to use a BOLT11 invoice
 as parameter instead of the <code>paymentHash</code> but at least one of the two must be specified.</p>
-<h3 id='http-request-20'>HTTP Request</h3>
+<h3 id='http-request-21'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getreceivedinfo</code></p>
 <h3 id='parameters-18'>Parameters</h3>
 <table><thead>
@@ -1697,7 +1752,7 @@ eclair-cli getinvoice --description<span class="o">=</span>&lt;some_description&
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Queries the payment DB for a stored invoice with the given <code>paymentHash</code>, if none is found it responds HTTP 404.</p>
-<h3 id='http-request-21'>HTTP Request</h3>
+<h3 id='http-request-22'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getinvoice</code></p>
 <h3 id='parameters-19'>Parameters</h3>
 <table><thead>
@@ -1744,7 +1799,7 @@ eclair-cli listinvoices
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns all the <strong>BOLT11</strong> invoices stored.</p>
-<h3 id='http-request-22'>HTTP Request</h3>
+<h3 id='http-request-23'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listinvoices</code></p>
 <h3 id='parameters-20'>Parameters</h3>
 <table><thead>
@@ -1798,7 +1853,7 @@ eclair-cli listpendinginvoices
 </span></code></pre>
 <p>Returns all non paid, non expired <strong>BOLT11</strong> invoices stored, the result can be filtered by dates and is outputted in descending
 order.</p>
-<h3 id='http-request-23'>HTTP Request</h3>
+<h3 id='http-request-24'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listpendinginvoices</code></p>
 <h3 id='parameters-21'>Parameters</h3>
 <table><thead>
@@ -1838,7 +1893,7 @@ eclair-cli findroute --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
 </span></code></pre>
 <p>Finds a route to the node specified by the invoice, if the invoice does not specify an amount
 you must do so via the <code>amountMsat</code> parameter.</p>
-<h3 id='http-request-24'>HTTP Request</h3>
+<h3 id='http-request-25'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroute</code></p>
 <h3 id='parameters-22'>Parameters</h3>
 <table><thead>
@@ -1878,7 +1933,7 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Finds a route to the node.</p>
-<h3 id='http-request-25'>HTTP Request</h3>
+<h3 id='http-request-26'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutetonode</code></p>
 <h3 id='parameters-23'>Parameters</h3>
 <table><thead>
@@ -1915,7 +1970,7 @@ eclair-cli getnewaddress
 <p>Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
 depend on the configured address-type in <code>bitcoin.conf</code>.</p>
-<h3 id='http-request-26'>HTTP Request</h3>
+<h3 id='http-request-27'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getnewaddress</code></p>
 <h2 id='audit'>Audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
 
@@ -1985,7 +2040,7 @@ eclair-cli audit
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.
 All monetary values are expressed in millisatoshi.</p>
-<h3 id='http-request-27'>HTTP Request</h3>
+<h3 id='http-request-28'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
 <h3 id='parameters-24'>Parameters</h3>
 <table><thead>
@@ -2029,7 +2084,7 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations, currency values are in Satoshis.</p>
-<h3 id='http-request-28'>HTTP Request</h3>
+<h3 id='http-request-29'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
 <h3 id='parameters-25'>Parameters</h3>
 <table><thead>
@@ -2073,7 +2128,7 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels, the information is then aggregated in order to display
 statistics about the routing activity of the channels, values are in Satoshis.</p>
-<h3 id='http-request-29'>HTTP Request</h3>
+<h3 id='http-request-30'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
 <h2 id='usablebalances'>UsableBalances</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/usablebalances"</span>
 
@@ -2094,7 +2149,7 @@ eclair-cli usablebalances
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the available balance of local channels.</p>
-<h3 id='http-request-30'>HTTP Request</h3>
+<h3 id='http-request-31'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/usablebalances</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>WS</h2>
 <blockquote>
@@ -2209,7 +2264,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <td>A payment failed</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-31'>HTTP Request</h3>
+<h3 id='http-request-32'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
