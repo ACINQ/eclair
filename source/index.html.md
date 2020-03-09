@@ -773,6 +773,66 @@ Parameter | Description                                                  | Optio
 --------- | ------------------------------------------------------------ | -------- | ---------------------------
 nodeId    | The node id of the node to be used as filter for the updates | Yes      | 33-bytes-HexString (String)
 
+## NetworkStats
+
+```shell
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/networkstats"
+
+# with eclair-cli
+eclair-cli networkstats
+```
+
+> The above command returns:
+
+```json
+{
+   "channels":1,
+   "nodes":2,
+   "capacity":{
+      "median":30,
+      "percentile5":12,
+      "percentile10":14,
+      "percentile25":20,
+      "percentile75":40,
+      "percentile90":46,
+      "percentile95":48
+   },
+   "cltvExpiryDelta":{
+      "median":32,
+      "percentile5":11,
+      "percentile10":13,
+      "percentile25":22,
+      "percentile75":42,
+      "percentile90":51,
+      "percentile95":53
+   },
+   "feeBase":{
+      "median":32,
+      "percentile5":11,
+      "percentile10":13,
+      "percentile25":22,
+      "percentile75":42,
+      "percentile90":51,
+      "percentile95":53
+   },
+   "feeProportional":{
+      "median":32,
+      "percentile5":11,
+      "percentile10":13,
+      "percentile25":22,
+      "percentile75":42,
+      "percentile90":51,
+      "percentile95":53
+   }
+}
+```
+
+Returns the median and percentiles statistics about the network graph such as fees, cltvExpiry and capacity.
+
+### HTTP Request
+
+`POST http://localhost:8080/networkstats`
+
 # Payments
 
 Interfaces for sending and receiving payments through eclair.
