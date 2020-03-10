@@ -20,6 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -36,13 +37,13 @@ import kamon.Kamon
   *
   * All incoming/outgoing connections are processed here, before being sent to the switchboard
   */
-class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
+class Authenticator(nodeParams: NodeParams, router: ActorRef) extends Actor with DiagnosticActorLogging {
 
   override def receive: Receive = {
-    case switchboard: ActorRef => context become ready(switchboard, Map.empty)
+    case switchboard: ActorRef => context become ready(switchboard, Map.empty, 0)
   }
 
-  def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
+  def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth], counter: Long): Receive = {
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
       log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
       Kamon.counter("peers.connecting.count").withTag("state", "authenticating").increment()
@@ -50,25 +51,36 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
         KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
         remoteNodeId_opt.map(_.value),
         connection = connection,
-        codec = LightningMessageCodecs.meteredLightningMessageCodec))
+        codec = LightningMessageCodecs.meteredLightningMessageCodec),
+        name = s"transport-$counter")
       context watch transport
-      context become ready(switchboard, authenticating + (transport -> pending))
+      context become ready(switchboard, authenticating + (transport -> pending), counter + 1)
 
-    case HandshakeCompleted(connection, transport, remoteNodeId) if authenticating.contains(transport) =>
+    case HandshakeCompleted(_, transport, remoteNodeId) if authenticating.contains(transport) =>
       val pendingAuth = authenticating(transport)
       import pendingAuth.{address, remoteNodeId_opt}
       val outgoing = remoteNodeId_opt.isDefined
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (outgoing) "outgoing" else "incoming"}")
       Kamon.counter("peers.connecting.count").withTag("state", "authenticated").increment()
-      switchboard ! Authenticated(connection, transport, remoteNodeId, address, remoteNodeId_opt.isDefined, pendingAuth.origin_opt)
-      context become ready(switchboard, authenticating - transport)
+      val peerConnection = context.actorOf(PeerConnection.props(
+        nodeParams = nodeParams,
+        remoteNodeId = remoteNodeId,
+        address = address,
+        outgoing = outgoing,
+        origin_opt = pendingAuth.origin_opt,
+        transport = transport,
+        authenticator = self,
+        router = router
+      ), name = s"peer-conn-$counter")
+      switchboard ! Authenticated(peerConnection, remoteNodeId, address, remoteNodeId_opt.isDefined, pendingAuth.origin_opt)
+      context become ready(switchboard, authenticating - transport, counter + 1)
 
     case Terminated(transport) =>
       authenticating.get(transport) match {
         case Some(pendingAuth) =>
           // we send an error only when we are the initiator
           pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(AuthenticationFailed(pendingAuth.address)))
-          context become ready(switchboard, authenticating - transport)
+          context become ready(switchboard, authenticating - transport, counter)
         case None => ()
       }
 
@@ -89,12 +101,12 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
 
 object Authenticator {
 
-  def props(nodeParams: NodeParams): Props = Props(new Authenticator(nodeParams))
+  def props(nodeParams: NodeParams, router: ActorRef): Props = Props(new Authenticator(nodeParams, router))
 
   // @formatter:off
   case class OutgoingConnection(remoteNodeId: PublicKey, address: InetSocketAddress)
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef])
-  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
+  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
   case class AuthenticationFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
   // @formatter:on
 
