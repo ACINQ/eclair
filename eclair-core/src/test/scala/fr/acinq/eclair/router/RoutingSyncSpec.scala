@@ -77,10 +77,12 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     pipe.ignoreMsg {
       case _: TransportHandler.ReadAck => true
       case _: GossipTimestampFilter => true
+      case _: GossipDecision.Duplicate => true
+      case _: GossipDecision.Accepted => true
     }
     val srcId = src.underlyingActor.nodeParams.nodeId
     val tgtId = tgt.underlyingActor.nodeParams.nodeId
-    sender.send(src, SendChannelQuery(tgtId, pipe.ref, extendedQueryFlags_opt))
+    sender.send(src, SendChannelQuery(src.underlyingActor.nodeParams.chainHash, tgtId, pipe.ref, extendedQueryFlags_opt))
     // src sends a query_channel_range to bob
     val qcr = pipe.expectMsgType[QueryChannelRange]
     pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, qcr))
@@ -253,7 +255,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, None))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
 
@@ -269,7 +271,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     assert(sync.total == 1)
 
     // simulate a re-connection
-    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).isEmpty)
