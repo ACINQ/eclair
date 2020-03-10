@@ -160,7 +160,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
             if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
               log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(d.remoteNodeId, self, flags_opt = flags_opt)
+              router ! SendChannelQuery(nodeParams.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
             } else {
               log.info("not syncing with this peer")
             }
@@ -258,11 +258,12 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
+        val thisRemote = RemoteGossip(self, d.remoteNodeId)
         /**
          * Send and count in a single iteration
          */
         def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[GossipOrigin]]): Int = msgs.foldLeft(0) {
-          case (count, (_, origins)) if origins.contains(RemoteGossip(self)) =>
+          case (count, (_, origins)) if origins.contains(thisRemote) =>
             // the announcement came from this peer, we don't send it back
             count
           case (count, (msg, origins)) if !timestampInRange(d.nodeParams, msg, origins, d.gossipTimestampFilter) =>
@@ -321,9 +322,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         d.transport forward readAck
         stay
 
-      case Event(badMessage: BadMessage, d: ConnectedData) =>
-        val behavior1 = badMessage match {
-          case InvalidSignature(r) =>
+      case Event(rejectedGossip: GossipDecision.Rejected, d: ConnectedData) =>
+        val behavior1 = rejectedGossip match {
+          case GossipDecision.InvalidSignature(r) =>
             val bin: String = LightningMessageCodecs.meteredLightningMessageCodec.encode(r) match {
               case Attempt.Successful(b) => b.toHex
               case _ => "unknown"
@@ -333,14 +334,14 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
             d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"bad announcement sig! bin=$bin".getBytes()))
             d.behavior
-          case InvalidAnnouncement(c) =>
+          case GossipDecision.InvalidAnnouncement(c) =>
             // they seem to be sending us fake announcements?
             log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
             // for now we just return an error, maybe ban the peer in the future?
             // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
             d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes()))
             d.behavior
-          case ChannelClosed(_) =>
+          case GossipDecision.ChannelClosed(_) =>
             if (d.behavior.ignoreNetworkAnnouncement) {
               // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
@@ -351,6 +352,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
               setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
             }
+          case _ => d.behavior // other rejections are not considered punishable offenses
         }
         stay using d.copy(behavior = behavior1)
 
@@ -373,6 +375,10 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       }
       stop(FSM.Normal)
 
+    case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
+
+    case Event(_: GossipDecision.Rejected, _) => stay // we got disconnected while syncing
+
     case Event(_: Rebroadcast, _) => stay // ignored
 
     case Event(_: DelayedRebroadcast, _) => stay // ignored
@@ -386,9 +392,6 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
-
-    case Event(_: BadMessage, _) => stay // we got disconnected while syncing
-
   }
 
   /**
@@ -479,11 +482,6 @@ object PeerConnection {
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
-
-  sealed trait BadMessage
-  case class InvalidSignature(r: RoutingMessage) extends BadMessage
-  case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
-  case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
