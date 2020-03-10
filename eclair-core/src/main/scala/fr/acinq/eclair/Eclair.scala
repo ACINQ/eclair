@@ -41,7 +41,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-case class GetInfoResponse(nodeId: PublicKey, alias: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -313,7 +313,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
-    GetInfoResponse(nodeId = appKit.nodeParams.nodeId,
+    GetInfoResponse(
+      version = Kit.getVersionLong,
+      color = appKit.nodeParams.color.toString,
+      features = appKit.nodeParams.features.toHex,
+      nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,
       blockHeight = appKit.nodeParams.currentBlockHeight.toInt,

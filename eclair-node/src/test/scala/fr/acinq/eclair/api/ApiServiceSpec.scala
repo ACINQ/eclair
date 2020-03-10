@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.router.{NetworkStats, Stats}
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{FunSuite, Matchers}
 import scodec.bits._
@@ -168,6 +168,9 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
     eclair.getInfoResponse()(any[Timeout]) returns Future.successful(GetInfoResponse(
+      version = "1.0.0-SNAPSHOT-e3f1ec0",
+      color = Color(0.toByte, 1.toByte, 2.toByte).toString,
+      features = "",
       nodeId = aliceNodeId,
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
