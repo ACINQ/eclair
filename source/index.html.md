@@ -47,8 +47,11 @@ eclair-cli getinfo
 
 ```json
 {
+   "version":"1.0.0-SNAPSHOT-e3f1ec0",
    "nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
    "alias":"ACINQ",
+   "color":"#000102",
+   "features":"0a8a",
    "chainHash":"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
    "blockHeight":123456,
    "publicAddresses":[
@@ -58,7 +61,7 @@ eclair-cli getinfo
 }
 ```
 
-Returns information about this instance such as **nodeId** and current block height as seen by eclair.
+Returns information about this instance such as version, features, **nodeId** and current block height as seen by eclair.
 
 ### HTTP Request
 
