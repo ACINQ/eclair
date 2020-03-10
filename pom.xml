@@ -233,6 +233,7 @@
                     <parallel>true</parallel>
                     <systemProperties>
                         <buildDirectory>${project.build.directory}</buildDirectory>
+                        <fuzzFactor>${fuzzFactor}</fuzzFactor>
                     </systemProperties>
                     <argLine>-Xmx1024m -Dfile.encoding=UTF-8</argLine>
                 </configuration>

@@ -16,8 +16,11 @@
 
 package fr.acinq.eclair
 
+import org.scalactic.anyvals.PosInt
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{FunSuite, ParallelTestExecution, Tag}
+
+import scala.util.Try
 
 /**
  * Created by t-bast on 10/03/2020.
@@ -25,7 +28,9 @@ import org.scalatest.{FunSuite, ParallelTestExecution, Tag}
 
 abstract class FuzzingBaseClass extends FunSuite with GeneratorDrivenPropertyChecks with ParallelTestExecution {
 
-  implicit override val generatorDrivenConfig: PropertyCheckConfiguration = PropertyCheckConfiguration(minSuccessful = 10)
+  lazy val fuzzCount = sys.props.get("fuzzFactor").flatMap(f => Try(f.toInt).toOption).flatMap(PosInt.from).getOrElse(PosInt(10))
+
+  implicit override val generatorDrivenConfig: PropertyCheckConfiguration = PropertyCheckConfiguration(minSuccessful = fuzzCount)
 
 }
 
