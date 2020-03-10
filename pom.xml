@@ -233,6 +233,7 @@
                     <parallel>true</parallel>
                     <systemProperties>
                         <buildDirectory>${project.build.directory}</buildDirectory>
+                        <fuzzFactor>${fuzzFactor}</fuzzFactor>
                     </systemProperties>
                     <argLine>-Xmx1024m -Dfile.encoding=UTF-8</argLine>
                 </configuration>
@@ -273,6 +274,12 @@
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.version.short}</artifactId>
             <version>3.0.5</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.scalacheck</groupId>
+            <artifactId>scalacheck_2.11</artifactId>
+            <version>1.14.3</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

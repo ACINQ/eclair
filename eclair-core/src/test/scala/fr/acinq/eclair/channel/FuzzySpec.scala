@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
-import org.scalatest.{Outcome, Tag}
+import org.scalatest.Outcome
 
 import scala.collection.immutable.Nil
 import scala.concurrent.duration._
@@ -153,7 +153,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
   }
 
-  test("fuzzy test with only one party sending HTLCs", Tag("fuzzy")) { f =>
+  test("fuzzy test with only one party sending HTLCs", FuzzingBaseClass.Tags.Fuzzy) { f =>
     import f._
     val senders = 2
     val totalMessages = 100
@@ -164,7 +164,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     assert(List(NORMAL, OFFLINE, SYNCING).contains(bob.stateName))
   }
 
-  test("fuzzy test with both parties sending HTLCs", Tag("fuzzy")) { f =>
+  test("fuzzy test with both parties sending HTLCs", FuzzingBaseClass.Tags.Fuzzy) { f =>
     import f._
     val senders = 2
     val totalMessages = 100
