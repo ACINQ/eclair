@@ -17,6 +17,7 @@
 package fr.acinq.eclair.router
 
 import akka.Done
+import akka.actor.FSM.Event
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
@@ -644,145 +645,17 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.debug("received node announcement for nodeId={}", n.nodeId)
       stay using handle(n, RemoteGossip(sender), d)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-      Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
-        Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
-          log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)
-          // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-          val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(firstBlockNum, numberOfBlocks, _))
-          log.info("replying with {} items for range=({}, {})", shortChannelIds.size, firstBlockNum, numberOfBlocks)
-          val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
-            split(shortChannelIds, firstBlockNum, numberOfBlocks, nodeParams.routerConf.channelRangeChunkSize)
-          }
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
+      stay using SyncHandlers.handleQueryChannelRange(d, nodeParams.routerConf, peerConnection, remoteNodeId, q)
 
-          Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
-            chunks.foreach { chunk =>
-              val reply = Router.buildReplyChannelRange(chunk, chainHash, nodeParams.routerConf.encodingType, routingMessage.queryFlags_opt, d.channels)
-              peerConnection ! reply
-            }
-          }
-          stay
-        }
-      }
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
+      stay using SyncHandlers.handleReplyChannelRange(d, nodeParams.routerConf, peerConnection, remoteNodeId, r)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
-      sender ! TransportHandler.ReadAck(routingMessage)
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
+      stay using SyncHandlers.handleQueryShortChannelIds(d, nodeParams.routerConf, peerConnection, remoteNodeId, q)
 
-      Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
-        Kamon.runWithSpan(Kamon.spanBuilder("reply-channel-range").start(), finishSpan = true) {
-
-          @tailrec
-          def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
-            ids match {
-              case Nil => acc.reverse
-              case head :: tail =>
-                val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, nodeParams.routerConf.requestNodeAnnouncements)
-                // 0 means nothing to query, just don't include it
-                val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
-                loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
-            }
-          }
-
-          val timestamps_opt = routingMessage.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
-          val checksums_opt = routingMessage.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
-
-          val shortChannelIdAndFlags = Kamon.runWithSpan(Kamon.spanBuilder("compute-flags").start(), finishSpan = true) {
-            loop(shortChannelIds.array, timestamps_opt, checksums_opt)
-          }
-
-          val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
-            case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
-              val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeChannelAnnouncement(flag)) 1 else 0)
-              val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
-              (c1, u1)
-          }
-          log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", shortChannelIds.array.size, channelCount, updatesCount, shortChannelIds.encoding)
-
-          def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
-            // always encode empty lists as UNCOMPRESSED
-            val encoding = if (chunk.isEmpty) EncodingType.UNCOMPRESSED else shortChannelIds.encoding
-            QueryShortChannelIds(chainHash,
-              shortChannelIds = EncodedShortChannelIds(encoding, chunk.map(_.shortChannelId)),
-              if (routingMessage.timestamps_opt.isDefined || routingMessage.checksums_opt.isDefined)
-                TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(encoding, chunk.map(_.flag)))
-              else
-                TlvStream.empty
-            )
-          }
-
-          // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
-          val replies = shortChannelIdAndFlags
-            .grouped(nodeParams.routerConf.channelQueryChunkSize)
-            .map(buildQuery)
-            .toList
-
-          val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
-          // we only send a reply right away if there were no pending requests
-          replynow_opt.foreach(peerConnection ! _)
-          val progress = syncProgress(sync1)
-          context.system.eventStream.publish(progress)
-          self ! progress
-          stay using d.copy(sync = sync1)
-        }
-      }
-
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-
-      Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
-        Kamon.runWithSpan(Kamon.spanBuilder("query-short-channel-ids").start(), finishSpan = true) {
-
-          val flags = routingMessage.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
-
-          var channelCount = 0
-          var updateCount = 0
-          var nodeCount = 0
-
-          Router.processChannelQuery(d.nodes, d.channels)(
-            shortChannelIds.array,
-            flags,
-            ca => {
-              channelCount = channelCount + 1
-              peerConnection ! ca
-            },
-            cu => {
-              updateCount = updateCount + 1
-              peerConnection ! cu
-            },
-            na => {
-              nodeCount = nodeCount + 1
-              peerConnection ! na
-            }
-          )
-          log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", shortChannelIds.array.size, channelCount, updateCount, nodeCount)
-          peerConnection ! ReplyShortChannelIdsEnd(chainHash, 1)
-          stay
-        }
-      }
-
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage: ReplyShortChannelIdsEnd), d) =>
-      sender ! TransportHandler.ReadAck(routingMessage)
-      // have we more channels to ask this peer?
-      val sync1 = d.sync.get(remoteNodeId) match {
-        case Some(sync) =>
-          sync.pending match {
-            case nextRequest +: rest =>
-              log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.pending.size}/${sync.total})")
-              peerConnection ! nextRequest
-              d.sync + (remoteNodeId -> sync.copy(pending = rest))
-            case Nil =>
-              // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
-              // the remote peer from our map
-              log.info(s"sync complete (total=${sync.total})")
-              d.sync - remoteNodeId
-          }
-        case _ => d.sync
-      }
-      val progress = syncProgress(sync1)
-      context.system.eventStream.publish(progress)
-      self ! progress
-      stay using d.copy(sync = sync1)
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
+      stay using SyncHandlers.handleReplyShortChannelIdsEnd(d, peerConnection, remoteNodeId, r)
 
   }
 
