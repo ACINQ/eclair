@@ -78,7 +78,7 @@ class Setup(datadir: File,
   implicit val sttpBackend = OkHttpFutureBackend()
 
   logger.info(s"hello!")
-  logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
+  logger.info(s"version=${Kit.getVersion} commit=${Kit.getCommit}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
@@ -375,6 +375,16 @@ case class Kit(nodeParams: NodeParams,
                paymentInitiator: ActorRef,
                server: ActorRef,
                wallet: EclairWallet)
+
+object Kit {
+
+  def getVersionLong: String = s"$getVersion-$getCommit"
+
+  def getVersion: String = getClass.getPackage.getImplementationVersion
+
+  def getCommit: String = Option(getClass.getPackage.getSpecificationVersion).map(_.take(7)).getOrElse("null")
+
+}
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 
