@@ -17,19 +17,20 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, ToMilliSatoshiConversion, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, FuzzingBaseClass, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, ToMilliSatoshiConversion, randomKey}
+import org.scalacheck.Gen
 import org.scalatest.{FunSuite, ParallelTestExecution}
 import scodec.bits._
 
 import scala.collection.immutable.SortedMap
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 
 /**
  * Created by PM on 31/05/2016.
@@ -925,6 +926,144 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 }
 
+class RouteCalculationFuzzSpec extends FuzzingBaseClass {
+
+  import RouteCalculationSpec._
+
+  case class ChannelFees(feeBase: MilliSatoshi, feeProp: Long, expiryDelta: CltvExpiryDelta)
+
+  case class ChannelParams(capacity: Satoshi, fees1: ChannelFees, fees2: ChannelFees)
+
+  def makeGraph(anns: Seq[ChannelAnnouncement], params: Seq[ChannelParams]): DirectedGraph =
+    DirectedGraph.makeGraph(SortedMap(anns.zip(params).map { case (ann, ChannelParams(capacity, f1, f2)) =>
+      ann.shortChannelId -> PublicChannel(
+        ann,
+        ByteVector32.Zeroes,
+        capacity,
+        Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ann.shortChannelId, 0, 1.toByte, 0.toByte, f1.expiryDelta, 1 msat, f1.feeBase, f1.feeProp, Some(capacity.toMilliSatoshi))),
+        Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ann.shortChannelId, 0, 1.toByte, 1.toByte, f2.expiryDelta, 1 msat, f2.feeBase, f2.feeProp, Some(capacity.toMilliSatoshi)))
+      )
+    }: _ *))
+
+  val feesGen = for {
+    base <- Gen.choose(0, 5000).map(MilliSatoshi(_))
+    prop <- Gen.choose(10, 1000)
+    expiryDelta <- Gen.choose(9, 144).map(CltvExpiryDelta)
+  } yield ChannelFees(base, prop, expiryDelta)
+
+  def paramsGen(minCapacity: Satoshi, maxCapacity: Satoshi): Gen[ChannelParams] = for {
+    capacity <- Gen.choose(minCapacity.toLong, maxCapacity.toLong).map(Satoshi)
+    fees1 <- feesGen
+    fees2 <- feesGen
+  } yield ChannelParams(capacity, fees1, fees2)
+
+  // Generate those only once, it would be a waste to re-generate keys constantly.
+  val nodeIds = (1 to 500).map(_ => randomKey.publicKey).toList
+
+  // Generate a small-world graph based on the Watts–Strogatz model (https://en.wikipedia.org/wiki/Watts-Strogatz_model).
+  val smallWorldGraphGen: Gen[DirectedGraph] = for {
+    nodes <- Gen.choose(100, 500)
+    meanHalfDegree <- Gen.choose(5, 25)
+    beta <- Gen.choose(0, nodes)
+    // Start by connecting to neighbours on both sides.
+    // NB: to form a ring, we need to wrap the end of the list with the beginning.
+    edges = (nodeIds.take(nodes) ++ nodeIds.take(meanHalfDegree - 1))
+      .sliding(meanHalfDegree)
+      .flatMap(neighbours => {
+        val node1 = neighbours.head
+        neighbours.tail.map(node2 => {
+          // Then randomly rewire.
+          val r = Random.nextInt(nodes)
+          if (r <= beta && nodeIds(r) != node1) {
+            (node1, nodeIds(r))
+          } else {
+            (node1, node2)
+          }
+        })
+      }).zipWithIndex.map {
+      case ((node1, node2), scid) => makeChannel(scid, node1, node2)
+    }.toList
+    channelParams <- Gen.listOfN(edges.length, paramsGen(10000 sat, 100000000 sat))
+  } yield makeGraph(edges, channelParams)
+
+  // Generate a hub-and-spokes graph.
+  val hubAndSpokesGraphGen: Gen[DirectedGraph] = for {
+    hubs <- Gen.choose(2, 50)
+    spokes <- Gen.choose(50, 250)
+    // Hubs are strongly connected (between 10 and 50 edges to other hubs with a lot of capacity).
+    hubsEdges <- Gen.listOfN(hubs, Gen.choose(10, 50).flatMap(n => Gen.listOfN(n, Gen.choose(1, hubs - 1)))).map(_.zipWithIndex.flatMap {
+      case (edges, i) => edges.map(j => makeChannel(i, nodeIds(i), nodeIds((i + j) % hubs)))
+    })
+    hubsParams <- Gen.listOfN(hubsEdges.length, paramsGen(100000 sat, 100000000 sat))
+    // Spokes connect to a few hubs with a smaller capacity.
+    spokesEdges <- Gen.listOfN(spokes, Gen.nonEmptyListOf(Gen.choose(0, hubs - 1))).map(_.zipWithIndex.flatMap {
+      case (edges, i) => edges.map(j => makeChannel(100 + i, nodeIds(100 + i), nodeIds(j)))
+    })
+    spokesParams <- Gen.listOfN(spokesEdges.length, paramsGen(1000 sat, 100000 sat))
+  } yield makeGraph(hubsEdges ++ spokesEdges, hubsParams ++ spokesParams)
+
+  val paymentGen = for {
+    g <- Gen.oneOf(smallWorldGraphGen, hubAndSpokesGraphGen)
+    source <- Gen.oneOf(g.vertexSet())
+    target <- Gen.oneOf(g.vertexSet() - source)
+    amount <- Gen.choose(1, 1000).map(Satoshi(_).toMilliSatoshi)
+  } yield (g, source, target, amount)
+
+  test("route tiny amounts", FuzzingBaseClass.Tags.Fuzzy) {
+    forAll(paymentGen) { case (g, source, target, _) =>
+      val amount = 100 msat
+      val route = Router.findRoute(g, source, target, amount, 3, Set.empty, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS, TestConstants.defaultBlockHeight)
+      whenever(route.isSuccess) {
+        assert(route.get.nonEmpty)
+      }
+    }
+  }
+
+  test("route contains no cycles", FuzzingBaseClass.Tags.Fuzzy) {
+    forAll(paymentGen) { case (g, source, target, amount) =>
+      val route = Router.findRoute(g, source, target, amount, 3, Set.empty, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS, TestConstants.defaultBlockHeight)
+      whenever(route.isSuccess) {
+        assert(source === route.get.head.nodeId)
+        val nodes = source +: route.get.map(_.nextNodeId)
+        assert(nodes.toSet.size === nodes.size)
+      }
+    }
+  }
+
+  test("route can work in both directions", FuzzingBaseClass.Tags.Fuzzy) {
+    forAll(paymentGen) { case (g, source, target, amount) =>
+      // Very lenient parameters that make sure we can take a route in the reverse direction without hitting fee or cltv limits.
+      val routeParams = RouteParams(randomize = false, 1000000 msat, 10, 20, CltvExpiryDelta(2016), None)
+      val route = Router.findRoute(g, source, target, amount, 3, Set.empty, Set.empty, Set.empty, routeParams, TestConstants.defaultBlockHeight)
+      whenever(route.isSuccess) {
+        val reverse = Router.findRoute(g, target, source, amount, 3, Set.empty, Set.empty, Set.empty, routeParams, TestConstants.defaultBlockHeight)
+        assert(reverse.isSuccess)
+      }
+    }
+  }
+
+  test("route can be extended", FuzzingBaseClass.Tags.Fuzzy) {
+    forAll(paymentGen) { case (g, source, target, amount) =>
+      // Very lenient parameters that make sure we can extend routes without hitting fee, cltv or length limits.
+      val routeParams = RouteParams(randomize = false, 1000000 msat, 10, 20, CltvExpiryDelta(2016), None)
+      val route = Router.findRoute(g, source, target, amount, 3, Set.empty, Set.empty, Set.empty, routeParams, TestConstants.defaultBlockHeight)
+      whenever(route.isSuccess) {
+        whenever(route.get.length > 2) {
+          val subRoute = Router.findRoute(g, route.get.head.nextNodeId, target, amount, 3, Set.empty, Set.empty, Set.empty, routeParams, TestConstants.defaultBlockHeight)
+          assert(subRoute.isSuccess)
+          assert(computeRouteFee(amount, subRoute.get) <= computeRouteFee(amount, route.get))
+        }
+        val extendedTarget = g.getIncomingEdgesOf(target).headOption.map(e => if (e.desc.a == target) e.desc.b else e.desc.a)
+        whenever(extendedTarget.nonEmpty) {
+          val extendedRoute = Router.findRoute(g, source, extendedTarget.get, amount, 1, Set.empty, Set.empty, Set.empty, routeParams, TestConstants.defaultBlockHeight)
+          assert(extendedRoute.isSuccess)
+        }
+      }
+    }
+  }
+
+}
+
 object RouteCalculationSpec {
 
   val noopBoundaries = { _: RichWeight => true }
@@ -971,5 +1110,11 @@ object RouteCalculationSpec {
   def hops2ShortChannelIds(route: Seq[ChannelHop]) = route.map(hop => hop.lastUpdate.shortChannelId.toString).toList
 
   def hops2Nodes(route: Seq[ChannelHop]) = route.map(hop => (hop.nodeId, hop.nextNodeId))
+
+  def computeRouteFee(finalAmount: MilliSatoshi, route: Seq[ChannelHop]): MilliSatoshi = {
+    // NB: we won't pay a fee on the first hop (since it's our channel) so we ignore that first hop.
+    val toSend = route.tail.reverse.foldLeft(finalAmount) { case (amount, hop) => amount + hop.fee(amount) }
+    toSend - finalAmount
+  }
 
 }
