@@ -28,7 +28,9 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{ChannelClosed, InvalidAnnouncement, InvalidSignature, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.PeerConnection
+import fr.acinq.eclair.io.PeerConnection.InvalidAnnouncement
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -171,6 +173,8 @@ case object GetRoutingState
 
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
 
+case class RegisterToAnnouncements(listener: ActorRef)
+
 // @formatter:off
 sealed trait GossipOrigin
 /** Gossip that we received from a remote peer. */
@@ -195,8 +199,7 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                 privateChannels: Map[ShortChannelId, PrivateChannel], // short_channel_id -> node_id
                 excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                 graph: DirectedGraph,
-                sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query
-                // for which we have not yet received an 'end' message
+                sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                )
 
 // @formatter:off
@@ -238,7 +241,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     val graph = DirectedGraph.makeGraph(initChannels)
     val initNodes = nodes.map(n => n.nodeId -> n).toMap
     // send events for remaining channels/nodes
-    context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity))))
+    context.system.eventStream.publish(ChannelsDiscovered(initChannels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))))
     context.system.eventStream.publish(ChannelUpdatesReceived(initChannels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
     context.system.eventStream.publish(NodesDiscovered(initNodes.values))
 
@@ -363,7 +366,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                   // TODO: check feature bit set
                   log.debug("added channel channelId={}", c.shortChannelId)
                   val capacity = tx.txOut(outputIndex).amount
-                  context.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity) :: Nil))
+                  context.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity, None, None) :: Nil))
                   Kamon.runWithSpan(Kamon.spanBuilder("add-to-db").start(), finishSpan = true) {
                     db.addChannel(c, tx.txid, capacity)
                   }
@@ -380,7 +383,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                   log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
                   // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
                   d0.awaiting.get(c) match {
-                    case Some(origins) => origins.foreach(_.peer ! ChannelClosed(c))
+                    case Some(origins) => origins.foreach(_.peer ! PeerConnection.ChannelClosed(c))
                     case _ => ()
                   }
                 } else {
@@ -456,7 +459,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       } else {
         log.debug("broadcasting routing messages")
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
-        context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
+        context.actorSelection(context.system / "*" / "authenticator" / "peer-conn-*") ! d.rebroadcast
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
@@ -596,10 +599,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.debug("received channel update from {}", sender)
       stay using handle(u, LocalGossip, d)
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, u: ChannelUpdate), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-      stay using handle(u, RemoteGossip(sender), d, remoteNodeId_opt = Some(remoteNodeId), transport_opt = Some(transport))
+      stay using handle(u, RemoteGossip(sender), d, remoteNodeId_opt = Some(remoteNodeId), peerConnection_opt = Some(peerConnection))
 
     case Event(PeerRoutingMessage(_, _, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -621,7 +624,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       } else if (!Announcements.checkSigs(c)) {
         sender ! TransportHandler.ReadAck(c)
         log.warning("bad signature for announcement {}", c)
-        sender ! InvalidSignature(c)
+        sender ! PeerConnection.InvalidSignature(c)
         stay
       } else {
         log.info("validating shortChannelId={}", c.shortChannelId)
@@ -644,7 +647,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.debug("received node announcement for nodeId={}", n.nodeId)
       stay using handle(n, RemoteGossip(sender), d)
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
         Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
@@ -659,14 +662,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
             chunks.foreach { chunk =>
               val reply = Router.buildReplyChannelRange(chunk, chainHash, nodeParams.routerConf.encodingType, routingMessage.queryFlags_opt, d.channels)
-              transport ! reply
+              peerConnection ! reply
             }
           }
           stay
         }
       }
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
 
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
@@ -719,7 +722,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
           val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
           // we only send a reply right away if there were no pending requests
-          replynow_opt.foreach(transport ! _)
+          replynow_opt.foreach(peerConnection ! _)
           val progress = syncProgress(sync1)
           context.system.eventStream.publish(progress)
           self ! progress
@@ -727,7 +730,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         }
       }
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
 
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
@@ -744,24 +747,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             flags,
             ca => {
               channelCount = channelCount + 1
-              transport ! ca
+              peerConnection ! ca
             },
             cu => {
               updateCount = updateCount + 1
-              transport ! cu
+              peerConnection ! cu
             },
             na => {
               nodeCount = nodeCount + 1
-              transport ! na
+              peerConnection ! na
             }
           )
           log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", shortChannelIds.array.size, channelCount, updateCount, nodeCount)
-          transport ! ReplyShortChannelIdsEnd(chainHash, 1)
+          peerConnection ! ReplyShortChannelIdsEnd(chainHash, 1)
           stay
         }
       }
 
-    case Event(PeerRoutingMessage(transport, remoteNodeId, routingMessage: ReplyShortChannelIdsEnd), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage: ReplyShortChannelIdsEnd), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // have we more channels to ask this peer?
       val sync1 = d.sync.get(remoteNodeId) match {
@@ -769,7 +772,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           sync.pending match {
             case nextRequest +: rest =>
               log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.pending.size}/${sync.total})")
-              transport ! nextRequest
+              peerConnection ! nextRequest
               d.sync + (remoteNodeId -> sync.copy(pending = rest))
             case Nil =>
               // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
@@ -783,6 +786,22 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       context.system.eventStream.publish(progress)
       self ! progress
       stay using d.copy(sync = sync1)
+
+    case Event(RegisterToChanges(listener), d) =>
+      d.nodes
+        .values
+        .sliding(100, 100)
+        .map(NodesDiscovered)
+        .foreach(listener ! _)
+      d.channels
+        .values
+        .map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))
+        .sliding(100, 100)
+        .map(ChannelsDiscovered)
+        .foreach(listener ! _)
+      listener ! "done"
+      context.system.eventStream.subscribe(listener, classOf[NetworkEvent])
+      stay
 
   }
 
@@ -803,7 +822,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)
       origin match {
-        case RemoteGossip(peer) => peer ! InvalidSignature(n)
+        case RemoteGossip(peer) => peer ! PeerConnection.InvalidSignature(n)
         case LocalGossip =>
       }
       d
@@ -827,7 +846,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       d
     }
 
-  def handle(u: ChannelUpdate, origin: GossipOrigin, d: Data, remoteNodeId_opt: Option[PublicKey] = None, transport_opt: Option[ActorRef] = None): Data =
+  def handle(u: ChannelUpdate, origin: GossipOrigin, d: Data, remoteNodeId_opt: Option[PublicKey] = None, peerConnection_opt: Option[ActorRef] = None): Data =
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
@@ -846,7 +865,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         origin match {
-          case RemoteGossip(peer) => peer ! InvalidSignature(u)
+          case RemoteGossip(peer) => peer ! PeerConnection.InvalidSignature(u)
           case LocalGossip =>
         }
         d
@@ -891,7 +910,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         origin match {
-          case RemoteGossip(peer) => peer ! InvalidSignature(u)
+          case RemoteGossip(peer) => peer ! PeerConnection.InvalidSignature(u)
           case LocalGossip =>
         }
         d
@@ -917,10 +936,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
       db.removeFromPruned(u.shortChannelId)
 
-      // transport_opt will contain a valid transport only when we're handling an update that we received from a peer, not
+      // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
       // when we're sending updates to ourselves
-      (transport_opt, remoteNodeId_opt) match {
-        case (Some(transport), Some(remoteNodeId)) =>
+      (peerConnection_opt, remoteNodeId_opt) match {
+        case (Some(peerConnection), Some(remoteNodeId)) =>
           val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(nodeParams.routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
           d.sync.get(remoteNodeId) match {
             case Some(sync) =>
@@ -929,12 +948,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
               d.copy(sync = d.sync + (remoteNodeId -> sync.copy(pending = sync.pending :+ query, total = sync.total + 1)))
             case None =>
               // we send the query right away
-              transport ! query
+              peerConnection ! query
               d.copy(sync = d.sync + (remoteNodeId -> Sync(pending = Nil, total = 1)))
           }
         case _ =>
           // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
-          // or we don't have a transport to send our query to.
+          // or we don't have a peerConnection to send our query to.
           // anyway, that's not really a big deal because we have removed the channel from the pruned db so next time it shows up we will revalidate it
           d
       }
@@ -955,6 +974,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 }
 
 object Router {
+
+  case class RegisterToChanges(listener: ActorRef)
 
   val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
   val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
@@ -1421,7 +1442,8 @@ object Router {
     }
 
     val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
-      Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
+      Graph.yenKshortestPaths(g, localNodeId
+        , targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
     }
     foundRoutes match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
