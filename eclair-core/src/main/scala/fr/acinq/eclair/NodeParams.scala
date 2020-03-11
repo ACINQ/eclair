@@ -162,7 +162,7 @@ object NodeParams {
     }
 
     val htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat"))
-    require(htlcMinimum > 0.msat, "htlc-minimum-msat must not be 0")
+    require(htlcMinimum > 0.msat, "htlc-minimum-msat must be strictly greater than 0")
 
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
