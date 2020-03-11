@@ -135,7 +135,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
             case (writer, _, Some((dec, enc, ck))) =>
               val remoteNodeId = PublicKey(writer.rs)
               remoteNodeId_opt = Some(remoteNodeId)
-              context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
+              context.parent ! HandshakeCompleted(remoteNodeId)
               val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
               goto(WaitingForListener) using nextStateData
 
@@ -152,7 +152,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
                   val remoteNodeId = PublicKey(writer.rs)
                   remoteNodeId_opt = Some(remoteNodeId)
-                  context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
+                  context.parent ! HandshakeCompleted(remoteNodeId)
                   val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
                   goto(WaitingForListener) using nextStateData
                 }
@@ -443,7 +443,7 @@ object TransportHandler {
 
   case class Listener(listener: ActorRef)
 
-  case class HandshakeCompleted(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey)
+  case class HandshakeCompleted(remoteNodeId: PublicKey)
 
   case class ReadAck(msg: Any)
   case object WriteAck extends Tcp.Event

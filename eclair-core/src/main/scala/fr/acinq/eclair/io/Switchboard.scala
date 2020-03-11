@@ -20,21 +20,18 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.{NodeParams, io}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.router.Rebroadcast
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
-
-  authenticator ! self
 
   // we load peers and channels from database
   {
@@ -85,12 +82,10 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
+    case authenticated: io.PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
-      peer forward auth
-
-    case r: Rebroadcast => context.children.foreach(_ forward r)
+      val peer = createOrGetPeer(authenticated.remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
 
     case 'peers => sender ! context.children
 
@@ -107,7 +102,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
-    Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, paymentHandler, wallet),
+    Peer.props(nodeParams, remoteNodeId, router, watcher, relayer, paymentHandler, wallet),
     name = peerActorName(remoteNodeId))
 
   /**
@@ -132,7 +127,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet))
+  def props(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, router, watcher, relayer, paymentHandler, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
