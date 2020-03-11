@@ -573,7 +573,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     alice2bob.forward(bob)
 
-    //  point the channel still isn't deeply buried: channel_update isn't sent again
+    //  at this point the channel still isn't deeply buried: channel_update isn't sent again
     alice2bob.expectNoMsg()
     bob2alice.expectNoMsg()
 
