@@ -534,4 +534,69 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(bob, CurrentFeerates(highFeerate))
     bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
   }
+
+  test("re-send channel_update at reconnection for private channels") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection / reconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // at this point the channel isn't deeply buried: channel_update isn't sent again
+    alice2bob.expectMsgType[FundingLocked]
+    bob2alice.expectMsgType[FundingLocked]
+    alice2bob.expectNoMsg()
+    bob2alice.expectNoMsg()
+
+    // we make the peers exchange a few messages
+    addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // we simulate a disconnection / reconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    //  at this point the channel still isn't deeply buried: channel_update isn't sent again
+    alice2bob.expectNoMsg()
+    bob2alice.expectNoMsg()
+
+    // funding tx gets 6 confirmations, channel is private so there is no announcement sigs
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate]
+
+    // we get disconnected again
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // this time peers re-send their channel_update
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate]
+  }
 }
