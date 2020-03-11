@@ -16,27 +16,28 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorContext, ActorRef}
+import akka.actor.ActorContext
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.router.Router.{addToSync, computeFlag, keep, remoteNodeIdKey, split, syncProgress}
-import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, QueryChannelRange, QueryShortChannelIds, QueryShortChannelIdsTlv, ReplyChannelRange, ReplyChannelRangeTlv, ReplyShortChannelIdsEnd, TlvStream}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire._
 import kamon.Kamon
 
 import scala.annotation.tailrec
 import scala.collection.SortedSet
+import scala.collection.immutable.SortedMap
 
 object SyncHandlers {
 
-  def handleQueryChannelRange(d: Data, routerConf: RouterConf, peerConnection: ActorRef, remoteNodeId: PublicKey, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     ctx.sender ! TransportHandler.ReadAck(q)
-    Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
+    Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
         log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
         // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-        val shortChannelIds: SortedSet[ShortChannelId] = d.channels.keySet.filter(keep(q.firstBlockNum, q.numberOfBlocks, _))
+        val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlockNum, q.numberOfBlocks, _))
         log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
         val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
           split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
@@ -44,19 +45,18 @@ object SyncHandlers {
 
         Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
           chunks.foreach { chunk =>
-            val reply = Router.buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, d.channels)
-            peerConnection ! reply
+            val reply = Router.buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
+            origin.peerConnection ! reply
           }
         }
-        d
       }
     }
   }
 
-  def handleReplyChannelRange(d: Data, routerConf: RouterConf, peerConnection: ActorRef, remoteNodeId: PublicKey, r: ReplyChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleReplyChannelRange(d: Data, routerConf: RouterConf, origin: RemoteGossip, r: ReplyChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     ctx.sender ! TransportHandler.ReadAck(r)
 
-    Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
+    Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("reply-channel-range").start(), finishSpan = true) {
 
         @tailrec
@@ -104,9 +104,9 @@ object SyncHandlers {
           .map(buildQuery)
           .toList
 
-        val (sync1, replynow_opt) = addToSync(d.sync, remoteNodeId, replies)
+        val (sync1, replynow_opt) = addToSync(d.sync, origin.nodeId, replies)
         // we only send a reply right away if there were no pending requests
-        replynow_opt.foreach(peerConnection ! _)
+        replynow_opt.foreach(origin.peerConnection ! _)
         val progress = syncProgress(sync1)
         ctx.system.eventStream.publish(progress)
         ctx.self ! progress
@@ -115,10 +115,10 @@ object SyncHandlers {
     }
   }
 
-  def handleQueryShortChannelIds(d: Data, routerConf: RouterConf, peerConnection: ActorRef, remoteNodeId: PublicKey, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     ctx.sender ! TransportHandler.ReadAck(q)
 
-    Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
+    Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("query-short-channel-ids").start(), finishSpan = true) {
 
         val flags = q.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
@@ -127,44 +127,43 @@ object SyncHandlers {
         var updateCount = 0
         var nodeCount = 0
 
-        Router.processChannelQuery(d.nodes, d.channels)(
+        Router.processChannelQuery(nodes, channels)(
           q.shortChannelIds.array,
           flags,
           ca => {
             channelCount = channelCount + 1
-            peerConnection ! ca
+            origin.peerConnection ! ca
           },
           cu => {
             updateCount = updateCount + 1
-            peerConnection ! cu
+            origin.peerConnection ! cu
           },
           na => {
             nodeCount = nodeCount + 1
-            peerConnection ! na
+            origin.peerConnection ! na
           }
         )
         log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
-        peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
-        d
+        origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
       }
     }
   }
 
-  def handleReplyShortChannelIdsEnd(d: Data, peerConnection: ActorRef, remoteNodeId: PublicKey, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleReplyShortChannelIdsEnd(d: Data, origin: RemoteGossip, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     ctx.sender ! TransportHandler.ReadAck(r)
     // have we more channels to ask this peer?
-    val sync1 = d.sync.get(remoteNodeId) match {
+    val sync1 = d.sync.get(origin.nodeId) match {
       case Some(sync) =>
         sync.pending match {
           case nextRequest +: rest =>
             log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.pending.size}/${sync.total})")
-            peerConnection ! nextRequest
-            d.sync + (remoteNodeId -> sync.copy(pending = rest))
+            origin.peerConnection ! nextRequest
+            d.sync + (origin.nodeId -> sync.copy(pending = rest))
           case Nil =>
             // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
             // the remote peer from our map
             log.info(s"sync complete (total=${sync.total})")
-            d.sync - remoteNodeId
+            d.sync - origin.nodeId
         }
       case _ => d.sync
     }
