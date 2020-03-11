@@ -18,7 +18,6 @@ package fr.acinq.eclair
 
 import java.util.UUID
 
-import akka.actor.Terminated
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import akka.io.Tcp
@@ -28,9 +27,9 @@ import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.channel.{LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.io.{Authenticator, Peer, PeerConnection}
-import fr.acinq.eclair.router.{ExcludeChannel, GetRoutingState, LiftChannelExclusion, Rebroadcast, RouteRequest, SyncProgress, TickBroadcast, TickPruneStaleChannels}
-import fr.acinq.eclair.wire.{ChannelReestablish, Ping, Pong, RoutingMessage, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.router._
+import fr.acinq.eclair.wire._
 
 object Logs {
 
@@ -103,10 +102,10 @@ object Logs {
         case TickBroadcast => Some(LogCategory.ROUTING_SYNC)
         case TickPruneStaleChannels => Some(LogCategory.ROUTING_SYNC)
 
-        case _: Authenticator.PendingAuth => Some(LogCategory.CONNECTION)
         case _: HandshakeCompleted => Some(LogCategory.CONNECTION)
         case _: Peer.Connect => Some(LogCategory.CONNECTION)
         case _: Peer.Disconnect => Some(LogCategory.CONNECTION)
+        case _: io.PeerConnection.PendingAuth => Some(LogCategory.CONNECTION)
         case _: PeerConnection.InitializeConnection => Some(LogCategory.CONNECTION)
         case _: PeerConnection.DelayedRebroadcast => Some(LogCategory.ROUTING_SYNC)
         case Peer.Reconnect => Some(LogCategory.CONNECTION)

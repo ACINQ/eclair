@@ -40,7 +40,7 @@ import scala.util.Random
 /**
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -77,7 +77,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
             stay
           } else {
             // we immediately process explicit connection requests to new addresses
-            context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender())))
+            context.actorOf(Client.props(nodeParams, context.parent, router, address, remoteNodeId, origin_opt = Some(sender())))
             stay using d.copy(address_opt = Some(address))
           }
       }
@@ -87,7 +87,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
         case _ if d.channels.isEmpty => stay // no-op, no more channels with this peer
         case None => stay // no-op, we don't know any address to this peer and we won't try reconnecting again
         case Some(address) =>
-          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
+          context.actorOf(Client.props(nodeParams, context.parent, router, address, remoteNodeId, origin_opt = None))
           log.info(s"reconnecting to $address (next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds)")
           setTimer(RECONNECT_TIMER, Reconnect, d.nextReconnectionDelay, repeat = false)
           stay using d.copy(nextReconnectionDelay = nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
@@ -340,7 +340,7 @@ object Peer {
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, relayer, paymentHandler, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, router, watcher, relayer, paymentHandler, wallet))
 
   // @formatter:off
 

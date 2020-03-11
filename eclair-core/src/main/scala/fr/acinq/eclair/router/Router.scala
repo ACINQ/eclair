@@ -459,7 +459,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       } else {
         log.debug("broadcasting routing messages")
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
-        context.actorSelection(context.system / "*" / "authenticator" / "peer-conn-*") ! d.rebroadcast
+        context.system.eventStream.publish(d.rebroadcast)
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
