@@ -44,6 +44,12 @@ To run tests for a specific class, run:
 mvn test -Dsuites=*<TestClassName>
 ```
 
+To skip fuzz tests, run:
+
+```shell
+mvn test -DtagsToExclude=fr.acinq.eclair.tags.Fuzzy
+```
+
 ## Build the API documentation
 
 ### Slate

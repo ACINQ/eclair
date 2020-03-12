@@ -23,16 +23,20 @@ import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Origin.Local
+import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
+import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{TestkitBaseClass, _}
-import org.scalatest.{Outcome, Tag}
+import org.scalacheck.Gen
+import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success}
+import scala.util.{Failure, Success}
 
 class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
@@ -425,60 +429,71 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("should always be able to send availableForSend", Tag("fuzzy")) { f =>
-    val maxPendingHtlcAmount = 1000000.msat
-    case class FuzzTest(isFunder: Boolean, pendingHtlcs: Int, feeRatePerKw: Long, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
-    for (_ <- 1 to 100) {
-      val t = FuzzTest(
-        isFunder = Random.nextInt(2) == 0,
-        pendingHtlcs = Random.nextInt(10),
-        feeRatePerKw = Random.nextInt(10000),
-        dustLimit = Random.nextInt(1000).sat,
-        // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
-        toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
-        toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
+}
+
+class CommitmentsFuzzSpec extends FuzzingBaseClass {
+
+  val maxPendingHtlcAmount = 1000000.msat
+
+  def makeCmdAdd(amount: MilliSatoshi): CMD_ADD_HTLC = {
+    val expiry = CltvExpiryDelta(144).toCltvExpiry(TestConstants.defaultBlockHeight)
+    OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID), randomBytes32, ChannelHop(null, randomKey.publicKey, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
+  }
+
+  case class Params(isFunder: Boolean, pendingHtlcs: Seq[MilliSatoshi], feeRatePerKw: Long, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
+
+  val paramsGen = for {
+    isFunder <- Gen.oneOf(true :: false :: Nil)
+    pendingHtlcsCount <- Gen.choose(0, 10)
+    pendingHtlcs <- Gen.listOfN(pendingHtlcsCount, Gen.choose(1, maxPendingHtlcAmount.toLong).map(MilliSatoshi(_)))
+    feeRatePerKw <- Gen.choose(1, 10000)
+    dustLimit <- Gen.choose(1, 1000).map(Satoshi(_))
+    toLocal <- Gen.choose(1, 1000000000).map(MilliSatoshi(_))
+    toRemote <- Gen.choose(1, 1000000000).map(MilliSatoshi(_))
+  } yield Params(isFunder, pendingHtlcs, feeRatePerKw, dustLimit, toLocal, toRemote)
+
+  test("should always be able to send availableForSend") {
+    forAll(paramsGen) { p =>
+      var c = CommitmentsSpec.makeCommitments(p.toLocal, p.toRemote, p.feeRatePerKw, p.dustLimit, p.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
-      for (_ <- 0 to t.pendingHtlcs) {
-        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat
-        val (_, cmdAdd) = makeCmdAdd(amount, randomKey.publicKey, f.currentBlockHeight)
-        sendAdd(c, cmdAdd, Local(UUID.randomUUID, None), f.currentBlockHeight) match {
-          case Success((cc, _)) => c = cc
-          case Failure(e) => fail(s"$t -> could not setup initial htlcs: $e")
+      p.pendingHtlcs.foreach(amount => sendAdd(c, makeCmdAdd(amount), Local(UUID.randomUUID, None), TestConstants.defaultBlockHeight) match {
+        case Success((cc, _)) => c = cc
+        case Failure(_: InsufficientFunds) => // this is ok, we don't add the HTLC
+        case Failure(_: CannotAffordFees) => // this is ok, we don't add the HTLC
+        case Failure(_: RemoteCannotAffordFeesForNewHtlc) => // this is ok, we don't add the HTLC
+        case Failure(e) => fail(s"could not setup initial htlcs: $e")
+      })
+      whenever(c.availableBalanceForSend > 0.msat) {
+        sendAdd(c, makeCmdAdd(c.availableBalanceForSend), Local(UUID.randomUUID, None), TestConstants.defaultBlockHeight) match {
+          case Success(_) => // great!
+          case Failure(_: RemoteCannotAffordFeesForNewHtlc) if !p.isFunder => // this is ok too, we don't take that into account in availableBalanceForSend for now
+          case Failure(e) => fail(s"could not send ${c.availableBalanceForSend}: $e")
         }
       }
-      val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
-      val result = sendAdd(c, cmdAdd, Local(UUID.randomUUID, None), f.currentBlockHeight)
-      assert(result.isSuccess, s"$t -> $result")
     }
   }
 
-  test("should always be able to receive availableForReceive", Tag("fuzzy")) { f =>
-    val maxPendingHtlcAmount = 1000000.msat
-    case class FuzzTest(isFunder: Boolean, pendingHtlcs: Int, feeRatePerKw: Long, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
-    for (_ <- 1 to 100) {
-      val t = FuzzTest(
-        isFunder = Random.nextInt(2) == 0,
-        pendingHtlcs = Random.nextInt(10),
-        feeRatePerKw = Random.nextInt(10000),
-        dustLimit = Random.nextInt(1000).sat,
-        // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
-        toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
-        toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
-      var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
+  test("should always be able to receive availableForReceive") {
+    forAll(paramsGen) { p =>
+      var c = CommitmentsSpec.makeCommitments(p.toLocal, p.toRemote, p.feeRatePerKw, p.dustLimit, p.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
-      for (_ <- 0 to t.pendingHtlcs) {
-        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat
-        val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, amount, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      p.pendingHtlcs.foreach(amount => {
+        val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, amount, randomBytes32, CltvExpiry(TestConstants.defaultBlockHeight), TestConstants.emptyOnionPacket)
         receiveAdd(c, add) match {
           case Success(cc) => c = cc
-          case Failure(e) => fail(s"$t -> could not setup initial htlcs: $e")
+          case Failure(_: InsufficientFunds) => // this is ok, we don't add the HTLC
+          case Failure(_: CannotAffordFees) => // this is ok, we don't add the HTLC
+          case Failure(_: RemoteCannotAffordFeesForNewHtlc) => // this is ok, we don't add the HTLC
+          case Failure(e) => fail(s"could not setup initial htlcs: $e")
         }
-      }
-      val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
-      receiveAdd(c, add) match {
-        case Success(_) => ()
-        case Failure(e) => fail(s"$t -> $e")
+      })
+      whenever(c.availableBalanceForReceive > 0.msat) {
+        val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32, CltvExpiry(TestConstants.defaultBlockHeight), TestConstants.emptyOnionPacket)
+        receiveAdd(c, add) match {
+          case Success(_) => // great!
+          case Failure(_: CannotAffordFees) if p.isFunder => // this is ok too, we don't take that into account in availableBalanceForReceive for now
+          case Failure(e) => fail(s"could not receive ${c.availableBalanceForReceive}: $e")
+        }
       }
     }
   }

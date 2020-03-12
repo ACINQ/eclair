@@ -1,0 +1,25 @@
+version: v1.0
+name: Fuzz Tests
+agent:
+  machine:
+    type: e1-standard-4
+    os_image: ubuntu1804
+execution_time_limit:
+  minutes: 15
+
+blocks:
+  - name: Fuzz Tests
+    task:
+      env_vars:
+        # Set maven to use a local directory. This is required for
+        # the cache util. It must be set in all blocks.
+        - name: MAVEN_OPTS
+          value: "-Dmaven.repo.local=.m2"
+      jobs:
+        - name: Fuzz Tests
+          commands:
+            - sem-version java 11
+            - checkout
+            - cache restore maven
+            - mvn -DtagsToInclude=fr.acinq.eclair.tags.Fuzzy -DfuzzFactor=250 test
+            - cache store maven .m2

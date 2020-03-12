@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import org.scalatest.{Outcome, Tag, fixture}
+import org.scalatest.{Outcome, fixture}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -485,7 +485,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     assert(result.nonTrampolineFees === 5.msat)
   }
 
-  test("split payment", Tag("fuzzy")) { f =>
+  test("split payment", FuzzingBaseClass.Tags.Fuzzy) { f =>
     // The fees for a single HTLC will be 100 * 172 / 1000 = 17 satoshis.
     val testChannels = localChannels(100)
     for (_ <- 1 to 100) {
