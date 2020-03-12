@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.channel.{LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.router.PeerRoutingMessage
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
