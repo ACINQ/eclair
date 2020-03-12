@@ -1009,7 +1009,7 @@ class RouteCalculationFuzzSpec extends FuzzingBaseClass {
     amount <- Gen.choose(1, 1000).map(Satoshi(_).toMilliSatoshi)
   } yield (g, source, target, amount)
 
-  test("route tiny amounts", FuzzingBaseClass.Tags.Fuzzy) {
+  test("route tiny amounts") {
     forAll(paymentGen) { case (g, source, target, _) =>
       val amount = 100 msat
       val route = Router.findRoute(g, source, target, amount, 3, Set.empty, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS, TestConstants.defaultBlockHeight)
@@ -1019,7 +1019,7 @@ class RouteCalculationFuzzSpec extends FuzzingBaseClass {
     }
   }
 
-  test("route contains no cycles", FuzzingBaseClass.Tags.Fuzzy) {
+  test("route contains no cycles") {
     forAll(paymentGen) { case (g, source, target, amount) =>
       val route = Router.findRoute(g, source, target, amount, 3, Set.empty, Set.empty, Set.empty, DEFAULT_ROUTE_PARAMS, TestConstants.defaultBlockHeight)
       whenever(route.isSuccess) {
@@ -1030,7 +1030,7 @@ class RouteCalculationFuzzSpec extends FuzzingBaseClass {
     }
   }
 
-  test("route can work in both directions", FuzzingBaseClass.Tags.Fuzzy) {
+  test("route can work in both directions") {
     forAll(paymentGen) { case (g, source, target, amount) =>
       // Very lenient parameters that make sure we can take a route in the reverse direction without hitting fee or cltv limits.
       val routeParams = RouteParams(randomize = false, 1000000 msat, 10, 20, CltvExpiryDelta(2016), None)
@@ -1042,7 +1042,7 @@ class RouteCalculationFuzzSpec extends FuzzingBaseClass {
     }
   }
 
-  test("route can be extended", FuzzingBaseClass.Tags.Fuzzy) {
+  test("route can be extended") {
     forAll(paymentGen) { case (g, source, target, amount) =>
       // Very lenient parameters that make sure we can extend routes without hitting fee, cltv or length limits.
       val routeParams = RouteParams(randomize = false, 1000000 msat, 10, 20, CltvExpiryDelta(2016), None)

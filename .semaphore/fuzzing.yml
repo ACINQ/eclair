@@ -21,5 +21,5 @@ blocks:
             - sem-version java 11
             - checkout
             - cache restore maven
-            - mvn -DtagsToInclude=fuzzy -DfuzzFactor=250 test
+            - mvn -DtagsToInclude=fr.acinq.eclair.tags.Fuzzy -DfuzzFactor=250 test
             - cache store maven .m2

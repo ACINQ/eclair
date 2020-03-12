@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.eclair.tags.Fuzzy
 import org.scalactic.anyvals.PosInt
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{FunSuite, ParallelTestExecution, Tag}
@@ -26,6 +27,7 @@ import scala.util.Try
  * Created by t-bast on 10/03/2020.
  */
 
+@Fuzzy
 abstract class FuzzingBaseClass extends FunSuite with GeneratorDrivenPropertyChecks with ParallelTestExecution {
 
   lazy val fuzzCount = sys.props.get("fuzzFactor").flatMap(f => Try(f.toInt).toOption).flatMap(PosInt.from).getOrElse(PosInt(10))
@@ -39,7 +41,7 @@ object FuzzingBaseClass {
   object Tags {
 
     // Use this tag for fuzz tests to ensure they run in nightly builds with a high degree of fuzzing.
-    object Fuzzy extends Tag("fuzzy")
+    object Fuzzy extends Tag("fr.acinq.eclair.tags.Fuzzy")
 
   }
 

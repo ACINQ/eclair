@@ -47,7 +47,7 @@ mvn test -Dsuites=*<TestClassName>
 To skip fuzz tests, run:
 
 ```shell
-mvn test -DtagsToExclude=fuzzy
+mvn test -DtagsToExclude=fr.acinq.eclair.tags.Fuzzy
 ```
 
 ## Build the API documentation

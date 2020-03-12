@@ -430,7 +430,7 @@ class CommitmentsFuzzSpec extends FuzzingBaseClass {
     toRemote <- Gen.choose(1, 1000000000).map(MilliSatoshi(_))
   } yield Params(isFunder, pendingHtlcs, feeRatePerKw, dustLimit, toLocal, toRemote)
 
-  test("should always be able to send availableForSend", FuzzingBaseClass.Tags.Fuzzy) {
+  test("should always be able to send availableForSend") {
     forAll(paramsGen) { p =>
       var c = CommitmentsSpec.makeCommitments(p.toLocal, p.toRemote, p.feeRatePerKw, p.dustLimit, p.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
@@ -451,7 +451,7 @@ class CommitmentsFuzzSpec extends FuzzingBaseClass {
     }
   }
 
-  test("should always be able to receive availableForReceive", FuzzingBaseClass.Tags.Fuzzy) {
+  test("should always be able to receive availableForReceive") {
     forAll(paramsGen) { p =>
       var c = CommitmentsSpec.makeCommitments(p.toLocal, p.toRemote, p.feeRatePerKw, p.dustLimit, p.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
