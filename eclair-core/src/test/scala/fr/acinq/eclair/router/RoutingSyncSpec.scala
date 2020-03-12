@@ -25,6 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
@@ -77,6 +78,8 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     pipe.ignoreMsg {
       case _: TransportHandler.ReadAck => true
       case _: GossipTimestampFilter => true
+      case _: GossipDecision.Duplicate => true
+      case _: GossipDecision.Accepted => true
     }
     val srcId = src.underlyingActor.nodeParams.nodeId
     val tgtId = tgt.underlyingActor.nodeParams.nodeId

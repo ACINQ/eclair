@@ -21,18 +21,21 @@ import akka.event.LoggingAdapter
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.PeerConnection
+import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.router.Router.{getDesc, isRelatedTo, isStale}
 import fr.acinq.eclair.wire.{ChannelUpdate, EncodedShortChannelIds, NodeAnnouncement, QueryShortChannelIds, TlvStream}
 
 object ValidationHandlers {
 
   def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    origins foreach {
+    val remoteOrigins = origins flatMap {
       case RemoteGossip(peerConnection, _) =>
         peerConnection ! TransportHandler.ReadAck(n) // TODO: duplicate ack for stashed messages
         log.debug("received node announcement for nodeId={}", n.nodeId)
+        Some(peerConnection)
       case LocalGossip =>
         log.debug("received node announcement from {}", ctx.sender)
+        None
     }
     if (d.stash.nodes.contains(n)) {
       log.debug("ignoring {} (already stashed)", n)
@@ -40,25 +43,26 @@ object ValidationHandlers {
       d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins1)))
     } else if (d.rebroadcast.nodes.contains(n)) {
       log.debug("ignoring {} (pending rebroadcast)", n)
+      remoteOrigins.foreach(_ ! GossipDecision.Accepted(n))
       val origins1 = d.rebroadcast.nodes(n) ++ origins
       d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins1)))
     } else if (d.nodes.contains(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
       log.debug("ignoring {} (duplicate)", n)
+      remoteOrigins.foreach(_ ! GossipDecision.Duplicate(n))
       d
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)
-      origins foreach {
-        case RemoteGossip(peerConnection, _) => peerConnection ! PeerConnection.InvalidSignature(n)
-        case LocalGossip =>
-      }
+      remoteOrigins.foreach(_ ! GossipDecision.InvalidSignature(n))
       d
     } else if (d.nodes.contains(n.nodeId)) {
       log.debug("updated node nodeId={}", n.nodeId)
+      remoteOrigins.foreach(_ ! GossipDecision.Accepted(n))
       ctx.system.eventStream.publish(NodeUpdated(n))
       db.updateNode(n)
       d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
     } else if (d.channels.values.exists(c => isRelatedTo(c.ann, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
+      remoteOrigins.foreach(_ ! GossipDecision.Accepted(n))
       ctx.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
       d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
@@ -67,6 +71,7 @@ object ValidationHandlers {
       d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))
     } else {
       log.debug("ignoring {} (no related channel found)", n)
+      remoteOrigins.foreach(_ ! GossipDecision.NoKnownChannel(n))
       // there may be a record if we have just restarted
       db.removeNode(n.nodeId)
       d
@@ -75,12 +80,14 @@ object ValidationHandlers {
   }
 
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], u: ChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    origins.foreach {
+    val remoteOrigins = origins flatMap {
       case RemoteGossip(peerConnection, _) =>
         peerConnection ! TransportHandler.ReadAck(u) // TODO: duplicate ack for stashed messages
         log.debug("received channel update for shortChannelId={}", u.shortChannelId)
+        Some(peerConnection)
       case LocalGossip =>
         log.debug("received channel update from {}", ctx.sender)
+        None
     }
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
@@ -89,23 +96,24 @@ object ValidationHandlers {
       val desc = getDesc(u, pc.ann)
       if (d.rebroadcast.updates.contains(u)) {
         log.debug("ignoring {} (pending rebroadcast)", u)
+        remoteOrigins.foreach(_ ! GossipDecision.Accepted(u))
         val origins1 = d.rebroadcast.updates(u) ++ origins
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
       } else if (isStale(u)) {
         log.debug("ignoring {} (stale)", u)
+        remoteOrigins.foreach(_ ! GossipDecision.Stale(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (duplicate)", u)
+        remoteOrigins.foreach(_ ! GossipDecision.Duplicate(u))
         d
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        origins foreach {
-          case RemoteGossip(peerConnection, _) => peerConnection ! PeerConnection.InvalidSignature(u)
-          case LocalGossip =>
-        }
+        remoteOrigins.foreach(_ ! GossipDecision.InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+        remoteOrigins.foreach(_ ! GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // update the graph
@@ -117,6 +125,7 @@ object ValidationHandlers {
         d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+        remoteOrigins.foreach(_ ! GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // we also need to update the graph
@@ -139,25 +148,26 @@ object ValidationHandlers {
       val desc = if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
       if (isStale(u)) {
         log.debug("ignoring {} (stale)", u)
+        remoteOrigins.foreach(_ ! GossipDecision.Stale(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (already know same or newer)", u)
+        remoteOrigins.foreach(_ ! GossipDecision.Duplicate(u))
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        origins foreach {
-          case RemoteGossip(peerConnection, _) => peerConnection ! PeerConnection.InvalidSignature(u)
-          case LocalGossip =>
-        }
+        remoteOrigins.foreach(_ ! GossipDecision.InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+        remoteOrigins.foreach(_ ! GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+        remoteOrigins.foreach(_ ! GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
@@ -170,6 +180,7 @@ object ValidationHandlers {
       // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
       // about that channel. We can ignore this update since we will receive it again
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
+      remoteOrigins.foreach(_ ! GossipDecision.Duplicate(u))
       db.removeFromPruned(u.shortChannelId)
 
       // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
@@ -195,6 +206,7 @@ object ValidationHandlers {
       }
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
+      remoteOrigins.foreach(_ ! GossipDecision.NoRelatedChannel(u))
       d
     }
   }

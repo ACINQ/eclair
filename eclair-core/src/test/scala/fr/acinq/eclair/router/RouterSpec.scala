@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.io.PeerConnection.InvalidSignature
+import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
@@ -123,9 +123,9 @@ class RouterSpec extends BaseRouterSpec {
     val channelId_ac = ShortChannelId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
-    sender.send(router, PeerRoutingMessage(null, remoteNodeId, buggy_chan_ac))
+    sender.send(router, PeerRoutingMessage(sender.ref, remoteNodeId, buggy_chan_ac))
     sender.expectMsg(TransportHandler.ReadAck(buggy_chan_ac))
-    sender.expectMsg(InvalidSignature(buggy_chan_ac))
+    sender.expectMsg(GossipDecision.InvalidSignature(buggy_chan_ac))
   }
 
   test("handle bad signature for NodeAnnouncement") { fixture =>
@@ -134,7 +134,7 @@ class RouterSpec extends BaseRouterSpec {
     val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, buggy_ann_a))
     peerConnection.expectMsg(TransportHandler.ReadAck(buggy_ann_a))
-    peerConnection.expectMsg(InvalidSignature(buggy_ann_a))
+    peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_ann_a))
   }
 
   test("handle bad signature for ChannelUpdate") { fixture =>
@@ -143,7 +143,7 @@ class RouterSpec extends BaseRouterSpec {
     val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, buggy_channelUpdate_ab))
     peerConnection.expectMsg(TransportHandler.ReadAck(buggy_channelUpdate_ab))
-    peerConnection.expectMsg(InvalidSignature(buggy_channelUpdate_ab))
+    peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_channelUpdate_ab))
   }
 
   test("route not found (unreachable target)") { fixture =>
@@ -285,9 +285,9 @@ class RouterSpec extends BaseRouterSpec {
     val update = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 5 msat, timestamp = timestamp)
     val probe = TestProbe()
     probe.ignoreMsg { case _: TransportHandler.ReadAck => true }
-    probe.send(router, PeerRoutingMessage(null, remoteNodeId, announcement))
+    probe.send(router, PeerRoutingMessage(probe.ref, remoteNodeId, announcement))
     watcher.expectMsgType[ValidateRequest]
-    probe.send(router, PeerRoutingMessage(null, remoteNodeId, update))
+    probe.send(router, PeerRoutingMessage(probe.ref, remoteNodeId, update))
     watcher.send(router, ValidateResult(announcement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
 
     probe.send(router, TickPruneStaleChannels)
@@ -299,6 +299,7 @@ class RouterSpec extends BaseRouterSpec {
 
     // we want to make sure that transport receives the query
     val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: GossipDecision.Duplicate => true }
     probe.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update1))
     peerConnection.expectMsg(TransportHandler.ReadAck(update1))
     val query = peerConnection.expectMsgType[QueryShortChannelIds]

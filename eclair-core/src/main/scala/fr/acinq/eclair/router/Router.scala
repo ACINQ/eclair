@@ -30,8 +30,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.io.PeerConnection
-import fr.acinq.eclair.io.PeerConnection.InvalidAnnouncement
+import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -339,10 +338,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
               case Some(origin +: _) => origin.peerConnection ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
               case _ => ()
             }
+            val remoteOrigins_opt = d0.awaiting.get(c)
             log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
             val publicChannel_opt = v match {
               case ValidateResult(c, Left(t)) =>
                 log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
+                remoteOrigins_opt.foreach(_.foreach(_.peerConnection ! GossipDecision.ValidationFailure(c)))
                 None
               case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
                 val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
@@ -354,15 +355,13 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                 }
                 if (ok) {
                   log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
-                  d0.awaiting.get(c) match {
-                    case Some(origins) => origins.foreach(_.peerConnection ! InvalidAnnouncement(c))
-                    case _ => ()
-                  }
+                  remoteOrigins_opt.foreach(_.foreach(_.peerConnection ! GossipDecision.InvalidAnnouncement(c)))
                   None
                 } else {
                   watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
                   // TODO: check feature bit set
                   log.debug("added channel channelId={}", c.shortChannelId)
+                  remoteOrigins_opt.foreach(_.foreach(_.peerConnection ! GossipDecision.Accepted(c)))
                   val capacity = tx.txOut(outputIndex).amount
                   context.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(c, capacity, None, None) :: Nil))
                   Kamon.runWithSpan(Kamon.spanBuilder("add-to-db").start(), finishSpan = true) {
@@ -380,12 +379,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                 if (fundingTxStatus.spendingTxConfirmed) {
                   log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
                   // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
-                  d0.awaiting.get(c) match {
-                    case Some(origins) => origins.foreach(_.peerConnection ! PeerConnection.ChannelClosed(c))
-                    case _ => ()
-                  }
+                  remoteOrigins_opt.foreach(_.foreach(_.peerConnection ! GossipDecision.ChannelClosed(c)))
                 } else {
                   log.debug("ignoring shortChannelId={} tx={} (funding tx already spent but spending tx isn't confirmed)", c.shortChannelId, tx.txid)
+                  remoteOrigins_opt.foreach(_.foreach(_.peerConnection ! GossipDecision.ChannelClosing(c)))
                 }
                 // there may be a record if we have just restarted
                 db.removeChannel(c.shortChannelId)
@@ -598,27 +595,29 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
       stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(peerConnection, remoteNodeId)), u)
 
-    case Event(PeerRoutingMessage(_, remoteNodeId, c: ChannelAnnouncement), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
       if (d.channels.contains(c.shortChannelId)) {
-        sender ! TransportHandler.ReadAck(c)
+        peerConnection ! TransportHandler.ReadAck(c)
         log.debug("ignoring {} (duplicate)", c)
+        peerConnection ! GossipDecision.Duplicate(c)
         stay
       } else if (d.awaiting.contains(c)) {
-        sender ! TransportHandler.ReadAck(c)
+        peerConnection ! TransportHandler.ReadAck(c)
         log.debug("ignoring {} (being verified)", c)
         // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
-        val origins = d.awaiting(c) :+ RemoteGossip(sender, remoteNodeId)
+        val origins = d.awaiting(c) :+ RemoteGossip(peerConnection, remoteNodeId)
         stay using d.copy(awaiting = d.awaiting + (c -> origins))
       } else if (db.isPruned(c.shortChannelId)) {
-        sender ! TransportHandler.ReadAck(c)
+        peerConnection ! TransportHandler.ReadAck(c)
         // channel was pruned and we haven't received a recent channel_update, so we have no reason to revalidate it
         log.debug("ignoring {} (was pruned)", c)
+        peerConnection ! GossipDecision.ChannelPruned(c)
         stay
       } else if (!Announcements.checkSigs(c)) {
-        sender ! TransportHandler.ReadAck(c)
+        peerConnection ! TransportHandler.ReadAck(c)
         log.warning("bad signature for announcement {}", c)
-        sender ! PeerConnection.InvalidSignature(c)
+        peerConnection ! GossipDecision.InvalidSignature(c)
         stay
       } else {
         log.info("validating shortChannelId={}", c.shortChannelId)
@@ -628,7 +627,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
           }
         }
         // we don't acknowledge the message just yet
-        stay using d.copy(awaiting = d.awaiting + (c -> Seq(RemoteGossip(sender, remoteNodeId))))
+        stay using d.copy(awaiting = d.awaiting + (c -> Seq(RemoteGossip(peerConnection, remoteNodeId))))
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
