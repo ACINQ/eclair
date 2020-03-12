@@ -269,28 +269,28 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       d.channels.get(shortChannelId) match {
         case Some(_) =>
           // channel has already been announced and router knows about it, we can process the channel_update
-          stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, LocalGossip, u)
+          stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
         case None =>
           channelAnnouncement_opt match {
             case Some(c) if d.awaiting.contains(c) =>
               // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-              stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, LocalGossip, u)
+              stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
             case Some(c) =>
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
               watcher ! ValidateRequest(c)
               val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
               // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
               db.removeFromPruned(c.shortChannelId)
-              stay using ValidationHandlers.handleChannelUpdate(d1, nodeParams.db.network, nodeParams.routerConf, LocalGossip, u)
+              stay using ValidationHandlers.handleChannelUpdate(d1, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
             case None if d.privateChannels.contains(shortChannelId) =>
               // channel isn't announced but we already know about it, we can process the channel_update
-              stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, LocalGossip, u)
+              stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
             case None =>
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
               log.debug("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
               val d1 = d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(nodeParams.nodeId, remoteNodeId, None, None)))
-              stay using ValidationHandlers.handleChannelUpdate(d1, nodeParams.db.network, nodeParams.routerConf, LocalGossip, u)
+              stay using ValidationHandlers.handleChannelUpdate(d1, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
           }
       }
 
@@ -414,10 +414,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
                     awaiting = awaiting1)
                   // we only reprocess updates and nodes if validation succeeded
                   val d2 = reprocessUpdates.foldLeft(d1) {
-                    case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origin, u) } // we reprocess the same channel_update for every origin (to preserve origin information)
+                    case (d, (u, origins)) => ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u)
                   }
                   val d3 = reprocessNodes.foldLeft(d2) {
-                    case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, origin, n) } // we reprocess the same node_announcement for every origins (to preserve origin information)
+                    case (d, (n, origins)) => ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, origins, n)
                   }
                   stay using d3
                 }
@@ -593,10 +593,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(u: ChannelUpdate, d: Data) =>
-      stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, LocalGossip, u)
+      stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
-      stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), u)
+      stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(peerConnection, remoteNodeId)), u)
 
     case Event(PeerRoutingMessage(_, remoteNodeId, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -632,10 +632,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      stay using ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, LocalGossip, n)
+      stay using ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
-      stay using ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, RemoteGossip(peerConnection, remoteNodeId), n)
+      stay using ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
       SyncHandlers.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
