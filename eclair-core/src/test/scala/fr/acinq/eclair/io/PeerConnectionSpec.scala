@@ -25,6 +25,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag}
@@ -330,7 +331,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // let's assume that the router isn't happy with those channels because the funding tx is already spent
     for (c <- channels) {
-      router.send(peerConnection, PeerConnection.ChannelClosed(c))
+      router.send(peerConnection, GossipDecision.ChannelClosed(c))
     }
     // peer will temporary ignore announcements coming from bob
     for (ann <- channels ++ updates) {
@@ -353,14 +354,14 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
     // now let's assume that the router isn't happy with those channels because the announcement is invalid
-    router.send(peerConnection, PeerConnection.InvalidAnnouncement(channels(0)))
+    router.send(peerConnection, GossipDecision.InvalidAnnouncement(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error1 = transport.expectMsgType[Error]
     assert(error1.channelId === Peer.CHANNELID_ZERO)
     assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
 
     // let's assume that one of the sigs were invalid
-    router.send(peerConnection, PeerConnection.InvalidSignature(channels(0)))
+    router.send(peerConnection, GossipDecision.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error2 = transport.expectMsgType[Error]
     assert(error2.channelId === Peer.CHANNELID_ZERO)
