@@ -26,28 +26,28 @@ import fr.acinq.eclair.wire.{ChannelUpdate, EncodedShortChannelIds, NodeAnnounce
 
 object ValidationHandlers {
 
-  def handleNodeAnnouncement(d: Data, db: NetworkDb, origin: GossipOrigin, n: NodeAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    origin match {
+  def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    origins foreach {
       case RemoteGossip(peerConnection, _) =>
-        peerConnection ! TransportHandler.ReadAck(n)
+        peerConnection ! TransportHandler.ReadAck(n) // TODO: duplicate ack for stashed messages
         log.debug("received node announcement for nodeId={}", n.nodeId)
       case LocalGossip =>
         log.debug("received node announcement from {}", ctx.sender)
     }
     if (d.stash.nodes.contains(n)) {
       log.debug("ignoring {} (already stashed)", n)
-      val origins = d.stash.nodes(n) + origin
-      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))
+      val origins1 = d.stash.nodes(n) ++ origins
+      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins1)))
     } else if (d.rebroadcast.nodes.contains(n)) {
       log.debug("ignoring {} (pending rebroadcast)", n)
-      val origins = d.rebroadcast.nodes(n) + origin
-      d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
+      val origins1 = d.rebroadcast.nodes(n) ++ origins
+      d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins1)))
     } else if (d.nodes.contains(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
       log.debug("ignoring {} (duplicate)", n)
       d
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)
-      origin match {
+      origins foreach {
         case RemoteGossip(peerConnection, _) => peerConnection ! PeerConnection.InvalidSignature(n)
         case LocalGossip =>
       }
@@ -56,15 +56,15 @@ object ValidationHandlers {
       log.debug("updated node nodeId={}", n.nodeId)
       ctx.system.eventStream.publish(NodeUpdated(n))
       db.updateNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
     } else if (d.channels.values.exists(c => isRelatedTo(c.ann, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
       ctx.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("stashing {}", n)
-      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> Set(origin))))
+      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))
     } else {
       log.debug("ignoring {} (no related channel found)", n)
       // there may be a record if we have just restarted
@@ -74,10 +74,10 @@ object ValidationHandlers {
 
   }
 
-  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origin: GossipOrigin, u: ChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    origin match {
+  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], u: ChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    origins.foreach {
       case RemoteGossip(peerConnection, _) =>
-        peerConnection ! TransportHandler.ReadAck(u)
+        peerConnection ! TransportHandler.ReadAck(u) // TODO: duplicate ack for stashed messages
         log.debug("received channel update for shortChannelId={}", u.shortChannelId)
       case LocalGossip =>
         log.debug("received channel update from {}", ctx.sender)
@@ -89,8 +89,8 @@ object ValidationHandlers {
       val desc = getDesc(u, pc.ann)
       if (d.rebroadcast.updates.contains(u)) {
         log.debug("ignoring {} (pending rebroadcast)", u)
-        val origins = d.rebroadcast.updates(u) + origin
-        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)))
+        val origins1 = d.rebroadcast.updates(u) ++ origins
+        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
       } else if (isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         d
@@ -99,7 +99,7 @@ object ValidationHandlers {
         d
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        origin match {
+        origins foreach {
           case RemoteGossip(peerConnection, _) => peerConnection ! PeerConnection.InvalidSignature(u)
           case LocalGossip =>
         }
@@ -114,24 +114,24 @@ object ValidationHandlers {
         } else {
           d.graph.removeEdge(desc)
         }
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
       if (d.stash.updates.contains(u)) {
         log.debug("ignoring {} (already stashed)", u)
-        val origins = d.stash.updates(u) + origin
-        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
+        val origins1 = d.stash.updates(u) ++ origins
+        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins1)))
       } else {
         log.debug("stashing {}", u)
-        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> Set(origin))))
+        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
       }
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
@@ -145,7 +145,7 @@ object ValidationHandlers {
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        origin match {
+        origins foreach {
           case RemoteGossip(peerConnection, _) => peerConnection ! PeerConnection.InvalidSignature(u)
           case LocalGossip =>
         }
@@ -174,7 +174,7 @@ object ValidationHandlers {
 
       // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
       // when we're sending updates to ourselves
-      origin match {
+      origins head match {
         case RemoteGossip(peerConnection, remoteNodeId) =>
           val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
           d.sync.get(remoteNodeId) match {
