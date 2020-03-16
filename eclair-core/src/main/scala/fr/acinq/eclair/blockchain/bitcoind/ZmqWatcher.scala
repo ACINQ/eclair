@@ -57,7 +57,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case NewTransaction(tx) =>
       KamonExt.time("watcher.newtx.checkwatch.time") {
-        log.debug(s"analyzing txid={} tx={}", tx.txid, tx)
+        log.debug("analyzing txid={} tx={}", tx.txid, tx)
         tx.txIn
           .map(_.outPoint)
           .flatMap(watchedUtxos.get)
@@ -72,9 +72,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
-      log.debug(s"received blockid=${Try(block.blockId).getOrElse(ByteVector32(ByteVector.empty))}")
+      log.debug("received blockid={}", Try(block.blockId).getOrElse(ByteVector32(ByteVector.empty)))
       nextTick.map(_.cancel()) // this may fail or succeed, worse case scenario we will have two ticks in a row (no big deal)
-      log.debug(s"scheduling a new task to check on tx confirmations")
+      log.debug("scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row
       val task = context.system.scheduler.scheduleOnce(2 seconds, self, TickNewBlock)
       context become watching(watches, watchedUtxos, block2tx, Some(task))
@@ -82,7 +82,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     case TickNewBlock =>
       client.getBlockCount.map {
         case count =>
-          log.debug(s"setting blockCount=$count")
+          log.debug("setting blockCount={}", count)
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
@@ -151,7 +151,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         case w => log.warning(s"ignoring $w")
       }
 
-      log.debug(s"adding watch $w for $sender")
+      log.debug("adding watch {} for {}", w, sender)
       context.watch(w.channel)
       context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
 
@@ -213,13 +213,12 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   }
 
   def checkConfirmed(w: WatchConfirmed) = {
-    log.debug(s"checking confirmations of txid=${w.txId}")
+    log.debug("checking confirmations of txid={}", w.txId)
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth
     client.getTxConfirmations(w.txId.toString).map {
       case Some(confirmations) if confirmations >= w.minDepth =>
-        client.getTransaction(w.txId.toString).map {
-          case tx =>
+        client.getTransaction(w.txId.toString).map { tx =>
             client.getTransactionShortId(w.txId.toString).map {
               case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
           }
