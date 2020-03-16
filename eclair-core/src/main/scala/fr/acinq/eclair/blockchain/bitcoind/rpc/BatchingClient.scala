@@ -38,7 +38,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
       context become waiting(queue :+ Pending(request, sender), processing)
 
     case responses: Seq[JsonRPCResponse]@unchecked =>
-      log.debug(s"got {} responses", responses.size)
+      log.debug("got {} responses", responses.size)
       // let's send back answers to the requestors
       require(responses.size == processing.size, s"responses=${responses.size} != processing=${processing.size}")
       responses.zip(processing).foreach {
@@ -57,7 +57,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
   def process(queue: Queue[Pending]) = {
     // do we have queued requests?
     if (queue.isEmpty) {
-      log.debug(s"no more requests, going back to idle")
+      log.debug("no more requests, going back to idle")
       context become receive
     } else {
       val (batch, rest) = queue.splitAt(BatchingClient.BATCH_SIZE)
