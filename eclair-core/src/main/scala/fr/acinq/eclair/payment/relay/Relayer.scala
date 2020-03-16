@@ -149,10 +149,10 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 
     case Status.Failure(addFailed: AddHtlcFailed) =>
       addFailed.origin match {
-        case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
+        case Origin.Local(id, None) => postRestartCleaner forward addFailed
         case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
         case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
-        case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
+        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward addFailed
         case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
       }
 

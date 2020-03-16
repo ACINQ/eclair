@@ -1312,7 +1312,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
-            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverridenByLocalCommit(d.channelId), origin, None, None))
+            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcOverriddenByLocalCommit(d.channelId, Set(add)), origin, None, None))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
