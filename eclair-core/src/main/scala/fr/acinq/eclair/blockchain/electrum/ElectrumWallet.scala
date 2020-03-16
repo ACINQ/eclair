@@ -77,7 +77,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
     if (data.isReady(swipeRange)) {
       data.lastReadyMessage match {
         case Some(value) if value == data.readyMessage =>
-          log.debug(s"ready message $value has already been sent")
+          log.debug("ready message {} has already been sent", value)
           data
         case _ =>
           log.info(s"checking wallet")
@@ -202,7 +202,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       // we can ignore this, we will request header chunks until the server has nothing left to send us
-      log.debug(s"ignoring header $header at $height while syncing")
+      log.debug("ignoring header {} at {} while syncing", header, height)
       stay()
   }
 
@@ -278,7 +278,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
       stay using persistAndNotify(data1)
 
     case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items), data) =>
-      log.debug(s"scriptHash=$scriptHash has history=$items")
+      log.debug("scriptHash={} has history={}", scriptHash, items)
       val shadow_items = data.history.get(scriptHash) match {
         case Some(existing_items) => existing_items.filterNot(item => items.exists(_.tx_hash == item.tx_hash))
         case None => Nil
