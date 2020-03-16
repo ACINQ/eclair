@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.io.PeerConnection.InvalidAnnouncement
@@ -122,7 +123,7 @@ trait Hop {
  * @param lastUpdate last update of the channel used for the hop.
  */
 case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
-  override lazy val cltvExpiryDelta = lastUpdate.cltvExpiryDelta
+  override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
 
   override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
 }
@@ -163,17 +164,15 @@ case class ExcludeChannel(desc: ChannelDesc)
 case class LiftChannelExclusion(desc: ChannelDesc)
 // @formatter:on
 
+// @formatter:off
 case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
-
 case object GetNetworkStats
-
 case class GetNetworkStatsResponse(stats: Option[NetworkStats])
-
 case object GetRoutingState
-
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
-
-case class RegisterToAnnouncements(listener: ActorRef)
+case class GetRoutingStateStreaming(subscribeToChanges: Boolean)
+case object InitialRoutingStateEnd
+// @formatter:on
 
 // @formatter:off
 sealed trait GossipOrigin
@@ -227,9 +226,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
   setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
-  val defaultRouteParams = getDefaultRouteParams(nodeParams.routerConf)
+  val defaultRouteParams: RouteParams = getDefaultRouteParams(nodeParams.routerConf)
 
-  val db = nodeParams.db.network
+  val db: NetworkDb = nodeParams.db.network
 
   {
     log.info("loading network announcements from db...")
@@ -327,6 +326,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
       sender ! RoutingState(d.channels.values, d.nodes.values)
+      stay
+
+    case Event(GetRoutingStateStreaming(subscribeToChanges), d) =>
+      d.nodes
+        .values
+        .sliding(100, 100)
+        .map(NodesDiscovered)
+        .foreach(sender ! _)
+      d.channels
+        .values
+        .map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))
+        .sliding(100, 100)
+        .map(ChannelsDiscovered)
+        .foreach(sender ! _)
+      sender ! InitialRoutingStateEnd
+      if (subscribeToChanges) {
+        context.system.eventStream.subscribe(sender, classOf[NetworkEvent])
+      }
       stay
 
     case Event(GetNetworkStats, d: Data) =>
@@ -787,22 +804,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       self ! progress
       stay using d.copy(sync = sync1)
 
-    case Event(RegisterToChanges(listener), d) =>
-      d.nodes
-        .values
-        .sliding(100, 100)
-        .map(NodesDiscovered)
-        .foreach(listener ! _)
-      d.channels
-        .values
-        .map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))
-        .sliding(100, 100)
-        .map(ChannelsDiscovered)
-        .foreach(listener ! _)
-      listener ! "done"
-      context.system.eventStream.subscribe(listener, classOf[NetworkEvent])
-      stay
-
   }
 
   initialize()
@@ -974,8 +975,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 }
 
 object Router {
-
-  case class RegisterToChanges(listener: ActorRef)
 
   val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
   val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
@@ -1289,7 +1288,7 @@ object Router {
           if (id.blockHeight == currentHeight)
             loop(id :: currentChunk, acc) // same height => always add to the current chunk
           else if (currentChunk.size < channelRangeChunkSize) // different height but we're under the size target => add to the current chunk
-            loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
+          loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
           else {
             // we always prepend because it's more efficient so we have to reverse the current chunk
             // for the first chunk, we make sure that we start at the request first block
@@ -1442,8 +1441,7 @@ object Router {
     }
 
     val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
-      Graph.yenKshortestPaths(g, localNodeId
-        , targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
+      Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
     }
     foundRoutes match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search

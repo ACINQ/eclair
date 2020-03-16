@@ -49,7 +49,7 @@ object Logs {
     * This is useful in some cases where we can't rely on the `aroundReceive` trick to set the MDC before processing a
     * message because we don't have enough context. That's typically the case when handling `Terminated` messages.
     */
-  def withMdc(log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => Any) = {
+  def withMdc(log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => Any): Any = {
     val mdc0 = log.mdc // backup the current mdc
     try {
       log.mdc(mdc0 ++ mdc) // add the new mdc to the current one
@@ -105,7 +105,10 @@ object Logs {
         case _: HandshakeCompleted => Some(LogCategory.CONNECTION)
         case _: Peer.Connect => Some(LogCategory.CONNECTION)
         case _: Peer.Disconnect => Some(LogCategory.CONNECTION)
-        case _: io.PeerConnection.PendingAuth => Some(LogCategory.CONNECTION)
+        case _: PeerConnection.PendingAuth => Some(LogCategory.CONNECTION)
+        case _: PeerConnection.Authenticated => Some(LogCategory.CONNECTION)
+        case _: PeerConnection.AuthenticationFailed => Some(LogCategory.CONNECTION)
+        case _: PeerConnection.ConnectionReady => Some(LogCategory.CONNECTION)
         case _: PeerConnection.InitializeConnection => Some(LogCategory.CONNECTION)
         case _: PeerConnection.DelayedRebroadcast => Some(LogCategory.ROUTING_SYNC)
         case Peer.Reconnect => Some(LogCategory.CONNECTION)

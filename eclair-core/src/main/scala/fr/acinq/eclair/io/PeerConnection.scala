@@ -20,11 +20,11 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, FSM, PoisonPill, Props, Status, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -43,7 +43,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
   import PeerConnection._
 
-  startWith(BEFORE_AUTH, Nothing())
+  startWith(BEFORE_AUTH, Nothing)
 
   when(BEFORE_AUTH) {
     case Event(p: PendingAuth, _) =>
@@ -398,27 +398,25 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
 object PeerConnection {
 
-  val CHANNELID_ZERO = ByteVector32.Zeroes
-
-  val UNKNOWN_CHANNEL_MESSAGE = ByteVector.view("unknown channel".getBytes())
-
+  // @formatter:off
   val RECONNECT_TIMER = "reconnect"
-
   val SEND_PING_TIMER = "send_ping"
+  // @formatter:on
 
+  // @formatter:off
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
-
   val MAX_FUNDING_TX_NOT_FOUND = 10
+  // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef) = Props(new PeerConnection(nodeParams, switchboard, router))
+  def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef): Props = Props(new PeerConnection(nodeParams, switchboard, router))
 
   // @formatter:off
 
   sealed trait Data
   sealed trait HasTransport extends Data { def transport: ActorRef }
-  case class Nothing() extends Data
+  case object Nothing extends Data
   case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
@@ -451,7 +449,7 @@ object PeerConnection {
   case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
   case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
 
-  case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
+  case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   // @formatter:on
 

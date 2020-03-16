@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{NodeParams, io}
+import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
@@ -82,7 +82,7 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case authenticated: io.PeerConnection.Authenticated =>
+    case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)

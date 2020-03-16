@@ -70,6 +70,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, address, outgoing = true, origin_opt = None))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[wire.Init]

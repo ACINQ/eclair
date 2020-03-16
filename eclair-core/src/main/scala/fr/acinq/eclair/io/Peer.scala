@@ -28,7 +28,6 @@ import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import kamon.Kamon
@@ -44,7 +43,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
 
   import Peer._
 
-  startWith(INSTANTIATING, Nothing())
+  startWith(INSTANTIATING, Nothing)
 
   when(INSTANTIATING) {
     case Event(Init(previousKnownAddress, storedChannels), _) =>
@@ -250,8 +249,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
       sender ! PeerInfo(remoteNodeId, stateName.toString, d.address_opt, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay
 
-    case Event(_: TransportHandler.ReadAck, _) => stay // ignored
-
     case Event(Peer.Reconnect, _) => stay // we got connected in the meantime
 
     case Event(msg, _) =>
@@ -303,7 +300,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
     channel
   }
 
-  def stopPeer() = {
+  def stopPeer(): State = {
     log.info("removing peer from db")
     nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
@@ -315,7 +312,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
   }
 
   // a failing channel won't be restarted, it should handle its states
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
+  // connection are stateless
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 
   initialize()
 
@@ -326,21 +324,19 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
 
 object Peer {
 
-  val CHANNELID_ZERO = ByteVector32.Zeroes
-
-  val UNKNOWN_CHANNEL_MESSAGE = ByteVector.view("unknown channel".getBytes())
+  // @formatter:off
+  val CHANNELID_ZERO: ByteVector32 = ByteVector32.Zeroes
+  val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
+  // @formatter:on
 
   val RECONNECT_TIMER = "reconnect"
 
-  val SEND_PING_TIMER = "send_ping"
-
+  // @formatter:off
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
-
   val MAX_FUNDING_TX_NOT_FOUND = 10
+  // @formatter:on
 
-  val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
-
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, router, watcher, relayer, paymentHandler, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, router, watcher, relayer, paymentHandler, wallet))
 
   // @formatter:off
 
@@ -352,7 +348,7 @@ object Peer {
     def address_opt: Option[InetSocketAddress]
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
-  case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
+  case object Nothing extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], nextReconnectionDelay: FiniteDuration = randomizeDelay(10 seconds)) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data
 
