@@ -121,7 +121,7 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
           case V3 => Tor3(serviceId, virtualPort)
         })
         onionAdded.foreach(_.success(address.get))
-        log.debug(s"Onion address: ${address.get}")
+        log.debug("Onion address: {}", address.get)
       }
   }
 
