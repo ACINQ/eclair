@@ -22,6 +22,7 @@ import akka.Done
 import akka.actor.{ActorRef, Status}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
@@ -32,7 +33,7 @@ import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, Direction, IN, OUT}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, NodeParams, TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, NodeParams, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Outcome
 import scodec.bits.ByteVector
 
@@ -46,6 +47,8 @@ import scala.concurrent.duration._
 class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
 
   import PostRestartHtlcCleanerSpec._
+
+  implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   case class FixtureParam(nodeParams: NodeParams, commandBuffer: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(): ActorRef = {
@@ -294,6 +297,52 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
       testCase.upstream_1 -> Set(testCase.downstream_1_1).map(htlc => (htlc.channelId, htlc.id)),
       testCase.upstream_2 -> Set(testCase.downstream_2_1, testCase.downstream_2_2, testCase.downstream_2_3).map(htlc => (htlc.channelId, htlc.id))
     ))
+  }
+
+  test("ignore dust HTLCs in closing downstream channels") { f =>
+    import f._
+
+    // Upstream HTLCs.
+    val htlc_ab_1 = Seq(buildHtlc(0, channelId_ab_1, paymentHash1, IN), buildHtlc(5, channelId_ab_1, paymentHash2, IN))
+    val htlc_ab_2 = Seq(buildHtlc(7, channelId_ab_2, paymentHash1, IN))
+    val origin_1 = Origin.TrampolineRelayed((channelId_ab_1, 0L) :: (channelId_ab_2, 7L) :: Nil, None)
+    val origin_2 = Origin.TrampolineRelayed((channelId_ab_1, 5L) :: Nil, None)
+
+    // Downstream HTLCs.
+    val dustHtlc = {
+      val htlc = buildHtlc(8, channelId_bc_1, paymentHash1, OUT)
+      htlc.copy(add = htlc.add.copy(amountMsat = nodeParams.dustLimit.toMilliSatoshi / 2))
+    }
+    val htlc_bc_1 = Seq(dustHtlc)
+    val htlc_bc_2 = Seq(buildHtlc(1, channelId_bc_2, paymentHash2, OUT))
+
+    val data_ab_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty)
+    val data_ab_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map.empty)
+    // The first channel between B and C is closing; its HTLC is dust and will never reach the chain, so it can safely be failed upstream.
+    val data_bc_1 = {
+      val d = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_1, Map(6L -> origin_1, 8L -> origin_1))
+      val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
+      val localCommitPublished = Closing.claimCurrentLocalCommitTxOutputs(nodeParams.keyManager, d.commitments, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+      val commitTxConfirmed = localCommitPublished.copy(irrevocablySpent = Map(d.commitments.commitInput.outPoint -> commitTx.txid))
+      DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = 1L, mutualCloseProposed = Nil, localCommitPublished = Some(commitTxConfirmed))
+    }
+    val data_bc_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc_2, Map(1L -> origin_2))
+
+    nodeParams.db.channels.addOrUpdateChannel(data_ab_1)
+    nodeParams.db.channels.addOrUpdateChannel(data_ab_2)
+    nodeParams.db.channels.addOrUpdateChannel(data_bc_1)
+    nodeParams.db.channels.addOrUpdateChannel(data_bc_2)
+
+    val initialized = Promise[Done]()
+    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer.ref, Some(initialized)))
+    awaitCond(initialized.isCompleted)
+    commandBuffer.expectNoMsg(100 millis)
+
+    val probe = TestProbe()
+    probe.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
+    val brokenHtlcs = probe.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
+    assert(brokenHtlcs.notRelayed.map(htlc => (htlc.add.id, htlc.add.channelId)).toSet === Set((0L, channelId_ab_1), (7L, channelId_ab_2)))
+    assert(brokenHtlcs.relayedOut === Map(origin_2 -> Set((channelId_bc_2, 1L))))
   }
 
   test("handle a trampoline relay htlc-fail") { f =>
