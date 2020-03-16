@@ -78,7 +78,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
-    case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, NORMAL | SHUTDOWN | CLOSING, data: HasCommitments) =>
+    case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
       log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == data.channelId) // only consider htlcs related to this channel
@@ -89,11 +89,15 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               case Some(preimage) =>
                 log.info(s"fulfilling broken htlc=$htlc")
                 Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
-                channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+                if (e.currentState != CLOSED) {
+                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+                }
               case None =>
                 log.info(s"failing not relayed htlc=$htlc")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
-                channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+                if (e.currentState != CLOSING && e.currentState != CLOSED) {
+                  channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+                }
             }
             false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
           case _ =>
@@ -110,11 +114,24 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 
     case Relayer.ForwardFail(_, to, add) =>
       log.info("htlc failed downstream: ({},{})", add.channelId, add.id)
-      handleDownstreamFailure(brokenHtlcs, to, add)
+      handleDownstreamFailure(brokenHtlcs, to, Set(add))
 
     case Relayer.ForwardFailMalformed(_, to, add) =>
       log.info("htlc failed (malformed) downstream: ({},{})", add.channelId, add.id)
-      handleDownstreamFailure(brokenHtlcs, to, add)
+      handleDownstreamFailure(brokenHtlcs, to, Set(add))
+
+    case addFailed: AddHtlcFailed => addFailed.t match {
+      case HtlcTimedout(_, htlcs) =>
+        log.info("htlcs timed out downstream: ({},{})", addFailed.channelId, htlcs.map(_.id).mkString("/"))
+        handleDownstreamFailure(brokenHtlcs, addFailed.origin, htlcs)
+      case HtlcOverriddenByLocalCommit(_, htlcs) =>
+        log.info("htlcs not included on-chain: ({},{})", addFailed.channelId, htlcs.map(_.id).mkString("/"))
+        handleDownstreamFailure(brokenHtlcs, addFailed.origin, htlcs)
+      case _ =>
+        log.error("received unexpected add htlc failed: {}", addFailed)
+    }
+
+    case GetBrokenHtlcs => sender ! brokenHtlcs
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
@@ -162,7 +179,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
             }
           }
-          val relayedOut1 = relayedOut diff Seq((fulfilledHtlc.channelId, fulfilledHtlc.id))
+          val relayedOut1 = relayedOut diff Set((fulfilledHtlc.channelId, fulfilledHtlc.id))
           if (relayedOut1.isEmpty) {
             log.info(s"payment with paymentHash=${fulfilledHtlc.paymentHash} successfully relayed")
             // We could emit a TrampolinePaymentRelayed event but that requires more book-keeping on incoming HTLCs.
@@ -181,16 +198,16 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
         log.error(s"received fulfill with unknown origin $origin for htlcId=${fulfilledHtlc.id}, channelId=${fulfilledHtlc.channelId}: cannot forward upstream")
     }
 
-  private def handleDownstreamFailure(brokenHtlcs: BrokenHtlcs, origin: Origin, failedHtlc: UpdateAddHtlc): Unit =
+  private def handleDownstreamFailure(brokenHtlcs: BrokenHtlcs, origin: Origin, failedHtlcs: Set[UpdateAddHtlc]): Unit =
     brokenHtlcs.relayedOut.get(origin) match {
       case Some(relayedOut) =>
         // If this is a local payment, we need to update the DB:
         origin match {
-          case Origin.Local(id, _) => nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, failedHtlc.paymentHash, Nil))
+          case Origin.Local(id, _) => nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, failedHtlcs.head.paymentHash, Nil))
           case _ =>
         }
-        val relayedOut1 = relayedOut diff Seq((failedHtlc.channelId, failedHtlc.id))
-        // This was the last downstream HTLC we were waiting for.
+        val relayedOut1 = relayedOut diff failedHtlcs.map(add => (add.channelId, add.id))
+        // These were the last downstream HTLCs we were waiting for.
         if (relayedOut1.isEmpty) {
           // If we haven't already settled upstream, we can fail now.
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
@@ -198,12 +215,12 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               case Origin.Local(id, _) => nodeParams.db.payments.getOutgoingPayment(id).foreach(p => {
                 val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
                 if (payments.forall(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) {
-                  log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}")
-                  context.system.eventStream.publish(PaymentFailed(p.parentId, failedHtlc.paymentHash, Nil))
+                  log.warning(s"payment failed for paymentHash=${failedHtlcs.head.paymentHash}")
+                  context.system.eventStream.publish(PaymentFailed(p.parentId, failedHtlcs.head.paymentHash, Nil))
                 }
               })
               case Origin.TrampolineRelayed(origins, _) =>
-                log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} upstream HTLCs")
+                log.warning(s"payment failed for paymentHash=${failedHtlcs.head.paymentHash}: failing ${origins.length} upstream HTLCs")
                 origins.foreach { case (channelId, htlcId) =>
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
@@ -223,7 +240,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
         }
       case None =>
         Metrics.Unhandled.withTag(Metrics.Hint, "MissingOrigin").increment()
-        log.error(s"received failure with unknown origin $origin for htlcId=${failedHtlc.id}, channelId=${failedHtlc.channelId}")
+        log.error(s"received failure with unknown origin $origin for htlcs=${failedHtlcs.map(add => (add.id, add.channelId)).mkString(",")}")
     }
 
 }
@@ -231,6 +248,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 object PostRestartHtlcCleaner {
 
   def props(nodeParams: NodeParams, commandBuffer: ActorRef, initialized: Option[Promise[Done]] = None) = Props(classOf[PostRestartHtlcCleaner], nodeParams, commandBuffer, initialized)
+
+  case object GetBrokenHtlcs
 
   object Metrics {
 
@@ -260,7 +279,7 @@ object PostRestartHtlcCleaner {
    * @param relayedOut      outgoing HTLC sets that may have been incompletely sent and need to be watched.
    * @param settledUpstream upstream payments that have already been settled (failed or fulfilled) by this actor.
    */
-  case class BrokenHtlcs(notRelayed: Seq[IncomingHtlc], relayedOut: Map[Origin, Seq[(ByteVector32, Long)]], settledUpstream: Set[Origin])
+  case class BrokenHtlcs(notRelayed: Seq[IncomingHtlc], relayedOut: Map[Origin, Set[(ByteVector32, Long)]], settledUpstream: Set[Origin])
 
   /** Returns true if the given HTLC matches the given origin. */
   private def matchesOrigin(htlcIn: UpdateAddHtlc, origin: Origin): Boolean = origin match {
@@ -307,16 +326,39 @@ object PostRestartHtlcCleaner {
         case Right(p@IncomingPacket.FinalPacket(add, _)) => IncomingHtlc(add, shouldFulfill(p, paymentsDb))
       }
 
+    // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
+    // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream
+    // channel is closing (because an HTLC timed out or our remote peer misbehaved).
+    def isPendingUpstream(channelId: ByteVector32, htlcId: Long): Boolean =
+      htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
+
     // We group relayed outgoing HTLCs by their origin.
     val relayedOut = channels
-      .flatMap(c => c.commitments.originChannels.map { case (outgoingHtlcId, origin) => (origin, c.channelId, outgoingHtlcId) })
+      .flatMap(c => {
+        // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
+        val htlcsToIgnore: Set[Long] = c match {
+          case c: DATA_CLOSING =>
+            val irrevocablySpentTxes = Closing.irrevocablySpentTxes(c)
+            val timedOutHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.timedoutHtlcs(c, tx)).map(_.id)
+            val overriddenHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.overriddenOutgoingHtlcs(c, tx)).map(_.id)
+            timedOutHtlcs ++ overriddenHtlcs
+          case _ => Set.empty
+        }
+        c.commitments.originChannels.filterKeys(htlcId => !htlcsToIgnore.contains(htlcId)).map { case (outgoingHtlcId, origin) => (origin, c.channelId, outgoingHtlcId) }
+      })
       .groupBy { case (origin, _, _) => origin }
-      .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) })
+      .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
+      // Filter out HTLCs that are already fulfilled/failed upstream.
+      .filterKeys {
+        case _: Origin.Local => true
+        case Origin.Relayed(channelId, htlcId, _, _) => isPendingUpstream(channelId, htlcId)
+        case Origin.TrampolineRelayed(htlcs, _) => htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId) }
+      }
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
-    log.debug("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
-    log.debug("relayedOut={}", relayedOut)
+    log.info("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
+    log.info("relayedOut={}", relayedOut)
     BrokenHtlcs(notRelayed, relayedOut, Set.empty)
   }
 

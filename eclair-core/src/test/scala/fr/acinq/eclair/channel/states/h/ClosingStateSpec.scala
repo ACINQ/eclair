@@ -474,7 +474,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0, aliceCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverriddenByLocalCommit(aliceData.channelId, Set(htlc)), origin, None, None)))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
   }
@@ -503,7 +503,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverridenByLocalCommit(aliceData.channelId), origin, None, None)))
+    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverriddenByLocalCommit(aliceData.channelId, Set(htlc)), origin, None, None)))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
   }
