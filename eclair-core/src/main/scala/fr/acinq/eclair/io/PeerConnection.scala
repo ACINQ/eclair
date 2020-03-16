@@ -59,16 +59,22 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             name = "transport")
       }
       context.watch(transport)
+      setTimer(AUTH_TIMER, AuthTimeout, nodeParams.authTimeout)
       goto(AUTHENTICATING) using AuthenticatingData(p, transport)
   }
 
   when(AUTHENTICATING) {
     case Event(TransportHandler.HandshakeCompleted(remoteNodeId), d: AuthenticatingData) =>
+      cancelTimer(AUTH_TIMER)
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
       Kamon.counter("peers.connecting.count").withTag("state", "authenticated").increment()
       switchboard ! Authenticated(self, remoteNodeId, address, d.pendingAuth.outgoing, d.pendingAuth.origin_opt)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
+
+    case Event(AuthTimeout, _) =>
+      log.warning(s"authentication timed out after ${nodeParams.authTimeout}")
+      stop(FSM.Normal)
   }
 
   when(BEFORE_INIT) {
@@ -96,61 +102,68 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       log.info(s"using features=${localFeatures.toBin}")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit
-
+      setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
       goto(INITIALIZING) using InitializingData(nodeParams, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit)
   }
 
   when(INITIALIZING) {
-    case Event(remoteInit: wire.Init, d: InitializingData) =>
-      d.transport ! TransportHandler.ReadAck(remoteInit)
+    heartbeat { // receiving the init message from remote will start the first ping timer
+      case Event(remoteInit: wire.Init, d: InitializingData) =>
+        cancelTimer(INIT_TIMER)
+        d.transport ! TransportHandler.ReadAck(remoteInit)
 
-      log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
+        log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
 
-      if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
-        log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
-        d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
-        d.transport ! PoisonPill
-        stay
-      } else if (!Features.areSupported(remoteInit.features)) {
-        log.warning("incompatible features, disconnecting")
-        d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
-        d.transport ! PoisonPill
-        stay
-      } else {
-        Kamon.counter("peers.connecting.count").withTag("state", "initialized").increment()
-        d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
+        if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
+          log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
+          d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+          d.transport ! PoisonPill
+          stay
+        } else if (!Features.areSupported(remoteInit.features)) {
+          log.warning("incompatible features, disconnecting")
+          d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+          d.transport ! PoisonPill
+          stay
+        } else {
+          Kamon.counter("peers.connecting.count").withTag("state", "initialized").increment()
+          d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
-        d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
+          d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
 
-        def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
+          def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
 
-        def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
+          def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
 
-        val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
-        val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
-        if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
-          // if they support channel queries we don't send routing info yet, if they want it they will query us
-          // we will query them, using extended queries if supported
-          val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-          if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
-            log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-            router ! SendChannelQuery(d.remoteNodeId, self, flags_opt = flags_opt)
-          } else {
-            log.info("not syncing with this peer")
+          val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
+          val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
+          if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
+            // if they support channel queries we don't send routing info yet, if they want it they will query us
+            // we will query them, using extended queries if supported
+            val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
+            if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
+              log.info(s"sending sync channel range query with flags_opt=$flags_opt")
+              router ! SendChannelQuery(d.remoteNodeId, self, flags_opt = flags_opt)
+            } else {
+              log.info("not syncing with this peer")
+            }
+          } else if (remoteHasFeature(Features.InitialRoutingSync)) {
+            // "old" nodes, do as before
+            log.info("peer requested a full routing table dump")
+            router ! GetRoutingState
           }
-        } else if (remoteHasFeature(Features.InitialRoutingSync)) {
-          // "old" nodes, do as before
-          log.info("peer requested a full routing table dump")
-          router ! GetRoutingState
+
+          // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
+          val rebroadcastDelay = Random.nextInt(d.nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
+          log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
+          context.system.eventStream.subscribe(self, classOf[Rebroadcast])
+
+          goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
         }
 
-        // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
-        val rebroadcastDelay = Random.nextInt(d.nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
-        log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
-        context.system.eventStream.subscribe(self, classOf[Rebroadcast])
-
-        goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
-      }
+      case Event(InitTimeout, _) =>
+        log.warning(s"initialization timed out after ${nodeParams.initTimeout}")
+        stop(FSM.Normal)
+    }
   }
 
   when(CONNECTED) {
@@ -253,7 +266,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
       case Event(msg: GossipTimestampFilter, d: ConnectedData) =>
         // special case: time range filters are peer specific and must not be sent to the router
-        sender ! TransportHandler.ReadAck(msg)
+        d.transport ! TransportHandler.ReadAck(msg)
         if (msg.chainHash != d.nodeParams.chainHash) {
           log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, d.nodeParams.chainHash)
           stay
@@ -272,7 +285,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             stay
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
-            sender ! TransportHandler.ReadAck(msg)
+            d.transport ! TransportHandler.ReadAck(msg)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
             router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
@@ -371,7 +384,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   def heartbeat(s: StateFunction): StateFunction = {
     case event if s.isDefinedAt(event) =>
       event match {
-        case Event(_: LightningMessage, d: ConnectedData) if sender == d.transport =>
+        case Event(_: LightningMessage, d: HasTransport) if sender == d.transport =>
           // this is a message from the peer, he's alive, we can delay the next ping
           scheduleNextPing()
         case _ => ()
@@ -386,29 +399,38 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   initialize()
 
   override def mdc(currentMessage: Any): MDC = {
-    val remoteNodeId_opt = stateData match {
-      case d: BeforeInitData => Some(d.remoteNodeId)
-      case d: InitializingData => Some(d.remoteNodeId)
-      case d: ConnectedData => Some(d.remoteNodeId)
-      case _ => None
+    val (category_opt, remoteNodeId_opt) = stateData match {
+      case Nothing => (Some(LogCategory.CONNECTION), None)
+      case d: AuthenticatingData => (Some(LogCategory.CONNECTION), d.pendingAuth.remoteNodeId_opt)
+      case d: BeforeInitData => (Some(LogCategory.CONNECTION), Some(d.remoteNodeId))
+      case d: InitializingData => (Some(LogCategory.CONNECTION), Some(d.remoteNodeId))
+      case d: ConnectedData => (LogCategory(currentMessage), Some(d.remoteNodeId))
     }
-    Logs.mdc(LogCategory(currentMessage), remoteNodeId_opt = remoteNodeId_opt)
+    Logs.mdc(category_opt, remoteNodeId_opt)
   }
 }
 
 object PeerConnection {
 
   // @formatter:off
-  val RECONNECT_TIMER = "reconnect"
+  val AUTH_TIMER = "auth"
+  val INIT_TIMER = "init"
   val SEND_PING_TIMER = "send_ping"
   // @formatter:on
+
+  // @formatter:off
+  case object AuthTimeout
+  case object InitTimeout
+  case object SendPing
+  case object ResumeAnnouncements
+  // @formatter:on
+
+  val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
 
   // @formatter:off
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
   val MAX_FUNDING_TX_NOT_FOUND = 10
   // @formatter:on
-
-  val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD = 5 minutes
 
   def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef): Props = Props(new PeerConnection(nodeParams, switchboard, router))
 
@@ -432,9 +454,6 @@ object PeerConnection {
   case object CONNECTED extends State
 
   case class InitializeConnection(peer: ActorRef)
-  case object ResumeAnnouncements
-  case object SendPing
-
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }

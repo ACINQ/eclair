@@ -46,7 +46,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement).toList
 
-  case class FixtureParam(remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe)
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val switchboard = TestProbe()
@@ -62,7 +62,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
 
     val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(aliceParams, switchboard.ref, router.ref))
-    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
+    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
   }
 
   def connect(remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features), expectSync: Boolean = false): Unit = {
@@ -89,6 +89,24 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("establish connection") { f =>
     import f._
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+  }
+
+  test("disconnect if authentication timeout") { f =>
+    import f._
+    val probe = TestProbe()
+    probe.watch(peerConnection)
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.expectTerminated(peerConnection, nodeParams.authTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+  }
+
+  test("disconnect if init timeout") { f =>
+    import f._
+    val probe = TestProbe()
+    probe.watch(peerConnection)
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
   }
 
   test("disconnect if incompatible local features") { f =>
@@ -185,6 +203,13 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(transport.expectMsgType[Pong].data.size === ping.pongLength)
   }
 
+  test("send a ping if no message after init") { f =>
+    import f._
+    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    // ~30s without an incoming message: peer should send a ping
+    transport.expectMsgType[Ping](35 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+  }
+
   test("send a ping if no message received for 30s") { f =>
     import f._
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
@@ -196,8 +221,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
       transport.send(peerConnection, dummy)
     }
     // ~30s without an incoming message: peer should send a ping
-    transport.expectMsgType[Ping](35 seconds)
-    transport.expectNoMsg()
+    transport.expectMsgType[Ping](35 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("ignore malicious ping") { f =>
