@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -103,26 +102,27 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       val watcher = TestProbe()
       val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
       // we announce channels
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_ab)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_bc)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_cd)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_ef)
+      val origin = RemoteGossip(system.deadLetters, remoteNodeId)
+      router ! PeerRoutingMessage(origin, chan_ab)
+      router ! PeerRoutingMessage(origin, chan_bc)
+      router ! PeerRoutingMessage(origin, chan_cd)
+      router ! PeerRoutingMessage(origin, chan_ef)
       // then nodes
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_a)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_b)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_c)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_d)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_e)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_f)
+      router ! PeerRoutingMessage(origin, ann_a)
+      router ! PeerRoutingMessage(origin, ann_b)
+      router ! PeerRoutingMessage(origin, ann_c)
+      router ! PeerRoutingMessage(origin, ann_d)
+      router ! PeerRoutingMessage(origin, ann_e)
+      router ! PeerRoutingMessage(origin, ann_f)
       // then channel updates
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ab)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ba)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bc)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_cb)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_dc)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ef)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_fe)
+      router ! PeerRoutingMessage(origin, channelUpdate_ab)
+      router ! PeerRoutingMessage(origin, channelUpdate_ba)
+      router ! PeerRoutingMessage(origin, channelUpdate_bc)
+      router ! PeerRoutingMessage(origin, channelUpdate_cb)
+      router ! PeerRoutingMessage(origin, channelUpdate_cd)
+      router ! PeerRoutingMessage(origin, channelUpdate_dc)
+      router ! PeerRoutingMessage(origin, channelUpdate_ef)
+      router ! PeerRoutingMessage(origin, channelUpdate_fe)
       // watcher receives the get tx requests
       watcher.expectMsg(ValidateRequest(chan_ab))
       watcher.expectMsg(ValidateRequest(chan_bc))

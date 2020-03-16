@@ -32,7 +32,7 @@ case class NodeUpdated(ann: NodeAnnouncement) extends NetworkEvent
 
 case class NodeLost(nodeId: PublicKey) extends NetworkEvent
 
-case class SingleChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi)
+case class SingleChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi, u1_opt: Option[ChannelUpdate], u2_opt: Option[ChannelUpdate])
 
 case class ChannelsDiscovered(c: Iterable[SingleChannelDiscovered]) extends NetworkEvent
 
