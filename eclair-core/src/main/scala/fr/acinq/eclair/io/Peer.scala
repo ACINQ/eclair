@@ -353,7 +353,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
     msg match {
       case _: LightningMessage =>
         logMsgIn.mdc(mdc(msg))
-        logMsgIn.info("OUT msg={}", msg)
+        logMsgIn.info("IN msg={}", msg)
         logMsgIn.clearMDC()
       case _ => ()
     }
