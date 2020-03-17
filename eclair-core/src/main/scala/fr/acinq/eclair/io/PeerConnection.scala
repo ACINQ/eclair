@@ -39,7 +39,7 @@ import scala.util.Random
 /**
  * This actor represents a protocol-level connection to another lightning node. As soon as a TCP connection is established
  * with a peer, a new [[PeerConnection]] will be spawned and the raw connection actor will be passed to it. This is done by
- * the [[Peer]] or a [[Client]] depending on whether it is an incoming our outgoing connection.
+ * the [[Peer]] or a [[Client]] depending on whether it is an incoming or outgoing connection.
  *
  * There is one [[PeerConnection]] per TCP connection, and the [[PeerConnection]] actor dies when the underlying TCP connection
  * dies.
@@ -517,5 +517,4 @@ object PeerConnection {
   }
 
 }
-
 
