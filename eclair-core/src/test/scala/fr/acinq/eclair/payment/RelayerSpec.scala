@@ -468,10 +468,11 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ChannelUnavailable(channelId_bc), origin, Some(channelUpdate_bc_disabled), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, None, None)))
+    val htlc = UpdateAddHtlc(channelId_bc, 31, 1090000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
+    sender.send(relayer, Status.Failure(HtlcTimedout(channelId_bc, htlc, origin)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, Some(channelUpdate_bc), None)))
+    sender.send(relayer, Status.Failure(HtlcOverriddenByLocalCommit(channelId_bc, htlc, origin)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
     register.expectNoMsg(50 millis)
