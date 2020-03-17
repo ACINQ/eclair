@@ -59,6 +59,18 @@ object Logs {
     }
   }
 
+  /**
+   * Helpers methods that extract the channel id, if present, from messages. To be used when filling in the
+   * MDC
+   */
+  def channelId(msg: Any): Option[ByteVector32] = {
+    msg match {
+      case msg: HasTemporaryChannelId => Some(msg.temporaryChannelId)
+      case msg: HasChannelId => Some(msg.channelId)
+      case _ => None
+    }
+  }
+
   // @formatter: off
   sealed trait LogCategory {
     def category: String

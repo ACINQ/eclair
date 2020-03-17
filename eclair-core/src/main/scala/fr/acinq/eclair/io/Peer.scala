@@ -18,7 +18,8 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.event.Logging.MDC
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
@@ -96,7 +97,34 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
       log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
 
-      context watch peerConnection
+      // We want to log all incoming/outgoing messages to/from this peer. Logging incoming messages is easy (they all go
+      // through this actor), but for outgoing messages it's a bit trickier because channels directly send messages to
+      // the connection. That's why we use this pass-through actor that just logs messages and forward them.
+      val logConnection = context.actorOf(Props(new Actor {
+        // we use this to log raw messages coming in and out of the peer
+        val logMsgOut = new BusLogging(context.system.eventStream, "", classOf[Peer.MessageLogs], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+        context watch peerConnection
+        override def receive: Receive = {
+          case Terminated(_) =>
+            context stop self
+          case msg =>
+            msg match {
+              case _: LightningMessage =>
+                logMsgOut.mdc(mdc(msg))
+                logMsgOut.info("OUT msg={}", msg)
+                logMsgOut.clearMDC()
+              case _ => ()
+            }
+            peerConnection forward msg
+        }
+
+        override def postStop(): Unit = {
+          peerConnection ! PoisonPill
+          super.postStop()
+        }
+      }))
+
+      context watch logConnection
 
       val address_opt = if (outgoing) {
         // we store the node address upon successful outgoing connection, so we can reconnect later
@@ -106,9 +134,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
       } else None
 
       // let's bring existing/requested channels online
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(peerConnection, localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(logConnection, localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
 
-      goto(CONNECTED) using ConnectedData(address_opt, peerConnection, localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
+      goto(CONNECTED) using ConnectedData(address_opt, logConnection, localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
@@ -317,9 +345,25 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef
 
   initialize()
 
-  override def mdc(currentMessage: Any): MDC = {
-    Logs.mdc(LogCategory(currentMessage), remoteNodeId_opt = Some(remoteNodeId))
+
+  // we use this to log raw messages coming in and out of the peer
+  val logMsgIn = new BusLogging(context.system.eventStream, "", classOf[Peer.MessageLogs], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    msg match {
+      case _: LightningMessage =>
+        logMsgIn.mdc(mdc(msg))
+        logMsgIn.info("OUT msg={}", msg)
+        logMsgIn.clearMDC()
+      case _ => ()
+    }
+    super.aroundReceive(receive, msg)
   }
+
+  override def mdc(currentMessage: Any): MDC = {
+    Logs.mdc(LogCategory(currentMessage), Some(remoteNodeId), Logs.channelId(currentMessage))
+  }
+
 }
 
 object Peer {
@@ -339,6 +383,9 @@ object Peer {
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, router, watcher, relayer, paymentHandler, wallet))
 
   // @formatter:off
+
+  // used to identify the logger for raw messages
+  case class MessageLogs()
 
   sealed trait ChannelId { def id: ByteVector32 }
   case class TemporaryChannelId(id: ByteVector32) extends ChannelId
