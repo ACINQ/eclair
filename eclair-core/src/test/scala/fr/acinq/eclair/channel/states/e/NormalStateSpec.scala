@@ -183,7 +183,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(0 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, add)
     val error = HtlcValueTooSmall(channelId(bob), 1 msat, 0 msat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(initialState.channelUpdate), Some(add))))
     bob2alice.expectNoMsg(200 millis)
   }
 
