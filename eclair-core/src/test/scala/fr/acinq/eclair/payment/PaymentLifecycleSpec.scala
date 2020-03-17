@@ -261,7 +261,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _, _) = paymentFSM.stateData
 
     register.expectMsg(ForwardShortId(channelId_ab, cmd1))
-    sender.send(paymentFSM, Status.Failure(AddHtlcFailed(ByteVector32.Zeroes, defaultPaymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None)))
+    sender.send(paymentFSM, Status.Failure(AddHtlcFailed(ByteVector32.Zeroes, defaultPaymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None, None)))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(RouteRequest(nodeParams.nodeId, d, defaultAmountMsat, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(ChannelDesc(channelId_ab, a, b))))
@@ -526,7 +526,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("filter errors properly") { _ =>
-    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(ChannelHop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)) :: LocalFailure(RouteNotFound) :: Nil
+    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(ChannelHop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None, None)) :: LocalFailure(RouteNotFound) :: Nil
     val filtered = PaymentFailure.transformForUser(failures)
     assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(ChannelHop(a, b, channelUpdate_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable(ByteVector32.Zeroes)) :: Nil)
   }
