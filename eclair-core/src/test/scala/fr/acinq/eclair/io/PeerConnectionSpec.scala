@@ -21,17 +21,18 @@ import java.net.{Inet4Address, InetSocketAddress}
 import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
+import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
+import scala.collection.mutable
 import scala.concurrent.duration._
 
 class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
@@ -40,11 +41,13 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   val address = new InetSocketAddress("localhost", 42000)
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
+  // this map will store private keys so that we can sign new announcements at will
+  val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
   val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
-  val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
+  val fakeRoutingInfo = shortChannelIds.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
   val channels = fakeRoutingInfo.map(_._1.ann).toList
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
-  val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement).toList
+  val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement(pub2priv)).toList
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe)
 
