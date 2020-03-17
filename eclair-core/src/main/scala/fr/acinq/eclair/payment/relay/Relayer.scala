@@ -147,13 +147,13 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
       }
 
-    case Status.Failure(addFailed: AddHtlcFailed) =>
-      addFailed.origin match {
+    case Status.Failure(localFailure: UpdateFailLocalHtlc) =>
+      localFailure.origin match {
         case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
-        case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
-        case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
+        case Origin.Local(_, Some(sender)) => sender ! Status.Failure(localFailure)
+        case _: Origin.Relayed => channelRelayer forward Status.Failure(localFailure)
         case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
-        case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
+        case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(localFailure)
       }
 
     case ff@ForwardFulfill(fulfill, to, add) =>
@@ -200,7 +200,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case ForwardAdd(add, _) => Some(add.paymentHash)
-      case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
+      case Status.Failure(localFailure: UpdateFailLocalHtlc) => Some(localFailure.paymentHash)
       case ForwardFulfill(_, _, add) => Some(add.paymentHash)
       case ForwardFail(_, _, add) => Some(add.paymentHash)
       case ForwardFailMalformed(_, _, add) => Some(add.paymentHash)
@@ -221,7 +221,7 @@ object Relayer extends Logging {
 
   // @formatter:off
   sealed trait ForwardMessage
-  case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
+  case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[UpdateFailLocalHtlc] = Seq.empty) extends ForwardMessage
   case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
   case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
   case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
