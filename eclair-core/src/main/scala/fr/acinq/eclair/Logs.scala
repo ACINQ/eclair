@@ -60,7 +60,7 @@ object Logs {
   }
 
   /**
-   * Helpers methods that extract the channel id, if present, from messages. To be used when filling in the
+   * Helper method that extracts the channel id, if present, from messages. To be used when filling in the
    * MDC
    */
   def channelId(msg: Any): Option[ByteVector32] = {
