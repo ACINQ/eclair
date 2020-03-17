@@ -305,7 +305,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val add = CMD_ADD_HTLC(500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, None, Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -483,7 +483,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0, aliceCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverriddenByLocalCommit(aliceData.channelId), origin, None, None)))
+    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverriddenByLocalCommit(aliceData.channelId, htlc), origin, Some(htlc), None, None)))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
     relayerA.expectNoMsg(100 millis)
@@ -513,7 +513,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverriddenByLocalCommit(aliceData.channelId), origin, None, None)))
+    relayerA.expectMsg(Status.Failure(AddHtlcFailed(aliceData.channelId, htlc.paymentHash, HtlcOverriddenByLocalCommit(aliceData.channelId, htlc), origin, Some(htlc), None, None)))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
   }
@@ -561,7 +561,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayerA.expectMsgType[ForwardAdd]
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
-    addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN
     alice2bob.expectMsgType[CommitSig] // We stop here: Alice sent her CommitSig, but doesn't hear back from Bob.
 
@@ -592,7 +592,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // The second htlc was not included in the commit tx published on-chain, so we can consider it failed
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].t === HtlcOverriddenByLocalCommit(channelId(alice)))
+    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].t === HtlcOverriddenByLocalCommit(channelId(alice), htlc2))
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0, claimMainTx)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcSuccessTx), 0, 0, claimHtlcSuccessTx)
     awaitCond(alice.stateName == CLOSED)
