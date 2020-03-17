@@ -38,6 +38,13 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 /**
+ * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
+ *
+ * The [[Peer] actor is mostly in charge of managing channels, stays alive when the peer is disconnected, and only dies
+ * when there are no more channels.
+ *
+ * Everytime a new connection is established, it is sent to the [[Peer]] and replaces the previous one.
+ *
  * Created by PM on 26/08/2016.
  */
 class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {

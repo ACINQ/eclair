@@ -37,7 +37,25 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 /**
- * Created by PM on 26/08/2016.
+ * This actor represents a protocol-level connection to another lightning node. As soon as a TCP connection is established
+ * with a peer, a new [[PeerConnection]] will be spawned and the raw connection actor will be passed to it. This is done by
+ * the [[Peer]] or a [[Client]] depending on whether it is an incoming our outgoing connection.
+ *
+ * There is one [[PeerConnection]] per TCP connection, and the [[PeerConnection]] actor dies when the underlying TCP connection
+ * dies.
+ *
+ * The [[PeerConnection]] will be responsible for handling:
+ * - the crypto handshake (BOLT 8)
+ * - the application handshake (exchange of [[Init]] messages, BOLT 1)
+ * - the routing messages (syncing and gossip, BOLT 7)
+ *
+ * Higher level messages (e.g. BOLT 2) are forwarded to the [[Peer]] actor, which is unique per logical peer (i.e. unique per
+ * node id).
+ *
+ * Most of the time there will only be one [[PeerConnection]] per logical peer, but there is no strict constraint and the
+ * [[Peer]] is responsible for deciding which [[PeerConnection]] stays and which should be killed.
+ *
+ * Created by PM on 11/03/2020.
  */
 class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] {
 
