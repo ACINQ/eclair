@@ -20,19 +20,15 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     }
   }
 
-  test("on initialization create peers and send Reconnect to them") {
+  test("on initialization create peers") {
     val nodeParams = Alice.nodeParams
     val peer = TestProbe()
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
-    val remoteNodeAddress = NodeAddress.fromParts("127.0.0.1", 9735).get
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, remoteNodeAddress)
-    nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
     // If we have a channel with that remote peer, we will automatically reconnect.
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
 
     val _ = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
-    peer.expectMsg(Peer.Init(Some(remoteNodeAddress.socketAddress), Set(ChannelCodecsSpec.normal)))
-    peer.expectMsg(Peer.Reconnect)
+    peer.expectMsg(Peer.Init(Set(ChannelCodecsSpec.normal)))
   }
 
   test("when connecting to a new peer forward Peer.Connect to it") {
@@ -44,7 +40,7 @@ class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
     val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
     probe.send(switchboard, Peer.Connect(remoteNodeId, None))
-    peer.expectMsg(Peer.Init(None, Set.empty))
+    peer.expectMsg(Peer.Init(Set.empty))
     peer.expectMsg(Peer.Connect(remoteNodeId, None))
   }
 

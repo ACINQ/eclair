@@ -123,7 +123,6 @@ object Logs {
         case _: PeerConnection.ConnectionReady => Some(LogCategory.CONNECTION)
         case _: PeerConnection.InitializeConnection => Some(LogCategory.CONNECTION)
         case _: PeerConnection.DelayedRebroadcast => Some(LogCategory.ROUTING_SYNC)
-        case Peer.Reconnect => Some(LogCategory.CONNECTION)
         case _: Ping => Some(LogCategory.CONNECTION)
         case _: Pong => Some(LogCategory.CONNECTION)
         case _: wire.Init => Some(LogCategory.CONNECTION)
