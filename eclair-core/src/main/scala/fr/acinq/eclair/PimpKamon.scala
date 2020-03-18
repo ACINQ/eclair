@@ -17,23 +17,12 @@
 package fr.acinq.eclair
 
 import fr.acinq.eclair.payment.{LocalFailure, PaymentFailure, RemoteFailure, UnreadableRemoteFailure}
-import kamon.Kamon
 import kamon.metric.Timer
-import kamon.tag.TagSet
 import kamon.trace.Span
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object KamonExt {
-
-  def time[T](name: String, tags: TagSet = TagSet.Empty)(f: => T): T = {
-    val started = Kamon.timer(name).withTags(tags).start()
-    try {
-      f
-    } finally {
-      started.stop()
-    }
-  }
 
   def time[T](timer: Timer)(f: => T): T = {
     val started = timer.start()
@@ -44,8 +33,8 @@ object KamonExt {
     }
   }
 
-  def timeFuture[T](name: String, tags: TagSet = TagSet.Empty)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
-    val started = Kamon.timer(name).withTags(tags).start()
+  def timeFuture[T](timer: Timer)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+    val started = timer.start()
     val res = f
     res onComplete (_ => started.stop)
     res
