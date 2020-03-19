@@ -174,6 +174,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (0 msat)") { f =>
+    import f._
+    val sender = TestProbe()
+    // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.htlcMinimum === 0.msat)
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val add = CMD_ADD_HTLC(0 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    sender.send(bob, add)
+    val error = HtlcValueTooSmall(channelId(bob), 1 msat, 0 msat)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    bob2alice.expectNoMsg(200 millis)
+  }
+
   test("recv CMD_ADD_HTLC (increasing balance but still below reserve)", Tag("no_push_msat")) { f =>
     import f._
     val sender = TestProbe()

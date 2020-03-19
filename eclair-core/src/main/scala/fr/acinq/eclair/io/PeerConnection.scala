@@ -24,11 +24,11 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
-import kamon.Kamon
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
@@ -68,7 +68,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       val transport = p.transport_opt match {
         case Some(transport) => transport // used in tests to bypass encryption
         case None =>
-          Kamon.counter("peers.connecting.count").withTag("state", "authenticating").increment()
+          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
           context.actorOf(TransportHandler.props(
             keyPair = KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
             rs = p.remoteNodeId_opt.map(_.value),
@@ -86,7 +86,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       cancelTimer(AUTH_TIMER)
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
-      Kamon.counter("peers.connecting.count").withTag("state", "authenticated").increment()
+      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(self, remoteNodeId, address, d.pendingAuth.outgoing, d.pendingAuth.origin_opt)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
@@ -98,7 +98,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   when(BEFORE_INIT) {
     case Event(InitializeConnection(peer), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
-      Kamon.counter("peers.connecting.count").withTag("state", "initializing").increment()
+      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
         case None =>
@@ -143,7 +143,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           d.transport ! PoisonPill
           stay
         } else {
-          Kamon.counter("peers.connecting.count").withTag("state", "initialized").increment()
+          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
           d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")

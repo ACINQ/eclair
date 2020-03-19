@@ -175,8 +175,8 @@ object Commitments {
       return Failure(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
 
-    if (cmd.amount < commitments.remoteParams.htlcMinimum) {
-      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum, actual = cmd.amount))
+    if (cmd.amount < commitments.remoteParams.htlcMinimum.max(1 msat)) {
+      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum.max(1 msat), actual = cmd.amount))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -225,8 +225,8 @@ object Commitments {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
 
-    if (add.amountMsat < commitments.localParams.htlcMinimum) {
-      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum, actual = add.amountMsat)
+    if (add.amountMsat < commitments.localParams.htlcMinimum.max(1 msat)) {
+      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum.max(1 msat), actual = add.amountMsat)
     }
 
     // let's compute the current commitment *as seen by us* including this change
@@ -430,7 +430,7 @@ object Commitments {
         val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint))
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
+        log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
 
         // don't sign if they don't get paid
         val commitSig = CommitSig(
@@ -477,7 +477,7 @@ object Commitments {
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
 
-    log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
+    log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
 
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 

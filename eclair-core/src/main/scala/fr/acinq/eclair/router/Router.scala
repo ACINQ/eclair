@@ -290,7 +290,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             case None =>
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
-              log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
+              log.debug("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
               stay using handle(u, LocalGossip, d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(nodeParams.nodeId, remoteNodeId, None, None))))
           }
       }

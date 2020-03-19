@@ -29,9 +29,9 @@ import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
-import kamon.Kamon
 import scodec.bits.ByteVector
 
 /**
@@ -265,17 +265,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   onTransition {
     case _ -> CONNECTED =>
-      Metrics.connectedPeers.increment()
+      Metrics.ConnectedPeers.increment()
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
-      Metrics.connectedPeers.decrement()
+      Metrics.ConnectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
   onTermination {
     case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
-      Metrics.connectedPeers.decrement()
+      Metrics.ConnectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
@@ -376,12 +376,6 @@ object Peer {
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: LightningMessage)
 
   // @formatter:on
-
-  object Metrics {
-    val peers = Kamon.rangeSampler("peers.count").withoutTags()
-    val connectedPeers = Kamon.rangeSampler("peers.connected.count").withoutTags()
-    val channels = Kamon.rangeSampler("channels.count").withoutTags()
-  }
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
