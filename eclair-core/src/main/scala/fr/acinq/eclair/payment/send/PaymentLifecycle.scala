@@ -23,7 +23,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, HtlcsTimedoutDownstream, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -225,9 +225,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(t))).increment()
-      // If the first hop was selected by the sender (in routePrefix) and it failed, it doesn't make sense to retry (we
-      // will end up retrying over that same faulty channel).
-      if (failures.size + 1 >= c.maxAttempts || c.routePrefix.nonEmpty) {
+      val isFatal = failures.size + 1 >= c.maxAttempts || // retries exhausted
+        c.routePrefix.nonEmpty || // first hop was selected by the sender and failed, it doesn't make sense to retry
+        t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs
+      if (isFatal) {
         onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(t)))
         myStop()
       } else {

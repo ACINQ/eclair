@@ -450,7 +450,7 @@ object NodeRelayerSpec {
 
   def createDownstreamFulfill(payFSM: ActorRef): Relayer.ForwardFulfill = {
     val origin = Origin.TrampolineRelayed(null, Some(payFSM))
-    Relayer.ForwardFulfill(UpdateFulfillHtlc(randomBytes32, Random.nextInt(100), paymentPreimage), origin, null)
+    Relayer.ForwardRemoteFulfill(UpdateFulfillHtlc(randomBytes32, Random.nextInt(100), paymentPreimage), origin, null)
   }
 
   def createSuccessEvent(id: UUID): PaymentSent =

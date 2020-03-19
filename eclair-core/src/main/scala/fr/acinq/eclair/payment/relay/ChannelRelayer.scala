@@ -221,7 +221,6 @@ object ChannelRelayer {
       case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
       case (_: ChannelUnavailable, None) => PermanentChannelFailure
-      case (_: HtlcTimedout, _) => PermanentChannelFailure
       case _ => TemporaryNodeFailure
     }
   }

@@ -147,50 +147,39 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
           commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
       }
 
-    case Status.Failure(addFailed: AddHtlcFailed) =>
-      addFailed.origin match {
-        case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
-        case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
-        case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
-        case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
-        case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
-      }
+    case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
+      case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
+      case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
+      case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
+      case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
+    }
 
-    case ff@ForwardFulfill(fulfill, to, add) =>
-      to match {
-        case Origin.Local(_, None) => postRestartCleaner forward ff
-        case Origin.Local(_, Some(sender)) => sender ! fulfill
-        case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
-          val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
-          context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, add.paymentHash, originChannelId, fulfill.channelId))
-        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-        case Origin.TrampolineRelayed(_, Some(_)) => nodeRelayer forward ff
-      }
+    case ff: ForwardFulfill => ff.to match {
+      case Origin.Local(_, None) => postRestartCleaner forward ff
+      case Origin.Local(_, Some(sender)) => sender ! ff.fulfill
+      case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
+        val cmd = CMD_FULFILL_HTLC(originHtlcId, ff.fulfill.paymentPreimage, commit = true)
+        commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
+        context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
+      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
+      case Origin.TrampolineRelayed(_, Some(_)) => nodeRelayer forward ff
+    }
 
-    case ff@ForwardFail(fail, to, _) =>
-      to match {
-        case Origin.Local(_, None) => postRestartCleaner forward ff
-        case Origin.Local(_, Some(sender)) => sender ! fail
-        case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
-          Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-          val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
-        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-        case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fail
-      }
-
-    case ff@ForwardFailMalformed(fail, to, _) =>
-      to match {
-        case Origin.Local(_, None) => postRestartCleaner forward ff
-        case Origin.Local(_, Some(sender)) => sender ! fail
-        case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
-          Metrics.recordPaymentRelayFailed(Tags.FailureType.Malformed, Tags.RelayType.Channel)
-          val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
-        case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-        case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! fail
-      }
+    case ff: ForwardFail => ff.to match {
+      case Origin.Local(_, None) => postRestartCleaner forward ff
+      case Origin.Local(_, Some(sender)) => sender ! translateFail(ff)
+      case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
+        Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
+        val cmd = ff match {
+          case ForwardRemoteFail(fail, _, _) => CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
+          case ForwardRemoteFailMalformed(fail, _, _) => CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
+          case _: ForwardOnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
+        }
+        commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
+      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! translateFail(ff)
+    }
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
@@ -201,9 +190,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
     val paymentHash_opt = currentMessage match {
       case ForwardAdd(add, _) => Some(add.paymentHash)
       case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
-      case ForwardFulfill(_, _, add) => Some(add.paymentHash)
-      case ForwardFail(_, _, add) => Some(add.paymentHash)
-      case ForwardFailMalformed(_, _, add) => Some(add.paymentHash)
+      case ff: ForwardFulfill => Some(ff.htlc.paymentHash)
+      case ff: ForwardFail => Some(ff.htlc.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -222,9 +210,13 @@ object Relayer extends Logging {
   // @formatter:off
   sealed trait ForwardMessage
   case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
-  case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
-  case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
-  case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
+  sealed trait ForwardFulfill extends ForwardMessage { val fulfill: UpdateFulfillHtlc; val to: Origin; val htlc: UpdateAddHtlc }
+  case class ForwardRemoteFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFulfill
+  case class ForwardOnChainFulfill(preimage: ByteVector32, to: Origin, htlc: UpdateAddHtlc) extends ForwardFulfill { override val fulfill  = UpdateFulfillHtlc(htlc.channelId, htlc.id, preimage) }
+  sealed trait ForwardFail extends ForwardMessage { val to: Origin; val htlc: UpdateAddHtlc }
+  case class ForwardRemoteFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFail
+  case class ForwardRemoteFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFail
+  case class ForwardOnChainFail(cause: ChannelException, to: Origin, htlc: UpdateAddHtlc) extends ForwardFail
 
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
@@ -244,5 +236,14 @@ object Relayer extends Logging {
   }
   case class OutgoingChannels(channels: Seq[OutgoingChannel])
   // @formatter:on
+
+  /**
+   * Translate a downstream failure before forwarding to a pay FSM.
+   */
+  def translateFail(ff: ForwardFail) = ff match {
+    case ForwardRemoteFail(fail, _, _) => fail
+    case ForwardRemoteFailMalformed(fail, _, _) => fail
+    case ForwardOnChainFail(cause, _, _) => Status.Failure(cause)
+  }
 
 }
