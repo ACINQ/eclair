@@ -170,8 +170,6 @@ case object GetNetworkStats
 case class GetNetworkStatsResponse(stats: Option[NetworkStats])
 case object GetRoutingState
 case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
-case class GetRoutingStateStreaming(subscribeToChanges: Boolean)
-case object InitialRoutingStateEnd
 // @formatter:on
 
 // @formatter:off
@@ -326,24 +324,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
       sender ! RoutingState(d.channels.values, d.nodes.values)
-      stay
-
-    case Event(GetRoutingStateStreaming(subscribeToChanges), d) =>
-      d.nodes
-        .values
-        .sliding(100, 100)
-        .map(NodesDiscovered)
-        .foreach(sender ! _)
-      d.channels
-        .values
-        .map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))
-        .sliding(100, 100)
-        .map(ChannelsDiscovered)
-        .foreach(sender ! _)
-      sender ! InitialRoutingStateEnd
-      if (subscribeToChanges) {
-        context.system.eventStream.subscribe(sender, classOf[NetworkEvent])
-      }
       stay
 
     case Event(GetNetworkStats, d: Data) =>
