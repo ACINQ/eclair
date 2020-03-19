@@ -46,12 +46,15 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
 
   import ReconnectionTask._
 
+  // this is used in tests to control transitions
+  var bypassTimer = false
+
   startWith(IDLE, Nothing)
 
   when(CONNECTING) {
     case Event(Terminated(actor), d: ConnectingData) if actor == d.connection =>
       log.info(s"connection failed, next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds")
-      setTimer(RECONNECT_TIMER, TickReconnect, d.nextReconnectionDelay, repeat = false)
+      setTimer(RECONNECT_TIMER, if (bypassTimer) 'dummy else TickReconnect, d.nextReconnectionDelay, repeat = false)
       goto(WAITING) using WaitingData(nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
 
     case Event(FSM.Transition(_, Peer.DISCONNECTED, Peer.CONNECTED), _) =>
@@ -102,7 +105,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
             log.info("peer is disconnected")
             nextReconnectionDelay(initialDelay, nodeParams.maxReconnectInterval)
         }
-        setTimer(RECONNECT_TIMER, TickReconnect, initialDelay, repeat = false)
+        setTimer(RECONNECT_TIMER, if (bypassTimer) 'dummy else TickReconnect, initialDelay, repeat = false)
         goto(WAITING) using WaitingData(firstNextReconnectionDelay)
       } else {
         stay

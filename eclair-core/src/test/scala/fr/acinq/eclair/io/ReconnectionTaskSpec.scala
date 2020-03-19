@@ -92,11 +92,14 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
   test("reconnect with increasing delays", Tag("auto_reconnect")) { f =>
     import f._
 
+    reconnectionTask.underlyingActor.bypassTimer = true
+
     val probe = TestProbe()
     val peer = TestProbe()
     nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeAddress.fromParts("localhost", 42).get)
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
     val Transition(_, ReconnectionTask.IDLE, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
+    probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING) = monitor.expectMsgType[Transition[_]]
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.DISCONNECTED, Peer.CONNECTED))
     val Transition(_, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE) = monitor.expectMsgType[Transition[_]]
