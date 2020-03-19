@@ -23,6 +23,7 @@ import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.KamonExt
+import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
@@ -35,11 +36,11 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 /**
-  * A blockchain watcher that:
-  * - receives bitcoin events (new blocks and new txes) directly from the bitcoin network
-  * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
-  * Created by PM on 21/02/2016.
-  */
+ * A blockchain watcher that:
+ * - receives bitcoin events (new blocks and new txes) directly from the bitcoin network
+ * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
+ * Created by PM on 21/02/2016.
+ */
 class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   import ZmqWatcher._
@@ -56,19 +57,17 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      KamonExt.time("watcher.newtx.checkwatch.time") {
-        log.debug("analyzing txid={} tx={}", tx.txid, tx)
-        tx.txIn
-          .map(_.outPoint)
-          .flatMap(watchedUtxos.get)
-          .flatten // List[Watch] -> Watch
-          .collect {
-            case w: WatchSpentBasic =>
-              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-            case w: WatchSpent =>
-              self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
-          }
-      }
+      log.debug("analyzing txid={} tx={}", tx.txid, tx)
+      tx.txIn
+        .map(_.outPoint)
+        .flatMap(watchedUtxos.get)
+        .flatten // List[Watch] -> Watch
+        .collect {
+          case w: WatchSpentBasic =>
+            self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+          case w: WatchSpent =>
+            self ! TriggerEvent(w, WatchEventSpent(w.event, tx))
+        }
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
@@ -81,13 +80,13 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case TickNewBlock =>
       client.getBlockCount.map {
-        case count =>
+        count =>
           log.debug("setting blockCount={}", count)
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       // TODO: beware of the herd effect
-      KamonExt.timeFuture("watcher.newblock.checkwatch.time") {
+      KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
         Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
       }
       context become watching(watches, watchedUtxos, block2tx, None)
@@ -104,17 +103,16 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           context become watching(watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, None)
       }
 
-    case CurrentBlockCount(count) => {
+    case CurrentBlockCount(count) =>
       val toPublish = block2tx.filterKeys(_ <= count)
-      toPublish.values.flatten.map(tx => publish(tx))
+      toPublish.values.flatten.foreach(tx => publish(tx))
       context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, None)
-    }
 
     case w: Watch if !watches.contains(w) =>
       w match {
         case WatchSpentBasic(_, txid, outputIndex, _, _) =>
           // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
-          client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
+          client.isTransactionOutputSpendable(txid.toString(), outputIndex, includeMempool = true).collect {
             case false =>
               log.info(s"output=$outputIndex of txid=$txid has already been spent")
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
@@ -125,7 +123,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           client.getTxConfirmations(txid.toString()).collect {
             case Some(_) =>
               // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
+              client.isTransactionOutputSpendable(txid.toString(), outputIndex, includeMempool = true).collect {
                 case false =>
                   log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
                   client.getMempool().map { mempoolTxs =>
@@ -161,7 +159,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
-        val parentTxid = tx.txIn(0).outPoint.txid
+        val parentTxid = tx.txIn.head.outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
         self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
@@ -207,20 +205,20 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
         import akka.pattern.after
 
         import scala.concurrent.duration._
-        after(3 seconds, context.system.scheduler)(Future.successful({})).map(x => publish(tx, isRetry = true))
+        after(3 seconds, context.system.scheduler)(Future.successful({})).map(_ => publish(tx, isRetry = true))
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
     }
   }
 
-  def checkConfirmed(w: WatchConfirmed) = {
+  def checkConfirmed(w: WatchConfirmed): Future[Unit] = {
     log.debug("checking confirmations of txid={}", w.txId)
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth
-    client.getTxConfirmations(w.txId.toString).map {
+    client.getTxConfirmations(w.txId.toString).flatMap {
       case Some(confirmations) if confirmations >= w.minDepth =>
-        client.getTransaction(w.txId.toString).map { tx =>
-            client.getTransactionShortId(w.txId.toString).map {
-              case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
+        client.getTransaction(w.txId.toString).flatMap { tx =>
+          client.getTransactionShortId(w.txId.toString).map {
+            case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
           }
         }
     }
@@ -242,11 +240,11 @@ object ZmqWatcher {
     }
 
   /**
-    * The resulting map allows checking spent txes in constant time wrt number of watchers
-    */
+   * The resulting map allows checking spent txes in constant time wrt number of watchers
+   */
   def addWatchedUtxos(m: Map[OutPoint, Set[Watch]], w: Watch): Map[OutPoint, Set[Watch]] = {
     utxo(w) match {
-      case Some(utxo) =>  m.get(utxo) match {
+      case Some(utxo) => m.get(utxo) match {
         case Some(watches) => m + (utxo -> (watches + w))
         case None => m + (utxo -> Set(w))
       }
