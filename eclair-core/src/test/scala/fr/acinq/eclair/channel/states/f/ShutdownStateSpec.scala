@@ -500,7 +500,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardFail]
+    val forward = relayerA.expectMsgType[ForwardRemoteFail]
     assert(forward.fail === fail)
   }
 
@@ -526,7 +526,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardFailMalformed]
+    val forward = relayerA.expectMsgType[ForwardRemoteFailMalformed]
     assert(forward.fail === fail)
   }
 

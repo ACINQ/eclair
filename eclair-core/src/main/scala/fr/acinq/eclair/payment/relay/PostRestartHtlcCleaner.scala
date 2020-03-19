@@ -104,17 +104,13 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       Metrics.PendingNotRelayed.update(notRelayed1.size)
       context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
 
-    case Relayer.ForwardFulfill(fulfill, to, add) =>
-      log.info("htlc fulfilled downstream: ({},{})", fulfill.channelId, fulfill.id)
-      handleDownstreamFulfill(brokenHtlcs, to, add, fulfill.paymentPreimage)
+    case ff: Relayer.ForwardFulfill =>
+      log.info("htlc fulfilled downstream: ({},{})", ff.htlc.channelId, ff.htlc.id)
+      handleDownstreamFulfill(brokenHtlcs, ff.to, ff.htlc, ff.fulfill.paymentPreimage)
 
-    case Relayer.ForwardFail(_, to, add) =>
-      log.info("htlc failed downstream: ({},{})", add.channelId, add.id)
-      handleDownstreamFailure(brokenHtlcs, to, add)
-
-    case Relayer.ForwardFailMalformed(_, to, add) =>
-      log.info("htlc failed (malformed) downstream: ({},{})", add.channelId, add.id)
-      handleDownstreamFailure(brokenHtlcs, to, add)
+    case ff: Relayer.ForwardFail =>
+      log.info("htlc failed downstream: ({},{},{})", ff.htlc.channelId, ff.htlc.id, ff.getClass.getSimpleName)
+      handleDownstreamFailure(brokenHtlcs, ff.to, ff.htlc)
 
     case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 

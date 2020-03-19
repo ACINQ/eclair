@@ -435,7 +435,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0, aliceCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(ForwardOnChainFail(origin, htlc))
+    relayerA.expectMsg(ForwardOnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc), origin, htlc))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
     relayerA.expectNoMsg(100 millis)
@@ -463,7 +463,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(ForwardOnChainFail(origin, htlc))
+    relayerA.expectMsg(ForwardOnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc), origin, htlc))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
   }

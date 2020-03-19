@@ -646,7 +646,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Commitments.receiveFulfill(d.commitments, fulfill) match {
         case Success((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
+          relayer ! Relayer.ForwardRemoteFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -990,7 +990,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Commitments.receiveFulfill(d.commitments, fulfill) match {
         case Success((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! Relayer.ForwardFulfill(fulfill, origin, htlc)
+          relayer ! Relayer.ForwardRemoteFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -1296,7 +1296,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-            relayer ! Relayer.ForwardOnChainFail(origin, add)
+            relayer ! Relayer.ForwardOnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add)), origin, add)
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
@@ -1307,7 +1307,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
-            relayer ! Relayer.ForwardOnChainFail(origin, add)
+            relayer ! Relayer.ForwardOnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add), origin, add)
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")

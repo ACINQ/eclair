@@ -25,7 +25,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
-import fr.acinq.eclair.payment.relay.Relayer.{ForwardFail, ForwardFulfill}
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, Direction, IN, OUT}
@@ -379,12 +378,12 @@ object PostRestartHtlcCleanerSpec {
   }
 
   def buildForwardFail(add: UpdateAddHtlc, origin: Origin) =
-    ForwardFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty), origin, add)
+    Relayer.ForwardRemoteFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty), origin, add)
 
   def buildForwardFulfill(add: UpdateAddHtlc, origin: Origin, preimage: ByteVector32) =
-    ForwardFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage), origin, add)
+    Relayer.ForwardRemoteFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage), origin, add)
 
-  case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[ForwardFail], fulfills: Seq[ForwardFulfill])
+  case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[Relayer.ForwardFail], fulfills: Seq[Relayer.ForwardFulfill])
 
   /**
    * We setup two outgoing payments:
