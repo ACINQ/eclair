@@ -72,7 +72,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
     case Event(PeerConnection.ConnectionReady(peerConnection, remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
-      log.debug(s"got authenticated connection to address ${address.getHostString}:${address.getPort}")
+      log.debug("got authenticated connection to address {}:{}", address.getHostString, address.getPort)
 
       // We want to log all incoming/outgoing messages to/from this peer. Logging incoming messages is easy (they all go
       // through this actor), but for outgoing messages it's a bit trickier because channels directly send messages to
