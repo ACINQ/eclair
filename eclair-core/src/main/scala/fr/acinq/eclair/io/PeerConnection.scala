@@ -447,7 +447,6 @@ object PeerConnection {
 
   // @formatter:off
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
-  val MAX_FUNDING_TX_NOT_FOUND = 10
   // @formatter:on
 
   def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef): Props = Props(new PeerConnection(nodeParams, switchboard, router))
