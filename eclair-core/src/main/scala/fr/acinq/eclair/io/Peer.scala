@@ -332,11 +332,6 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  // @formatter:off
-  val MAX_FUNDING_TX_ALREADY_SPENT = 10
-  val MAX_FUNDING_TX_NOT_FOUND = 10
-  // @formatter:on
-
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, switchboard: ActorRef, router, watcher, relayer, paymentHandler, wallet))
 
   // @formatter:off
