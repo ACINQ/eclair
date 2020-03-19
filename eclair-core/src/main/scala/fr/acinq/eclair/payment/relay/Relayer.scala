@@ -223,8 +223,10 @@ object Relayer extends Logging {
   sealed trait ForwardMessage
   case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
   case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
+  case class ForwardOnChainFulfill(preimage: ByteVector32, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
   case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
   case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
+  case class ForwardOnChainFail(to: Origin, htlc: UpdateAddHtlc) extends ForwardMessage
 
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 

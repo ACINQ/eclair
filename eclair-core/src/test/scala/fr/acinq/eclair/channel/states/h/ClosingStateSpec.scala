@@ -18,7 +18,6 @@ package fr.acinq.eclair.channel.states.h
 
 import java.util.UUID
 
-import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -360,12 +359,16 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // scenario 1: bob claims the htlc output from the commit tx using its preimage
     val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomBytes32, 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, ra1, ByteVector.fill(130)(33))) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessFromCommitTx)
-    assert(relayerA.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
+    val fulfill1 = relayerA.expectMsgType[ForwardOnChainFulfill]
+    assert(fulfill1.htlc === htlca1)
+    assert(fulfill1.preimage === ra1)
 
     // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
     val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomBytes32, 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessHtlcSuccess(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ra1, ByteVector.fill(130)(33))) :: Nil, txOut = Nil, lockTime = 0)
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, claimHtlcSuccessTx)
-    assert(relayerA.expectMsgType[ForwardFulfill].fulfill === UpdateFulfillHtlc(htlca1.channelId, htlca1.id, ra1))
+    val fulfill2 = relayerA.expectMsgType[ForwardOnChainFulfill]
+    assert(fulfill2.htlc === htlca1)
+    assert(fulfill2.preimage === ra1)
 
     assert(alice.stateData == initialState) // this was a no-op
   }
@@ -394,7 +397,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + TestConstants.Bob.channelParams.toSelfDelay.toInt)
     assert(listener.expectMsgType[PaymentSettlingOnChain].paymentHash == htlca1.paymentHash)
     // htlcs below dust will never reach the chain, once the commit tx is confirmed we can consider them failed
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].t === HtlcTimedout(channelId(alice), Set(htlca2)))
+    assert(relayerA.expectMsgType[ForwardOnChainFail].htlc === htlca2)
     relayerA.expectNoMsg(100 millis)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainDelayedOutputTx.get), 200, 0, closingState.claimMainDelayedOutputTx.get)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.htlcTimeoutTxs.head), 201, 0, closingState.htlcTimeoutTxs.head)
@@ -403,7 +406,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       closingState.claimMainDelayedOutputTx.get.txid,
       closingState.htlcTimeoutTxs.head.txid
     ))
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].t === HtlcTimedout(channelId(alice), Set(htlca1)))
+    assert(relayerA.expectMsgType[ForwardOnChainFail].htlc === htlca1)
     relayerA.expectNoMsg(100 millis)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimHtlcDelayedTxs.head), 202, 0, closingState.claimHtlcDelayedTxs.head)
     awaitCond(alice.stateName == CLOSED)
@@ -432,7 +435,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0, aliceCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(Status.Failure(AddHtlcFailed(channelId(alice), htlc.paymentHash, HtlcOverriddenByLocalCommit(channelId(alice)), origin, None, None)))
+    relayerA.expectMsg(ForwardOnChainFail(origin, htlc))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
     relayerA.expectNoMsg(100 millis)
@@ -460,7 +463,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
-    relayerA.expectMsg(Status.Failure(AddHtlcFailed(channelId(alice), htlc.paymentHash, HtlcOverriddenByLocalCommit(channelId(alice)), origin, None, None)))
+    relayerA.expectMsg(ForwardOnChainFail(origin, htlc))
     // the htlc will not settle on chain
     listener.expectNoMsg(2 seconds)
   }
@@ -504,7 +507,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayerA.expectMsgType[ForwardAdd]
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
-    addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN
     alice2bob.expectMsgType[CommitSig] // We stop here: Alice sent her CommitSig, but doesn't hear back from Bob.
 
@@ -533,7 +536,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // The second htlc was not included in the commit tx published on-chain, so we can consider it failed
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].t === HtlcOverriddenByLocalCommit(channelId(alice)))
+    assert(relayerA.expectMsgType[ForwardOnChainFail].htlc === htlc2)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainOutputTx.get), 0, 0, closingState.claimMainOutputTx.get)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcSuccessTx), 0, 0, claimHtlcSuccessTx)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.irrevocablySpent.values.toSet === Set(
@@ -590,7 +593,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainOutputTx.get), 0, 0, closingState.claimMainOutputTx.get)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcSuccessTx), 0, 0, claimHtlcSuccessTx)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcTimeoutTx), 0, 0, claimHtlcTimeoutTx)
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].t === HtlcTimedout(channelId(alice), Set(htlc2)))
+    assert(relayerA.expectMsgType[ForwardOnChainFail].htlc === htlc2)
     awaitCond(alice.stateName == CLOSED)
     alice2blockchain.expectNoMsg(100 millis)
     relayerA.expectNoMsg(100 millis)

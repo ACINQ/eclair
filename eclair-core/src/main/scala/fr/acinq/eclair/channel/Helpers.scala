@@ -817,18 +817,16 @@ object Helpers {
      * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
      * the upstream node would get refunded after a timeout.
      *
-     * @param localCommit
-     * @param tx
-     * @return   a set of pairs (add, fulfills) if extraction was successful:
+     * @return   a set of pairs (add, preimage) if extraction was successful:
      *           - add is the htlc in the downstream channel from which we extracted the preimage
-     *           - fulfill needs to be sent to the upstream channel
+     *           - preimage needs to be sent to the upstream channel
      */
-    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, UpdateFulfillHtlc)] = {
+    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, ByteVector32)] = {
       val paymentPreimages = tx.txIn.map(_.witness match {
-        case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
+        case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 =>
           log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (claim-htlc-success)")
           Some(ByteVector32(paymentPreimage))
-        case ScriptWitness(Seq(ByteVector.empty, remoteSig, localSig, paymentPreimage, htlcReceivedScript)) if paymentPreimage.size == 32 =>
+        case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 =>
           log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (htlc-success)")
           Some(ByteVector32(paymentPreimage))
         case _ => None
@@ -840,9 +838,7 @@ object Helpers {
         // - or we have already received the fulfill and forwarded it upstream
         val outgoingHtlcs = localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
         outgoingHtlcs.collect {
-          case add if add.paymentHash == sha256(paymentPreimage) =>
-            // let's just pretend we received the preimage from the counterparty and build a fulfill message
-            (add, UpdateFulfillHtlc(add.channelId, add.id, paymentPreimage))
+          case add if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
         }
       }
     }
