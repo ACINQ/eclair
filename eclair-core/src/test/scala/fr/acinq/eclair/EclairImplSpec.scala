@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler.{SendPaymentRequest, SendPaymentToRouteRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
 import fr.acinq.eclair.router.{Announcements, GetNetworkStats, GetNetworkStatsResponse, NetworkStats, PublicChannel, Router, Stats}
 import org.mockito.Mockito

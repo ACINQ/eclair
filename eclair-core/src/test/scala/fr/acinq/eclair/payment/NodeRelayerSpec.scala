@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.relay.{CommandBuffer, NodeRelayer, Origin, Relayer}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.wire._

@@ -27,7 +27,7 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
 import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}

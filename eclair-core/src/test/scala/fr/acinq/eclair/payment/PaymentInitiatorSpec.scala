@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorContext, ActorRef, ActorSystem}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.Features._
@@ -27,9 +27,9 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
-import fr.acinq.eclair.payment.send.PaymentInitiator._
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator}
+import fr.acinq.eclair.payment.send.{PaymentInitiatorHandler, PaymentError, PaymentInitiator}
 import fr.acinq.eclair.router.{NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
@@ -53,20 +53,21 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    class TestPaymentInitiator extends PaymentInitiator(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref) {
+    val testPaymentInitiator = new PaymentInitiatorHandler(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref) {
       // @formatter:off
-      override def spawnPaymentFsm(cfg: SendPaymentConfig): ActorRef = {
+      override def spawnPaymentFsm(cfg: SendPaymentConfig, ctx: ActorContext): ActorRef = {
         payFsm.ref ! cfg
         payFsm.ref
       }
-      override def spawnMultiPartPaymentFsm(cfg: SendPaymentConfig): ActorRef = {
+      override def spawnMultiPartPaymentFsm(cfg: SendPaymentConfig, ctx: ActorContext): ActorRef = {
         multiPartPayFsm.ref ! cfg
         multiPartPayFsm.ref
       }
       // @formatter:on
     }
-    val initiator = TestActorRef(new TestPaymentInitiator().asInstanceOf[PaymentInitiator])
-    withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender, eventListener)))
+    val initiatorHandler = TestActorRef[PaymentInitiator](PaymentInitiator.props(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref))
+    initiatorHandler ! testPaymentInitiator
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiatorHandler, payFsm, multiPartPayFsm, sender, eventListener)))
   }
 
   test("reject payment with unknown mandatory feature") { f =>
