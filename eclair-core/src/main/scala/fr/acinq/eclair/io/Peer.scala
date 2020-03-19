@@ -49,7 +49,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
   import Peer._
 
   val reconnectionTask: ActorRef = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId, switchboard, router), "reconnection-task")
-  // we don't use FSM.SubscribeTransitionCallBack(reconnectionTask) because we don't want the reconnectionTask to miss the first transition
+  // we register the reconnection task to our transitions ourselves; if we let the child actor register itself, there is
+  // a race condition and it may miss the first transition
   listeners.add(reconnectionTask)
 
   startWith(INSTANTIATING, Nothing)
