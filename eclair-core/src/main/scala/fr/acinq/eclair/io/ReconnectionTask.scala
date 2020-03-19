@@ -177,7 +177,7 @@ object ReconnectionTask {
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
 
   /**
-   * This helps preventing peers reconnection loops due to synchronization of reconnection attempts.
+   * This helps prevent peers reconnection loops due to synchronization of reconnection attempts.
    */
   def randomizeDelay(initialRandomReconnectDelay: FiniteDuration): FiniteDuration = Random.nextInt(initialRandomReconnectDelay.toMillis.toInt).millis.max(200 milliseconds)
 
