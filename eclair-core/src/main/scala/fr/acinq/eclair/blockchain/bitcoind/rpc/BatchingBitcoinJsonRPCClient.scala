@@ -20,6 +20,7 @@ import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import fr.acinq.eclair.KamonExt
+import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import org.json4s.JsonAST
 
 import scala.concurrent.duration._
@@ -32,7 +33,7 @@ class BatchingBitcoinJsonRPCClient(rpcClient: BasicBitcoinJsonRPCClient)(implici
   val batchingClient = system.actorOf(Props(new BatchingClient(rpcClient)), name = "batching-client")
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JsonAST.JValue] = {
-    KamonExt.timeFuture("bitcoin.rpc.batch.invoke.time") {
+    KamonExt.timeFuture(Metrics.RpcBatchDuration.withoutTags()) {
       (batchingClient ? JsonRPCRequest(method = method, params = params)).mapTo[JsonAST.JValue]
     }
   }

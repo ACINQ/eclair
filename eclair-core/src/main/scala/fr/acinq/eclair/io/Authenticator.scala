@@ -26,16 +26,16 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Authenticator.{Authenticated, AuthenticationFailed, PendingAuth}
+import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.LightningMessageCodecs
 import fr.acinq.eclair.{Logs, NodeParams}
-import kamon.Kamon
 
 /**
-  * The purpose of this class is to serve as a buffer for newly connection before they are authenticated
-  * (meaning that a crypto handshake as successfully been completed).
-  *
-  * All incoming/outgoing connections are processed here, before being sent to the switchboard
-  */
+ * The purpose of this class is to serve as a buffer for newly connection before they are authenticated
+ * (meaning that a crypto handshake as successfully been completed).
+ *
+ * All incoming/outgoing connections are processed here, before being sent to the switchboard
+ */
 class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
 
   override def receive: Receive = {
@@ -45,7 +45,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
   def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
       log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
-      Kamon.counter("peers.connecting.count").withTag("state", "authenticating").increment()
+      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
       val transport = context.actorOf(TransportHandler.props(
         KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
         remoteNodeId_opt.map(_.value),
@@ -59,7 +59,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with DiagnosticActorLo
       import pendingAuth.{address, remoteNodeId_opt}
       val outgoing = remoteNodeId_opt.isDefined
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (outgoing) "outgoing" else "incoming"}")
-      Kamon.counter("peers.connecting.count").withTag("state", "authenticated").increment()
+      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(connection, transport, remoteNodeId, address, remoteNodeId_opt.isDefined, pendingAuth.origin_opt)
       context become ready(switchboard, authenticating - transport)
 

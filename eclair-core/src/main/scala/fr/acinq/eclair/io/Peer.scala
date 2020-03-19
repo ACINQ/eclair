@@ -29,10 +29,10 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
-import kamon.Kamon
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
@@ -276,7 +276,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
             val latency = Platform.currentTime - timestamp
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
-            // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
+          // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
           case None =>
             log.debug(s"received unexpected pong with size=${data.length}")
         }
@@ -558,18 +558,18 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: A
 
   onTransition {
     case _ -> CONNECTED =>
-      Metrics.connectedPeers.increment()
+      Metrics.ConnectedPeers.increment()
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
       scheduleNextPing()
     case CONNECTED -> DISCONNECTED =>
-      Metrics.connectedPeers.decrement()
+      Metrics.ConnectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
   onTermination {
     case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
-      Metrics.connectedPeers.decrement()
+      Metrics.ConnectedPeers.decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
@@ -728,12 +728,6 @@ object Peer {
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, fundingTxNotFoundCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   // @formatter:on
-
-  object Metrics {
-    val peers = Kamon.rangeSampler("peers.count").withoutTags()
-    val connectedPeers = Kamon.rangeSampler("peers.connected.count").withoutTags()
-    val channels = Kamon.rangeSampler("channels.count").withoutTags()
-  }
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
