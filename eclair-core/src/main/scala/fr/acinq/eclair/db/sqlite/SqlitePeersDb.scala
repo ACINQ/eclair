@@ -21,13 +21,13 @@ import java.sql.Connection
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.PeersDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, using}
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 
 class SqlitePeersDb(sqlite: Connection) extends PeersDb {
 
-import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "peers"
   val CURRENT_VERSION = 1
@@ -56,6 +56,14 @@ import SqliteUtils.ExtendedResultSet._
     using(sqlite.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
+    }
+  }
+
+  override def getPeer(nodeId: PublicKey): Option[NodeAddress] = {
+    using(sqlite.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      val rs = statement.executeQuery()
+      codecSequence(rs, CommonCodecs.nodeaddress).headOption
     }
   }
 
