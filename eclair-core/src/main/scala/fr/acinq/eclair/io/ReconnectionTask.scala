@@ -121,7 +121,8 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
     case Event(FSM.Transition(_, Peer.INSTANTIATING, Peer.INSTANTIATING), _) => stay // instantiation transition
 
     case Event(Peer.Connect(_, hostAndPort_opt), _) =>
-      // this happens completely independently of the automated reconnection process
+      // manual connection requests happen completely independently of the automated reconnection process;
+      // we initiate a connection but don't modify our state.
       // if we are already connecting/connected, the peer will kill any duplicate connections
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
