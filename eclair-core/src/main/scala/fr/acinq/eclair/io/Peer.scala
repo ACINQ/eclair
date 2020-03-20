@@ -75,35 +75,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
       log.debug("got authenticated connection to address {}:{}", address.getHostString, address.getPort)
 
-      // We want to log all incoming/outgoing messages to/from this peer. Logging incoming messages is easy (they all go
-      // through this actor), but for outgoing messages it's a bit trickier because channels directly send messages to
-      // the connection. That's why we use this pass-through actor that just logs messages and forward them.
-      val logConnection = context.actorOf(Props(new Actor {
-        // we use this to log raw messages coming in and out of the peer
-        val logMsgOut = new BusLogging(context.system.eventStream, "", classOf[Peer.MessageLogs], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
-        context watch peerConnection
-
-        override def receive: Receive = {
-          case Terminated(_) =>
-            context stop self
-          case msg =>
-            msg match {
-              case _: LightningMessage =>
-                logMsgOut.mdc(mdc(msg))
-                logMsgOut.info("OUT msg={}", msg)
-                logMsgOut.clearMDC()
-              case _ => ()
-            }
-            peerConnection forward msg
-        }
-
-        override def postStop(): Unit = {
-          peerConnection ! PoisonPill
-          super.postStop()
-        }
-      }))
-
-      context watch logConnection
+      context watch peerConnection
 
       if (outgoing) {
         // we store the node address upon successful outgoing connection, so we can reconnect later
@@ -112,9 +84,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       }
 
       // let's bring existing/requested channels online
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(logConnection, localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(peerConnection, localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
 
-      goto(CONNECTED) using ConnectedData(address, logConnection, localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
+      goto(CONNECTED) using ConnectedData(address, peerConnection, localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
@@ -135,6 +107,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       sender ! "already connected"
       stay
 
+    case Event((msg: LightningMessage, peerConnection: ActorRef), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but
+      logMessage(msg, "OUT")
+      d.peerConnection forward msg
+      stay
+
     case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
       log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
       d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -145,7 +122,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
       d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
         case Some(channel) => channel forward err
-        case None => d.peerConnection ! wire.Error(err.channelId, UNKNOWN_CHANNEL_MESSAGE)
+        case None => () // let's not create a ping-pong of error messages here
       }
       stay
 
@@ -187,14 +164,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
     case Event(msg: wire.HasChannelId, d: ConnectedData) =>
       d.channels.get(FinalChannelId(msg.channelId)) match {
         case Some(channel) => channel forward msg
-        case None => d.peerConnection ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
+        case None => replyUnknownChannel(d.peerConnection, msg.channelId)
       }
       stay
 
     case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
       d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case Some(channel) => channel forward msg
-        case None => d.peerConnection ! wire.Error(msg.temporaryChannelId, UNKNOWN_CHANNEL_MESSAGE)
+        case None => replyUnknownChannel(d.peerConnection, msg.temporaryChannelId)
       }
       stay
 
@@ -292,6 +269,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
     channel
   }
 
+  def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32) = {
+    val msg = wire.Error(unknownChannelId, UNKNOWN_CHANNEL_MESSAGE)
+    logMessage(msg, "OUT")
+    peerConnection ! msg
+  }
+
   def stopPeer(): State = {
     log.info("removing peer from db")
     nodeParams.db.peers.removePeer(remoteNodeId)
@@ -304,16 +287,19 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   initialize()
 
-
   // we use this to log raw messages coming in and out of the peer
-  val logMsgIn = new BusLogging(context.system.eventStream, "", classOf[Peer.MessageLogs], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+  private val msgLogger = new BusLogging(context.system.eventStream, "", classOf[Peer.MessageLogs], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+
+  private def logMessage(msg: LightningMessage, direction: String) = {
+    require(direction == "IN" || direction == "OUT")
+    msgLogger.mdc(mdc(msg))
+    msgLogger.info(s"$direction msg={}", msg)
+    msgLogger.clearMDC()
+  }
 
   override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
     msg match {
-      case _: LightningMessage =>
-        logMsgIn.mdc(mdc(msg))
-        logMsgIn.info("IN msg={}", msg)
-        logMsgIn.clearMDC()
+      case lm: LightningMessage => logMessage(lm, "IN")
       case _ => ()
     }
     super.aroundReceive(receive, msg)

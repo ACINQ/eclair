@@ -18,11 +18,14 @@ package fr.acinq.eclair.channel.states
 
 import java.util.UUID
 
-import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import akka.actor.ActorRef
+import akka.testkit
+import akka.testkit.{TestActor, TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ScriptHashSubscriptionResponse
 import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
@@ -54,6 +57,24 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
+    val alicePeer = TestProbe()
+    alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case (msg: LightningMessage, _: ActorRef) =>
+          alice2bob.ref tell (msg, sender)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+    })
+    val bobPeer = TestProbe()
+    bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case (msg: LightningMessage, _: ActorRef) =>
+          bob2alice.ref tell (msg, sender)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+    })
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val relayerA = TestProbe()
@@ -62,8 +83,8 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref), alicePeer.ref)
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref), bobPeer.ref)
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener)
   }
 

@@ -21,14 +21,15 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit.{TestFSMRef, TestKit, TestProbe}
+import akka.testkit
+import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
-import fr.acinq.eclair.wire.Init
+import fr.acinq.eclair.wire.{Init, LightningMessage}
 import fr.acinq.eclair.{LongToBtcAmount, TestUtils}
 import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
 
@@ -47,6 +48,24 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val blockCount = new AtomicLong(0)
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
+    val alicePeer = TestProbe()
+    alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case (msg: LightningMessage, _: ActorRef) =>
+          pipe tell (msg, sender)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+    })
+    val bobPeer = TestProbe()
+    bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case (msg: LightningMessage, _: ActorRef) =>
+          pipe tell (msg, sender)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+    })
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref)))
@@ -55,8 +74,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val relayer = paymentHandler
     val wallet = new TestWallet
     val feeEstimator = new TestFeeEstimator
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayer))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer), alicePeer.ref)
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator)), wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayer), bobPeer.ref)
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
     // alice and bob will both have 1 000 000 sat
