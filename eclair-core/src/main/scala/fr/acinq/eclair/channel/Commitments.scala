@@ -544,12 +544,12 @@ object Commitments {
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
-            Relayer.ForwardFail(fail, origin, add)
+            Relayer.ForwardRemoteFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
-            Relayer.ForwardFailMalformed(fail, origin, add)
+            Relayer.ForwardRemoteFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
