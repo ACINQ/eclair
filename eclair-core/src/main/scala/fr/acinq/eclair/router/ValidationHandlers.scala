@@ -153,10 +153,10 @@ object ValidationHandlers {
                   awaiting = awaiting1)
                 // we only reprocess updates and nodes if validation succeeded
                 val d2 = reprocessUpdates.foldLeft(d1) {
-                  case (d, (u, origins)) => ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u)
+                  case (d, (u, origins)) => ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u, wasStashed = true)
                 }
                 val d3 = reprocessNodes.foldLeft(d2) {
-                  case (d, (n, origins)) => ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, origins, n)
+                  case (d, (n, origins)) => ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, origins, n, wasStashed = true)
                 }
                 d3
               }
@@ -194,11 +194,13 @@ object ValidationHandlers {
     d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, graph = graph1)
   }
 
-  def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val remoteOrigins = origins flatMap {
+      case r: RemoteGossip if wasStashed =>
+        Some(r.peerConnection)
       case RemoteGossip(peerConnection, _) =>
-        peerConnection ! TransportHandler.ReadAck(n) // TODO: duplicate ack for stashed messages
+        peerConnection ! TransportHandler.ReadAck(n)
         log.debug("received node announcement for nodeId={}", n.nodeId)
         Some(peerConnection)
       case LocalGossip =>
@@ -247,11 +249,13 @@ object ValidationHandlers {
 
   }
 
-  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], u: ChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], u: ChannelUpdate, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val remoteOrigins = origins flatMap {
+      case r: RemoteGossip if wasStashed =>
+        Some(r.peerConnection)
       case RemoteGossip(peerConnection, _) =>
-        peerConnection ! TransportHandler.ReadAck(u) // TODO: duplicate ack for stashed messages
+        peerConnection ! TransportHandler.ReadAck(u)
         log.debug("received channel update for shortChannelId={}", u.shortChannelId)
         Some(peerConnection)
       case LocalGossip =>
