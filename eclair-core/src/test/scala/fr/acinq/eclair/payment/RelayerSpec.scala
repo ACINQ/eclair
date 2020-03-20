@@ -197,7 +197,7 @@ class RelayerSpec extends TestkitBaseClass {
     val origin2 = TrampolineRelayed((channelId_ab, 561L) :: (channelId_ab, 565L) :: Nil, Some(register.lastSender))
     val add_bc = UpdateAddHtlc(channelId_bc, 72, cmd1.amount + cmd2.amount, paymentHash, cmd1.cltvExpiry, onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, paymentPreimage)
-    sender.send(relayer, ForwardFulfill(fulfill_ba, origin2, add_bc))
+    sender.send(relayer, ForwardRemoteFulfill(fulfill_ba, origin2, add_bc))
 
     // it should trigger a fulfill on the upstream HTLCs
     register.expectMsg(Register.Forward(channelId_ab, CMD_FULFILL_HTLC(561, paymentPreimage, commit = true)))
@@ -468,10 +468,14 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ChannelUnavailable(channelId_bc), origin, Some(channelUpdate_bc_disabled), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, None, None)))
-    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
+    val add = UpdateAddHtlc(channelId_bc, 7, 1090000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
+    sender.send(relayer, ForwardRemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)), origin, add))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Left(ByteVector.fill(12)(3)))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc, Set.empty), origin, Some(channelUpdate_bc), None)))
+    sender.send(relayer, ForwardRemoteFailMalformed(UpdateFailMalformedHtlc(channelId_bc, 7, ByteVector32.One, FailureMessageCodecs.BADONION), origin, add))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message.onionHash === ByteVector32.One)
+
+    sender.send(relayer, ForwardOnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add), origin, add))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
     register.expectNoMsg(50 millis)
@@ -487,17 +491,26 @@ class RelayerSpec extends TestkitBaseClass {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 72, paymentPreimage = ByteVector32.Zeroes)
     val origin = Relayed(channelId_ab, 42, 11000000 msat, 10000000 msat)
-    sender.send(relayer, ForwardFulfill(fulfill_ba, origin, add_bc))
+    for (fulfill <- Seq(ForwardRemoteFulfill(fulfill_ba, origin, add_bc), ForwardOnChainFulfill(ByteVector32.Zeroes, origin, add_bc))) {
+      sender.send(relayer, fulfill)
+      val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId === origin.originChannelId)
+      assert(fwd.message.id === origin.originHtlcId)
 
-    val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
-    assert(fwd.channelId === origin.originChannelId)
-    assert(fwd.message.id === origin.originHtlcId)
-
-    val paymentRelayed = eventListener.expectMsgType[ChannelPaymentRelayed]
-    assert(paymentRelayed.copy(timestamp = 0) === ChannelPaymentRelayed(origin.amountIn, origin.amountOut, add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
+      val paymentRelayed = eventListener.expectMsgType[ChannelPaymentRelayed]
+      assert(paymentRelayed.copy(timestamp = 0) === ChannelPaymentRelayed(origin.amountIn, origin.amountOut, add_bc.paymentHash, channelId_ab, channelId_bc, timestamp = 0))
+    }
   }
 
   test("relay a trampoline htlc-fulfill") { f =>
+    testRelayTrampolineHtlcFulfill(f, onChain = false)
+  }
+
+  test("relay a trampoline on-chain htlc-fulfill") { f =>
+    testRelayTrampolineHtlcFulfill(f, onChain = true)
+  }
+
+  def testRelayTrampolineHtlcFulfill(f: FixtureParam, onChain: Boolean): Unit = {
     import f._
 
     // A sends a multi-payment to trampoline node B.
@@ -516,11 +529,16 @@ class RelayerSpec extends TestkitBaseClass {
 
     // We simulate a fake htlc fulfill for the downstream channel.
     val payFSM = TestProbe()
-    val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, preimage)
-    sender.send(relayer, ForwardFulfill(fulfill_ba, TrampolineRelayed(null, Some(payFSM.ref)), UpdateAddHtlc(channelId_bc, 13, 1000 msat, paymentHash, CltvExpiry(1), null)))
+    val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), null)
+    val forwardFulfill: ForwardFulfill = if (onChain) {
+      ForwardOnChainFulfill(preimage, TrampolineRelayed(null, Some(payFSM.ref)), add_bc)
+    } else {
+      ForwardRemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, preimage), TrampolineRelayed(null, Some(payFSM.ref)), add_bc)
+    }
+    sender.send(relayer, forwardFulfill)
 
     // the FSM responsible for the payment should receive the fulfill.
-    payFSM.expectMsg(fulfill_ba)
+    payFSM.expectMsg(forwardFulfill)
 
     // the payment should be immediately fulfilled upstream.
     val upstream1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
@@ -541,11 +559,12 @@ class RelayerSpec extends TestkitBaseClass {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = Relayed(channelId_ab, 42, 11000000 msat, 10000000 msat)
-    sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
-
-    val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
-    assert(fwd.channelId === origin.originChannelId)
-    assert(fwd.message.id === origin.originHtlcId)
+    for (fail <- Seq(ForwardRemoteFail(fail_ba, origin, add_bc), ForwardOnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc), origin, add_bc))) {
+      sender.send(relayer, fail)
+      val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId === origin.originChannelId)
+      assert(fwd.message.id === origin.originHtlcId)
+    }
   }
 
   test("relay a trampoline htlc-fail") { f =>
@@ -557,10 +576,18 @@ class RelayerSpec extends TestkitBaseClass {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = TrampolineRelayed(List((channelId_ab, 42), (randomBytes32, 7)), Some(payFSM.ref))
-    sender.send(relayer, ForwardFail(fail_ba, origin, add_bc))
+    val remoteFailure = ForwardRemoteFail(fail_ba, origin, add_bc)
 
-    // we forward to the FSM responsible for the payment to trigger the retry mechanism.
-    payFSM.expectMsg(fail_ba)
+    // a remote failure should be forwarded to the FSM responsible for the payment to trigger the retry mechanism.
+    sender.send(relayer, remoteFailure)
+    payFSM.expectMsg(remoteFailure)
+    payFSM.expectNoMsg(100 millis)
+
+    // same for an on-chain downstream failure.
+    val onChainFailure = ForwardOnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)), origin, add_bc)
+    sender.send(relayer, onChainFailure)
+    payFSM.expectMsg(onChainFailure)
+    payFSM.expectNoMsg(100 millis)
   }
 
   test("get outgoing channels") { f =>
