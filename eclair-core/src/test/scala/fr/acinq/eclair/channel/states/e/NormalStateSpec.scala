@@ -1067,7 +1067,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardFail]
+    val forward = relayerA.expectMsgType[ForwardRemoteFail]
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1096,7 +1096,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardFailMalformed]
+    val forward = relayerA.expectMsgType[ForwardRemoteFailMalformed]
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1183,7 +1183,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
     // alice immediately propagates the fulfill upstream
-    val forward = relayerA.expectMsgType[ForwardFulfill]
+    val forward = relayerA.expectMsgType[ForwardRemoteFulfill]
     assert(forward.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }

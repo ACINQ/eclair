@@ -23,13 +23,14 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, HtlcsTimedoutDownstream, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router._
@@ -120,10 +121,18 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event(ChannelCommandResponse.Ok, _) => stay
 
-    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
-      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.channelId, Some(cfg.fullRoute(route)))
+    case Event(fulfill: Relayer.ForwardFulfill, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
+      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.htlc.channelId, Some(cfg.fullRoute(route)))
       onSuccess(s, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
       myStop()
+
+    case Event(forwardFail: Relayer.ForwardFail, _) =>
+      forwardFail match {
+        case Relayer.ForwardRemoteFail(fail, _, _) => self ! fail
+        case Relayer.ForwardRemoteFailMalformed(fail, _, _) => self ! fail
+        case Relayer.ForwardOnChainFail(cause, _, _) => self ! Status.Failure(cause)
+      }
+      stay
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       (Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
@@ -225,9 +234,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(t))).increment()
-      // If the first hop was selected by the sender (in routePrefix) and it failed, it doesn't make sense to retry (we
-      // will end up retrying over that same faulty channel).
-      if (failures.size + 1 >= c.maxAttempts || c.routePrefix.nonEmpty) {
+      val isFatal = failures.size + 1 >= c.maxAttempts || // retries exhausted
+        c.routePrefix.nonEmpty || // first hop was selected by the sender and failed, it doesn't make sense to retry
+        t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs
+      if (isFatal) {
         onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(t)))
         myStop()
       } else {
