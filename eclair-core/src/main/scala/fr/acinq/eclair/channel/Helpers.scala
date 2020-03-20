@@ -844,6 +844,24 @@ object Helpers {
     }
 
     /**
+     * In case of a unilateral close, returns all spending transactions that have reached mindepth (commit tx, claimed
+     * delayed outputs, HTLCs, etc).
+     */
+    def irrevocablySpentTxes(d: DATA_CLOSING): Set[Transaction] = {
+      val txids = (d.localCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty) ++
+        d.remoteCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty) ++
+        d.nextRemoteCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty) ++
+        d.futureRemoteCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty)).values.toSet
+      def localCommitTxes(localCommitPublished: Option[LocalCommitPublished]): List[Transaction] = localCommitPublished.map(c => c.commitTx :: c.claimMainDelayedOutputTx.toList ::: c.htlcTimeoutTxs ::: c.htlcSuccessTxs ::: c.claimHtlcDelayedTxs).getOrElse(Nil)
+      def remoteCommitTxes(remoteCommitPublished: Option[RemoteCommitPublished]): List[Transaction] = remoteCommitPublished.map(c => c.commitTx :: c.claimMainOutputTx.toList ::: c.claimHtlcTimeoutTxs ::: c.claimHtlcSuccessTxs).getOrElse(Nil)
+      val txes = localCommitTxes(d.localCommitPublished) ++
+        remoteCommitTxes(d.remoteCommitPublished) ++
+        remoteCommitTxes(d.nextRemoteCommitPublished) ++
+        remoteCommitTxes(d.futureRemoteCommitPublished)
+      txes.filter(tx => txids.contains(tx.txid)).toSet
+    }
+
+    /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
      * more htlcs have timed out and need to be failed in an upstream channel.
      *
