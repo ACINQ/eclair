@@ -18,13 +18,14 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
-import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.PeerConnection.GossipDecision
-import fr.acinq.eclair.router.Router.{getDesc, hasChannels, isRelatedTo, isStale, shortChannelIdKey}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, TxCoordinates}
@@ -380,4 +381,59 @@ object ValidationHandlers {
     }
   }
 
+  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: ActorRef, lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    import lcu.{channelAnnouncement_opt, shortChannelId, channelUpdate => u}
+    d.channels.get(shortChannelId) match {
+      case Some(_) =>
+        // channel has already been announced and router knows about it, we can process the channel_update
+        handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+      case None =>
+        channelAnnouncement_opt match {
+          case Some(c) if d.awaiting.contains(c) =>
+            // channel is currently being verified, we can process the channel_update right away (it will be stashed)
+            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+          case Some(c) =>
+            // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
+            watcher ! ValidateRequest(c)
+            val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
+            // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
+            db.removeFromPruned(c.shortChannelId)
+            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
+          case None if d.privateChannels.contains(shortChannelId) =>
+            // channel isn't announced but we already know about it, we can process the channel_update
+            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+          case None =>
+            // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
+            // let's create a corresponding private channel and process the channel_update
+            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, shortChannelId)
+            val d1 = d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(localNodeId, lcu.remoteNodeId, None, None)))
+            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
+        }
+    }
+  }
+
+  def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    import lcd.{channelId, remoteNodeId, shortChannelId}
+    // a local channel has permanently gone down
+    if (d.channels.contains(shortChannelId)) {
+      // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
+      // so let's not do anything here
+      d
+    } else if (d.privateChannels.contains(shortChannelId)) {
+      // the channel was private or public-but-not-yet-announced, let's do the clean up
+      log.debug("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+      val desc1 = ChannelDesc(shortChannelId, localNodeId, remoteNodeId)
+      val desc2 = ChannelDesc(shortChannelId, remoteNodeId, localNodeId)
+      // we remove the corresponding updates from the graph
+      val graph1 = d.graph
+        .removeEdge(desc1)
+        .removeEdge(desc2)
+      // and we remove the channel and channel_update from our state
+      d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
+    } else {
+      d
+    }
+  }
 }
