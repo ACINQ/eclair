@@ -221,8 +221,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
   setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
 
-  val defaultRouteParams: RouteParams = getDefaultRouteParams(nodeParams.routerConf)
-
   val db: NetworkDb = nodeParams.db.network
 
   {
@@ -363,37 +361,11 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! d
       stay
 
-    case Event(FinalizeRoute(partialHops, assistedRoutes), d) =>
-      // NB: using a capacity of 0 msat will impact the path-finding algorithm. However here we don't run any path-finding, so it's ok.
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, partialHops.last, 0 msat)).toMap
-      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
-      val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
-      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-      partialHops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
-        case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
-          val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
-          val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
-          sender ! RouteResponse(hops, Set.empty, Set.empty)
-        case _ => // some nodes in the supplied route aren't connected in our graph
-          sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
-      }
-      stay
+    case Event(fr: FinalizeRoute, d) =>
+      stay using RouteCalculationHandlers.finalizeRoute(d, fr)
 
-    case Event(RouteRequest(start, end, amount, assistedRoutes, ignoreNodes, ignoreChannels, params_opt), d) =>
-      // we convert extra routing info provided in the payment request to fake channel_update
-      // it takes precedence over all other channel_updates we know
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, end, amount)).toMap
-      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
-      val ignoredEdges = ignoreChannels ++ d.excludedChannels
-      val params = params_opt.getOrElse(defaultRouteParams)
-      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
-
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), ignoreNodes.map(_.value).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
-      log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-      findRoute(d.graph, start, end, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = ignoreNodes, routeParams = params, nodeParams.currentBlockHeight)
-        .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
-        .recover { case t => sender ! Status.Failure(t) }
-      stay
+    case Event(r: RouteRequest, d) =>
+      stay using RouteCalculationHandlers.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
