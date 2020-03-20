@@ -20,7 +20,8 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit
+import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -52,6 +53,24 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
   override def withFixture(test: OneArgTest): Outcome = {
     val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
+    val alicePeer = TestProbe()
+    alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case (msg: LightningMessage, _: ActorRef) =>
+          pipe tell (msg, sender)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+    })
+    val bobPeer = TestProbe()
+    bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
+      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
+        case (msg: LightningMessage, _: ActorRef) =>
+          pipe tell (msg, sender)
+          TestActor.KeepRunning
+        case _ => TestActor.KeepRunning
+      }
+    })
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val registerA = system.actorOf(Props(new TestRegister()))
@@ -62,10 +81,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, commandBufferB)))
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, TestProbe().ref, registerA, commandBufferA, paymentHandlerA))
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, TestProbe().ref, registerB, commandBufferB, paymentHandlerB))
-    val router = TestProbe()
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayerB))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA), alicePeer.ref)
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB), bobPeer.ref)
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.features)
       val bobInit = Init(Bob.channelParams.features)
