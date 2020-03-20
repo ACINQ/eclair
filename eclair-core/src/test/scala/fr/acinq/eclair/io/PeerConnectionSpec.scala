@@ -25,7 +25,6 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag}

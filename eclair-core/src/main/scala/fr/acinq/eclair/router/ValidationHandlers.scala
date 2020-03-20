@@ -24,7 +24,6 @@ import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, 
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.io.PeerConnection.GossipDecision
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
