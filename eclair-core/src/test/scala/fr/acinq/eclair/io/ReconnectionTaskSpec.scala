@@ -19,7 +19,6 @@ package fr.acinq.eclair.io
 import java.net.{InetAddress, ServerSocket}
 
 import akka.actor.FSM
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -37,6 +36,8 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
 
+  case class TransitionWithData(previousState: ReconnectionTask.State, nextState: ReconnectionTask.State, previousData: ReconnectionTask.Data, nextData: ReconnectionTask.Data)
+
   override protected def withFixture(test: OneArgTest): Outcome = {
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
@@ -49,17 +50,13 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask] = if (test.tags.contains("disable_tick_reconnect")) {
-      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref) {
-        override protected def setReconnectTimer(delay: FiniteDuration): Unit = () // allows control of transitions in test
-      })
-    } else {
-      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref))
-    }
-
     val monitor = TestProbe()
-    reconnectionTask ! SubscribeTransitionCallBack(monitor.ref)
-    val CurrentState(_, ReconnectionTask.IDLE) = monitor.expectMsgType[CurrentState[_]]
+    val reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask] =
+      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref) {
+        onTransition {
+          case state -> nextState => monitor.ref ! TransitionWithData(state, nextState, stateData, nextStateData)
+        }
+      })
 
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, reconnectionTask, monitor)))
   }
@@ -77,8 +74,8 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
 
     val peer = TestProbe()
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
-    val Transition(_, ReconnectionTask.IDLE, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
-    val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.IDLE) = monitor.expectMsgType[Transition[_]]
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
     monitor.expectNoMsg()
   }
 
@@ -87,55 +84,50 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
 
     val peer = TestProbe()
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
-    val Transition(_, ReconnectionTask.IDLE, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
-    val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING) = monitor.expectMsgType[Transition[_]]
-    val connectingData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.ConnectingData]
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, connectingData: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
     assert(connectingData.to === fakeIPAddress.socketAddress)
     val expectedNextReconnectionDelayInterval = (nodeParams.maxReconnectInterval.toSeconds / 2) to nodeParams.maxReconnectInterval.toSeconds
     assert(expectedNextReconnectionDelayInterval contains connectingData.nextReconnectionDelay.toSeconds) // we only reconnect once
   }
 
-  test("reconnect with increasing delays", Tag("auto_reconnect"), Tag("disable_tick_reconnect")) { f =>
+  test("reconnect with increasing delays", Tag("auto_reconnect")) { f =>
     import f._
 
     val probe = TestProbe()
     val peer = TestProbe()
     nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeAddress.fromParts("localhost", 42).get)
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
-    val Transition(_, ReconnectionTask.IDLE, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
-    val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING) = monitor.expectMsgType[Transition[_]]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.DISCONNECTED, Peer.CONNECTED))
-    val Transition(_, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE) = monitor.expectMsgType[Transition[_]]
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // disconnection
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.CONNECTED, Peer.DISCONNECTED))
 
     // auto reconnect
-    val Transition(_, ReconnectionTask.IDLE, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
-    val firstNextReconnectDelay = reconnectionTask.stateData.asInstanceOf[WaitingData].nextReconnectionDelay
-    assert(firstNextReconnectDelay >= (200 milliseconds))
-    assert(firstNextReconnectDelay <= (10 seconds))
-    reconnectionTask.cancelTimer(ReconnectionTask.RECONNECT_TIMER)
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData0: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    assert(waitingData0.nextReconnectionDelay >= (200 milliseconds))
+    assert(waitingData0.nextReconnectionDelay <= (10 seconds))
+    probe.send(reconnectionTask, ReconnectionTask.TickReconnect) // we send it manually in order to not have to actually wait (duplicates don' matter since we look at transitions sequentially)
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
+
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData1: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    assert(waitingData1.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 2))
+
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
-    val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING) = monitor.expectMsgType[Transition[_]]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
-    val Transition(_, ReconnectionTask.CONNECTING, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
-    assert(reconnectionTask.stateData.asInstanceOf[WaitingData].nextReconnectionDelay === (firstNextReconnectDelay * 2))
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData2: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    assert(waitingData2.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 4))
 
-    reconnectionTask.cancelTimer(ReconnectionTask.RECONNECT_TIMER)
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
-    val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING) = monitor.expectMsgType[Transition[_]]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
-    val Transition(_, ReconnectionTask.CONNECTING, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
-    assert(reconnectionTask.stateData.asInstanceOf[WaitingData].nextReconnectionDelay === (firstNextReconnectDelay * 4))
-
-    reconnectionTask.cancelTimer(ReconnectionTask.RECONNECT_TIMER)
-    probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
-    val Transition(_, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING) = monitor.expectMsgType[Transition[_]]
-
-    val Transition(_, ReconnectionTask.CONNECTING, ReconnectionTask.WAITING) = monitor.expectMsgType[Transition[_]]
-    assert(reconnectionTask.stateData.asInstanceOf[WaitingData].nextReconnectionDelay === (firstNextReconnectDelay * 8))
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData3: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    assert(waitingData3.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 8))
   }
 
   test("reconnect using the address from node_announcement") { f =>

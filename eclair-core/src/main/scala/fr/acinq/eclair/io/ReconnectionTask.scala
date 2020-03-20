@@ -132,7 +132,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
       stay
   }
 
-  protected def setReconnectTimer(delay: FiniteDuration) = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
+  private def setReconnectTimer(delay: FiniteDuration) = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
 
   private def connect(address: InetSocketAddress, origin_opt: Option[ActorRef]): ActorRef = {
     log.info(s"connecting to $address")
