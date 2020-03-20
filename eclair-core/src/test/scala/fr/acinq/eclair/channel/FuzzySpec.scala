@@ -131,11 +131,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
-              case u: UpdateFulfillHtlc =>
-                log.info(s"successfully sent htlc #${u.id}")
+              case u: Relayer.ForwardFulfill =>
+                log.info(s"successfully sent htlc #${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case u: UpdateFailHtlc =>
-                log.warning(s"htlc failed: ${u.id}")
+              case u: Relayer.ForwardFail =>
+                log.warning(s"htlc failed: ${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
               case Status.Failure(t) =>
                 log.error(s"htlc error: ${t.getMessage}")

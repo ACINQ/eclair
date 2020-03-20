@@ -434,7 +434,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
-    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+    assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
