@@ -49,7 +49,13 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask] = TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref))
+    val reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask] = if (test.tags.contains("disable_tick_reconnect")) {
+      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref) {
+        override protected def setReconnectTimer(delay: FiniteDuration): Unit = () // allows control of transitions in test
+      })
+    } else {
+      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref))
+    }
 
     val monitor = TestProbe()
     reconnectionTask ! SubscribeTransitionCallBack(monitor.ref)
@@ -89,10 +95,8 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
     assert(expectedNextReconnectionDelayInterval contains connectingData.nextReconnectionDelay.toSeconds) // we only reconnect once
   }
 
-  test("reconnect with increasing delays", Tag("auto_reconnect")) { f =>
+  test("reconnect with increasing delays", Tag("auto_reconnect"), Tag("disable_tick_reconnect")) { f =>
     import f._
-
-    reconnectionTask.underlyingActor.bypassTimer = true
 
     val probe = TestProbe()
     val peer = TestProbe()
