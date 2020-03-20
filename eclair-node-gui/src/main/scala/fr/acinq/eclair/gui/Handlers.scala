@@ -24,7 +24,7 @@ import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler.SendPaymentRequest
 import fr.acinq.eclair.{MilliSatoshi, _}
 import grizzled.slf4j.Logging
 
