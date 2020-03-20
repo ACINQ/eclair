@@ -42,11 +42,13 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   import RoutingSyncSpec._
 
+  // this map will store private keys so that we can sign new announcements at will
+  val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
   val fakeRoutingInfo: TreeMap[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)] = RoutingSyncSpec
     .shortChannelIds
     .take(60)
     .foldLeft(TreeMap.empty[ShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)]) {
-      case (m, shortChannelId) => m + (shortChannelId -> makeFakeRoutingInfo(shortChannelId))
+      case (m, shortChannelId) => m + (shortChannelId -> makeFakeRoutingInfo(pub2priv)(shortChannelId))
     }
 
   class YesWatcher extends Actor {
@@ -224,7 +226,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // bump random channel_updates
     def touchUpdate(shortChannelId: Int, side: Boolean) = {
       val PublicChannel(c, _, _, Some(u1), Some(u2)) = fakeRoutingInfo.values.toList(shortChannelId)._1
-      makeNewerChannelUpdate(c, if (side) u1 else u2)
+      makeNewerChannelUpdate(pub2priv)(c, if (side) u1 else u2)
     }
 
     val bumpedUpdates = (List(0, 3, 7).map(touchUpdate(_, true)) ++ List(1, 3, 9).map(touchUpdate(_, false))).toSet
@@ -302,12 +304,9 @@ object RoutingSyncSpec {
     outputIndex <- 0 to 1
   } yield ShortChannelId(block, txindex, outputIndex)).foldLeft(SortedSet.empty[ShortChannelId])(_ + _)
 
-  // this map will store private keys so that we can sign new announcements at will
-  val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
+  val unused: PrivateKey = randomKey
 
-  val unused = randomKey
-
-  def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
+  def makeFakeRoutingInfo(pub2priv: mutable.Map[PublicKey, PrivateKey])(shortChannelId: ShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
     val timestamp = Platform.currentTime / 1000
     val (priv1, priv2) = {
       val (priv_a, priv_b) = (randomKey, randomKey)
@@ -326,7 +325,7 @@ object RoutingSyncSpec {
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 
-  def makeNewerChannelUpdate(channelAnnouncement: ChannelAnnouncement, channelUpdate: ChannelUpdate): ChannelUpdate = {
+  def makeNewerChannelUpdate(pub2priv: mutable.Map[PublicKey, PrivateKey])(channelAnnouncement: ChannelAnnouncement, channelUpdate: ChannelUpdate): ChannelUpdate = {
     val (local, remote) = if (Announcements.isNode1(channelUpdate.channelFlags)) (channelAnnouncement.nodeId1, channelAnnouncement.nodeId2) else (channelAnnouncement.nodeId2, channelAnnouncement.nodeId1)
     val priv = pub2priv(local)
     makeChannelUpdate(channelUpdate.chainHash, priv, remote, channelUpdate.shortChannelId,
@@ -335,7 +334,7 @@ object RoutingSyncSpec {
       channelUpdate.htlcMinimumMsat, Announcements.isEnabled(channelUpdate.channelFlags), channelUpdate.timestamp + 5000)
   }
 
-  def makeFakeNodeAnnouncement(nodeId: PublicKey): NodeAnnouncement = {
+  def makeFakeNodeAnnouncement(pub2priv: mutable.Map[PublicKey, PrivateKey])(nodeId: PublicKey): NodeAnnouncement = {
     val priv = pub2priv(nodeId)
     makeNodeAnnouncement(priv, "", Color(0, 0, 0), List(), hex"00")
   }
