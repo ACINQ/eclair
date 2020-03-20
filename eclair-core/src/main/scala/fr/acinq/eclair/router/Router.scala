@@ -162,7 +162,7 @@ case class LiftChannelExclusion(desc: ChannelDesc)
 // @formatter:on
 
 // @formatter:off
-case class SendChannelQuery(remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
+case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
 case object GetNetworkStats
 case class GetNetworkStatsResponse(stats: Option[NetworkStats])
 case object GetRoutingState
@@ -395,25 +395,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         .recover { case t => sender ! Status.Failure(t) }
       stay
 
-    case Event(SendChannelQuery(remoteNodeId, remote, flags_opt), d) =>
-      // ask for everything
-      // we currently send only one query_channel_range message per peer, when we just (re)connected to it, so we don't
-      // have to worry about sending a new query_channel_range when another query is still in progress
-      val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0L, numberOfBlocks = Int.MaxValue.toLong, TlvStream(flags_opt.toList))
-      log.info("sending query_channel_range={}", query)
-      remote ! query
-
-      // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
-      // the first_timestamp field to the current date/time and timestamp_range to the maximum value
-      // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
-      // that (i.e. the whole routing table)
-      val filter = GossipTimestampFilter(nodeParams.chainHash, firstTimestamp = Platform.currentTime.milliseconds.toSeconds, timestampRange = Int.MaxValue)
-      remote ! filter
-
-      // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
-      // will start a new complete sync process
-      stay using d.copy(sync = d.sync - remoteNodeId)
-
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
@@ -447,6 +428,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay using ValidationHandlers.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
+    case Event(s: SendChannelQuery, d) =>
+      stay using SyncHandlers.handleSendChannelQuery(d, s)
+
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
       SyncHandlers.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay
@@ -468,9 +452,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
     currentMessage match {
-      case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
-      case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
-      case LocalChannelUpdate(_, _, _, remoteNodeId, _, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
+      case s: SendChannelQuery => Logs.mdc(category_opt, remoteNodeId_opt = Some(s.remoteNodeId))
+      case prm: PeerRoutingMessage => Logs.mdc(category_opt, remoteNodeId_opt = Some(prm.remoteNodeId))
+      case lcu: LocalChannelUpdate => Logs.mdc(category_opt, remoteNodeId_opt = Some(lcu.remoteNodeId))
       case _ => Logs.mdc(category_opt)
     }
   }

@@ -160,7 +160,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
             if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
               log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(d.remoteNodeId, self, flags_opt = flags_opt)
+              router ! SendChannelQuery(nodeParams.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
             } else {
               log.info("not syncing with this peer")
             }
