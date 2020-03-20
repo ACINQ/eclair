@@ -483,23 +483,6 @@ object PeerConnection {
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 
-  sealed trait GossipDecision { def ann: AnnouncementMessage }
-  object GossipDecision {
-    case class Accepted(ann: AnnouncementMessage) extends GossipDecision
-
-    sealed trait Rejected extends GossipDecision
-    case class Duplicate(ann: AnnouncementMessage) extends Rejected
-    case class InvalidSignature(ann: AnnouncementMessage) extends Rejected
-    case class NoKnownChannel(ann: NodeAnnouncement) extends Rejected
-    case class ValidationFailure(ann: ChannelAnnouncement) extends Rejected
-    case class InvalidAnnouncement(ann: ChannelAnnouncement) extends Rejected
-    case class ChannelPruned(ann: ChannelAnnouncement) extends Rejected
-    case class ChannelClosing(ann: ChannelAnnouncement) extends Rejected
-    case class ChannelClosed(ann: ChannelAnnouncement) extends Rejected
-    case class Stale(ann: ChannelUpdate) extends Rejected
-    case class NoRelatedChannel(ann: ChannelUpdate) extends Rejected
-  }
-
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
   // @formatter:on
