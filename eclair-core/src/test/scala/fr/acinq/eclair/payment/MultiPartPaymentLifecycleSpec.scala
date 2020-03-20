@@ -29,7 +29,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError}
 import fr.acinq.eclair.router._

@@ -35,7 +35,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
+import fr.acinq.eclair.payment.send.PaymentInitiatorHandler.SendPaymentToRouteResponse
 import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.router.{NetworkStats, Stats}
 import fr.acinq.eclair.wire.{Color, NodeAddress}
