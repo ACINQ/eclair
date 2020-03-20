@@ -317,9 +317,21 @@ object PostRestartHtlcCleaner {
 
     // We group relayed outgoing HTLCs by their origin.
     val relayedOut = channels
-      .flatMap(c => c.commitments.originChannels.map { case (outgoingHtlcId, origin) => (origin, c.channelId, outgoingHtlcId) })
+      .flatMap(c => {
+        // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
+        val htlcsToIgnore: Set[Long] = c match {
+          case c: DATA_CLOSING =>
+            val irrevocablySpentTxes = Closing.irrevocablySpentTxes(c)
+            val timedOutHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.timedoutHtlcs(c, tx)).map(_.id)
+            val overriddenHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.overriddenOutgoingHtlcs(c, tx)).map(_.id)
+            timedOutHtlcs ++ overriddenHtlcs
+          case _ => Set.empty
+        }
+        c.commitments.originChannels.filterKeys(htlcId => !htlcsToIgnore.contains(htlcId)).map { case (outgoingHtlcId, origin) => (origin, c.channelId, outgoingHtlcId) }
+      })
       .groupBy { case (origin, _, _) => origin }
       .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
+      // Filter out HTLCs that are already fulfilled/failed upstream.
       .filterKeys {
         case _: Origin.Local => true
         case Origin.Relayed(channelId, htlcId, _, _) => isPendingUpstream(channelId, htlcId)
