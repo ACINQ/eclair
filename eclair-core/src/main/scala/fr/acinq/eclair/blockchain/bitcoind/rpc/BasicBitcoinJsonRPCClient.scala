@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
 import fr.acinq.eclair.KamonExt
+import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.Serialization
@@ -40,15 +41,15 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
   }
 
   def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
-    KamonExt.timeFuture("bitcoin.rpc.basic.invoke.time") {
-    for {
-      res <- sttp
-        .post(uri"$scheme://$host:$port")
-        .body(requests)
-        .auth.basic(user, password)
-        .response(asJson[Seq[JsonRPCResponse]])
-        .send()
-    } yield res.unsafeBody
+    KamonExt.timeFuture(Metrics.RpcBasicDuration.withoutTags()) {
+      for {
+        res <- sttp
+          .post(uri"$scheme://$host:$port/wallet/") // wallet/ specifies to use the default bitcoind wallet, named ""
+          .body(requests)
+          .auth.basic(user, password)
+          .response(asJson[Seq[JsonRPCResponse]])
+          .send()
+      } yield res.unsafeBody
     }
   }
 

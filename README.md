@@ -48,7 +48,8 @@ You will find detailed guides and frequently asked questions there.
 :warning: Eclair requires Bitcoin Core 0.17.1 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
-Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet. 
+Eclair will use any BTC it finds in the default Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet. You can have multiple Bitcoin Core wallets but make sure that the default one is always available.
+Any BTC found in the wallet can be used to fund the channels you choose to open and the BTC from closed channels will return to this wallet. 
 You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
 If your Bitcoin Core wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `p2sh-segwit` or `bech32` address.
 
@@ -65,25 +66,25 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 
 ### Installing Eclair
 
-Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a JAR (Java Archive) file. We provide 2 different packages, which internally use the same core libraries:
+Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive. We provide 2 different packages, which internally use the same core libraries:
 
 * eclair-node, which is a headless application that you can run on servers and desktops, and control from the command line
 * eclair-node-gui, which also includes a JavaFX GUI
 
 To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Other runtimes also work but we don't recommend using them.
 
-Then download our latest [release](https://github.com/ACINQ/eclair/releases) and depending on whether or not you want a GUI run the following command:
+Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and depending on whether or not you want a GUI run the following command:
 
 * with GUI:
 
 ```shell
-java -jar eclair-node-gui-<version>-<commit_id>.jar
+eclair-node-gui-<version>-<commit_id>/bin/eclair-node-gui.sh
 ```
 
 * without GUI:
 
 ```shell
-java -jar eclair-node-<version>-<commit_id>.jar
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
 
 ### Configuring Eclair
@@ -133,7 +134,7 @@ eclair.printToConsole | Log to stdout (in addition to eclair.log)  |
 For example, to specify a different data directory you would run the following command:
 
 ```shell
-java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Declair.datadir=/tmp/node1
 ```
 
 #### Logging
@@ -141,7 +142,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
 
 ```shell
-java -Dlogback.configurationFile=/path/to/logback-custom.xml -jar eclair-node-gui-<version>-<commit_id>.jar
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile=/path/to/logback-custom.xml
 ```
 
 #### Backup
@@ -192,12 +193,13 @@ docker exec <container_name> eclair-cli -p foobar getinfo
 
 For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-compatible language.
 
-A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface.
+A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface, and 
+a manifest entry for `Main-Class` with the FQDN of the implementation.
 
 Here is how to run Eclair with plugins:
 
 ```shell
-java -jar eclair-node-<version>-<commit_id>.jar <plugin1.jar> <plugin2.jar> <...>
+eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
 ```
 
 ## Testnet usage

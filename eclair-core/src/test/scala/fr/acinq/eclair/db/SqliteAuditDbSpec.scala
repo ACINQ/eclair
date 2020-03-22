@@ -22,8 +22,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{TestPsqlDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
-import fr.acinq.eclair.channel.{ChannelErrorOccurred, NetworkFeePaid}
+import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.psql.PsqlAuditDb
 import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
@@ -35,7 +34,6 @@ import org.scalatest.{FunSuite, Tag}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
-
 
 class SqliteAuditDbSpec extends FunSuite {
 

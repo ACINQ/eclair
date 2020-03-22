@@ -131,11 +131,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
-              case u: UpdateFulfillHtlc =>
-                log.info(s"successfully sent htlc #${u.id}")
+              case u: Relayer.ForwardFulfill =>
+                log.info(s"successfully sent htlc #${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case u: UpdateFailHtlc =>
-                log.warning(s"htlc failed: ${u.id}")
+              case u: Relayer.ForwardFail =>
+                log.warning(s"htlc failed: ${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
               case Status.Failure(t) =>
                 log.error(s"htlc error: ${t.getMessage}")
@@ -186,7 +186,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
+      sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure]) == ChannelCommandResponse.Ok
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)
@@ -203,11 +203,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))
-      val resa = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
+      val resa = sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure])
       sender.send(bob, CMD_CLOSE(None))
-      val resb = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
+      val resb = sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure])
       // we only need that one of them succeeds
-      resa == "ok" || resb == "ok"
+      resa == ChannelCommandResponse.Ok || resb == ChannelCommandResponse.Ok
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)

@@ -26,8 +26,9 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, Features}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
-import fr.acinq.eclair.payment.relay.{CommandBuffer, NodeRelayer}
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{BalanceTooLow, SendMultiPartPayment}
+import fr.acinq.eclair.payment.relay.{CommandBuffer, NodeRelayer, Origin, Relayer}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.PaymentError
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router.RouteNotFound
@@ -74,8 +75,8 @@ class NodeRelayerSpec extends TestkitBaseClass {
     incomingMultiPart.dropRight(1).foreach(incoming => relayer.send(nodeRelayer, incoming))
 
     val sender = TestProbe()
-    val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.PendingPayment(i.add.id, PaymentReceived.PartialPayment(i.add.amountMsat, i.add.channelId)))
-    sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
+    val parts = incomingMultiPart.dropRight(1).map(i => MultiPartPaymentFSM.HtlcPart(incomingAmount, i.add))
+    sender.send(nodeRelayer, MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, PaymentTimeout, Queue(parts: _*)))
 
     incomingMultiPart.dropRight(1).foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
     sender.expectNoMsg(100 millis)
@@ -86,11 +87,42 @@ class NodeRelayerSpec extends TestkitBaseClass {
     import f._
 
     val sender = TestProbe()
-    val partial = MultiPartPaymentFSM.PendingPayment(15, PaymentReceived.PartialPayment(100 msat, randomBytes32))
-    sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraHtlcReceived(paymentHash, partial, Some(InvalidRealm)))
+    val partial = MultiPartPaymentFSM.HtlcPart(incomingAmount, UpdateAddHtlc(randomBytes32, 15, 100 msat, paymentHash, CltvExpiry(42000), TestConstants.emptyOnionPacket))
+    sender.send(nodeRelayer, MultiPartPaymentFSM.ExtraPaymentReceived(paymentHash, partial, Some(InvalidRealm)))
 
-    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.payment.fromChannelId, CMD_FAIL_HTLC(partial.htlcId, Right(InvalidRealm), commit = true)))
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(partial.htlc.channelId, CMD_FAIL_HTLC(partial.htlc.id, Right(InvalidRealm), commit = true)))
     sender.expectNoMsg(100 millis)
+    outgoingPayFSM.expectNoMsg(100 millis)
+  }
+
+  test("fail all additional incoming HTLCs once already relayed out") { f =>
+    import f._
+
+    // Receive a complete upstream multi-part payment, which we relay out.
+    incomingMultiPart.foreach(incoming => relayer.send(nodeRelayer, incoming))
+    val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayed(incomingMultiPart.map(_.add)))
+    val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+
+    // Receive new extraneous multi-part HTLC.
+    val i1 = IncomingPacket.NodeRelayPacket(
+      UpdateAddHtlc(randomBytes32, Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket),
+      Onion.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret),
+      Onion.createNodeRelayPayload(outgoingAmount, outgoingExpiry, outgoingNodeId),
+      nextTrampolinePacket)
+    relayer.send(nodeRelayer, i1)
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(i1.add.channelId, CMD_FAIL_HTLC(i1.add.id, Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), commit = true)))
+
+    // Receive new HTLC with different details, but for the same payment hash.
+    val i2 = IncomingPacket.NodeRelayPacket(
+      UpdateAddHtlc(randomBytes32, Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket),
+      Onion.createSinglePartPayload(1500 msat, CltvExpiry(499990), Some(randomBytes32)),
+      Onion.createNodeRelayPayload(1250 msat, outgoingExpiry, outgoingNodeId),
+      nextTrampolinePacket)
+    relayer.send(nodeRelayer, i2)
+    commandBuffer.expectMsg(CommandBuffer.CommandSend(i2.add.channelId, CMD_FAIL_HTLC(i2.add.id, Right(IncorrectOrUnknownPaymentDetails(1500 msat, nodeParams.currentBlockHeight)), commit = true)))
+
     outgoingPayFSM.expectNoMsg(100 millis)
   }
 
@@ -186,7 +218,7 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
     outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
-    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(BalanceTooLow) :: Nil))
+    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(PaymentError.BalanceTooLow) :: Nil))
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
@@ -248,8 +280,22 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
-    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
+    // A first downstream HTLC is fulfilled.
+    val ff1 = createDownstreamFulfill(outgoingPayFSM.ref)
+    relayer.send(nodeRelayer, ff1)
+    outgoingPayFSM.expectMsg(ff1)
+    // We should immediately forward the fulfill upstream.
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+
+    // A second downstream HTLC is fulfilled.
+    val ff2 = createDownstreamFulfill(outgoingPayFSM.ref)
+    relayer.send(nodeRelayer, ff2)
+    outgoingPayFSM.expectMsg(ff2)
+    // We should not fulfill a second time upstream.
+    commandBuffer.expectNoMsg(100 millis)
+
+    // Once all the downstream payments have settled, we should emit the relayed event.
+    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.toSet === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
@@ -268,9 +314,13 @@ class NodeRelayerSpec extends TestkitBaseClass {
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
-    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
+    val ff = createDownstreamFulfill(outgoingPayFSM.ref)
+    relayer.send(nodeRelayer, ff)
+    outgoingPayFSM.expectMsg(ff)
     val incomingAdd = incomingSinglePart.add
     commandBuffer.expectMsg(CommandBuffer.CommandSend(incomingAdd.channelId, CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true)))
+
+    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === Seq(PaymentRelayed.Part(incomingSinglePart.add.amountMsat, incomingSinglePart.add.channelId)))
@@ -301,8 +351,12 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === hints)
 
-    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
+    val ff = createDownstreamFulfill(outgoingPayFSM.ref)
+    relayer.send(nodeRelayer, ff)
+    outgoingPayFSM.expectMsg(ff)
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+
+    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
@@ -330,8 +384,12 @@ class NodeRelayerSpec extends TestkitBaseClass {
     assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === hints)
 
-    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
+    val ff = createDownstreamFulfill(outgoingPayFSM.ref)
+    relayer.send(nodeRelayer, ff)
+    outgoingPayFSM.expectMsg(ff)
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))))
+
+    outgoingPayFSM.send(nodeRelayer, createSuccessEvent(outgoingCfg.id))
     val relayEvent = eventListener.expectMsgType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
@@ -389,6 +447,11 @@ object NodeRelayerSpec {
   )
   val incomingSinglePart =
     createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
+
+  def createDownstreamFulfill(payFSM: ActorRef): Relayer.ForwardFulfill = {
+    val origin = Origin.TrampolineRelayed(null, Some(payFSM))
+    Relayer.ForwardRemoteFulfill(UpdateFulfillHtlc(randomBytes32, Random.nextInt(100), paymentPreimage), origin, null)
+  }
 
   def createSuccessEvent(id: UUID): PaymentSent =
     PaymentSent(id, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(id, outgoingAmount, 10 msat, randomBytes32, None)))

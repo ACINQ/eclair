@@ -20,6 +20,7 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.Features.{Wumbo, hasFeature}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
@@ -81,13 +82,34 @@ object Helpers {
   }
 
   /**
+   * Returns the number of confirmations needed to safely handle the funding transaction,
+   * we make sure the cumulative block reward largely exceeds the channel size.
+   *
+   * @param nodeParams
+   * @param fundingSatoshis funding amount of the channel
+   * @return number of confirmations needed
+   */
+  def minDepthForFunding(nodeParams: NodeParams, fundingSatoshis: Satoshi): Long = fundingSatoshis match {
+    case funding if funding <= Channel.MAX_FUNDING => nodeParams.minDepthBlocks
+    case funding if funding > Channel.MAX_FUNDING =>
+      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+      val scalingFactor = 15
+      val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
+      nodeParams.minDepthBlocks.max(blocksToReachFunding)
+  }
+
+  /**
    * Called by the fundee
    */
   def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
-    if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis >= Channel.MAX_FUNDING) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING)
+
+    if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis)
+
+    // BOLT #2: Channel funding limits
+    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !hasFeature(nodeParams.features, Wumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING)
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi)
@@ -455,7 +477,7 @@ object Helpers {
       import commitments._
       require(isValidFinalScriptPubkey(localScriptPubkey), "invalid localScriptPubkey")
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
-      log.debug(s"making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
+      log.debug("making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
       // TODO: check that
       val dustLimitSatoshis = localParams.dustLimit.max(remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
@@ -579,7 +601,6 @@ object Helpers {
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
       val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
       val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
 
       // we need to use a rather high fee for htlc-claim because we compete with the counterparty
@@ -796,18 +817,16 @@ object Helpers {
      * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
      * the upstream node would get refunded after a timeout.
      *
-     * @param localCommit
-     * @param tx
-     * @return   a set of pairs (add, fulfills) if extraction was successful:
+     * @return   a set of pairs (add, preimage) if extraction was successful:
      *           - add is the htlc in the downstream channel from which we extracted the preimage
-     *           - fulfill needs to be sent to the upstream channel
+     *           - preimage needs to be sent to the upstream channel
      */
-    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, UpdateFulfillHtlc)] = {
+    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, ByteVector32)] = {
       val paymentPreimages = tx.txIn.map(_.witness match {
-        case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
+        case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 =>
           log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (claim-htlc-success)")
           Some(ByteVector32(paymentPreimage))
-        case ScriptWitness(Seq(ByteVector.empty, remoteSig, localSig, paymentPreimage, htlcReceivedScript)) if paymentPreimage.size == 32 =>
+        case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 =>
           log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (htlc-success)")
           Some(ByteVector32(paymentPreimage))
         case _ => None
@@ -819,9 +838,7 @@ object Helpers {
         // - or we have already received the fulfill and forwarded it upstream
         val outgoingHtlcs = localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
         outgoingHtlcs.collect {
-          case add if add.paymentHash == sha256(paymentPreimage) =>
-            // let's just pretend we received the preimage from the counterparty and build a fulfill message
-            (add, UpdateFulfillHtlc(add.channelId, add.id, paymentPreimage))
+          case add if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
         }
       }
     }
@@ -830,8 +847,18 @@ object Helpers {
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
      * more htlcs have timed out and need to be failed in an upstream channel.
      *
-     * @param localCommit
-     * @param localDustLimit
+     * @param tx a tx that has reached mindepth
+     * @return a set of htlcs that need to be failed upstream
+     */
+    def timedoutHtlcs(d: DATA_CLOSING, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+      timedoutHtlcs(d.commitments.localCommit, d.commitments.localParams.dustLimit, tx) ++
+        timedoutHtlcs(d.commitments.remoteCommit, d.commitments.remoteParams.dustLimit, tx) ++
+        d.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => timedoutHtlcs(r.nextRemoteCommit, d.commitments.remoteParams.dustLimit, tx))
+
+    /**
+     * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+     * more htlcs have timed out and need to be failed in an upstream channel.
+     *
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
@@ -854,8 +881,6 @@ object Helpers {
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
      * more htlcs have timed out and need to be failed in an upstream channel.
      *
-     * @param remoteCommit
-     * @param remoteDustLimit
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
@@ -878,9 +903,6 @@ object Helpers {
      * As soon as a local or remote commitment reaches min_depth, we know which htlcs will be settled on-chain (whether
      * or not they actually have an output in the commitment tx).
      *
-     * @param localCommit
-     * @param remoteCommit
-     * @param nextRemoteCommit_opt
      * @param tx a transaction that is sufficiently buried in the blockchain
      */
     def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
@@ -888,7 +910,7 @@ object Helpers {
         localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
       } else if (remoteCommit.txid == tx.txid) {
         remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add)
-      } else if (nextRemoteCommit_opt.map(_.txid) == Some(tx.txid)) {
+      } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
         nextRemoteCommit_opt.get.spec.htlcs.filter(_.direction == IN).map(_.add)
       } else {
         Set.empty
@@ -900,14 +922,11 @@ object Helpers {
      * they will never reach the blockchain.
      *
      * Those are only present in the remote's commitment.
-     *
-     * @param localCommit
-     * @param remoteCommit
-     * @param tx
-     * @param log
-     * @return
      */
-    def overriddenOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+    def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+      val localCommit = d.commitments.localCommit
+      val remoteCommit = d.commitments.remoteCommit
+      val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
         val mostRecentRemoteCommit = nextRemoteCommit_opt.getOrElse(remoteCommit)
@@ -921,13 +940,16 @@ object Helpers {
             // any htlc that we signed in the new commitment that they didn't sign will never reach the chain
             nextRemoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add) -- localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
           case None =>
-            // their last commitment got confirmed, so no htlcs will be overriden, they will timeout or be fulfilled on chain
+            // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
             Set.empty
         }
-      } else if (nextRemoteCommit_opt.map(_.txid) == Some(tx.txid)) {
-        // their last commitment got confirmed, so no htlcs will be overriden, they will timeout or be fulfilled on chain
+      } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
+        // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
         Set.empty
-      } else Set.empty
+      } else {
+        Set.empty
+      }
+    }
 
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the

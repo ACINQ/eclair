@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
+import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import kamon.Kamon
@@ -148,7 +149,7 @@ case class RouteRequest(source: PublicKey,
                         ignoreChannels: Set[ChannelDesc] = Set.empty,
                         routeParams: Option[RouteParams] = None)
 
-case class FinalizeRoute(hops: Seq[PublicKey])
+case class FinalizeRoute(hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
 case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
   require(allowEmpty || hops.nonEmpty, "route cannot be empty")
@@ -287,7 +288,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
             case None =>
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
-              log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
+              log.debug("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
               stay using handle(u, LocalGossip, d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(nodeParams.nodeId, remoteNodeId, None, None))))
           }
       }
@@ -533,9 +534,13 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! d
       stay
 
-    case Event(FinalizeRoute(partialHops), d) =>
+    case Event(FinalizeRoute(partialHops, assistedRoutes), d) =>
+      // NB: using a capacity of 0 msat will impact the path-finding algorithm. However here we don't run any path-finding, so it's ok.
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, partialHops.last, 0 msat)).toMap
+      val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
+      val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
       // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-      partialHops.sliding(2).map { case List(v1, v2) => d.graph.getEdgesBetween(v1, v2) }.toList match {
+      partialHops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
         case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
           val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
           val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
@@ -1299,11 +1304,12 @@ object Router {
 
   /**
    * Build a `reply_channel_range` message
-   * @param chunk chunk of scids
-   * @param chainHash chain hash
+   *
+   * @param chunk           chunk of scids
+   * @param chainHash       chain hash
    * @param defaultEncoding default encoding
-   * @param queryFlags_opt query flag set by the requester
-   * @param channels channels map
+   * @param queryFlags_opt  query flag set by the requester
+   * @param channels        channels map
    * @return a ReplyChannelRange object
    */
   def buildReplyChannelRange(chunk: ShortChannelIdsChunk, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
@@ -1414,18 +1420,26 @@ object Router {
       feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
     }
 
-    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList match {
-      case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
-      case Nil => throw RouteNotFound
-      case routes => routes.find(_.path.size == 1) match {
-        case Some(directRoute) => directRoute :: Nil
-        case _ => routes
-      }
+    val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
+      Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
     }
-
-    // At this point 'foundRoutes' cannot be empty
-    val randomizedRoutes = if (routeParams.randomize) Random.shuffle(foundRoutes) else foundRoutes
-    randomizedRoutes.head.path.map(graphEdgeToHop)
+    foundRoutes match {
+      case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
+        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
+      case Nil =>
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
+        throw RouteNotFound
+      case foundRoutes =>
+        val routes = foundRoutes.find(_.path.size == 1) match {
+          case Some(directRoute) => directRoute :: Nil
+          case _ => foundRoutes
+        }
+        // At this point 'routes' cannot be empty
+        val randomizedRoutes = if (routeParams.randomize) Random.shuffle(routes) else routes
+        val route = randomizedRoutes.head.path.map(graphEdgeToHop)
+        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(route.length)
+        route
+    }
   }
 }

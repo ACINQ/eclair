@@ -18,11 +18,11 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
 import fr.acinq.eclair.channel.Helpers.Closing._
+import fr.acinq.eclair.channel.Monitoring.{Metrics => ChannelMetrics, Tags => ChannelTags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.ChannelLifecycleEvent
-import kamon.Kamon
+import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
 
 class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
@@ -37,87 +37,60 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
   override def receive: Receive = {
 
     case e: PaymentSent =>
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "sent")
-        .withTag("type", "amount")
-        .record(e.recipientAmount.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "sent")
-        .withTag("type", "fee")
-        .record(e.feesPaid.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "sent")
-        .withTag("type", "parts")
-        .record(e.parts.length)
+      PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.recipientAmount.truncateToSatoshi.toLong)
+      PaymentMetrics.PaymentFees.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.feesPaid.truncateToSatoshi.toLong)
+      PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.parts.length)
       db.add(e)
 
     case _: PaymentFailed =>
-      Kamon
-        .counter("payment.failures.count")
-        .withTag("direction", "sent")
-        .increment()
+      PaymentMetrics.PaymentFailed.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).increment()
 
     case e: PaymentReceived =>
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "received")
-        .withTag("type", "amount")
-        .record(e.amount.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "received")
-        .withTag("type", "parts")
-        .record(e.parts.length)
+      PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.amount.truncateToSatoshi.toLong)
+      PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.parts.length)
       db.add(e)
 
     case e: PaymentRelayed =>
-      val relayType = e match {
-        case _: ChannelPaymentRelayed => "channel"
-        case _: TrampolinePaymentRelayed => "trampoline"
-      }
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "relayed")
-        .withTag("relay", relayType)
-        .withTag("type", "total")
+      PaymentMetrics.PaymentAmount
+        .withTag(PaymentTags.Direction, PaymentTags.Directions.Relayed)
+        .withTag(PaymentTags.Relay, PaymentTags.RelayType(e))
         .record(e.amountIn.truncateToSatoshi.toLong)
-      Kamon
-        .histogram("payment.hist")
-        .withTag("direction", "relayed")
-        .withTag("relay", relayType)
-        .withTag("type", "fee")
+      PaymentMetrics.PaymentFees
+        .withTag(PaymentTags.Direction, PaymentTags.Directions.Relayed)
+        .withTag(PaymentTags.Relay, PaymentTags.RelayType(e))
         .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
+      e match {
+        case TrampolinePaymentRelayed(_, incoming, outgoing, _) =>
+          PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(incoming.length)
+          PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(outgoing.length)
+        case _: ChannelPaymentRelayed =>
+      }
       db.add(e)
 
     case e: NetworkFeePaid => db.add(e)
 
     case e: ChannelErrorOccurred =>
-      val metric = Kamon.counter("channels.errors")
       e.error match {
-        case LocalError(_) if e.isFatal => metric.withTag("origin", "local").withTag("fatal", "yes").increment()
-        case LocalError(_) if !e.isFatal => metric.withTag("origin", "local").withTag("fatal", "no").increment()
-        case RemoteError(_) => metric.withTag("origin", "remote").increment()
+        case LocalError(_) if e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = true).increment()
+        case LocalError(_) if !e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = false).increment()
+        case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
       }
       db.add(e)
 
     case e: ChannelStateChanged =>
-      val metric = Kamon.counter("channels.lifecycle")
       // NB: order matters!
       e match {
         case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
-          metric.withTag("event", "created").increment()
+          ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
         case ChannelStateChanged(_, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, _, _, _, CLOSING, _) =>
-          metric.withTag("event", "closing").increment()
+          ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closing).increment()
         case _ => ()
       }
 
     case e: ChannelClosed =>
-      Kamon.counter("channels.lifecycle").withTag("event", "closed").increment()
+      ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = e.closingType match {
         case MutualClose => "mutual"
         case LocalClose => "local"

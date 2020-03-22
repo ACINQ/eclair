@@ -19,15 +19,16 @@ package fr.acinq.eclair.io
 import java.net.{Inet4Address, InetAddress, InetSocketAddress, ServerSocket}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.Status.Failure
 import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, Btc}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{ChannelCreated, HasCommitments}
+import fr.acinq.eclair.channel.{Channel, ChannelCreated, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.router.RoutingSyncSpec.makeFakeRoutingInfo
@@ -66,6 +67,8 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
 
     if (test.tags.contains("with_node_announcements")) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
@@ -245,7 +248,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       (bin"        1000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
       (bin"        0100101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
       (bin"000000101000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp
-      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and 19
+      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and large_channel_support (optional)
     )
 
     for ((configuredFeatures, sentFeatures) <- testCases) {
@@ -299,6 +302,49 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.expectMsg("disconnecting")
   }
 
+  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+  }
+
+  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag("wumbo")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer) // Bob doesn't support wumbo, Alice does
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
+  }
+
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag("wumbo")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingAmountBig = Btc(1).toSatoshi
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer, remoteInit = wire.Init(hex"80000")) // Bob supports wumbo
+
+    assert(peer.stateData.channels.isEmpty)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+
+    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
+  }
+
+
   test("use correct fee rates when spawning a channel") { f =>
     import f._
 
@@ -343,6 +389,21 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(transport.expectMsgType[Pong].data.size === ping.pongLength)
   }
 
+  test("send a ping if no message received for 30s") { f =>
+    import f._
+    connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
+    // we make the transport send a message, this will delay the sending of a ping
+    val dummy = updates.head
+    for (_ <- 1 to 5) { // the goal of this loop is to make sure that we don't send pings when we receive messages
+      // we make the transport send a message, this will delay the sending of a ping --again
+      transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+      transport.send(peer, dummy)
+    }
+    // ~30s without an incoming message: peer should send a ping
+    transport.expectMsgType[Ping](35 seconds)
+    transport.expectNoMsg()
+  }
+
   test("ignore malicious ping") { f =>
     import f._
     val probe = TestProbe()
@@ -373,7 +434,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     connect(remoteNodeId, authenticator, watcher, router, relayer, connection, transport, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peer, rebroadcast)
-    transport.expectNoMsg(10 seconds)
+    transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -427,7 +488,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     transport.expectMsg(updates(6))
     transport.expectMsg(updates(10))
     transport.expectMsg(nodes(4))
-    transport.expectNoMsg(10 seconds)
+    transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("react to peer's bad behavior") { f =>

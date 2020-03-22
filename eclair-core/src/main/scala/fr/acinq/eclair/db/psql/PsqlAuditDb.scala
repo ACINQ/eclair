@@ -21,7 +21,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.channel.{Channel, ChannelErrorOccurred, NetworkFeePaid}
+import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi}
@@ -181,8 +181,8 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         val (errorName, errorMessage) = e.error match {
-          case Channel.LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
-          case Channel.RemoteError(error) => ("remote", error.toAscii)
+          case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
+          case RemoteError(error) => ("remote", error.toAscii)
         }
         statement.setString(1, e.channelId.toHex)
         statement.setString(2, e.remoteNodeId.value.toHex)

@@ -26,6 +26,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.router.{ChannelHop, Hop, NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
@@ -49,13 +50,13 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
-          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(InvalidInvoice(s"unknown invoice features (${invoice.features})")) :: Nil)
+          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(UnsupportedFeatures(invoice.features.bitmask)) :: Nil)
         case Some(invoice) if invoice.features.allowMultiPart && Features.hasFeature(nodeParams.features, Features.BasicMultiPartPayment) =>
           invoice.paymentSecret match {
             case Some(paymentSecret) =>
               spawnMultiPartPaymentFsm(paymentCfg) forward SendMultiPartPayment(paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams)
             case None =>
-              sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(InvalidInvoice("multi-part invoice is missing a payment secret")) :: Nil)
+              sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(PaymentSecretMissing) :: Nil)
           }
         case _ =>
           // NB: we only generate legacy payment onions for now for maximum compatibility.
@@ -111,15 +112,15 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
           val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32)
           sender ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
           val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(SendTrampolinePaymentRequest(r.recipientAmount, r.paymentRequest, trampoline, Seq((r.trampolineFees, r.trampolineExpiryDelta)), r.finalExpiryDelta), r.trampolineFees, r.trampolineExpiryDelta)
-          payFsm forward SendPaymentToRoute(r.route, Onion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionTlv.TrampolineOnion(trampolineOnion))))
+          payFsm forward SendPaymentToRoute(r.route, Onion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
         case Nil =>
           sender ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           r.paymentRequest.paymentSecret match {
-            case Some(paymentSecret) => payFsm forward SendPaymentToRoute(r.route, Onion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, paymentSecret))
-            case None => payFsm forward SendPaymentToRoute(r.route, FinalLegacyPayload(r.recipientAmount, finalExpiry))
+            case Some(paymentSecret) => payFsm forward SendPaymentToRoute(r.route, Onion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, paymentSecret), r.paymentRequest.routingInfo)
+            case None => payFsm forward SendPaymentToRoute(r.route, FinalLegacyPayload(r.recipientAmount, finalExpiry), r.paymentRequest.routingInfo)
           }
         case _ =>
-          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(new IllegalArgumentException(s"unsupported number of trampoline nodes: ${r.trampolineNodes}")) :: Nil)
+          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(TrampolineMultiNodeNotSupported) :: Nil)
       }
   }
 
@@ -310,11 +311,5 @@ object PaymentInitiator {
 
     def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeId, parts)
   }
-
-  // @formatter:off
-  case class InvalidInvoice(message: String) extends IllegalArgumentException(s"can't send payment: $message")
-  object TrampolineFeesMissing extends IllegalArgumentException("trampoline fees and cltv expiry delta are missing")
-  object TrampolineLegacyAmountLessInvoice extends IllegalArgumentException("cannot pay a 0-value invoice via trampoline-to-legacy (trampoline may steal funds)")
-  // @formatter:on
 
 }

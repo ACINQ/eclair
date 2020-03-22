@@ -79,7 +79,7 @@ class Setup(datadir: File,
   implicit val sttpBackend = OkHttpFutureBackend()
 
   logger.info(s"hello!")
-  logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
+  logger.info(s"version=${Kit.getVersion} commit=${Kit.getCommit}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
@@ -199,7 +199,7 @@ class Setup(datadir: File,
           val stream = classOf[Setup].getResourceAsStream(addressesFile)
           ElectrumClientPool.readServerAddresses(stream, sslEnabled)
       }
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses, nodeParams.socksProxy_opt)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 
@@ -409,6 +409,16 @@ case class Kit(nodeParams: NodeParams,
                paymentInitiator: ActorRef,
                server: ActorRef,
                wallet: EclairWallet)
+
+object Kit {
+
+  def getVersionLong: String = s"$getVersion-$getCommit"
+
+  def getVersion: String = getClass.getPackage.getImplementationVersion
+
+  def getCommit: String = Option(getClass.getPackage.getSpecificationVersion).map(_.take(7)).getOrElse("null")
+
+}
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 

@@ -77,6 +77,7 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       minFundingSatoshis: Satoshi,
+                      maxFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
@@ -160,6 +161,9 @@ object NodeParams {
       require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
     }
 
+    val htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat"))
+    require(htlcMinimum > 0.msat, "htlc-minimum-msat must be strictly greater than 0")
+
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
@@ -241,7 +245,7 @@ object NodeParams {
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
       fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
-      htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat")),
+      htlcMinimum = htlcMinimum,
       toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
@@ -263,6 +267,7 @@ object NodeParams {
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
+      maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
