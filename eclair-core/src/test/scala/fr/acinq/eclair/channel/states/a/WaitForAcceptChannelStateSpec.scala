@@ -16,17 +16,14 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.ActorRef
-import akka.testkit
-import akka.testkit.{TestActor, TestFSMRef, TestProbe}
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetHeaders, GetHeadersResponse, ScriptHashSubscription, ScriptHashSubscriptionResponse}
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, LightningMessage, OpenChannel, TlvStream}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}

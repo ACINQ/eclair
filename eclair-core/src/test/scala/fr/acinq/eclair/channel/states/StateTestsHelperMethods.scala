@@ -18,14 +18,11 @@ package fr.acinq.eclair.channel.states
 
 import java.util.UUID
 
-import akka.actor.ActorRef
-import akka.testkit
-import akka.testkit.{TestActor, TestFSMRef, TestKitBase, TestProbe}
+import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ScriptHashSubscriptionResponse
 import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
@@ -58,23 +55,9 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alicePeer = TestProbe()
-    alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          alice2bob.ref tell (msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
-    })
     val bobPeer = TestProbe()
-    bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          bob2alice.ref tell (msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
-    })
+    TestUtils.forwardOutgoingToPipe(alicePeer, alice2bob.ref)
+    TestUtils.forwardOutgoingToPipe(bobPeer, bob2alice.ref)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val relayerA = TestProbe()

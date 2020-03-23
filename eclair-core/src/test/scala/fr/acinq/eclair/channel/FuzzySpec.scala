@@ -54,23 +54,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val alicePeer = TestProbe()
-    alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          pipe tell (msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
-    })
     val bobPeer = TestProbe()
-    bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          pipe tell (msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
-    })
+    TestUtils.forwardOutgoingToPipe(alicePeer, pipe)
+    TestUtils.forwardOutgoingToPipe(bobPeer, pipe)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val registerA = system.actorOf(Props(new TestRegister()))

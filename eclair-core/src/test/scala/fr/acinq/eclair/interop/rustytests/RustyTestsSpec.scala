@@ -49,23 +49,9 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val alicePeer = TestProbe()
-    alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          pipe tell (msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
-    })
     val bobPeer = TestProbe()
-    bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          pipe tell (msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
-    })
+    TestUtils.forwardOutgoingToPipe(alicePeer, pipe)
+    TestUtils.forwardOutgoingToPipe(bobPeer, pipe)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref)))
