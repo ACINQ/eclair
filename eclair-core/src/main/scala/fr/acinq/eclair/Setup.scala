@@ -366,7 +366,7 @@ class Setup(datadir: File,
               logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
               sys.exit(-2)
             })
-            if (LockType(dbConfig.getString("psql.lock-type")) == LockType.EXCLUSIVE) {
+            if (LockType(dbConfig.getString("psql.lock-type")) == LockType.OWNERSHIP_LEASE) {
               val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
               val dbLockLeaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
               if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)

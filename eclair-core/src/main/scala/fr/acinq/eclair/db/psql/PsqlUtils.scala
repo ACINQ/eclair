@@ -36,11 +36,11 @@ object PsqlUtils extends JdbcUtils with Logging {
   object LockType extends Enumeration {
     type LockType = Value
 
-    val NONE, EXCLUSIVE, OPTIMISTIC = Value
+    val NONE, OWNERSHIP_LEASE, OPTIMISTIC = Value
 
     def apply(s: String): LockType = s match {
       case "none" => NONE
-      case "exclusive" => EXCLUSIVE
+      case "ownership-lease" => OWNERSHIP_LEASE
       case "optimistic" => OPTIMISTIC
       case _ => throw new RuntimeException(s"Unknown psql lock type: `$s`")
     }
@@ -71,7 +71,7 @@ object PsqlUtils extends JdbcUtils with Logging {
       inTransaction(f)
   }
 
-  case class ExclusiveLock(instanceId: String, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
+  case class OwnershipLeaseLock(instanceId: String, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
     override def obtainExclusiveLock(implicit ds: DataSource): Unit =
       obtainDatabaseOwnership(instanceId, leaseDuration, lockTimeout)
 
@@ -225,7 +225,6 @@ object PsqlUtils extends JdbcUtils with Logging {
 
   private def checkDatabaseOwnership(connection: Connection, instanceId: String, lockTimeout: FiniteDuration, lockExceptionHandler: LockExceptionHandler): Unit = {
     Try {
-//      acquireExclusiveTableLock(lockTimeout)(connection)
       getCurrentLease(connection) match {
         case Some(lease) =>
           if (!(lease.instanceId == instanceId) || lease.expired) {
