@@ -56,6 +56,10 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
+    val alicePeer = TestProbe()
+    val bobPeer = TestProbe()
+    TestUtils.forwardOutgoingToPipe(alicePeer, alice2bob.ref)
+    TestUtils.forwardOutgoingToPipe(bobPeer, bob2alice.ref)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val relayerA = TestProbe()
@@ -64,8 +68,8 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA.ref))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayerB.ref))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref), alicePeer.ref)
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref), bobPeer.ref)
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener)
   }
 
