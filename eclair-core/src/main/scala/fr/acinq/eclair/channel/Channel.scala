@@ -100,7 +100,7 @@ object Channel {
    * we need to also provide the connection that the message is valid for. If the actual connection was reset in the
    * meantime, the [[Peer]] will simply drop the message.
    */
-case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
+  case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
