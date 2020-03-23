@@ -24,7 +24,7 @@ import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, Btc, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.io.Peer.{Disconnect, GetPeerInfo, PeerInfo, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -50,7 +50,7 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, 
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
@@ -62,7 +62,6 @@ import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 15/03/2017.
