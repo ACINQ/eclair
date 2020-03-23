@@ -60,15 +60,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
   def diag(message: T, direction: String) = {
     require(direction == "IN" || direction == "OUT")
-    val channelId_opt = message match {
-      case msg: HasTemporaryChannelId => Some(msg.temporaryChannelId)
-      case msg: HasChannelId => Some(msg.channelId)
-      case _ => None
-    }
-
-    val category_opt = LogCategory(message)
-
-    wireLog.mdc(Logs.mdc(category_opt, remoteNodeId_opt, channelId_opt))
+    val channelId_opt = Logs.channelId(message)
+    wireLog.mdc(Logs.mdc(LogCategory(message), remoteNodeId_opt, channelId_opt))
     if (channelId_opt.isDefined) {
       // channel-related messages are logged as info
       wireLog.info(s"$direction msg={}", message)
@@ -135,7 +128,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
             case (writer, _, Some((dec, enc, ck))) =>
               val remoteNodeId = PublicKey(writer.rs)
               remoteNodeId_opt = Some(remoteNodeId)
-              context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
+              context.parent ! HandshakeCompleted(remoteNodeId)
               val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
               goto(WaitingForListener) using nextStateData
 
@@ -152,7 +145,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
                   val remoteNodeId = PublicKey(writer.rs)
                   remoteNodeId_opt = Some(remoteNodeId)
-                  context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
+                  context.parent ! HandshakeCompleted(remoteNodeId)
                   val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
                   goto(WaitingForListener) using nextStateData
                 }
@@ -443,7 +436,7 @@ object TransportHandler {
 
   case class Listener(listener: ActorRef)
 
-  case class HandshakeCompleted(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey)
+  case class HandshakeCompleted(remoteNodeId: PublicKey)
 
   case class ReadAck(msg: Any)
   case object WriteAck extends Tcp.Event

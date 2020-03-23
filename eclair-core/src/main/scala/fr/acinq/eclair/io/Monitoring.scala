@@ -32,6 +32,8 @@ object Monitoring {
       val Connected = "connected"
       val Authenticating = "authenticating"
       val Authenticated = "authenticated"
+      val Initializing = "initializing"
+      val Initialized = "initialized"
     }
 
   }
