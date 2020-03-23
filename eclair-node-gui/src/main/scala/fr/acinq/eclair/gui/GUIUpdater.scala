@@ -164,7 +164,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelsDiscovered(channelsDiscovered) =>
       runInGuiThread { () =>
-        channelsDiscovered.foreach { case SingleChannelDiscovered(channelAnnouncement, capacity) =>
+        channelsDiscovered.foreach { case SingleChannelDiscovered(channelAnnouncement, capacity, _, _) =>
           log.debug(s"peer channel discovered with channel id={}", channelAnnouncement.shortChannelId)
           if (!mainController.networkChannelsMap.containsKey(channelAnnouncement.shortChannelId)) {
             mainController.networkChannelsMap.put(channelAnnouncement.shortChannelId, ChannelInfo(channelAnnouncement, None, None, None, None, capacity, None, None))
