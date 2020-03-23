@@ -92,6 +92,15 @@ object Channel {
     case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
     case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
   }
+
+  /**
+   * Outgoing messages go through the [[Peer]] for logging purposes.
+   *
+   * [[Channel]] is notified asynchronously of disconnections and reconnections. To preserve sequentiality of messages,
+   * we need to also provide the connection that the message is valid for. If the actual connection was reset in the
+   * meantime, the [[Peer]] will simply drop the message.
+   */
+case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -102,7 +111,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
 
-  private val peer = context.parent
+  private val peer = context.parent // we assume that the peer is the channel's parent
   private var activeConnection = context.system.deadLetters
 
   // this will be used to detect htlc timeouts
@@ -2287,7 +2296,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def send(msg: LightningMessage) = {
-    peer ! (msg, activeConnection)
+    peer ! OutgoingMessage(msg, activeConnection)
   }
 
   def now = Platform.currentTime.milliseconds.toSeconds

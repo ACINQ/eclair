@@ -51,7 +51,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val alicePeer = TestProbe()
     alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case (msg: LightningMessage, _: ActorRef) =>
+        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
           pipe tell (msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning
@@ -60,7 +60,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val bobPeer = TestProbe()
     bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case (msg: LightningMessage, _: ActorRef) =>
+        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
           pipe tell (msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning

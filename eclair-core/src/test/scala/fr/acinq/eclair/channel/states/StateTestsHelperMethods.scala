@@ -60,7 +60,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val alicePeer = TestProbe()
     alicePeer.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case (msg: LightningMessage, _: ActorRef) =>
+        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
           alice2bob.ref tell (msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning
@@ -69,7 +69,7 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     val bobPeer = TestProbe()
     bobPeer.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case (msg: LightningMessage, _: ActorRef) =>
+        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
           bob2alice.ref tell (msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning

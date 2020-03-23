@@ -107,7 +107,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       sender ! "already connected"
       stay
 
-    case Event((msg: LightningMessage, peerConnection: ActorRef), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but
+    case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
       logMessage(msg, "OUT")
       d.peerConnection forward msg
       stay
@@ -234,10 +234,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       }, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay
 
-    case Event(msg, _) =>
-      log.warning("unhandled msg {} in state {}", msg, stateName)
-      stay
-
+    case Event(_: Channel.OutgoingMessage, _) => stay // we got disconnected or reconnected and this message was for the previous connection
   }
 
   onTransition {
