@@ -119,7 +119,6 @@ object Logs {
         case _: Peer.Disconnect => Some(LogCategory.CONNECTION)
         case _: PeerConnection.PendingAuth => Some(LogCategory.CONNECTION)
         case _: PeerConnection.Authenticated => Some(LogCategory.CONNECTION)
-        case _: PeerConnection.AuthenticationFailed => Some(LogCategory.CONNECTION)
         case _: PeerConnection.ConnectionReady => Some(LogCategory.CONNECTION)
         case _: PeerConnection.InitializeConnection => Some(LogCategory.CONNECTION)
         case _: PeerConnection.DelayedRebroadcast => Some(LogCategory.ROUTING_SYNC)

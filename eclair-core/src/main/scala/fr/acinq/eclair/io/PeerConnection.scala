@@ -470,12 +470,11 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class InitializeConnection(peer: ActorRef)
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
-  case class AuthenticationFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
+  case class InitializeConnection(peer: ActorRef)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
