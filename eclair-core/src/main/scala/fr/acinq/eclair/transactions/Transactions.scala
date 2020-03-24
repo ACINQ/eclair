@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
+import fr.acinq.eclair.transactions.CommitmentOutput.ToLocal
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import scodec.bits.ByteVector
@@ -210,10 +211,10 @@ object Transactions {
   /**
    * Represent a link between a commitment spec item (to-local, to-remote, htlc) and the actual output in the commit tx
    * @param output transaction output
-   * @param redeemScript redeeem script that matches this output (most of them are p2wsh)
+   * @param redeemScript redeem script that matches this output (most of them are p2wsh)
    * @param link commitment spec item this output is built from
    */
-  case class CommitmentOutputLink(output: TxOut, redeemScript: Seq[ScriptElt], link: CommitmentSpecLink)
+  case class CommitmentOutputLink(output: TxOut, redeemScript: Seq[ScriptElt], link: CommitmentOutput)
 
   object CommitmentOutputLink {
     def sort(a: CommitmentOutputLink, b: CommitmentOutputLink): Boolean = (a.link, b.link) match {
@@ -231,7 +232,7 @@ object Transactions {
                           remotePaymentPubkey: PublicKey,
                           localHtlcPubkey: PublicKey,
                           remoteHtlcPubkey: PublicKey,
-                          spec: CommitmentSpec): IndexedSeq[CommitmentOutputLink]  = {
+                          spec: CommitmentSpec): Seq[CommitmentOutputLink]  = {
     val commitFee = commitTxFee(localDustLimit, spec)
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
@@ -245,13 +246,13 @@ object Transactions {
       CommitmentOutputLink(
         TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))),
         toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey),
-        ToLocalLink))
+        CommitmentOutput.ToLocal))
 
     if (toRemoteAmount >= localDustLimit) outputs.append(
       CommitmentOutputLink(
         TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey)),
         pay2pkh(remotePaymentPubkey),
-        ToRemoteLink))
+        CommitmentOutput.ToRemote))
 
     trimOfferedHtlcs(localDustLimit, spec).foreach(htlc =>
       outputs.append(CommitmentOutputLink(
@@ -265,7 +266,7 @@ object Transactions {
         htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry),
         htlc)))
 
-    outputs.sortWith(CommitmentOutputLink.sort).toIndexedSeq
+    outputs.sortWith(CommitmentOutputLink.sort)
   }
 
   def makeCommitTx(commitTxInput: InputInfo,
@@ -273,7 +274,7 @@ object Transactions {
                    localPaymentBasePoint: PublicKey,
                    remotePaymentBasePoint: PublicKey,
                    localIsFunder: Boolean,
-                   outputs: IndexedSeq[CommitmentOutputLink]): CommitTx = {
+                   outputs: Seq[CommitmentOutputLink]): CommitTx = {
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
 
@@ -339,7 +340,7 @@ object Transactions {
                   toLocalDelay: CltvExpiryDelta,
                   localDelayedPaymentPubkey: PublicKey,
                   feeratePerKw: Long,
-                  outputs: IndexedSeq[CommitmentOutputLink]): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+                  outputs: Seq[CommitmentOutputLink]): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
 
     val htlcTimeoutTxs = outputs.zipWithIndex.collect {
       case (co@CommitmentOutputLink(_, _, DirectedHtlc(OUT, _)), outputIndex) =>
@@ -352,7 +353,7 @@ object Transactions {
     (htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeClaimHtlcSuccessTx(commitTx: Transaction, outputs: IndexedSeq[CommitmentOutputLink], localDustLimit: Satoshi, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, htlc: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcSuccessTx = {
+  def makeClaimHtlcSuccessTx(commitTx: Transaction, outputs: Seq[CommitmentOutputLink], localDustLimit: Satoshi, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, htlc: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcSuccessTx = {
     val redeemScript = htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes))
     val Some(outputIndex) = outputs.zipWithIndex.find {
       case (CommitmentOutputLink(_, _, DirectedHtlc(OUT, outgoingHtlc)), _) => outgoingHtlc.id == htlc.id
@@ -378,7 +379,7 @@ object Transactions {
     ClaimHtlcSuccessTx(input, tx1)
   }
 
-  def makeClaimHtlcTimeoutTx(commitTx: Transaction, outputs: IndexedSeq[CommitmentOutputLink], localDustLimit: Satoshi, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, htlc: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcTimeoutTx = {
+  def makeClaimHtlcTimeoutTx(commitTx: Transaction, outputs: Seq[CommitmentOutputLink], localDustLimit: Satoshi, localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, htlc: UpdateAddHtlc, feeratePerKw: Long): ClaimHtlcTimeoutTx = {
     val redeemScript = htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry)
     val Some(outputIndex) = outputs.zipWithIndex.find {
       case (CommitmentOutputLink(_, _, DirectedHtlc(IN, incomingHtlc)), _) => incomingHtlc.id == htlc.id
