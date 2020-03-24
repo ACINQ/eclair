@@ -31,9 +31,10 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator}
 import fr.acinq.eclair.router.{NodeHop, RouteParams}
-import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
+import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
+import fr.acinq.eclair.wire.{GenericTlv, Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, UInt64, randomBytes32, randomKey}
 import org.scalatest.{Outcome, Tag, fixture}
 import scodec.bits.HexStringSyntax
 
@@ -67,6 +68,19 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     }
     val initiator = TestActorRef(new TestPaymentInitiator().asInstanceOf[PaymentInitiator])
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender, eventListener)))
+  }
+
+  test("send TLV payment with custom TLV records to node") { f =>
+    import f._
+    val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
+    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), tlvRecords = keySendTlvRecords)
+    sender.send(initiator, req)
+    sender.expectMsgType[UUID]
+    payFsm.expectMsgType[SendPaymentConfig]
+    val FinalTlvPayload(tlvs) = payFsm.expectMsgType[SendPayment].finalPayload
+    assert(tlvs.get[AmountToForward].get.amount == finalAmount)
+    assert(tlvs.get[OutgoingCltv].get.cltv == CltvExpiryDelta(42).toCltvExpiry(nodeParams.currentBlockHeight + 1))
+    assert(tlvs.unknown == keySendTlvRecords)
   }
 
   test("reject payment with unknown mandatory feature") { f =>
