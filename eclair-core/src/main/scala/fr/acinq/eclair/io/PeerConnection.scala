@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, PoisonPill, Props, Status, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -416,6 +416,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
   initialize()
 
+  // we should not restart a failing transport-handler (NB: logging is handled in the transport)
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = false) { case _ => SupervisorStrategy.Stop }
+
   override def mdc(currentMessage: Any): MDC = {
     val (category_opt, remoteNodeId_opt) = stateData match {
       case Nothing => (Some(LogCategory.CONNECTION), None)
@@ -491,7 +494,6 @@ object PeerConnection {
   /**
    * PeerConnection may want to filter announcements based on timestamp.
    *
-   * @param nodeParams
    * @param gossipTimestampFilter_opt optional gossip timestamp range
    * @return
    *         - true if this is our own gossip
