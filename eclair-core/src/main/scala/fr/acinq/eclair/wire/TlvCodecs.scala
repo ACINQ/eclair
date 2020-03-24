@@ -26,9 +26,7 @@ import scodec.{Attempt, Codec, Err}
 /**
  * Created by t-bast on 20/06/2019.
  */
-
 object TlvCodecs {
-
   /**
    * Truncated uint64 (0 to 8 bytes unsigned integer).
    * The encoder minimally-encodes every value, and the decoder verifies that values are minimally-encoded.
@@ -111,7 +109,10 @@ object TlvCodecs {
     }
   }
 
-  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(validateGenericTlv, validateGenericTlv)
+  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(
+    validateGenericTlv, // we must reject incoming even unknown tlv records
+    g => Attempt.Successful(g) // but we allow outgoing even unknown tlv records (so that users can provide experimental tlv records)
+  )
 
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: Either[GenericTlv, T]): UInt64 = record match {
     case Left(generic) => generic.tag
