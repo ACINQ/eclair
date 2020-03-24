@@ -456,7 +456,7 @@ object PeerConnection {
   sealed trait Data
   sealed trait HasTransport extends Data { def transport: ActorRef }
   case object Nothing extends Data
-  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data
+  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
   case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport

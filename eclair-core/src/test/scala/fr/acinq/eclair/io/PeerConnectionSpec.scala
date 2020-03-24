@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, PoisonPill}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -26,8 +26,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.router.RoutingSyncSpec
-import fr.acinq.eclair.router._
+import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -92,6 +91,15 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("establish connection") { f =>
     import f._
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+  }
+
+  test("handle connection closed during authentication") { f =>
+    import f._
+    val probe = TestProbe()
+    probe.watch(peerConnection)
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    transport.ref ! PoisonPill
+    probe.expectTerminated(peerConnection, 100 millis)
   }
 
   test("disconnect if authentication timeout") { f =>
