@@ -101,6 +101,7 @@ object Channel {
    * meantime, the [[Peer]] will simply drop the message.
    */
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
+
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -500,6 +501,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           log.info(s"committing txid=${fundingTx.txid}")
+
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
           def publishFundingTx(): Unit = {
@@ -516,7 +518,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
             }
           }
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling(publishFundingTx)
+
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling (publishFundingTx)
       }
 
     case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
@@ -806,7 +809,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
-        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
+      handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
       else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
         handleCommandError(InvalidFinalScript(d.channelId), c)
       else {
@@ -1227,7 +1230,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             nextRemoteCommitPublished1.foreach(doPublish)
           }
 
-          stay using d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1) storing() calling(republish)
+          stay using d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1) storing() calling (republish)
         case Failure(cause) => handleCommandError(cause, c)
       }
 
@@ -1964,7 +1967,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
     }
 
-    goto(CLOSING) using nextData storing() calling(doPublish(closingTx))
+    goto(CLOSING) using nextData storing() calling (doPublish(closingTx))
   }
 
   def doPublish(closingTx: Transaction): Unit = {
@@ -1995,7 +1998,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
       }
 
-      goto(CLOSING) using nextData storing() calling(doPublish(localCommitPublished))
+      goto(CLOSING) using nextData storing() calling (doPublish(localCommitPublished))
     }
   }
 
@@ -2059,7 +2062,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
     }
 
-    goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
+    goto(CLOSING) using nextData storing() calling (doPublish(remoteCommitPublished))
   }
 
   def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
@@ -2069,7 +2072,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
 
-    goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
+    goto(CLOSING) using nextData storing() calling (doPublish(remoteCommitPublished))
   }
 
   def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {
@@ -2087,7 +2090,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
     }
 
-    goto(CLOSING) using nextData storing() calling(doPublish(remoteCommitPublished))
+    goto(CLOSING) using nextData storing() calling (doPublish(remoteCommitPublished))
   }
 
   def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
@@ -2122,7 +2125,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // NB: if there is a revoked commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
           case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, mutualCloseProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
         }
-        goto(CLOSING) using nextData storing() calling(doPublish(revokedCommitPublished)) sending error
+        goto(CLOSING) using nextData storing() calling (doPublish(revokedCommitPublished)) sending error
       case None =>
         // the published tx was neither their current commitment nor a revoked one
         log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
@@ -2157,7 +2160,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
     val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
 
-    goto(ERR_INFORMATION_LEAK) calling(doPublish(localCommitPublished)) sending error
+    goto(ERR_INFORMATION_LEAK) calling (doPublish(localCommitPublished)) sending error
   }
 
   def handleSync(channelReestablish: ChannelReestablish, d: HasCommitments): (Commitments, Queue[LightningMessage]) = {
