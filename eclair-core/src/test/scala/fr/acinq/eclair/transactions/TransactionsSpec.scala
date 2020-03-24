@@ -39,15 +39,14 @@ import scala.util.{Failure, Random, Success, Try}
  */
 
 class TransactionsSpec extends FunSuite with Logging {
-
-  val localFundingPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val remoteFundingPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val localRevocationPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val localPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val localDelayedPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val remotePaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val localHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-  val remoteHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
+  val localFundingPriv = PrivateKey(randomBytes32)
+  val remoteFundingPriv = PrivateKey(randomBytes32)
+  val localRevocationPriv = PrivateKey(randomBytes32)
+  val localPaymentPriv = PrivateKey(randomBytes32)
+  val localDelayedPaymentPriv = PrivateKey(randomBytes32)
+  val remotePaymentPriv = PrivateKey(randomBytes32)
+  val localHtlcPriv = PrivateKey(randomBytes32)
+  val remoteHtlcPriv = PrivateKey(randomBytes32)
   val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
   val commitInput = Funding.makeFundingInputInfo(randomBytes32, 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
   val toLocalDelay = 144
@@ -90,12 +89,6 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("check pre-computed transaction weights") {
-    val localRevocationPriv = PrivateKey(randomBytes32)
-    val localPaymentPriv = PrivateKey(randomBytes32)
-    val remotePaymentPriv = PrivateKey(randomBytes32)
-    val localHtlcPriv = PrivateKey(randomBytes32)
-    val remoteHtlcPriv = PrivateKey(randomBytes32)
-    val localFinalPriv = PrivateKey(randomBytes32)
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val localDustLimit = 546 sat
     val toLocalDelay = CltvExpiryDelta(144)
@@ -187,14 +180,6 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions") {
-    val localFundingPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val remoteFundingPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val localRevocationPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val localPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val localDelayedPaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val remotePaymentPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val localHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
-    val remoteHtlcPriv = PrivateKey(randomBytes32 :+ 1.toByte)
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val commitInput = Funding.makeFundingInputInfo(randomBytes32, 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val toLocalDelay = CltvExpiryDelta(144)
@@ -345,21 +330,15 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("sort the htlc outputs using BIP69") {
-
-    val localFundingPriv = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" :+ 1.toByte)
-    val remoteFundingPriv = PrivateKey(hex"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2" :+ 1.toByte)
-    val localRevocationPriv = PrivateKey(hex"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3" :+ 1.toByte)
-    val localPaymentPriv = PrivateKey(hex"a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4" :+ 1.toByte)
-    val localDelayedPaymentPriv = PrivateKey(hex"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5" :+ 1.toByte)
-    val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6" :+ 1.toByte)
-    val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7" :+ 1.toByte)
-    val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8" :+ 1.toByte)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(hex"a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9").publicKey))
+    val localFundingPriv = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
+    val remoteFundingPriv = PrivateKey(hex"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
+    val localRevocationPriv = PrivateKey(hex"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3")
+    val localPaymentPriv = PrivateKey(hex"a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4")
+    val localDelayedPaymentPriv = PrivateKey(hex"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5")
+    val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
+    val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
+    val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
     val commitInput = Funding.makeFundingInputInfo(ByteVector32(hex"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
-    val toLocalDelay = CltvExpiryDelta(144)
-    val localDustLimit = Satoshi(546)
-    val feeratePerKw = 22000
-
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
@@ -381,7 +360,7 @@ class TransactionsSpec extends FunSuite with Logging {
 
     val commitTxNumber = 0x404142434446L
     val commitTx = {
-      val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
+      val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, CltvExpiryDelta(toLocalDelay), localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, true, outputs)
       val localSig = Transactions.sign(txinfo, localPaymentPriv)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
