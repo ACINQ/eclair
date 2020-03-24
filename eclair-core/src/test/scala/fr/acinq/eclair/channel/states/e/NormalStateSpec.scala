@@ -174,6 +174,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (0 msat)") { f =>
+    import f._
+    val sender = TestProbe()
+    // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.htlcMinimum === 0.msat)
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val add = CMD_ADD_HTLC(0 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    sender.send(bob, add)
+    val error = HtlcValueTooSmall(channelId(bob), 1 msat, 0 msat)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    bob2alice.expectNoMsg(200 millis)
+  }
+
   test("recv CMD_ADD_HTLC (increasing balance but still below reserve)", Tag("no_push_msat")) { f =>
     import f._
     val sender = TestProbe()
@@ -190,7 +203,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(MilliSatoshi(Int.MaxValue), randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(Int.MaxValue), missing = 1376443 sat, reserve = 20000 sat, fees = 8960 sat)
+    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(Int.MaxValue), missing = 1379883 sat, reserve = 20000 sat, fees = 8960 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -207,19 +220,27 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (HTLC dips remote funder below reserve)") { f =>
+  test("recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)") { f =>
     import f._
     val sender = TestProbe()
-    addHtlc(771000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(767600000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 40000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 0.msat)
 
     // actual test begins
-    // at this point alice has the minimal amount to sustain a channel (29000 sat ~= alice reserve + commit fee)
-    val add = CMD_ADD_HTLC(120000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
-    sender.send(bob, add)
-    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), add.amount, missing = 1680 sat, 10000 sat, 10680 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(add))))
+    // at this point alice has the minimal amount to sustain a channel
+    // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first two HTLCs should be allowed
+    sender.send(bob, CMD_ADD_HTLC(12000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.expectMsg(ChannelCommandResponse.Ok)
+
+    sender.send(bob, CMD_ADD_HTLC(12500000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.expectMsg(ChannelCommandResponse.Ok)
+
+    // but this one will dip alice below her reserve: we must wait for the two previous HTLCs to settle before sending any more
+    val failedAdd = CMD_ADD_HTLC(11000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    sender.send(bob, failedAdd)
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 1720 sat, 10000 sat, 14120 sat)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), failedAdd.paymentHash, error, Origin.Local(failedAdd.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(failedAdd))))
   }
 
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { f =>
@@ -232,7 +253,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, CMD_ADD_HTLC(200000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[UpdateAddHtlc]
-    sender.send(alice, CMD_ADD_HTLC(67600000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(64160000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[UpdateAddHtlc]
     val add = CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
@@ -254,7 +275,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2bob.expectMsgType[UpdateAddHtlc]
     val add = CMD_ADD_HTLC(500000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amount = 500000000 msat, missing = 332400 sat, reserve = 20000 sat, fees = 12400 sat)
+    val error = InsufficientFunds(channelId(alice), amount = 500000000 msat, missing = 335840 sat, reserve = 20000 sat, fees = 12400 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -316,7 +337,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // this is over channel-capacity
     val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis.toMilliSatoshi * 2 / 3, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add2)
-    val error = InsufficientFunds(channelId(alice), add2.amount, 564013 sat, 20000 sat, 10680 sat)
+    val error = InsufficientFunds(channelId(alice), add2.amount, 567453 sat, 20000 sat, 10680 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -1046,7 +1067,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardFail]
+    val forward = relayerA.expectMsgType[ForwardRemoteFail]
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1075,7 +1096,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardFailMalformed]
+    val forward = relayerA.expectMsgType[ForwardRemoteFailMalformed]
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1162,7 +1183,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
     // alice immediately propagates the fulfill upstream
-    val forward = relayerA.expectMsgType[ForwardFulfill]
+    val forward = relayerA.expectMsgType[ForwardRemoteFulfill]
     assert(forward.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }
@@ -1819,7 +1840,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
-    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+    assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -1854,7 +1875,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
-    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+    assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -1894,7 +1915,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
-    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+    assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed

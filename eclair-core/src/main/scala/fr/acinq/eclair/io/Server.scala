@@ -19,20 +19,20 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.Done
-import akka.actor.{Actor, ActorLogging, ActorRef, DiagnosticActorLogging, Props}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Logs, NodeParams}
-import kamon.Kamon
 
 import scala.concurrent.Promise
 
 /**
-  * Created by PM on 27/10/2015.
-  */
-class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
+ * Created by PM on 27/10/2015.
+ */
+class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
 
   import Tcp._
   import context.system
@@ -55,9 +55,14 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   def listening(listener: ActorRef): Receive = {
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
-      Kamon.counter("peers.connecting.count").withTag("state", "connected").increment()
+      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Connected).increment()
       val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
+      val peerConnection = context.actorOf(PeerConnection.props(
+        nodeParams = nodeParams,
+        switchboard = switchboard,
+        router = router
+      ))
+      peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
       listener ! ResumeAccepting(batchSize = 1)
   }
 
@@ -66,7 +71,7 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
 object Server {
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None): Props = Props(new Server(nodeParams, switchboard, address, bound))
+  def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None): Props = Props(new Server(nodeParams, switchboard, router: ActorRef, address, bound))
 
 }
 

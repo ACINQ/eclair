@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,33 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.channel
 
-import java.io.Closeable
+import kamon.Kamon
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.NodeAddress
+object Monitoring {
 
-trait PeersDb extends Closeable {
+  object Metrics {
+    val ChannelErrors = Kamon.counter("channels.errors")
+    val ChannelLifecycleEvents = Kamon.counter("channels.lifecycle")
+  }
 
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
+  object Tags {
+    val Event = "event"
+    val Fatal = "fatal"
+    val Origin = "origin"
 
-  def removePeer(nodeId: PublicKey)
+    object Events {
+      val Created = "created"
+      val Closing = "closing"
+      val Closed = "closed"
+    }
 
-  def getPeer(nodeId: PublicKey): Option[NodeAddress]
+    object Origins {
+      val Local = "local"
+      val Remote = "remote"
+    }
 
-  def listPeers(): Map[PublicKey, NodeAddress]
+  }
 
 }

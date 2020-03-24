@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.wire
 
-import java.io.Closeable
+import kamon.Kamon
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.NodeAddress
+object Monitoring {
 
-trait PeersDb extends Closeable {
+  object Metrics {
+    val DecodeDuration = Kamon.timer("scodec.decode.time")
+    val EncodeDuration = Kamon.timer("scodec.encode.time")
+  }
 
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
-
-  def removePeer(nodeId: PublicKey)
-
-  def getPeer(nodeId: PublicKey): Option[NodeAddress]
-
-  def listPeers(): Map[PublicKey, NodeAddress]
+  object Tags {
+    val MessageType = "type"
+  }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,16 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db
+package fr.acinq.eclair.blockchain
 
-import java.io.Closeable
+import kamon.Kamon
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.wire.NodeAddress
+object Monitoring {
 
-trait PeersDb extends Closeable {
-
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
-
-  def removePeer(nodeId: PublicKey)
-
-  def getPeer(nodeId: PublicKey): Option[NodeAddress]
-
-  def listPeers(): Map[PublicKey, NodeAddress]
+  object Metrics {
+    val NewBlockCheckConfirmedDuration = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
+    val RpcBasicDuration = Kamon.timer("bitcoin.rpc.basic.invoke")
+    val RpcBatchDuration = Kamon.timer("bitcoin.rpc.batch.invoke")
+  }
 
 }

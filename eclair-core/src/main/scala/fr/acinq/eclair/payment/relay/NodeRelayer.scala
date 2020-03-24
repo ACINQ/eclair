@@ -107,15 +107,18 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       case None => log.error("could not find pending incoming payment: payment will not be relayed: please investigate")
     }
 
-    case Relayer.ForwardFulfill(fulfill, Origin.TrampolineRelayed(_, Some(paymentSender)), _) =>
-      paymentSender ! fulfill
-      val paymentHash = Crypto.sha256(fulfill.paymentPreimage)
-      pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
-        // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
-        log.debug("trampoline payment successfully relayed")
-        fulfillPayment(p.upstream, fulfill.paymentPreimage)
-        context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
-      })
+    case ff: Relayer.ForwardFulfill => ff.to match {
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) =>
+        paymentSender ! ff
+        val paymentHash = Crypto.sha256(ff.paymentPreimage)
+        pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
+          // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
+          log.debug("trampoline payment successfully relayed")
+          fulfillPayment(p.upstream, ff.paymentPreimage)
+          context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
+        })
+      case _ => log.error(s"unexpected non-trampoline fulfill: $ff")
+    }
 
     case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.

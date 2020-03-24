@@ -94,13 +94,16 @@ case class Commitments(channelVersion: ChannelVersion,
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
       val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
+      // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
+      // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
-        (balanceNoFees - commitFees - htlcFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve - htlcFees).max(0 msat)
       }
     } else {
       // The fundee doesn't pay on-chain fees.
@@ -117,13 +120,16 @@ case class Commitments(channelVersion: ChannelVersion,
     } else {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
       val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced)
+      // we expect the funder to keep an extra reserve to be able to handle fee increase without getting the channel stuck
+      // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
-        (balanceNoFees - commitFees - htlcFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve - htlcFees).max(0 msat)
       }
     }
   }
@@ -169,8 +175,8 @@ object Commitments {
       return Failure(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
 
-    if (cmd.amount < commitments.remoteParams.htlcMinimum) {
-      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum, actual = cmd.amount))
+    if (cmd.amount < commitments.remoteParams.htlcMinimum.max(1 msat)) {
+      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum.max(1 msat), actual = cmd.amount))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -185,7 +191,10 @@ object Commitments {
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
+    // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
+    // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+    val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
+    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees + funderFeeReserve else 0.msat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
       return Failure(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
@@ -216,8 +225,8 @@ object Commitments {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
 
-    if (add.amountMsat < commitments.localParams.htlcMinimum) {
-      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum, actual = add.amountMsat)
+    if (add.amountMsat < commitments.localParams.htlcMinimum.max(1 msat)) {
+      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum.max(1 msat), actual = add.amountMsat)
     }
 
     // let's compute the current commitment *as seen by us* including this change
@@ -227,6 +236,8 @@ object Commitments {
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote funder that doesn't have this mitigation in place
+    // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     val missingForReceiver = reduced.toLocal - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
     if (missingForSender < 0.sat) {
@@ -419,7 +430,7 @@ object Commitments {
         val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint))
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
+        log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
 
         // don't sign if they don't get paid
         val commitSig = CommitSig(
@@ -466,7 +477,7 @@ object Commitments {
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
 
-    log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
+    log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
 
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 
@@ -533,12 +544,12 @@ object Commitments {
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
-            Relayer.ForwardFail(fail, origin, add)
+            Relayer.ForwardRemoteFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
-            Relayer.ForwardFailMalformed(fail, origin, add)
+            Relayer.ForwardRemoteFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment

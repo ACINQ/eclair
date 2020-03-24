@@ -65,6 +65,8 @@ case class NodeParams(keyManager: KeyManager,
                       maxReserveToFundingRatio: Double,
                       db: Databases,
                       revocationTimeout: FiniteDuration,
+                      authTimeout: FiniteDuration,
+                      initTimeout: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
@@ -161,6 +163,9 @@ object NodeParams {
       require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
     }
 
+    val htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat"))
+    require(htlcMinimum > 0.msat, "htlc-minimum-msat must be strictly greater than 0")
+
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
@@ -242,7 +247,7 @@ object NodeParams {
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
       fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
-      htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat")),
+      htlcMinimum = htlcMinimum,
       toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
@@ -252,6 +257,8 @@ object NodeParams {
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
+      authTimeout = FiniteDuration(config.getDuration("auth-timeout").getSeconds, TimeUnit.SECONDS),
+      initTimeout = FiniteDuration(config.getDuration("init-timeout").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
