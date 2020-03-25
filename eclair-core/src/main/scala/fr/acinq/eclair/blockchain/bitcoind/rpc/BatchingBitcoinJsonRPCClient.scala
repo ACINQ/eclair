@@ -28,12 +28,12 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class BatchingBitcoinJsonRPCClient(rpcClient: BasicBitcoinJsonRPCClient)(implicit system: ActorSystem, ec: ExecutionContext) extends BitcoinJsonRPCClient {
 
-  implicit val timeout = Timeout(1 hour)
+  implicit val timeout: Timeout = Timeout(1 hour)
 
   val batchingClient = system.actorOf(Props(new BatchingClient(rpcClient)), name = "batching-client")
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JsonAST.JValue] = {
-    KamonExt.timeFuture(Metrics.RpcBatchDuration.withoutTags()) {
+    KamonExt.timeFuture(Metrics.RpcBatchInvokeDuration.withoutTags()) {
       (batchingClient ? JsonRPCRequest(method = method, params = params)).mapTo[JsonAST.JValue]
     }
   }
