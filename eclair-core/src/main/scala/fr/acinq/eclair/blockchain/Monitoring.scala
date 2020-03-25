@@ -22,8 +22,14 @@ object Monitoring {
 
   object Metrics {
     val NewBlockCheckConfirmedDuration = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
-    val RpcBasicDuration = Kamon.timer("bitcoin.rpc.basic.invoke")
-    val RpcBatchDuration = Kamon.timer("bitcoin.rpc.batch.invoke")
+    val RpcBasicInvokeCount = Kamon.counter("bitcoin.rpc.basic.invoke.count")
+    val RpcBasicInvokeDuration = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
+    val RpcBatchInvokeDuration = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
+    val BitcoinBalance = Kamon.gauge("bitcoin.balance")
+  }
+
+  object Tags {
+    val Method = "method"
   }
 
 }
