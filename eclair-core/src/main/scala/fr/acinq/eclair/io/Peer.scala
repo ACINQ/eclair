@@ -239,17 +239,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   onTransition {
     case _ -> CONNECTED =>
-      Metrics.ConnectedPeers.increment()
+      Metrics.PeerConnected.withoutTags().increment()
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
-      Metrics.ConnectedPeers.decrement()
+      Metrics.PeerConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
   onTermination {
     case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
-      Metrics.ConnectedPeers.decrement()
+      Metrics.PeerConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
