@@ -112,7 +112,7 @@ class Socks5Connection(connection: ActorRef, credentials_opt: Option[Credentials
           }
           context become connected
           context.parent ! Socks5Connected(connectedAddress)
-          isConnected = false
+          isConnected = true
         }
   }
 
