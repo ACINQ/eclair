@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
 import fr.acinq.eclair.KamonExt
-import fr.acinq.eclair.blockchain.Monitoring.Metrics
+import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.Serialization
@@ -28,7 +28,8 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
 
-  val scheme = if (ssl) "https" else "http"
+  private val scheme = if (ssl) "https" else "http"
+  private val serviceUri = uri"$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
   implicit val formats = DefaultFormats.withBigDecimal
   implicit val serialization = Serialization
 
@@ -41,10 +42,13 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
   }
 
   def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
-    KamonExt.timeFuture(Metrics.RpcBasicDuration.withoutTags()) {
+    requests.groupBy(_.method).foreach {
+      case (method, calls) => Metrics.RpcBasicInvokeCount.withTag(Tags.Method, method).increment(calls.size)
+    }
+    KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withoutTags()) {
       for {
         res <- sttp
-          .post(uri"$scheme://$host:$port/wallet/") // wallet/ specifies to use the default bitcoind wallet, named ""
+          .post(serviceUri)
           .body(requests)
           .auth.basic(user, password)
           .response(asJson[Seq[JsonRPCResponse]])
