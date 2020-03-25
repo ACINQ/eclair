@@ -209,14 +209,15 @@ object Transactions {
 
   /**
    * Represent a link between a commitment spec item (to-local, to-remote, htlc) and the actual output in the commit tx
+
    * @param output transaction output
    * @param redeemScript redeem script that matches this output (most of them are p2wsh)
-   * @param link commitment spec item this output is built from
+   * @param specItem commitment spec item this output is built from
    */
-  case class CommitmentOutputLink(output: TxOut, redeemScript: Seq[ScriptElt], link: CommitmentOutput)
+  case class CommitmentOutputLink(output: TxOut, redeemScript: Seq[ScriptElt], specItem: CommitmentOutput)
 
   object CommitmentOutputLink {
-    def sort(a: CommitmentOutputLink, b: CommitmentOutputLink): Boolean = (a.link, b.link) match {
+    def sort(a: CommitmentOutputLink, b: CommitmentOutputLink): Boolean = (a.specItem, b.specItem) match {
       case (DirectedHtlc(OUT, htlcA), DirectedHtlc(OUT, htlcB)) if htlcA.paymentHash == htlcB.paymentHash && htlcA.amountMsat == htlcB.amountMsat =>
         htlcA.cltvExpiry <= htlcB.cltvExpiry
       case _ => LexicographicalOrdering.isLessThan(a.output, b.output)
@@ -296,7 +297,7 @@ object Transactions {
                         feeratePerKw: Long): HtlcTimeoutTx = {
     val fee = weight2fee(feeratePerKw, htlcTimeoutWeight)
     val redeemScript = output.redeemScript
-    val DirectedHtlc(OUT, htlc) = output.link
+    val DirectedHtlc(OUT, htlc) = output.specItem
     val amount = htlc.amountMsat.truncateToSatoshi - fee
     if (amount < localDustLimit) {
       throw AmountBelowDustLimit
@@ -319,7 +320,7 @@ object Transactions {
                         feeratePerKw: Long): HtlcSuccessTx = {
     val fee = weight2fee(feeratePerKw, htlcSuccessWeight)
     val redeemScript = output.redeemScript
-    val DirectedHtlc(IN, htlc) = output.link
+    val DirectedHtlc(IN, htlc) = output.specItem
 
     val amount = htlc.amountMsat.truncateToSatoshi - fee
     if (amount < localDustLimit) {
