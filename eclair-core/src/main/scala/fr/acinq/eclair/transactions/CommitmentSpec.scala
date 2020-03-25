@@ -29,7 +29,12 @@ case object IN extends Direction { def opposite = OUT }
 case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
-case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
+sealed trait CommitmentOutput
+object CommitmentOutput {
+  case object ToLocal extends CommitmentOutput
+  case object ToRemote extends CommitmentOutput
+}
+case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc) extends CommitmentOutput
 
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
