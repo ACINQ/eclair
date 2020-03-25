@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, PoisonPill, Props, Status, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -68,7 +68,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       val transport = p.transport_opt match {
         case Some(transport) => transport // used in tests to bypass encryption
         case None =>
-          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
+          Metrics.PeerConnectionConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
           context.actorOf(TransportHandler.props(
             keyPair = KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
             rs = p.remoteNodeId_opt.map(_.value),
@@ -86,7 +86,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       cancelTimer(AUTH_TIMER)
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
+      Metrics.PeerConnectionConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(self, remoteNodeId, address, d.pendingAuth.outgoing, d.pendingAuth.origin_opt)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
@@ -98,7 +98,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   when(BEFORE_INIT) {
     case Event(InitializeConnection(peer), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
+      Metrics.PeerConnectionConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
         case None =>
@@ -143,7 +143,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           d.transport ! PoisonPill
           stay
         } else {
-          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
+          Metrics.PeerConnectionConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
           d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
@@ -391,6 +391,14 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
   }
 
+  onTransition {
+    case _ -> CONNECTED => Metrics.PeerConnectionConnected.withoutTags().increment()
+  }
+
+  onTermination {
+    case StopEvent(_, CONNECTED, _: ConnectedData) => Metrics.PeerConnectionConnected.withoutTags().decrement()
+  }
+
   /**
    * As long as we receive messages from our peer, we consider it is online and don't send ping requests. If we don't
    * hear from the peer, we send pings and expect timely answers, otherwise we'll close the connection.
@@ -415,6 +423,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   }
 
   initialize()
+
+  // we should not restart a failing transport-handler (NB: logging is handled in the transport)
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = false) { case _ => SupervisorStrategy.Stop }
 
   override def mdc(currentMessage: Any): MDC = {
     val (category_opt, remoteNodeId_opt) = stateData match {
@@ -456,7 +467,7 @@ object PeerConnection {
   sealed trait Data
   sealed trait HasTransport extends Data { def transport: ActorRef }
   case object Nothing extends Data
-  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data
+  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
   case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
@@ -491,7 +502,6 @@ object PeerConnection {
   /**
    * PeerConnection may want to filter announcements based on timestamp.
    *
-   * @param nodeParams
    * @param gossipTimestampFilter_opt optional gossip timestamp range
    * @return
    *         - true if this is our own gossip

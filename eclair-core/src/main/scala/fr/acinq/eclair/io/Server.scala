@@ -55,7 +55,6 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, ad
   def listening(listener: ActorRef): Receive = {
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Connected).increment()
       val connection = sender
       val peerConnection = context.actorOf(PeerConnection.props(
         nodeParams = nodeParams,
