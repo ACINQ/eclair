@@ -60,22 +60,22 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
     case Tcp.CommandFailed(c: Tcp.Connect) =>
       val peerOrProxyAddress = c.remoteAddress
       log.info(s"connection failed to ${str(peerOrProxyAddress)}")
-      origin_opt.map(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
+      origin_opt.foreach(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
       context stop self
 
     case Tcp.Connected(peerOrProxyAddress, _) =>
       val connection = sender()
-      context watch connection
       proxyParams match {
         case Some(proxyParams) =>
           val proxyAddress = peerOrProxyAddress
           log.info(s"connected to SOCKS5 proxy ${str(proxyAddress)}")
           log.info(s"connecting to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
           val proxy = context.actorOf(Socks5Connection.props(sender(), Socks5ProxyParams.proxyCredentials(proxyParams), Socks5Connect(remoteAddress)))
+          context watch proxy
           context become {
             case Tcp.CommandFailed(_: Socks5Connect) =>
               log.info(s"connection failed to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
-              origin_opt.map(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
+              origin_opt.foreach(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
               context stop self
             case Socks5Connected(_) =>
               log.info(s"connected to ${str(remoteAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
@@ -86,6 +86,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
           val peerAddress = peerOrProxyAddress
           log.info(s"connected to ${str(peerAddress)}")
           auth(connection)
+          context watch connection
           context become connected(connection)
       }
   }
