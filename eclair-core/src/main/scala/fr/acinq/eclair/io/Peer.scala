@@ -239,17 +239,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   onTransition {
     case _ -> CONNECTED =>
-      Metrics.ConnectedPeers.increment()
+      Metrics.ConnectedPeers.withoutTags().increment()
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
-      Metrics.ConnectedPeers.decrement()
+      Metrics.ConnectedPeers.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
   onTermination {
     case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
-      Metrics.ConnectedPeers.decrement()
+      Metrics.ConnectedPeers.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
@@ -266,7 +266,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
     channel
   }
 
-  def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32) = {
+  def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
     val msg = wire.Error(unknownChannelId, UNKNOWN_CHANNEL_MESSAGE)
     logMessage(msg, "OUT")
     peerConnection ! msg
@@ -287,7 +287,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
   // we use this to log raw messages coming in and out of the peer
   private val msgLogger = new BusLogging(context.system.eventStream, "", classOf[Peer.MessageLogs], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
 
-  private def logMessage(msg: LightningMessage, direction: String) = {
+  private def logMessage(msg: LightningMessage, direction: String): Unit = {
     require(direction == "IN" || direction == "OUT")
     msgLogger.mdc(mdc(msg))
     msgLogger.info(s"$direction msg={}", msg)
