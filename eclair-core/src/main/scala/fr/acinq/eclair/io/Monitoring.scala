@@ -22,7 +22,7 @@ object Monitoring {
 
   object Metrics {
     val PeerConnections = Kamon.counter("peers.connecting.count")
-    val ConnectedPeers = Kamon.gauge("peers.connected").withoutTags()
+    val ConnectedPeers = Kamon.gauge("peers.connected")
   }
 
   object Tags {

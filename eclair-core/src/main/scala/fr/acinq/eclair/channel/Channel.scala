@@ -25,6 +25,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
+import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
@@ -111,6 +112,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
+
+  Metrics.ChannelCount.withoutTags().increment()
 
   // we assume that the peer is the channel's parent
   private val peer = context.parent
@@ -1377,6 +1380,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case _ =>
       }
       log.info("shutting down")
+      Metrics.ChannelCount.withoutTags().decrement()
       stop(FSM.Normal)
 
     case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
@@ -1728,6 +1732,16 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
         case _ => ()
       }
+  }
+
+  onTransition {
+    case _ -> OFFLINE => Metrics.ChannelCount.withTag(Tags.Status, Tags.Statuses.Offline).increment()
+    case OFFLINE -> _ => Metrics.ChannelCount.withTag(Tags.Status, Tags.Statuses.Offline).decrement()
+  }
+
+  onTransition {
+    case _ -> CLOSING => Metrics.ChannelCount.withTag(Tags.Status, Tags.Statuses.Closing).increment()
+    case CLOSING -> _ => Metrics.ChannelCount.withTag(Tags.Status, Tags.Statuses.Closing).decrement()
   }
 
   /*
