@@ -216,6 +216,11 @@ object Transactions {
   case class CommitmentOutputLink(output: TxOut, redeemScript: Seq[ScriptElt], specItem: CommitmentOutput)
 
   object CommitmentOutputLink {
+    /**
+      * We sort HTLC outputs according to BIP69 + CLVT as tie-breaker for offered HTLC, we do this only for the outgoing
+      * HTLC because we must agree with the remote on the order of HTLC-Timeout transactions even for identical HTLC outputs.
+      * See https://github.com/lightningnetwork/lightning-rfc/issues/448#issuecomment-432074187.
+      */
     def sort(a: CommitmentOutputLink, b: CommitmentOutputLink): Boolean = (a.specItem, b.specItem) match {
       case (DirectedHtlc(OUT, htlcA), DirectedHtlc(OUT, htlcB)) if htlcA.paymentHash == htlcB.paymentHash && htlcA.amountMsat == htlcB.amountMsat =>
         htlcA.cltvExpiry <= htlcB.cltvExpiry
