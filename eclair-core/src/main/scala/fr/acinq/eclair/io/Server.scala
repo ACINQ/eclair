@@ -24,7 +24,6 @@ import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Logs, NodeParams}
 
 import scala.concurrent.Promise
