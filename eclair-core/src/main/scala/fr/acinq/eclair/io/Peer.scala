@@ -103,20 +103,21 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
   }
 
   when(CONNECTED) {
-    case Event(_: Peer.Connect, _) =>
-      sender ! "already connected"
-      stay
+    dropStaleMessages {
+      case Event(_: Peer.Connect, _) =>
+        sender ! "already connected"
+        stay
 
-    case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
-      logMessage(msg, "OUT")
-      d.peerConnection forward msg
-      stay
+      case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
+        logMessage(msg, "OUT")
+        d.peerConnection forward msg
+        stay
 
-    case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
-      log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
-      d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-      d.peerConnection ! PoisonPill
-      stay
+      case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
+        log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
+        d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        d.peerConnection ! PoisonPill
+        stay
 
     case Event(err: wire.Error, d: ConnectedData) =>
       // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
@@ -147,19 +148,19 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
         stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
       }
 
-    case Event(msg: wire.OpenChannel, d: ConnectedData) =>
-      d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
-        case None =>
-          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
-          val temporaryChannelId = msg.temporaryChannelId
-          log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
-          channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit)
-          channel ! msg
-          stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
-        case Some(_) =>
-          log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
-          stay
-      }
+      case Event(msg: wire.OpenChannel, d: ConnectedData) =>
+        d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
+          case None =>
+            val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
+            val temporaryChannelId = msg.temporaryChannelId
+            log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
+            channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit)
+            channel ! msg
+            stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+          case Some(_) =>
+            log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
+            stay
+        }
 
     case Event(msg: wire.HasChannelId, d: ConnectedData) =>
       d.channels.get(FinalChannelId(msg.channelId)) match {
@@ -168,58 +169,59 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       }
       stay
 
-    case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
-      d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
-        case Some(channel) => channel forward msg
-        case None => replyUnknownChannel(d.peerConnection, msg.temporaryChannelId)
-      }
-      stay
+      case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
+        d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
+          case Some(channel) => channel forward msg
+          case None => replyUnknownChannel(d.peerConnection, msg.temporaryChannelId)
+        }
+        stay
 
-    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: ConnectedData) if d.channels.contains(TemporaryChannelId(temporaryChannelId)) =>
-      log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
-      // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
-      // we won't clean it up, but we won't remember the temporary id on channel termination
-      stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
+      case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: ConnectedData) if d.channels.contains(TemporaryChannelId(temporaryChannelId)) =>
+        log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
+        // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
+        // we won't clean it up, but we won't remember the temporary id on channel termination
+        stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
-      log.info("disconnecting")
-      sender ! "disconnecting"
-      d.peerConnection ! PoisonPill
-      stay
-
-    case Event(Terminated(actor), d: ConnectedData) if actor == d.peerConnection =>
-      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-        log.info("connection lost")
-      }
-      if (d.channels.isEmpty) {
-        // we have no existing channels, we can forget about this peer
-        stopPeer()
-      } else {
-        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
-      }
-
-    case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
-      // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
-      val channelIds = d.channels.filter(_._2 == actor).keys
-      log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-      if (d.channels.values.toSet - actor == Set.empty) {
-        log.info(s"that was the last open channel, closing the connection")
+      case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
+        log.info("disconnecting")
+        sender ! "disconnecting"
         d.peerConnection ! PoisonPill
-      }
-      stay using d.copy(channels = d.channels -- channelIds)
+        stay
 
-    case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
-      log.info(s"got new connection, killing current one and switching")
-      context unwatch d.peerConnection
-      d.peerConnection ! PoisonPill
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-      self ! connectionReady
-      goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+      case Event(Terminated(actor), d: ConnectedData) if actor == d.peerConnection =>
+        Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+          log.info("connection lost")
+        }
+        if (d.channels.isEmpty) {
+          // we have no existing channels, we can forget about this peer
+          stopPeer()
+        } else {
+          d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+        }
 
-    case Event(unhandledMsg: LightningMessage, _) =>
-      log.warning("ignoring message {}", unhandledMsg)
-      stay
+      case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
+        // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+        val channelIds = d.channels.filter(_._2 == actor).keys
+        log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+        if (d.channels.values.toSet - actor == Set.empty) {
+          log.info(s"that was the last open channel, closing the connection")
+          d.peerConnection ! PoisonPill
+        }
+        stay using d.copy(channels = d.channels -- channelIds)
+
+      case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
+        log.info(s"got new connection, killing current one and switching")
+        context unwatch d.peerConnection
+        d.peerConnection ! PoisonPill
+        d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        self ! connectionReady
+        goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+
+      case Event(unhandledMsg: LightningMessage, _) =>
+        log.warning("ignoring message {}", unhandledMsg)
+        stay
+    }
   }
 
   whenUnhandled {
@@ -239,18 +241,30 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   onTransition {
     case _ -> CONNECTED =>
-      Metrics.ConnectedPeers.increment()
+      Metrics.PeersConnected.withoutTags().increment()
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
-      Metrics.ConnectedPeers.decrement()
+      Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
   onTermination {
     case StopEvent(_, CONNECTED, _: ConnectedData) =>
       // the transition handler won't be fired if we go directly from CONNECTED to closed
-      Metrics.ConnectedPeers.decrement()
+      Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
+  /**
+   * We need to ignore [[LightningMessage]] not sent by the current [[PeerConnection]]. This may happen if we switch
+   * between connections.
+   */
+  def dropStaleMessages(s: StateFunction): StateFunction = {
+    case Event(msg: LightningMessage, d: ConnectedData) if sender != d.peerConnection =>
+      log.warning("dropping message from stale connection: {}", msg)
+      stay
+    case e if s.isDefinedAt(e) =>
+      s(e)
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
