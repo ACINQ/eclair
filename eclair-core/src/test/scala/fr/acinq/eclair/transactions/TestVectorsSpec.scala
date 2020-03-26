@@ -482,7 +482,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     assert(htlcTxs.map(_.tx).toSet == check)
   }
 
-  // NOT IN THE SPEC YET
+  // Added to the spec in https://github.com/lightningnetwork/lightning-rfc/pull/539
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
 
