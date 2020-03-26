@@ -25,7 +25,7 @@ object Monitoring {
     val RpcBasicInvokeCount = Kamon.counter("bitcoin.rpc.basic.invoke.count")
     val RpcBasicInvokeDuration = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
     val RpcBatchInvokeDuration = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
-    val BitcoinBalance = Kamon.gauge("bitcoin.balance")
+    val BitcoinBalance = Kamon.gauge("bitcoin.balance.mbtc")
   }
 
   object Tags {

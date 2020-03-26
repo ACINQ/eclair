@@ -87,7 +87,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       client.rpcClient.invoke("getbalance").collect {
-        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue())
+        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue() * 1000)
       }
       // TODO: beware of the herd effect
       KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
