@@ -151,7 +151,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
-      val spec = CommitmentSpec(Set(DirectedHtlc(OUT,htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
+      val spec = CommitmentSpec(Set(DirectedHtlc(OUT, htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
@@ -343,19 +343,19 @@ class TransactionsSpec extends FunSuite with Logging {
     val paymentPreimage1 = ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")
     val paymentPreimage2 = ByteVector32(hex"2222222222222222222222222222222222222222222222222222222222222222")
     val paymentPreimage3 = ByteVector32(hex"3333333333333333333333333333333333333333333333333333333333333333")
-    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, millibtc2satoshi(MilliBtc(100)).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 3, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 4, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc5 = UpdateAddHtlc(ByteVector32.Zeroes, 5, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(301), TestConstants.emptyOnionPacket)
+    val htlc1 = UpdateAddHtlc(randomBytes32, 1, millibtc2satoshi(MilliBtc(100)).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc2 = UpdateAddHtlc(randomBytes32, 2, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc3 = UpdateAddHtlc(randomBytes32, 3, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc4 = UpdateAddHtlc(randomBytes32, 4, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc5 = UpdateAddHtlc(randomBytes32, 5, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(301), TestConstants.emptyOnionPacket)
 
     val spec = CommitmentSpec(
       htlcs = Set(
-        DirectedHtlc(IN, htlc1),
-        DirectedHtlc(IN, htlc2),
-        DirectedHtlc(IN, htlc3),
-        DirectedHtlc(IN, htlc4),
-        DirectedHtlc(IN, htlc5)
+        DirectedHtlc(OUT, htlc1),
+        DirectedHtlc(OUT, htlc2),
+        DirectedHtlc(OUT, htlc3),
+        DirectedHtlc(OUT, htlc4),
+        DirectedHtlc(OUT, htlc5)
       ),
       feeratePerKw = feeratePerKw,
       toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
@@ -372,18 +372,18 @@ class TransactionsSpec extends FunSuite with Logging {
 
     // htlc1 comes before htlc2 because of the smaller amount (BIP69)
     // htlc2 and htlc3 have the same amount but htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
-    // htlc5 comes before htlc3 and htlc4 because of the smaller CLTV
-    val htlcOut1 :: htlcOut2 :: htlcOut5 :: htlcOut3 :: htlcOut4 :: _ = commitTx.tx.txOut.toList
-
+    // htlc5 comes after htlc3 and htlc4 because of the higher CLTV
+    val htlcOut1 :: htlcOut2 :: htlcOut3 :: htlcOut4 :: htlcOut5 :: _ = commitTx.tx.txOut.toList
     assert(htlcOut1.amount == 10000000.sat)
-    assert(htlcOut2.amount == 20000000.sat)
-    assert(htlcOut3.amount == 20000000.sat)
+    for (htlcOut <- Seq(htlcOut2, htlcOut3, htlcOut4, htlcOut5)) {
+      assert(htlcOut.amount == 20000000.sat)
+    }
 
     assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
-    assert(outputs.find(_.specItem == DirectedHtlc(IN, htlc2)).map(_.output.publicKeyScript).contains(htlcOut2.publicKeyScript))
-    assert(outputs.find(_.specItem == DirectedHtlc(IN, htlc3)).map(_.output.publicKeyScript).contains(htlcOut3.publicKeyScript))
-    assert(outputs.find(_.specItem == DirectedHtlc(IN, htlc4)).map(_.output.publicKeyScript).contains(htlcOut4.publicKeyScript))
-    assert(outputs.find(_.specItem == DirectedHtlc(IN, htlc5)).map(_.output.publicKeyScript).contains(htlcOut5.publicKeyScript))
+    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc2)).map(_.output.publicKeyScript).contains(htlcOut2.publicKeyScript))
+    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc3)).map(_.output.publicKeyScript).contains(htlcOut3.publicKeyScript))
+    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc4)).map(_.output.publicKeyScript).contains(htlcOut4.publicKeyScript))
+    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc5)).map(_.output.publicKeyScript).contains(htlcOut5.publicKeyScript))
   }
 
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {
