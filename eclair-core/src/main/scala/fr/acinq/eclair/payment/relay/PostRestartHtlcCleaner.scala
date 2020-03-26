@@ -322,7 +322,20 @@ object PostRestartHtlcCleaner {
         val htlcsToIgnore: Set[Long] = c match {
           case c: DATA_CLOSING =>
             val irrevocablySpentTxes = Closing.irrevocablySpentTxes(c)
-            val timedOutHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.timedoutHtlcs(c, tx)).map(_.id)
+            val localCommitConfirmed = c.localCommitPublished.exists(x => irrevocablySpentTxes.exists(tx => tx.txid == x.commitTx.txid))
+            val remoteCommitConfirmed = c.remoteCommitPublished.exists(x => irrevocablySpentTxes.exists(tx => tx.txid == x.commitTx.txid))
+            val nextRemoteCommitConfirmed = c.nextRemoteCommitPublished.exists(x => irrevocablySpentTxes.exists(tx => tx.txid == x.commitTx.txid))
+            val timedOutHtlcs = irrevocablySpentTxes.flatMap(tx => {
+              if (localCommitConfirmed) {
+                Closing.timedoutHtlcs(c.commitments.localCommit, c.commitments.localParams.dustLimit, tx, c.localCommitPublished)
+              } else if (remoteCommitConfirmed) {
+                Closing.timedoutHtlcs(c.commitments.remoteCommit, c.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished)
+              } else if (nextRemoteCommitConfirmed) {
+                c.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutHtlcs(r.nextRemoteCommit, c.commitments.remoteParams.dustLimit, tx, c.nextRemoteCommitPublished))
+              } else {
+                Set.empty[UpdateAddHtlc]
+              }
+            }).map(_.id)
             val overriddenHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.overriddenOutgoingHtlcs(c, tx)).map(_.id)
             timedOutHtlcs ++ overriddenHtlcs
           case _ => Set.empty

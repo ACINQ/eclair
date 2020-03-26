@@ -309,12 +309,13 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
     //  * this payment should be failed instantly when the upstream channels come back online
     // Payment 2:
     //  * 2 upstream htlcs
+    //  * 1 downstream htlc that timed out on-chain
     //  * 1 downstream htlc that will be resolved on-chain
     //  * this payment should be fulfilled upstream once we receive the preimage
 
     // Upstream HTLCs.
-    val htlc_upstream_1 = Seq(buildHtlc(0, channelId_ab_1, paymentHash1, IN), buildHtlc(5, channelId_ab_1, paymentHash2, IN))
-    val htlc_upstream_2 = Seq(buildHtlc(7, channelId_ab_2, paymentHash1, IN), buildHtlc(9, channelId_ab_2, paymentHash2, IN))
+    val htlc_upstream_1 = Seq(buildHtlcIn(0, channelId_ab_1, paymentHash1), buildHtlcIn(5, channelId_ab_1, paymentHash2))
+    val htlc_upstream_2 = Seq(buildHtlcIn(7, channelId_ab_2, paymentHash1), buildHtlcIn(9, channelId_ab_2, paymentHash2))
     val upstream_1 = Upstream.TrampolineRelayed(htlc_upstream_1.head.add :: htlc_upstream_2.head.add :: Nil)
     val upstream_2 = Upstream.TrampolineRelayed(htlc_upstream_1(1).add :: htlc_upstream_2(1).add :: Nil)
     val data_upstream_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_1, Map.empty)
@@ -337,6 +338,11 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
         val (_, cmd) = makeCmdAdd(300000 msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight, preimage1, upstream_1)
         addHtlc(cmd, alice, bob, alice2bob, bob2alice)
       }
+      {
+        // Will be timed out.
+        val (_, cmd) = makeCmdAdd(25000000 msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight, preimage2, upstream_2)
+        addHtlc(cmd, alice, bob, alice2bob, bob2alice)
+      }
       val htlc_2_2 = {
         // Will be fulfilled.
         val (_, cmd) = makeCmdAdd(30000000 msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight, preimage2, upstream_2)
@@ -356,7 +362,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
       val closingState = localClose(alice, alice2blockchain)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 42, 0, closingState.commitTx)
       // All committed htlcs timed out except the last one, which will be fulfilled later.
-      assert(closingState.htlcTimeoutTxs.length === 2)
+      assert(closingState.htlcTimeoutTxs.length === 3)
       val htlcTxes = closingState.htlcTimeoutTxs.sortBy(_.txOut.map(_.amount).sum)
       htlcTxes.reverse.tail.zipWithIndex.foreach {
         case (tx, i) => alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), 201, i, tx)
