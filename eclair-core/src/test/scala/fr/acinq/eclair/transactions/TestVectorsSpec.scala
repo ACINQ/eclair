@@ -502,8 +502,8 @@ class TestVectorsSpec extends FunSuite with Logging {
     assert(commitTx.tx.txOut.length == 5)
 
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
-    assert(htlcTxs.map(_.tx).apply(0) == Transaction.read(results(name)("output htlc_success_tx 0")))
-    assert(htlcTxs.map(_.tx).apply(1) == Transaction.read(results(name)("output htlc_timeout_tx 1")))
-    assert(htlcTxs.map(_.tx).apply(2) == Transaction.read(results(name)("output htlc_timeout_tx 2")))
+    assert(htlcTxs(0).tx == Transaction.read(results(name)("output htlc_success_tx 0")))
+    assert(htlcTxs(1).tx == Transaction.read(results(name)("output htlc_timeout_tx 1")))
+    assert(htlcTxs(2).tx == Transaction.read(results(name)("output htlc_timeout_tx 2")))
   }
 }
