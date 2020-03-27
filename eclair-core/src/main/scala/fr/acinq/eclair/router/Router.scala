@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.Peer.PeerMessage
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.io.PeerConnection.InvalidAnnouncement
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -586,7 +586,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using d.copy(sync = d.sync - remoteNodeId)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
-    case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
+    case Event(PeerMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
@@ -596,12 +596,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.debug("received channel update from {}", sender)
       stay using handle(u, LocalGossip, d)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
+    case Event(PeerMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
       sender ! TransportHandler.ReadAck(u)
       log.debug("received channel update for shortChannelId={}", u.shortChannelId)
       stay using handle(u, RemoteGossip(sender), d, remoteNodeId_opt = Some(remoteNodeId), peerConnection_opt = Some(peerConnection))
 
-    case Event(PeerRoutingMessage(_, _, c: ChannelAnnouncement), d) =>
+    case Event(PeerMessage(_, _, c: ChannelAnnouncement), d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
       if (d.channels.contains(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
@@ -639,12 +639,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.debug("received node announcement from {}", sender)
       stay using handle(n, LocalGossip, d)
 
-    case Event(PeerRoutingMessage(_, _, n: NodeAnnouncement), d: Data) =>
+    case Event(PeerMessage(_, _, n: NodeAnnouncement), d: Data) =>
       sender ! TransportHandler.ReadAck(n)
       log.debug("received node announcement for nodeId={}", n.nodeId)
       stay using handle(n, RemoteGossip(sender), d)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
+    case Event(PeerMessage(peerConnection, remoteNodeId, routingMessage@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, extendedQueryFlags_opt)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
         Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
@@ -666,7 +666,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         }
       }
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
+    case Event(PeerMessage(peerConnection, remoteNodeId, routingMessage@ReplyChannelRange(chainHash, _, _, _, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
 
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
@@ -727,7 +727,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         }
       }
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
+    case Event(PeerMessage(peerConnection, remoteNodeId, routingMessage@QueryShortChannelIds(chainHash, shortChannelIds, _)), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
 
       Kamon.runWithContextEntry(remoteNodeIdKey, remoteNodeId.toString) {
@@ -761,7 +761,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         }
       }
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, routingMessage: ReplyShortChannelIdsEnd), d) =>
+    case Event(PeerMessage(peerConnection, remoteNodeId, routingMessage: ReplyShortChannelIdsEnd), d) =>
       sender ! TransportHandler.ReadAck(routingMessage)
       // have we more channels to ask this peer?
       val sync1 = d.sync.get(remoteNodeId) match {
@@ -947,7 +947,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     val category_opt = LogCategory(currentMessage)
     currentMessage match {
       case SendChannelQuery(remoteNodeId, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
-      case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
+      case PeerMessage(_, remoteNodeId, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
       case LocalChannelUpdate(_, _, _, remoteNodeId, _, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
       case _ => Logs.mdc(category_opt)
     }
