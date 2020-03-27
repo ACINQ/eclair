@@ -144,8 +144,8 @@ class ChannelCodecsSpec extends FunSuite {
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val htlc1 = DirectedHtlc(direction = IN, add = add)
-    val htlc2 = DirectedHtlc(direction = OUT, add = add)
+    val htlc1 = IncomingHtlc(add)
+    val htlc2 = OutgoingHtlc(add)
     assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
     assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require === htlc2)
   }
@@ -165,9 +165,9 @@ class ChannelCodecsSpec extends FunSuite {
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32,
       onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val htlc1 = DirectedHtlc(direction = IN, add = add1)
-    val htlc2 = DirectedHtlc(direction = OUT, add = add2)
-    val htlcs = Set(htlc1, htlc2)
+    val htlc1 = IncomingHtlc(add1)
+    val htlc2 = OutgoingHtlc(add2)
+    val htlcs = Set[DirectedHtlc](htlc1, htlc2)
     assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
@@ -395,12 +395,12 @@ object ChannelCodecsSpec {
     ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404")
   )
 
-  val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 30, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 31, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
+  val htlcs = Seq[DirectedHtlc](
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 30, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 31, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
 
   val normal = makeChannelDataNormal(htlcs, Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)))
@@ -412,7 +412,7 @@ object ChannelCodecsSpec {
     val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
 
     val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(htlc => htlc.copy(direction = htlc.direction.opposite)).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
     val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 32L,
       remoteNextHtlcId = 4L,

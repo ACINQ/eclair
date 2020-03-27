@@ -614,8 +614,8 @@ object Helpers {
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val txes = remoteCommit.spec.htlcs.collect {
-        // incoming htlc for which we have the preimage: we spend it directly
-        case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
+        // outgoing htlc for which we have the preimage: we spend it directly
+        case OutgoingHtlc(add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
           val txinfo = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint)
@@ -624,8 +624,8 @@ object Helpers {
 
         // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
-        // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-        case DirectedHtlc(IN, add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
+        // incoming htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
+        case IncomingHtlc(add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
           val txinfo = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
           val sig = keyManager.sign(txinfo, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(txinfo, sig)

@@ -22,11 +22,11 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
-import fr.acinq.eclair.wire.{OnionRoutingPacket, UpdateAddHtlc}
+import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshi, randomBytes32, _}
-import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -77,11 +77,11 @@ class TransactionsSpec extends FunSuite with Logging {
 
   test("compute fees") {
     // see BOLT #3 specs
-    val htlcs = Set(
-      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000 msat, ByteVector32.Zeroes, CltvExpiry(552), TestConstants.emptyOnionPacket)),
-      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, ByteVector32.Zeroes, CltvExpiry(553), TestConstants.emptyOnionPacket)),
-      DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 7000000 msat, ByteVector32.Zeroes, CltvExpiry(550), TestConstants.emptyOnionPacket)),
-      DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket))
+    val htlcs = Set[DirectedHtlc](
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000 msat, ByteVector32.Zeroes, CltvExpiry(552), TestConstants.emptyOnionPacket)),
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, ByteVector32.Zeroes, CltvExpiry(553), TestConstants.emptyOnionPacket)),
+      IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 7000000 msat, ByteVector32.Zeroes, CltvExpiry(550), TestConstants.emptyOnionPacket)),
+      IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocal = 0 msat, toRemote = 0 msat)
     val fee = Transactions.commitTxFee(546 sat, spec)
@@ -151,7 +151,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
-      val spec = CommitmentSpec(Set(DirectedHtlc(OUT, htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
+      val spec = CommitmentSpec(Set(OutgoingHtlc(htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
@@ -167,7 +167,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcTimeoutTx
       val paymentPreimage = randomBytes32
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), toLocalDelay.toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
-      val spec = CommitmentSpec(Set(DirectedHtlc(IN, htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
+      val spec = CommitmentSpec(Set(IncomingHtlc(htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
@@ -195,10 +195,10 @@ class TransactionsSpec extends FunSuite with Logging {
     val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).toMilliSatoshi, sha256(paymentPreimage4), CltvExpiry(300), TestConstants.emptyOnionPacket)
     val spec = CommitmentSpec(
       htlcs = Set(
-        DirectedHtlc(OUT, htlc1),
-        DirectedHtlc(IN, htlc2),
-        DirectedHtlc(OUT, htlc3),
-        DirectedHtlc(IN, htlc4)
+        OutgoingHtlc(htlc1),
+        IncomingHtlc(htlc2),
+        OutgoingHtlc(htlc3),
+        IncomingHtlc(htlc4)
       ),
       feeratePerKw = feeratePerKw,
       toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
@@ -302,7 +302,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // remote spends offered HTLC output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash)))
       val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, DirectedHtlc(_, someHtlc)), _) => someHtlc.id == htlc1.id
+        case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(someHtlc))), _) => someHtlc.id == htlc1.id
         case _ => false
       }.map(_._2)
       val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
@@ -315,7 +315,7 @@ class TransactionsSpec extends FunSuite with Logging {
       // remote spends received HTLC output with revocation key
       val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
       val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, DirectedHtlc(_, someHtlc)), _) => someHtlc.id == htlc2.id
+        case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(someHtlc))), _) => someHtlc.id == htlc2.id
         case _ => false
       }.map(_._2)
       val htlcPenaltyTx = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
@@ -351,11 +351,11 @@ class TransactionsSpec extends FunSuite with Logging {
 
     val spec = CommitmentSpec(
       htlcs = Set(
-        DirectedHtlc(OUT, htlc1),
-        DirectedHtlc(OUT, htlc2),
-        DirectedHtlc(OUT, htlc3),
-        DirectedHtlc(OUT, htlc4),
-        DirectedHtlc(OUT, htlc5)
+        OutgoingHtlc(htlc1),
+        OutgoingHtlc(htlc2),
+        OutgoingHtlc(htlc3),
+        OutgoingHtlc(htlc4),
+        OutgoingHtlc(htlc5)
       ),
       feeratePerKw = feeratePerKw,
       toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
@@ -380,10 +380,10 @@ class TransactionsSpec extends FunSuite with Logging {
     }
 
     assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
-    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc2)).map(_.output.publicKeyScript).contains(htlcOut2.publicKeyScript))
-    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc3)).map(_.output.publicKeyScript).contains(htlcOut3.publicKeyScript))
-    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc4)).map(_.output.publicKeyScript).contains(htlcOut4.publicKeyScript))
-    assert(outputs.find(_.specItem == DirectedHtlc(OUT, htlc5)).map(_.output.publicKeyScript).contains(htlcOut5.publicKeyScript))
+    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc2))).map(_.output.publicKeyScript).contains(htlcOut2.publicKeyScript))
+    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc3))).map(_.output.publicKeyScript).contains(htlcOut3.publicKeyScript))
+    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc4))).map(_.output.publicKeyScript).contains(htlcOut4.publicKeyScript))
+    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc5))).map(_.output.publicKeyScript).contains(htlcOut5.publicKeyScript))
   }
 
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {
@@ -391,8 +391,11 @@ class TransactionsSpec extends FunSuite with Logging {
     case Failure(t) => fail(t)
   }
 
-  def htlc(direction: Direction, amount: Satoshi): DirectedHtlc =
-    DirectedHtlc(direction, UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+  def htlc(direction: Direction, amount: Satoshi): DirectedHtlc = direction match {
+    case IN => IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+    case OUT => OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+  }
+
 
   test("BOLT 2 fee tests") {
 
