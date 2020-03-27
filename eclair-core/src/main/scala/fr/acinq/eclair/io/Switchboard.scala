@@ -69,10 +69,15 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case authenticated: PeerConnection.Authenticated =>
-      // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
+    case p: PeerConnection.ConnectionReady =>
+      // we create a peer if it doesn't exist
+      val peer = createOrGetPeer(p.remoteNodeId, offlineChannels = Set.empty)
+      peer forward p
+
+    case p: Peer.PeerMessage =>
+      // we create a peer if it doesn't exist
+      val peer = createOrGetPeer(p.remoteNodeId, offlineChannels = Set.empty)
+      peer forward p.message
 
     case 'peers => sender ! context.children
 

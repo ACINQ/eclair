@@ -21,8 +21,12 @@ import kamon.Kamon
 object Monitoring {
 
   object Metrics {
-    val PeerConnections = Kamon.counter("peers.connecting.count")
-    val ConnectedPeers = Kamon.gauge("peers.connected").withoutTags()
+    val PeerConnectionsConnecting = Kamon.counter("peerconnections.connecting")
+    val PeerConnectionsConnected = Kamon.gauge("peerconnections.connected")
+
+    val PeersConnected = Kamon.gauge("peers.connected")
+
+    val ReconnectionsAttempts = Kamon.counter("reconnections.attempts")
   }
 
   object Tags {

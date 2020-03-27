@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.{Disconnect, PeerMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -1255,7 +1255,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
-    announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann))
+    announcements.foreach(ann => nodes("A").router ! PeerMessage(sender.ref, remoteNodeId, ann))
     awaitCond({
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 8 // 8 remaining channels because  D->F{1-5} have disappeared
