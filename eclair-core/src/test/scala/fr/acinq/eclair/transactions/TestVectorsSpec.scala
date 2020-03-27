@@ -183,7 +183,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
     val commitTx = {
-      val tx = Transactions.makeCommitTx(
+      val (tx, scripts) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -192,6 +192,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         spec)
 
+      assert(tx.tx.txOut.size == scripts.size)
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
 
@@ -213,7 +214,7 @@ class TestVectorsSpec extends FunSuite with Logging {
     })
 
     {
-      val tx = Transactions.makeCommitTx(
+      val (tx, scripts) = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
@@ -222,6 +223,7 @@ class TestVectorsSpec extends FunSuite with Logging {
         Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         spec)
 
+      assert(tx.tx.txOut.size == scripts.size)
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       logger.info(s"# local_signature = ${local_sig.dropRight(1).toHex}")
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
