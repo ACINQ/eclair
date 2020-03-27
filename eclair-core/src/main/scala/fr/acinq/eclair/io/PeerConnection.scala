@@ -18,14 +18,14 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, PoisonPill, Props, Status, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
+import fr.acinq.eclair.io.Peer.{CHANNELID_ZERO, PeerMessage}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -68,7 +68,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       val transport = p.transport_opt match {
         case Some(transport) => transport // used in tests to bypass encryption
         case None =>
-          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
+          Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
           context.actorOf(TransportHandler.props(
             keyPair = KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
             rs = p.remoteNodeId_opt.map(_.value),
@@ -86,20 +86,10 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       cancelTimer(AUTH_TIMER)
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
-      switchboard ! Authenticated(self, remoteNodeId, address, d.pendingAuth.outgoing, d.pendingAuth.origin_opt)
-      goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
-
-    case Event(AuthTimeout, _) =>
-      log.warning(s"authentication timed out after ${nodeParams.authTimeout}")
-      stop(FSM.Normal)
-  }
-
-  when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer), d: BeforeInitData) =>
+      Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       d.transport ! TransportHandler.Listener(self)
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
-      val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
+      Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
+      val localFeatures = nodeParams.overrideFeatures.get(remoteNodeId) match {
         case Some(f) => f
         case None =>
           // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
@@ -121,7 +111,11 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit
       setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
-      goto(INITIALIZING) using InitializingData(nodeParams, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit)
+      goto(INITIALIZING) using InitializingData(nodeParams, d.pendingAuth, remoteNodeId, d.transport, localInit)
+
+    case Event(AuthTimeout, _) =>
+      log.warning(s"authentication timed out after ${nodeParams.authTimeout}")
+      stop(FSM.Normal)
   }
 
   when(INITIALIZING) {
@@ -143,8 +137,8 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           d.transport ! PoisonPill
           stay
         } else {
-          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
-          d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
+          Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
+          switchboard ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
           d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
 
@@ -175,7 +169,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
           context.system.eventStream.subscribe(self, classOf[Rebroadcast])
 
-          goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
+          goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.localInit, remoteInit, rebroadcastDelay)
         }
 
       case Event(InitTimeout, _) =>
@@ -299,21 +293,21 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           case _: AnnouncementSignatures =>
             // this is actually for the channel
             d.transport ! TransportHandler.ReadAck(msg)
-            d.peer ! msg
+            switchboard ! PeerMessage(self, d.remoteNodeId, msg)
             stay
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
             d.transport ! TransportHandler.ReadAck(msg)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            router ! Peer.PeerMessage(self, d.remoteNodeId, msg)
         }
         stay
 
       case Event(msg: LightningMessage, d: ConnectedData) =>
         // we acknowledge and pass all other messages to the peer
         d.transport ! TransportHandler.ReadAck(msg)
-        d.peer ! msg
+        switchboard ! PeerMessage(self, d.remoteNodeId, msg)
         stay
 
       case Event(readAck: TransportHandler.ReadAck, d: ConnectedData) =>
@@ -391,6 +385,14 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
   }
 
+  onTransition {
+    case _ -> CONNECTED => Metrics.PeerConnectionsConnected.withoutTags().increment()
+  }
+
+  onTermination {
+    case StopEvent(_, CONNECTED, _: ConnectedData) => Metrics.PeerConnectionsConnected.withoutTags().decrement()
+  }
+
   /**
    * As long as we receive messages from our peer, we consider it is online and don't send ping requests. If we don't
    * hear from the peer, we send pings and expect timely answers, otherwise we'll close the connection.
@@ -416,11 +418,13 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
   initialize()
 
+  // we should not restart a failing transport-handler (NB: logging is handled in the transport)
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = false) { case _ => SupervisorStrategy.Stop }
+
   override def mdc(currentMessage: Any): MDC = {
     val (category_opt, remoteNodeId_opt) = stateData match {
       case Nothing => (Some(LogCategory.CONNECTION), None)
       case d: AuthenticatingData => (Some(LogCategory.CONNECTION), d.pendingAuth.remoteNodeId_opt)
-      case d: BeforeInitData => (Some(LogCategory.CONNECTION), Some(d.remoteNodeId))
       case d: InitializingData => (Some(LogCategory.CONNECTION), Some(d.remoteNodeId))
       case d: ConnectedData => (LogCategory(currentMessage), Some(d.remoteNodeId))
     }
@@ -454,27 +458,23 @@ object PeerConnection {
   // @formatter:off
 
   sealed trait Data
-  sealed trait HasTransport extends Data { def transport: ActorRef }
+  sealed trait HasTransport { this: Data => def transport: ActorRef }
   case object Nothing extends Data
-  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data
-  case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
-  case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
-  case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
+  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
+  case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, localInit: wire.Init) extends Data with HasTransport
+  case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
   case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
   case class PingTimeout(ping: Ping)
 
   sealed trait State
   case object BEFORE_AUTH extends State
   case object AUTHENTICATING extends State
-  case object BEFORE_INIT extends State
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
-  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
-  case class InitializeConnection(peer: ActorRef)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
@@ -491,7 +491,6 @@ object PeerConnection {
   /**
    * PeerConnection may want to filter announcements based on timestamp.
    *
-   * @param nodeParams
    * @param gossipTimestampFilter_opt optional gossip timestamp range
    * @return
    *         - true if this is our own gossip
