@@ -9,7 +9,7 @@
 ## Build
 
 Eclair is packaged as a compressed archive with a launcher script, the archives are built deterministically
-so it's possible to reproduce the build and verify its equality byte-by-byte. To build the exact same artifacts 
+so it's possible to reproduce the build and verify its equality byte-by-byte. To build the exact same artifacts
 that we release, you must use the build environment (OS, JDK, maven...) that we specify in our release notes.
 
 To build the project and run the tests, simply run:
@@ -17,6 +17,8 @@ To build the project and run the tests, simply run:
 ```shell
 mvn package
 ```
+
+NB: some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
 
 ### Other build options
 
