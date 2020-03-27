@@ -35,14 +35,14 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   implicit val formats = org.json4s.DefaultFormats
 
   def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txid.toHex, 1) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("getrawtransaction", txid, 1) // we choose verbose output to get the number of confirmations
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
   def getTxBlockHash(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
-    rpcClient.invoke("getrawtransaction", txid.toHex, 1) // we choose verbose output to get the number of confirmations
+    rpcClient.invoke("getrawtransaction", txid, 1) // we choose verbose output to get the number of confirmations
       .map(json => (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
@@ -55,7 +55,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         case None => rpcClient.invoke("getbestblockhash") collect { case JString(b) => ByteVector32.fromValidHex(b) }
       }
       // with a verbosity of 0, getblock returns the raw serialized block
-      block <- rpcClient.invoke("getblock", blockhash.toHex, 0).collect { case JString(b) => Block.read(b) }
+      block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
       prevblockhash = block.header.hashPreviousBlock.reverse
       res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
         case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
@@ -75,7 +75,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     * @return
     */
   def getRawTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[String] =
-    rpcClient.invoke("getrawtransaction", txid.toHex) collect {
+    rpcClient.invoke("getrawtransaction", txid) collect {
       case JString(raw) => raw
     }
 
@@ -91,7 +91,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
-      json <- rpcClient.invoke("gettxout", txid.toHex, outputIndex, includeMempool)
+      json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
     } yield json != JNull
 
   /**
@@ -104,7 +104,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   def getTransactionShortId(txid: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = {
     val future = for {
       Some(blockHash) <- getTxBlockHash(txid)
-      json <- rpcClient.invoke("getblock", blockHash.toHex)
+      json <- rpcClient.invoke("getblock", blockHash)
       JInt(height) = json \ "height"
       JString(hash) = json \ "hash"
       JArray(txs) = json \ "tx"
@@ -154,7 +154,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       for {
         _ <- Future.successful(0)
         span0 = Kamon.spanBuilder("getblockhash").start()
-        blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String](ByteVector32.Zeroes.toHex))
+        blockHash <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOpt[String].map(ByteVector32.fromValidHex).getOrElse(ByteVector32.Zeroes))
         _ = span0.finish()
         span1 = Kamon.spanBuilder("getblock").start()
         txid: ByteVector32 <- rpcClient.invoke("getblock", blockHash).map {

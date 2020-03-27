@@ -22,12 +22,9 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
-import org.json4s.jackson.Serialization
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
