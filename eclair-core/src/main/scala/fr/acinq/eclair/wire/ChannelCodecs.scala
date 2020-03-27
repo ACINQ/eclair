@@ -32,6 +32,7 @@ import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import shapeless.{HNil, ::}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -92,9 +93,15 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => bool.decode(wire).map(_.map(b => if (b) IN else OUT))
   )
 
-  val htlcCodec: Codec[DirectedHtlc] = (
-    ("direction" | directionCodec) ::
-      ("add" | updateAddHtlcCodec)).as[DirectedHtlc]
+  val htlcCodec: Codec[DirectedHtlc] = (("direction" | directionCodec) :: ("add" | updateAddHtlcCodec)).xmap(
+    {
+      case IN :: add :: HNil => IncomingHtlc(add)
+      case OUT :: add :: HNil => OutgoingHtlc(add)
+    },
+    {
+      htlc => htlc.direction :: htlc.add :: HNil
+    }
+  )
 
   def setCodec[T](codec: Codec[T]): Codec[Set[T]] = Codec[Set[T]](
     (elems: Set[T]) => listOfN(uint16, codec).encode(elems.toList),

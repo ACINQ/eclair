@@ -2086,8 +2086,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv BITCOIN_FUNDING_SPENT (revoked commit)") { f =>
     import f._
-    val sender = TestProbe()
-
     // initially we have :
     // alice = 800 000
     //   bob = 200 000
