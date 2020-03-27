@@ -153,12 +153,12 @@ class TestVectorsSpec extends FunSuite with Logging {
     ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404")
   )
 
-  val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
+  val htlcs = Seq[DirectedHtlc](
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
@@ -489,9 +489,9 @@ class TestVectorsSpec extends FunSuite with Logging {
     val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
 
     val someHtlc = Seq(
-      DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket)),
-      DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket))
+      IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket)),
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket))
     )
 
     val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = 253, toLocal = 6988000000L.msat, toRemote = 3000000000L.msat)
