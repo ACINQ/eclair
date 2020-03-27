@@ -29,7 +29,25 @@ case object IN extends Direction { def opposite = OUT }
 case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
-case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
+sealed trait CommitmentOutput
+object CommitmentOutput {
+  case object ToLocal extends CommitmentOutput
+  case object ToRemote extends CommitmentOutput
+  case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
+  case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+}
+
+sealed trait DirectedHtlc {
+  def direction: Direction
+  val add: UpdateAddHtlc
+  def opposite: DirectedHtlc = this match {
+    case IncomingHtlc(_) => OutgoingHtlc(add)
+    case OutgoingHtlc(_) => IncomingHtlc(add)
+  }
+}
+
+case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc { override def direction: Direction = IN }
+case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc { override def direction: Direction = OUT }
 
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
@@ -45,7 +63,10 @@ object CommitmentSpec {
   }
 
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
-    val htlc = DirectedHtlc(direction, update)
+    val htlc = direction match {
+      case IN => IncomingHtlc(update)
+      case OUT => OutgoingHtlc(update)
+    }
     direction match {
       case OUT => spec.copy(toLocal = spec.toLocal - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
       case IN => spec.copy(toRemote = spec.toRemote - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)

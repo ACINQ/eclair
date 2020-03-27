@@ -17,7 +17,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
@@ -153,12 +153,12 @@ class TestVectorsSpec extends FunSuite with Logging {
     ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404")
   )
 
-  val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(OUT, UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    DirectedHtlc(IN, UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
+  val htlcs = Seq[DirectedHtlc](
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
@@ -182,15 +182,17 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
+    val outputs = Transactions.makeCommitTxOutputs(
+      true, Local.dustLimit, Local.revocation_pubkey, Local.toSelfDelay,
+      Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
+      spec)
+
     val commitTx = {
       val tx = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
-        true, Local.dustLimit,
-        Local.revocation_pubkey, Local.toSelfDelay,
-        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
-        Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-        spec)
+        true, outputs)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
@@ -216,11 +218,7 @@ class TestVectorsSpec extends FunSuite with Logging {
       val tx = Transactions.makeCommitTx(
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
-        true, Local.dustLimit,
-        Local.revocation_pubkey, Local.toSelfDelay,
-        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
-        Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-        spec)
+        true, outputs)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       logger.info(s"# local_signature = ${local_sig.dropRight(1).toHex}")
@@ -237,8 +235,9 @@ class TestVectorsSpec extends FunSuite with Logging {
       Local.dustLimit,
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
-      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
-      spec)
+      spec.feeratePerKw,
+      outputs
+    )
 
     logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
     val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)
@@ -481,5 +480,30 @@ class TestVectorsSpec extends FunSuite with Logging {
 
     val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
     assert(htlcTxs.map(_.tx).toSet == check)
+  }
+
+  // Added to the spec in https://github.com/lightningnetwork/lightning-rfc/pull/539
+  test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
+    val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
+
+    val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
+
+    val someHtlc = Seq(
+      IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket)),
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket))
+    )
+
+    val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = 253, toLocal = 6988000000L.msat, toRemote = 3000000000L.msat)
+
+    val (commitTx, htlcTxs) = run(spec)
+
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+    assert(commitTx.tx.txOut.length == 5)
+
+    assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
+    assert(htlcTxs(0).tx == Transaction.read(results(name)("output htlc_success_tx 0")))
+    assert(htlcTxs(1).tx == Transaction.read(results(name)("output htlc_timeout_tx 1")))
+    assert(htlcTxs(2).tx == Transaction.read(results(name)("output htlc_timeout_tx 2")))
   }
 }
