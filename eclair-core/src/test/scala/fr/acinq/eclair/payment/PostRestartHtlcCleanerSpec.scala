@@ -27,7 +27,7 @@ import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.ChannelHop
-import fr.acinq.eclair.transactions.{DirectedHtlc, Direction, IN, OUT}
+import fr.acinq.eclair.transactions.{DirectedHtlc, Direction, IN, IncomingHtlc, OUT, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, NodeParams, TestConstants, TestkitBaseClass, randomBytes32}
@@ -368,13 +368,15 @@ object PostRestartHtlcCleanerSpec {
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, direction: Direction): DirectedHtlc = {
     val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     val add = UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    DirectedHtlc(direction, add)
+    direction match {
+      case IN => IncomingHtlc(add)
+      case OUT => OutgoingHtlc(add)
+    }
   }
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
     val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, FinalLegacyPayload(finalAmount, finalExpiry))
-    val add = UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    DirectedHtlc(IN, add)
+    IncomingHtlc(UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion))
   }
 
   def buildForwardFail(add: UpdateAddHtlc, origin: Origin) =
@@ -406,7 +408,7 @@ object PostRestartHtlcCleanerSpec {
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash2, PaymentType.Standard, add2.amountMsat, 2500 msat, c, 0, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, parentId, None, paymentHash2, PaymentType.Standard, add3.amountMsat, 2500 msat, c, 0, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.makeChannelDataNormal(
-      Seq(add1, add2, add3).map(add => DirectedHtlc(OUT, add)),
+      Seq(add1, add2, add3).map(add => OutgoingHtlc(add)),
       Map(add1.id -> origin1, add2.id -> origin2, add3.id -> origin3))
     )
 
