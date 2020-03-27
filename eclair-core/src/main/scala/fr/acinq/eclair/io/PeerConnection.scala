@@ -458,7 +458,7 @@ object PeerConnection {
   // @formatter:off
 
   sealed trait Data
-  sealed trait HasTransport extends Data { def transport: ActorRef }
+  sealed trait HasTransport { this: Data => def transport: ActorRef }
   case object Nothing extends Data
   case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, localInit: wire.Init) extends Data with HasTransport
