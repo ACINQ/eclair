@@ -27,6 +27,8 @@ trait PeersDb extends Closeable {
 
   def removePeer(nodeId: PublicKey)
 
+  def getPeer(nodeId: PublicKey): Option[NodeAddress]
+
   def listPeers(): Map[PublicKey, NodeAddress]
 
 }

@@ -66,6 +66,16 @@ class PsqlPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
     }
   }
 
+  override def getPeer(nodeId: PublicKey): Option[NodeAddress] = {
+    withLock { psql =>
+      using(psql.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        val rs = statement.executeQuery()
+        codecSequence(rs, CommonCodecs.nodeaddress).headOption
+      }
+    }
+  }
+
   override def listPeers(): Map[PublicKey, NodeAddress] = {
     withLock { psql =>
       using(psql.createStatement()) { statement =>

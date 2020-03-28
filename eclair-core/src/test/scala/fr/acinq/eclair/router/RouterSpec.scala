@@ -24,7 +24,8 @@ import fr.acinq.bitcoin.{Block, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.io.Peer.{InvalidSignature, PeerRoutingMessage}
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.io.PeerConnection.InvalidSignature
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
@@ -87,7 +88,7 @@ class RouterSpec extends BaseRouterSpec {
     watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 
-    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_ac, 1000000 sat) :: Nil))
+    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_ac, 1000000 sat, None, None) :: Nil))
   }
 
   test("properly announce lost channels and nodes") { fixture =>
