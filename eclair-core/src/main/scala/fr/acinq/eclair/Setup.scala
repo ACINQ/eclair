@@ -41,6 +41,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.psql.PsqlUtils.LockType
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment.Auditor
@@ -59,14 +60,14 @@ import scala.concurrent._
 import scala.concurrent.duration._
 
 /**
- * Setup eclair from a data directory.
- *
- * Created by PM on 25/01/2016.
- *
- * @param datadir          directory where eclair-core will write/read its data.
- * @param overrideDefaults use this parameter to programmatically override the node configuration .
- * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
- */
+  * Setup eclair from a data directory.
+  *
+  * Created by PM on 25/01/2016.
+  *
+  * @param datadir          directory where eclair-core will write/read its data.
+  * @param overrideDefaults use this parameter to programmatically override the node configuration .
+  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+  */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
@@ -92,32 +93,30 @@ class Setup(datadir: File,
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
 
-  val database = db match {
-    case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
-  }
+  val database = initDatabase(config.getConfig("db"))
 
   /**
-   * This counter holds the current blockchain height.
-   * It is mainly used to calculate htlc expiries.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This counter holds the current blockchain height.
+    * It is mainly used to calculate htlc expiries.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val blockCount = new AtomicLong(0)
 
   /**
-   * This holds the current feerates, in satoshi-per-kilobytes.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kilobytes.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
 
   /**
-   * This holds the current feerates, in satoshi-per-kw.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
+    * This holds the current feerates, in satoshi-per-kw.
+    * The value is read by all actors, hence it needs to be thread-safe.
+    */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
@@ -354,12 +353,47 @@ class Setup(datadir: File,
       None
     }
   }
+
+  private def initDatabase(dbConfig: Config): Databases = {
+    db match {
+      case Some(d) => d
+      case None =>
+        dbConfig.getString("driver") match {
+          case "sqlite" => Databases.sqliteJDBC(chaindir)
+          case "psql" =>
+            val psql = Databases.setupPsqlDatabases(dbConfig, datadir, { ex =>
+              logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
+              sys.exit(-2)
+            })
+            if (LockType(dbConfig.getString("psql.lock-type")) == LockType.OWNERSHIP_LEASE) {
+              val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
+              val dbLockLeaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
+              if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)
+                throw new RuntimeException("Invalid configuration: `db.psql.ownership-lease.lease-interval` must be greater than `db.psql.ownership-lease.lease-renew-interval`")
+              system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
+                try {
+                  database.obtainExclusiveLock()
+                } catch {
+                  case e: Throwable =>
+                    logger.error("fatal error: Cannot obtain ownership on the database.\n", e)
+                    sys.exit(-1)
+                }
+              }
+            }
+            psql
+          case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
+        }
+    }
+  }
 }
 
 // @formatter:off
 sealed trait Bitcoin
+
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
+
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,
