@@ -1313,7 +1313,16 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.toInt))
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
-      Closing.timedoutHtlcs(d, tx).foreach { add =>
+      val timedoutHtlcs = if (localCommitPublished1 != d.localCommitPublished) {
+        Closing.timedoutHtlcs(d.commitments.localCommit, d.commitments.localParams.dustLimit, tx, localCommitPublished1)
+      } else if (remoteCommitPublished1 != d.remoteCommitPublished) {
+        Closing.timedoutHtlcs(d.commitments.remoteCommit, d.commitments.remoteParams.dustLimit, tx, remoteCommitPublished1)
+      } else if (nextRemoteCommitPublished1 != d.nextRemoteCommitPublished) {
+        Closing.timedoutHtlcs(d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, d.commitments.remoteParams.dustLimit, tx, nextRemoteCommitPublished1)
+      } else {
+        Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarii (future remote commit)
+      }
+      timedoutHtlcs.foreach { add =>
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
