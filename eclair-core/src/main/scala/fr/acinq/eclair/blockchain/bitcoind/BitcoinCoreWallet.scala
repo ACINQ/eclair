@@ -61,15 +61,9 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
 
-  def getTransaction(txid: ByteVector32): Future[Transaction] = bitcoinClient.getTransaction(txid)
-
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = bitcoinClient.publishTransaction(tx)
 
-  def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] = publishTransaction(Transaction.read(hex))
-
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid, outPoint.index))) collect { case JBool(result) => result }
-
-  def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = bitcoinClient.isTransactionOutputSpendable(txid, outputIndex, includeMempool)
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue()) }
 
@@ -110,7 +104,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     .map(_ => true) // if bitcoind says OK, then we consider the tx successfully published
     .recoverWith { case JsonRPCError(e) =>
     logger.warn(s"txid=${tx.txid} error=$e")
-    getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
+    bitcoinClient.getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
   }
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
@@ -118,7 +112,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   override def doubleSpent(tx: Transaction): Future[Boolean] =
   for {
-    exists <- getTransaction(tx.txid)
+    exists <- bitcoinClient.getTransaction(tx.txid)
       .map(_ => true) // we have found the transaction
       .recover {
       case JsonRPCError(Error(_, message)) if message.contains("index") =>
@@ -134,7 +128,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       // if the tx wasn't in the blockchain and one of it's input has been spent, it is double-spent
       // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
       // the overriding transaction has been confirmed at least once
-      Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
+      Future.sequence(tx.txIn.map(txIn => bitcoinClient.isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
     }
   } yield doublespent
 

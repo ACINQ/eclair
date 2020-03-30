@@ -130,10 +130,10 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     } recoverWith {
       case JsonRPCError(Error(-27, _)) =>
         // "transaction already in block chain (code: -27)" ignore error
-        Future.successful(tx.txid.toString())
+        Future.successful(tx.txid.toHex)
       case e@JsonRPCError(Error(-25, _)) =>
         // "missing inputs (code: -25)" it may be that the tx has already been published and its output spent
-        getRawTransaction(tx.txid).map { case _ => tx.txid.toString() }.recoverWith { case _ => Future.failed[String](e) }
+        getRawTransaction(tx.txid).map { _ => tx.txid.toHex }.recoverWith { case _ => Future.failed[String](e) }
     }
 
   /**
