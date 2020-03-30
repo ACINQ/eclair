@@ -24,7 +24,6 @@ import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Logs, NodeParams}
 
 import scala.concurrent.Promise
@@ -55,7 +54,6 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, ad
   def listening(listener: ActorRef): Receive = {
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Connected).increment()
       val connection = sender
       val peerConnection = context.actorOf(PeerConnection.props(
         nodeParams = nodeParams,
