@@ -93,15 +93,9 @@ object ChannelCodecs extends Logging {
     (wire: BitVector) => bool.decode(wire).map(_.map(b => if (b) IN else OUT))
   )
 
-  val htlcCodec: Codec[DirectedHtlc] = (("direction" | directionCodec) :: ("add" | updateAddHtlcCodec)).xmap(
-    {
-      case IN :: add :: HNil => IncomingHtlc(add)
-      case OUT :: add :: HNil => OutgoingHtlc(add)
-    },
-    {
-      htlc => htlc.direction :: htlc.add :: HNil
-    }
-  )
+  val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(directionCodec)
+    .typecase(IN, updateAddHtlcCodec.as[IncomingHtlc])
+    .typecase(OUT, updateAddHtlcCodec.as[OutgoingHtlc])
 
   def setCodec[T](codec: Codec[T]): Codec[Set[T]] = Codec[Set[T]](
     (elems: Set[T]) => listOfN(uint16, codec).encode(elems.toList),
