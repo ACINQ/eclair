@@ -21,7 +21,7 @@ import kamon.Kamon
 object Monitoring {
 
   object Metrics {
-    val ChannelCount = Kamon.gauge("channels.count")
+    val ChannelsCount = Kamon.gauge("channels.count")
     val ChannelErrors = Kamon.counter("channels.errors")
     val ChannelLifecycleEvents = Kamon.counter("channels.lifecycle")
   }
@@ -30,7 +30,7 @@ object Monitoring {
     val Event = "event"
     val Fatal = "fatal"
     val Origin = "origin"
-    val Status = "status"
+    val State = "state"
 
     object Events {
       val Created = "created"
@@ -38,7 +38,7 @@ object Monitoring {
       val Closed = "closed"
     }
 
-    object Statuses {
+    object States {
       val Offline = "offline"
       val Closing = "closing"
     }

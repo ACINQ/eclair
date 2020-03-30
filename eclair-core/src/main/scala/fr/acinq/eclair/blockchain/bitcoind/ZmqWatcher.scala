@@ -87,6 +87,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       client.rpcClient.invoke("getbalance").collect {
+        // We track our balance in mBTC because a rounding issue in BTC would be too impactful.
         case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue() * 1000)
       }
       // TODO: beware of the herd effect
