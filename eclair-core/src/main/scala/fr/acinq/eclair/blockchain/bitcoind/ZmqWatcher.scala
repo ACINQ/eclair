@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
+import org.json4s.JsonAST.JDecimal
 import scodec.bits.ByteVector
 
 import scala.collection.{Set, SortedMap}
@@ -84,6 +85,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           log.debug("setting blockCount={}", count)
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
+      }
+      client.rpcClient.invoke("getbalance").collect {
+        // We track our balance in mBTC because a rounding issue in BTC would be too impactful.
+        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue() * 1000)
       }
       // TODO: beware of the herd effect
       KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
