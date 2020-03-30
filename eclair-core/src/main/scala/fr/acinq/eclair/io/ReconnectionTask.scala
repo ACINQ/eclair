@@ -24,6 +24,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.db.{NetworkDb, PeersDb}
+import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams}
 
 import scala.concurrent.duration.{FiniteDuration, _}
@@ -139,6 +140,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
     log.info(s"connecting to $address")
     val connection = context.actorOf(Client.props(nodeParams, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
     context.watch(connection)
+    Metrics.ReconnectionsAttempts.withoutTags().increment()
     connection
   }
 
