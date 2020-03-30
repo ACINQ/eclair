@@ -25,8 +25,8 @@ import fr.acinq.eclair.wire._
 
 // @formatter:off
 sealed trait Direction { def opposite: Direction }
-case object IN extends Direction { def opposite = OUT }
-case object OUT extends Direction { def opposite = IN }
+case object IN extends Direction { def opposite: Direction = OUT }
+case object OUT extends Direction { def opposite: Direction = IN }
 // @formatter:on
 
 sealed trait CommitmentOutput
@@ -53,7 +53,7 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, to
 
   def findHtlcById(id: Long, direction: Direction): Option[DirectedHtlc] = htlcs.find(htlc => htlc.add.id == id && htlc.direction == direction)
 
-  val totalFunds = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
+  val totalFunds: MilliSatoshi = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
 object CommitmentSpec {
@@ -63,13 +63,9 @@ object CommitmentSpec {
   }
 
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
-    val htlc = direction match {
-      case IN => IncomingHtlc(update)
-      case OUT => OutgoingHtlc(update)
-    }
     direction match {
-      case OUT => spec.copy(toLocal = spec.toLocal - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
-      case IN => spec.copy(toRemote = spec.toRemote - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
+      case OUT => spec.copy(toLocal = spec.toLocal - update.amountMsat, htlcs = spec.htlcs + OutgoingHtlc(update))
+      case IN => spec.copy(toRemote = spec.toRemote - update.amountMsat, htlcs = spec.htlcs + IncomingHtlc(update))
     }
   }
 
