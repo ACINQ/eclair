@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.channel.{LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.io.Peer.PeerMessage
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
@@ -109,7 +109,7 @@ object Logs {
         case _: LocalChannelDown => Some(LogCategory.ROUTING_SYNC)
         case _: ValidateResult => Some(LogCategory.ROUTING_SYNC)
         case _: RouteRequest => Some(LogCategory.PAYMENT)
-        case _: PeerMessage => Some(LogCategory.ROUTING_SYNC)
+        case _: PeerRoutingMessage => Some(LogCategory.ROUTING_SYNC)
         case _: RoutingMessage => Some(LogCategory.ROUTING_SYNC)
         case TickBroadcast => Some(LogCategory.ROUTING_SYNC)
         case TickPruneStaleChannels => Some(LogCategory.ROUTING_SYNC)
@@ -118,7 +118,9 @@ object Logs {
         case _: Peer.Connect => Some(LogCategory.CONNECTION)
         case _: Peer.Disconnect => Some(LogCategory.CONNECTION)
         case _: PeerConnection.PendingAuth => Some(LogCategory.CONNECTION)
+        case _: PeerConnection.Authenticated => Some(LogCategory.CONNECTION)
         case _: PeerConnection.ConnectionReady => Some(LogCategory.CONNECTION)
+        case _: PeerConnection.InitializeConnection => Some(LogCategory.CONNECTION)
         case _: PeerConnection.DelayedRebroadcast => Some(LogCategory.ROUTING_SYNC)
         case _: Ping => Some(LogCategory.CONNECTION)
         case _: Pong => Some(LogCategory.CONNECTION)

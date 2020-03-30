@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel.{AddHtlcFailed, Channel, ChannelUnavailable, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
-import fr.acinq.eclair.io.Peer.PeerMessage
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Origin.Local
@@ -494,10 +494,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
     val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
     assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
-    router ! PeerMessage(null, remoteNodeId, chan_bg)
-    router ! PeerMessage(null, remoteNodeId, ann_g)
-    router ! PeerMessage(null, remoteNodeId, channelUpdate_bg)
-    router ! PeerMessage(null, remoteNodeId, channelUpdate_gb)
+    router ! PeerRoutingMessage(null, remoteNodeId, chan_bg)
+    router ! PeerRoutingMessage(null, remoteNodeId, ann_g)
+    router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bg)
+    router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_gb)
     watcher.expectMsg(ValidateRequest(chan_bg))
     watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchSpentBasic]
