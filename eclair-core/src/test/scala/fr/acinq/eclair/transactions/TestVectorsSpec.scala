@@ -160,18 +160,18 @@ class TestVectorsSpec extends FunSuite with Logging {
     OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
     IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
-  val htlcScripts = htlcs.map(htlc => htlc.direction match {
-    case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
-    case IN => Scripts.htlcReceived(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.cltvExpiry)
-  })
+  val htlcScripts = htlcs.map {
+    case OutgoingHtlc(add) => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash))
+    case IncomingHtlc(add) => Scripts.htlcReceived(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), add.cltvExpiry)
+  }
 
-  def dir2string(dir: Direction) = dir match {
-    case IN => "remote->local"
-    case OUT => "local->remote"
+  def dir2string(htlc: DirectedHtlc) = htlc match {
+    case _: IncomingHtlc => "remote->local"
+    case _: OutgoingHtlc => "local->remote"
   }
 
   for (i <- 0 until htlcs.length) {
-    logger.info(s"htlc $i direction: ${dir2string(htlcs(i).direction)}")
+    logger.info(s"htlc $i direction: ${dir2string(htlcs(i))}")
     logger.info(s"htlc $i amount_msat: ${htlcs(i).add.amountMsat}")
     logger.info(s"htlc $i expiry: ${htlcs(i).add.cltvExpiry}")
     logger.info(s"htlc $i payment_preimage: ${paymentPreimages(i)}")
@@ -204,13 +204,13 @@ class TestVectorsSpec extends FunSuite with Logging {
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
-    commitTx.tx.txOut.map(txOut => {
+    commitTx.tx.txOut.foreach(txOut => {
       txOut.publicKeyScript.length match {
         case 22 => logger.info(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.payment_privkey.publicKey})")
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
           if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_pubkey, Local.toSelfDelay, Local.delayed_payment_privkey.publicKey))}")
-          else logger.info(s"# HTLC ${if (htlcs(index).direction == OUT) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
+          else logger.info(s"# HTLC ${if (htlcs(index).isInstanceOf[OutgoingHtlc]) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
 

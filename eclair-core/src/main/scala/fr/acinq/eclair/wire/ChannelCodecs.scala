@@ -88,14 +88,9 @@ object ChannelCodecs extends Logging {
       ("htlcBasepoint" | publicKey) ::
       ("features" | combinedFeaturesCodec)).as[RemoteParams]
 
-  val directionCodec: Codec[Direction] = Codec[Direction](
-    (dir: Direction) => bool.encode(dir == IN),
-    (wire: BitVector) => bool.decode(wire).map(_.map(b => if (b) IN else OUT))
-  )
-
-  val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(directionCodec)
-    .typecase(IN, updateAddHtlcCodec.as[IncomingHtlc])
-    .typecase(OUT, updateAddHtlcCodec.as[OutgoingHtlc])
+  val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool)
+    .typecase(true, updateAddHtlcCodec.as[IncomingHtlc])
+    .typecase(false, updateAddHtlcCodec.as[OutgoingHtlc])
 
   def setCodec[T](codec: Codec[T]): Codec[Set[T]] = Codec[Set[T]](
     (elems: Set[T]) => listOfN(uint16, codec).encode(elems.toList),
