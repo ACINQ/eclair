@@ -138,8 +138,17 @@ object NodeParams {
       "max-feerate-mismatch" -> "on-chain-fees.max-feerate-mismatch",
       "update-fee_min-diff-ratio" -> "on-chain-fees.update-fee-min-diff-ratio",
       // v0.3.3
-      "global-features" -> "features",
-      "local-features" -> "features"
+      "global-features" -> "peer-connection.features",
+      "local-features" -> "peer-connection.features",
+      // v0.3.4
+      "auth-timeout" -> "peer-connection.auth-timeout",
+      "init-timeout" -> "peer-connection.init-timeout",
+      "ping-interval" -> "peer-connection.ping-interval",
+      "ping-timeout" -> "peer-connection.ping-timeout",
+      "ping-disconnect" -> "peer-connection.ping-disconnect",
+      "features" -> "peer-connection.features",
+      "override-features" -> "peer-connection.override-features",
+      "sync-whitelist" -> "peer-connection.sync-whitelist"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -178,17 +187,17 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = ByteVector.fromValidHex(config.getString("features"))
+    val features = ByteVector.fromValidHex(config.getString("peer-connection.features"))
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 
-    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
+    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("peer-connection.override-features").map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = ByteVector.fromValidHex(e.getString("features"))
       p -> f
     }.toMap
 
-    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+    val syncWhitelist: Set[PublicKey] = config.getStringList("peer-connection.sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
@@ -264,11 +273,11 @@ object NodeParams {
       maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
       peerConnectionConf = PeerConnectionConf(
         chainHash = chainHash,
-        authTimeout = FiniteDuration(config.getDuration("auth-timeout").getSeconds, TimeUnit.SECONDS),
-        initTimeout = FiniteDuration(config.getDuration("init-timeout").getSeconds, TimeUnit.SECONDS),
-        pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
-        pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
-        pingDisconnect = config.getBoolean("ping-disconnect"),
+        authTimeout = FiniteDuration(config.getDuration("peer-connection.auth-timeout").getSeconds, TimeUnit.SECONDS),
+        initTimeout = FiniteDuration(config.getDuration("peer-connection.init-timeout").getSeconds, TimeUnit.SECONDS),
+        pingInterval = FiniteDuration(config.getDuration("peer-connection.ping-interval").getSeconds, TimeUnit.SECONDS),
+        pingTimeout = FiniteDuration(config.getDuration("peer-connection.ping-timeout").getSeconds, TimeUnit.SECONDS),
+        pingDisconnect = config.getBoolean("peer-connection.ping-disconnect"),
         features = features,
         overrideFeatures = overrideFeatures,
         syncWhitelist = syncWhitelist,
