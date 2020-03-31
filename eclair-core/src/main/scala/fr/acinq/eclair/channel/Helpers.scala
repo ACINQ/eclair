@@ -893,7 +893,7 @@ object Helpers {
           case ScriptWitness(Seq(remoteSig, ByteVector.empty, htlcReceivedScript)) =>
             val paymentHash160 = htlcReceivedScript.slice(69, 69 + 20)
             log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (claim-htlc-timeout)")
-            remoteCommit.spec.htlcs.collect { case IncomingHtlc(add) if ripemd160(add.paymentHash) == paymentHash160 => add }
+            remoteCommit.spec.htlcs.collect(incoming).filter { add => ripemd160(add.paymentHash) == paymentHash160 }
           case _ => Set.empty
         }).toSet.flatten
       }
