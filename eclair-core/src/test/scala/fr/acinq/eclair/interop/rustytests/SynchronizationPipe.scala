@@ -23,7 +23,7 @@ import java.util.concurrent.CountDownLatch
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.transactions.{IN, OUT}
+import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}
 
 /**
@@ -132,15 +132,15 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       val l = List(
         "LOCAL COMMITS:",
         s" Commit ${d.commitments.localCommit.index}:",
-        s"  Offered htlcs: ${localCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${localCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Offered htlcs: ${localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
+        s"  Received htlcs: ${localCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${localCommit.spec.toLocal}",
         s"  Balance them: ${localCommit.spec.toRemote}",
         s"  Fee rate: ${localCommit.spec.feeratePerKw}",
         "REMOTE COMMITS:",
         s" Commit ${remoteCommit.index}:",
-        s"  Offered htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Offered htlcs: ${remoteCommit.spec.htlcs.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
+        s"  Received htlcs: ${remoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${remoteCommit.spec.toLocal}",
         s"  Balance them: ${remoteCommit.spec.toRemote}",
         s"  Fee rate: ${remoteCommit.spec.feeratePerKw}")
