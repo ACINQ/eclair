@@ -54,7 +54,6 @@ class TransactionsSpec extends FunSuite with Logging {
   val feeratePerKw = 22000
 
   test("encode/decode sequence and locktime (one example)") {
-
     val txnumber = 0x11F71FB268DL
 
     val (sequence, locktime) = encodeTxNumber(txnumber)
@@ -66,8 +65,7 @@ class TransactionsSpec extends FunSuite with Logging {
   }
 
   test("reconstruct txnumber from sequence and locktime") {
-
-    for (i <- 0 until 1000) {
+    for (_ <- 0 until 1000) {
       val txnumber = Random.nextLong() & 0xffffffffffffL
       val (sequence, locktime) = encodeTxNumber(txnumber)
       val txnumber1 = decodeTxNumber(sequence, locktime)
@@ -293,8 +291,8 @@ class TransactionsSpec extends FunSuite with Logging {
     {
       // remote spends remote->local htlc output directly in case of timeout
       val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
-      val localSig = sign(claimHtlcTimeoutTx, remoteHtlcPriv)
-      val signed = addSigs(claimHtlcTimeoutTx, localSig)
+      val remoteSig = sign(claimHtlcTimeoutTx, remoteHtlcPriv)
+      val signed = addSigs(claimHtlcTimeoutTx, remoteSig)
       assert(checkSpendable(signed).isSuccess)
     }
 
