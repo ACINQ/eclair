@@ -391,11 +391,9 @@ class TransactionsSpec extends FunSuite with Logging {
     case Failure(t) => fail(t)
   }
 
-  def htlc(direction: Direction, amount: Satoshi): DirectedHtlc = direction match {
-    case IN => IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
-    case OUT => OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
-  }
+  def htlcIn(amount: Satoshi): DirectedHtlc = IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
 
+  def htlcOut(amount: Satoshi): DirectedHtlc = OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
 
   test("BOLT 2 fee tests") {
 
@@ -424,8 +422,8 @@ class TransactionsSpec extends FunSuite with Logging {
       val htlcs = htlcRegex.findAllIn(s).map(l => {
         val htlcRegex(direction, amount) = l
         direction match {
-          case "offered" => htlc(OUT, Satoshi(amount.toLong))
-          case "received" => htlc(IN, Satoshi(amount.toLong))
+          case "offered" => htlcOut(Satoshi(amount.toLong))
+          case "received" => htlcIn(Satoshi(amount.toLong))
         }
       }).toSet
       TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeratePerKw = feerate_per_kw.toLong, toLocal = MilliSatoshi(to_local_msat.toLong), toRemote = MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
