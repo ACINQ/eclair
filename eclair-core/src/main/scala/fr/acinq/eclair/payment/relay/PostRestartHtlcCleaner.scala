@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent}
-import fr.acinq.eclair.transactions.{IN, OUT}
+import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
 import scodec.bits.ByteVector
@@ -83,7 +83,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == data.channelId) // only consider htlcs related to this channel
         .filter {
-          case IncomingHtlc(htlc, preimage) if Commitments.getHtlcCrossSigned(data.commitments, IN, htlc.id).isDefined =>
+          case IncomingHtlc(htlc, preimage) if Commitments.getIncomingHtlcCrossSigned(data.commitments, htlc.id).isDefined =>
             // this htlc is cross signed in the current commitment, we can settle it
             preimage match {
               case Some(preimage) =>
@@ -292,8 +292,7 @@ object PostRestartHtlcCleaner {
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     val htlcsIn = channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .filter(_.direction == OUT)
-      .map(_.add)
+      .collect { case OutgoingHtlc(add) => add }
       .map(IncomingPacket.decrypt(_, privateKey, features))
       .collect {
         // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
@@ -333,8 +332,7 @@ object PostRestartHtlcCleaner {
     val channel2Htlc: Set[(ByteVector32, Long)] =
     channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .filter(_.direction == OUT)
-      .map(htlc => (htlc.add.channelId, htlc.add.id))
+      .collect { case OutgoingHtlc(add) => (add.channelId, add.id) }
       .toSet
 
     val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()

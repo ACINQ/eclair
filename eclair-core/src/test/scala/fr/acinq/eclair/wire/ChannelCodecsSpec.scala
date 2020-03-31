@@ -131,11 +131,6 @@ class ChannelCodecsSpec extends FunSuite {
     assert(withGlobalFeaturesDecoded.features === hex"028a")
   }
 
-  test("encode/decode direction") {
-    assert(directionCodec.decodeValue(directionCodec.encode(IN).require).require === IN)
-    assert(directionCodec.decodeValue(directionCodec.encode(OUT).require).require === OUT)
-  }
-
   test("encode/decode htlc") {
     val add = UpdateAddHtlc(
       channelId = randomBytes32,
@@ -222,8 +217,8 @@ class ChannelCodecsSpec extends FunSuite {
     val h1 = htlcCodec.decodeValue(encodedHtlc1.toBitVector).require
     val h2 = htlcCodec.decodeValue(encodedHtlc2.toBitVector).require
 
-    assert(h1.direction == IN)
-    assert(h2.direction == OUT)
+    assert(h1.direction == "IN")
+    assert(h2.direction == "OUT")
     assert(htlcCodec.encode(h1).require.bytes === encodedHtlc1)
     assert(htlcCodec.encode(h2).require.bytes === encodedHtlc2)
   }
