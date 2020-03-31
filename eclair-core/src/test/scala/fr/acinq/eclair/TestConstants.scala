@@ -20,12 +20,13 @@ import java.sql.{Connection, DriverManager}
 import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.PeerConnection.PeerConnectionConf
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
@@ -70,9 +71,6 @@ object TestConstants {
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
-      features = ByteVector.fromValidHex("0a8a"),
-      overrideFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
@@ -95,11 +93,6 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
-      authTimeout = 10 seconds,
-      initTimeout = 10 seconds,
-      pingInterval = 30 seconds,
-      pingTimeout = 10 seconds,
-      pingDisconnect = true,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -110,6 +103,18 @@ object TestConstants {
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
       maxFundingSatoshis = 16777215 sat,
+      peerConnectionConf = PeerConnectionConf(
+        chainHash = Block.RegtestGenesisBlock.hash,
+        authTimeout = 10 seconds,
+        initTimeout = 10 seconds,
+        pingInterval = 30 seconds,
+        pingTimeout = 10 seconds,
+        pingDisconnect = true,
+        features = ByteVector.fromValidHex("0a8a"),
+        overrideFeatures = Map.empty,
+        syncWhitelist = Set.empty,
+        maxRebroadcastDelay = 5 seconds
+      ),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
@@ -152,9 +157,6 @@ object TestConstants {
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      features = ByteVector.fromValidHex("0200"), // variable_length_onion, no announcement
-      overrideFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       dustLimit = 1000 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
@@ -177,11 +179,6 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
-      authTimeout = 10 seconds,
-      initTimeout = 10 seconds,
-      pingInterval = 30 seconds,
-      pingTimeout = 10 seconds,
-      pingDisconnect = true,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -192,6 +189,18 @@ object TestConstants {
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
       maxFundingSatoshis = 16777215 sat,
+      peerConnectionConf = PeerConnectionConf(
+        chainHash = Block.RegtestGenesisBlock.hash,
+        authTimeout = 10 seconds,
+        initTimeout = 10 seconds,
+        pingInterval = 30 seconds,
+        pingTimeout = 10 seconds,
+        pingDisconnect = true,
+        features = ByteVector.fromValidHex("0200"), // variable_length_onion, no announcement
+        overrideFeatures = Map.empty,
+        syncWhitelist = Set.empty,
+        maxRebroadcastDelay = 5 seconds
+      ),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
