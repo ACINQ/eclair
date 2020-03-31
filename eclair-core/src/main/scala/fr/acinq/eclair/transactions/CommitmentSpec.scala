@@ -24,19 +24,27 @@ import fr.acinq.eclair.wire._
  */
 
 sealed trait CommitmentOutput
+
 object CommitmentOutput {
+
   case object ToLocal extends CommitmentOutput
+
   case object ToRemote extends CommitmentOutput
+
   case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
+
   case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+
 }
 
 sealed trait DirectedHtlc {
   val add: UpdateAddHtlc
+
   def opposite: DirectedHtlc = this match {
     case IncomingHtlc(_) => OutgoingHtlc(add)
     case OutgoingHtlc(_) => IncomingHtlc(add)
   }
+
   def direction: String = this match {
     case IncomingHtlc(_) => "IN"
     case OutgoingHtlc(_) => "OUT"
@@ -44,11 +52,17 @@ sealed trait DirectedHtlc {
 }
 
 object DirectedHtlc {
-  def incoming: PartialFunction[DirectedHtlc, UpdateAddHtlc] = { case h: IncomingHtlc => h.add }
-  def outgoing: PartialFunction[DirectedHtlc, UpdateAddHtlc] = { case h: OutgoingHtlc => h.add }
+  def incoming: PartialFunction[DirectedHtlc, UpdateAddHtlc] = {
+    case h: IncomingHtlc => h.add
+  }
+
+  def outgoing: PartialFunction[DirectedHtlc, UpdateAddHtlc] = {
+    case h: OutgoingHtlc => h.add
+  }
 }
 
 case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
+
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
@@ -73,7 +87,6 @@ object CommitmentSpec {
     }
   }
 
-  // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
@@ -88,7 +101,6 @@ object CommitmentSpec {
     }
   }
 
-  // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
   def failIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
