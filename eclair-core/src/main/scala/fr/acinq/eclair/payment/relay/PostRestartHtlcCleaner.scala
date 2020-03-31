@@ -308,43 +308,49 @@ object PostRestartHtlcCleaner {
         case Right(p@IncomingPacket.FinalPacket(add, _)) => IncomingHtlc(add, shouldFulfill(p, paymentsDb))
       }
 
-    // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
-    // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream
-    // channel is closing (e.g. due to an HTLC timeout) because cooperatively failing the HTLC downstream will be
-    // instant whereas the uncooperative close of the downstream channel will take time.
     def isPendingUpstream(channelId: ByteVector32, htlcId: Long): Boolean =
       htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
 
     // We group relayed outgoing HTLCs by their origin.
     val relayedOut = channels
-      .flatMap(c => {
+      .flatMap { c =>
         // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
         val htlcsToIgnore: Set[Long] = c match {
-          case c: DATA_CLOSING =>
-            val irrevocablySpentTxes = Closing.irrevocablySpentTxes(c)
-            val localCommitConfirmed = c.localCommitPublished.exists(x => irrevocablySpentTxes.exists(tx => tx.txid == x.commitTx.txid))
-            val remoteCommitConfirmed = c.remoteCommitPublished.exists(x => irrevocablySpentTxes.exists(tx => tx.txid == x.commitTx.txid))
-            val nextRemoteCommitConfirmed = c.nextRemoteCommitPublished.exists(x => irrevocablySpentTxes.exists(tx => tx.txid == x.commitTx.txid))
-            val timedOutHtlcs = irrevocablySpentTxes.flatMap(tx => {
-              if (localCommitConfirmed) {
-                Closing.timedoutHtlcs(c.commitments.localCommit, c.commitments.localParams.dustLimit, tx, c.localCommitPublished)
-              } else if (remoteCommitConfirmed) {
-                Closing.timedoutHtlcs(c.commitments.remoteCommit, c.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished)
-              } else if (nextRemoteCommitConfirmed) {
-                c.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutHtlcs(r.nextRemoteCommit, c.commitments.remoteParams.dustLimit, tx, c.nextRemoteCommitPublished))
-              } else {
-                Set.empty[UpdateAddHtlc]
-              }
+          case d: DATA_CLOSING =>
+            val closingType_opt = Closing.isClosingTypeAlreadyKnown(d)
+            val overriddenHtlcs: Set[Long] = (closingType_opt match {
+              case Some(c: Closing.LocalClose) => Closing.overriddenOutgoingHtlcs(d, c.localCommitPublished.commitTx)
+              case Some(c: Closing.RemoteClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
+              case _ => Set.empty[UpdateAddHtlc]
             }).map(_.id)
-            val overriddenHtlcs = irrevocablySpentTxes.flatMap(tx => Closing.overriddenOutgoingHtlcs(c, tx)).map(_.id)
-            timedOutHtlcs ++ overriddenHtlcs
+            val irrevocablySpent = closingType_opt match {
+              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
+              case _ => Set.empty[ByteVector32]
+            }
+            val timedoutHtlcs: Set[Long] = (closingType_opt match {
+              case Some(c: Closing.LocalClose) =>
+                val confirmedTxs = c.localCommitPublished.commitTx :: c.localCommitPublished.htlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.localCommit, d.commitments.localParams.dustLimit, tx, c.localCommitPublished))
+              case Some(c: Closing.CurrentRemoteClose) =>
+                val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.remoteCommit, d.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished))
+              case Some(c: Closing.NextRemoteClose) =>
+                val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.remoteCommit, d.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished))
+              case _ => Seq.empty[UpdateAddHtlc]
+            }).map(_.id).toSet
+            overriddenHtlcs ++ timedoutHtlcs
           case _ => Set.empty
         }
         c.commitments.originChannels.filterKeys(htlcId => !htlcsToIgnore.contains(htlcId)).map { case (outgoingHtlcId, origin) => (origin, c.channelId, outgoingHtlcId) }
-      })
+      }
       .groupBy { case (origin, _, _) => origin }
       .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
-      // Filter out HTLCs that are already fulfilled/failed upstream.
+      // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
+      // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream
+      // channel is closing (e.g. due to an HTLC timeout) because cooperatively failing the HTLC downstream will be
+      // instant whereas the uncooperative close of the downstream channel will take time.
       .filterKeys {
         case _: Origin.Local => true
         case Origin.Relayed(channelId, htlcId, _, _) => isPendingUpstream(channelId, htlcId)
