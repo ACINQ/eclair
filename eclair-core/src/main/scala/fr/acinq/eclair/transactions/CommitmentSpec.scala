@@ -74,14 +74,14 @@ object CommitmentSpec {
   }
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
-  def fulfillOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
+  def fulfillIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 
-  def fulfillIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
+  def fulfillOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findOutgoingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
@@ -89,14 +89,14 @@ object CommitmentSpec {
   }
 
   // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
-  def failOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
+  def failIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
     }
   }
 
-  def failIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
+  def failOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findOutgoingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
@@ -113,15 +113,15 @@ object CommitmentSpec {
       case (spec, _) => spec
     }
     val spec3 = localChanges.foldLeft(spec2) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillOutgoingHtlc(spec, u.id)
-      case (spec, u: UpdateFailHtlc) => failOutgoingHtlc(spec, u.id)
-      case (spec, u: UpdateFailMalformedHtlc) => failOutgoingHtlc(spec, u.id)
-      case (spec, _) => spec
-    }
-    val spec4 = remoteChanges.foldLeft(spec3) {
       case (spec, u: UpdateFulfillHtlc) => fulfillIncomingHtlc(spec, u.id)
       case (spec, u: UpdateFailHtlc) => failIncomingHtlc(spec, u.id)
       case (spec, u: UpdateFailMalformedHtlc) => failIncomingHtlc(spec, u.id)
+      case (spec, _) => spec
+    }
+    val spec4 = remoteChanges.foldLeft(spec3) {
+      case (spec, u: UpdateFulfillHtlc) => fulfillOutgoingHtlc(spec, u.id)
+      case (spec, u: UpdateFailHtlc) => failOutgoingHtlc(spec, u.id)
+      case (spec, u: UpdateFailMalformedHtlc) => failOutgoingHtlc(spec, u.id)
       case (spec, _) => spec
     }
     val spec5 = (localChanges ++ remoteChanges).foldLeft(spec4) {
