@@ -836,8 +836,7 @@ object Helpers {
         // if an outgoing htlc is in the remote commitment, then:
         // - either it is in the local commitment (it was never fulfilled)
         // - or we have already received the fulfill and forwarded it upstream
-        localCommit.spec.htlcs
-          .collect {
+        localCommit.spec.htlcs.collect {
             case OutgoingHtlc(add) if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
           }
       }
@@ -872,7 +871,7 @@ object Helpers {
           case ScriptWitness(Seq(ByteVector.empty, remoteSig, localSig, ByteVector.empty, htlcOfferedScript)) =>
             val paymentHash160 = htlcOfferedScript.slice(109, 109 + 20)
             log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (htlc-timeout)")
-            localCommit.spec.htlcs.collect { case OutgoingHtlc(add) if ripemd160(add.paymentHash) == paymentHash160 => add }
+            localCommit.spec.htlcs.collect(outgoing).filter(add => ripemd160(add.paymentHash) == paymentHash160)
           case _ => Set.empty
         }).toSet.flatten
       }
