@@ -367,13 +367,13 @@ object Helpers {
 
     // @formatter:off
     sealed trait ClosingType
-    case object MutualClose extends ClosingType
-    case object LocalClose extends ClosingType
-    sealed trait RemoteClose extends ClosingType
-    case object CurrentRemoteClose extends RemoteClose
-    case object NextRemoteClose extends RemoteClose
-    case object RecoveryClose extends ClosingType
-    case object RevokedClose extends ClosingType
+    case class MutualClose(tx: Transaction) extends ClosingType
+    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType
+    sealed trait RemoteClose extends ClosingType { def remoteCommitPublished: RemoteCommitPublished }
+    case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
+    case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
+    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType
+    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType
     // @formatter:on
 
     /**
@@ -401,15 +401,15 @@ object Helpers {
      */
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = closing match {
       case _ if closing.localCommitPublished.exists(lcp => lcp.irrevocablySpent.values.toSet.contains(lcp.commitTx.txid)) =>
-        Some(LocalClose)
+        Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
       case _ if closing.remoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
-        Some(CurrentRemoteClose)
+        Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
       case _ if closing.nextRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
-        Some(NextRemoteClose)
+        Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
       case _ if closing.futureRemoteCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
-        Some(RecoveryClose)
+        Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
-        Some(RevokedClose)
+        Some(RevokedClose(closing.revokedCommitPublished.find(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)).get))
       case _ => None // we don't know yet what the closing type will be
     }
 
@@ -423,17 +423,17 @@ object Helpers {
      */
     def isClosed(data: HasCommitments, additionalConfirmedTx_opt: Option[Transaction]): Option[ClosingType] = data match {
       case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.contains) =>
-        Some(MutualClose)
+        Some(MutualClose(additionalConfirmedTx_opt.get))
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone) =>
-        Some(LocalClose)
+        Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(CurrentRemoteClose)
+        Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(NextRemoteClose)
+        Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
-        Some(RecoveryClose)
+        Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>
-        Some(RevokedClose)
+        Some(RevokedClose(closing.revokedCommitPublished.find(Closing.isRevokedCommitDone).get))
       case _ => None
     }
 
@@ -890,7 +890,7 @@ object Helpers {
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction, localCommitPublished: Option[LocalCommitPublished])(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction, localCommitPublished: LocalCommitPublished)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec).map(_.add)
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -905,7 +905,7 @@ object Helpers {
             findTimedOutHtlc(tx,
               paymentHash160,
               untrimmedHtlcs,
-              localCommitPublished.toSeq.flatMap(_.htlcTimeoutTxs),
+              localCommitPublished.htlcTimeoutTxs,
               Scripts.extractPaymentHashFromHtlcTimeout)
           }
           .toSet
@@ -919,7 +919,7 @@ object Helpers {
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction, remoteCommitPublished: Option[RemoteCommitPublished])(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction, remoteCommitPublished: RemoteCommitPublished)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec).map(_.add)
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -934,7 +934,7 @@ object Helpers {
             findTimedOutHtlc(tx,
               paymentHash160,
               untrimmedHtlcs,
-              remoteCommitPublished.toSeq.flatMap(_.claimHtlcTimeoutTxs),
+              remoteCommitPublished.claimHtlcTimeoutTxs,
               Scripts.extractPaymentHashFromClaimHtlcTimeout)
           }
           .toSet
