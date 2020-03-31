@@ -821,8 +821,11 @@ object Helpers {
      *           - preimage needs to be sent to the upstream channel
      */
     def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, ByteVector32)] = {
-      val paymentPreimages = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess).toSet
-      paymentPreimages.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx"))
+      val htlcSuccess = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess)
+      htlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (htlc-success)"))
+      val claimHtlcSuccess = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromClaimHtlcSuccess)
+      claimHtlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (claim-htlc-success)"))
+      val paymentPreimages = (htlcSuccess ++ claimHtlcSuccess).toSet
       paymentPreimages.flatMap { paymentPreimage =>
         // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment
         // if an outgoing htlc is in the remote commitment, then:

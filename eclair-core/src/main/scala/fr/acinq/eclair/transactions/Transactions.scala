@@ -620,13 +620,13 @@ object Transactions {
     htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, remoteSig: ByteVector64, paymentPreimage: ByteVector32): ClaimHtlcSuccessTx = {
-    val witness = witnessClaimHtlcSuccessFromCommitTx(remoteSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
+  def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: ByteVector64, paymentPreimage: ByteVector32): ClaimHtlcSuccessTx = {
+    val witness = witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
     claimHtlcSuccessTx.copy(tx = claimHtlcSuccessTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, remoteSig: ByteVector64): ClaimHtlcTimeoutTx = {
-    val witness = witnessClaimHtlcTimeoutFromCommitTx(remoteSig, claimHtlcTimeoutTx.input.redeemScript)
+  def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: ByteVector64): ClaimHtlcTimeoutTx = {
+    val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
   }
 

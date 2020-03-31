@@ -156,16 +156,21 @@ object Scripts {
   def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
     ScriptWitness(ByteVector.empty :: der(remoteSig) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
+  /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
+  def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
+    case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+  }
+
   /**
    * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
-   * claim its funds using a payment preimage (consumes htlcReceived script from commit tx)
+   * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
    */
-  def witnessClaimHtlcSuccessFromCommitTx(remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcReceivedScript: ByteVector) =
-    ScriptWitness(der(remoteSig) :: paymentPreimage.bytes :: htlcReceivedScript :: Nil)
+  def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
+    ScriptWitness(der(localSig) :: paymentPreimage.bytes :: htlcOffered :: Nil)
 
-  def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
+  /** Extract the payment preimage from from a fulfilled offered htlc. */
+  def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
-    case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
   def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, lockTime: CltvExpiry) = {
@@ -204,8 +209,8 @@ object Scripts {
    * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
    * claim its funds after timeout (consumes htlcReceived script from commit tx)
    */
-  def witnessClaimHtlcTimeoutFromCommitTx(remoteSig: ByteVector64, htlcReceivedScript: ByteVector) =
-    ScriptWitness(der(remoteSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
+  def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
+    ScriptWitness(der(localSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
 
   /** Extract the payment hash from a timed-out received htlc. */
   def extractPaymentHashFromClaimHtlcTimeout: PartialFunction[ScriptWitness, ByteVector] = {
