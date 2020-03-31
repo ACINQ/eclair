@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -835,10 +836,10 @@ object Helpers {
         // if an outgoing htlc is in the remote commitment, then:
         // - either it is in the local commitment (it was never fulfilled)
         // - or we have already received the fulfill and forwarded it upstream
-        val outgoingHtlcs = localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add }
-        outgoingHtlcs.collect {
-          case add if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
-        }
+        localCommit.spec.htlcs
+          .collect {
+            case OutgoingHtlc(add) if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
+          }
       }
     }
 
@@ -864,7 +865,7 @@ object Helpers {
     def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-        (localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add } -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec).map(_.add))
+        (localCommit.spec.htlcs.collect(outgoing) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec).map(_.add))
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
         tx.txIn.map(_.witness match {
@@ -886,7 +887,7 @@ object Helpers {
     def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
-        (remoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => add } -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec).map(_.add))
+        (remoteCommit.spec.htlcs.collect(incoming) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec).map(_.add))
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
         tx.txIn.map(_.witness match {
@@ -906,11 +907,11 @@ object Helpers {
      */
     def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
-        localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add }
+        localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
-        remoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => add }
+        remoteCommit.spec.htlcs.collect(incoming)
       } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
-        nextRemoteCommit_opt.get.spec.htlcs.collect { case IncomingHtlc(add) => add }
+        nextRemoteCommit_opt.get.spec.htlcs.collect(incoming)
       } else {
         Set.empty
       }
@@ -930,14 +931,14 @@ object Helpers {
         // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
         val mostRecentRemoteCommit = nextRemoteCommit_opt.getOrElse(remoteCommit)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
-        mostRecentRemoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => add } -- localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add }
+        mostRecentRemoteCommit.spec.htlcs.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
         // their commit got confirmed
         nextRemoteCommit_opt match {
           case Some(nextRemoteCommit) =>
             // we had signed a new commitment but they committed the previous one
             // any htlc that we signed in the new commitment that they didn't sign will never reach the chain
-            nextRemoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => add } -- localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add }
+            nextRemoteCommit.spec.htlcs.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
           case None =>
             // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
             Set.empty

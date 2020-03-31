@@ -43,6 +43,11 @@ sealed trait DirectedHtlc {
   }
 }
 
+object DirectedHtlc {
+  def incoming: PartialFunction[DirectedHtlc, UpdateAddHtlc] = { case h: IncomingHtlc => h.add }
+  def outgoing: PartialFunction[DirectedHtlc, UpdateAddHtlc] = { case h: OutgoingHtlc => h.add }
+}
+
 case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 

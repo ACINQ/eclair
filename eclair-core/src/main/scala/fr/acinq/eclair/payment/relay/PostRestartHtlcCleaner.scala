@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
@@ -292,7 +293,7 @@ object PostRestartHtlcCleaner {
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     val htlcsIn = channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .collect { case OutgoingHtlc(add) => add }
+      .collect(outgoing)
       .map(IncomingPacket.decrypt(_, privateKey, features))
       .collect {
         // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
