@@ -27,7 +27,7 @@ import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, Relayer}
 import fr.acinq.eclair.router.ChannelHop
-import fr.acinq.eclair.transactions.{DirectedHtlc, Direction, IN, IncomingHtlc, OUT, OutgoingHtlc}
+import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, NodeParams, TestConstants, TestkitBaseClass, randomBytes32}
@@ -80,19 +80,19 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass {
     val trampolineRelayed = Origin.TrampolineRelayed((channelId_ab_1, 0L) :: (channelId_ab_2, 2L) :: Nil, None)
 
     val htlc_ab_1 = Seq(
-      buildHtlc(0, channelId_ab_1, trampolineRelayedPaymentHash, IN),
-      buildHtlc(1, channelId_ab_1, randomBytes32, IN), // not relayed
-      buildHtlc(2, channelId_ab_1, randomBytes32, OUT),
-      buildHtlc(3, channelId_ab_1, randomBytes32, OUT),
-      buildHtlc(4, channelId_ab_1, randomBytes32, IN), // not relayed
-      buildHtlc(5, channelId_ab_1, relayedPaymentHash, IN)
+      buildHtlcIn(0, channelId_ab_1, trampolineRelayedPaymentHash),
+      buildHtlcIn(1, channelId_ab_1, randomBytes32), // not relayed
+      buildHtlcOut(2, channelId_ab_1, randomBytes32),
+      buildHtlcOut(3, channelId_ab_1, randomBytes32),
+      buildHtlcIn(4, channelId_ab_1, randomBytes32), // not relayed
+      buildHtlcIn(5, channelId_ab_1, relayedPaymentHash)
     )
     val htlc_ab_2 = Seq(
-      buildHtlc(0, channelId_ab_2, randomBytes32, IN), // not relayed
-      buildHtlc(1, channelId_ab_2, randomBytes32, OUT),
-      buildHtlc(2, channelId_ab_2, trampolineRelayedPaymentHash, IN),
-      buildHtlc(3, channelId_ab_2, randomBytes32, OUT),
-      buildHtlc(4, channelId_ab_2, randomBytes32, IN) // not relayed
+      buildHtlcIn(0, channelId_ab_2, randomBytes32), // not relayed
+      buildHtlcOut(1, channelId_ab_2, randomBytes32),
+      buildHtlcIn(2, channelId_ab_2, trampolineRelayedPaymentHash),
+      buildHtlcOut(3, channelId_ab_2, randomBytes32),
+      buildHtlcIn(4, channelId_ab_2, randomBytes32) // not relayed
     )
 
     val channels = Seq(
@@ -365,14 +365,14 @@ object PostRestartHtlcCleanerSpec {
   val (preimage1, preimage2) = (randomBytes32, randomBytes32)
   val (paymentHash1, paymentHash2) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2))
 
-  def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, direction: Direction): DirectedHtlc = {
+  def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
     val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
-    val add = UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    direction match {
-      case IN => IncomingHtlc(add)
-      case OUT => OutgoingHtlc(add)
-    }
+    UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
   }
+
+  def buildHtlcIn(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = IncomingHtlc(buildHtlc(htlcId, channelId, paymentHash))
+
+  def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
     val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, FinalLegacyPayload(finalAmount, finalExpiry))
@@ -432,15 +432,15 @@ object PostRestartHtlcCleanerSpec {
   def setupTrampolinePayments(nodeParams: NodeParams): TrampolinePaymentTest = {
     // Upstream HTLCs.
     val htlc_ab_1 = Seq(
-      buildHtlc(0, channelId_ab_1, paymentHash1, IN),
-      buildHtlc(2, channelId_ab_1, randomBytes32, OUT), // ignored
-      buildHtlc(3, channelId_ab_1, randomBytes32, OUT), // ignored
-      buildHtlc(5, channelId_ab_1, paymentHash2, IN)
+      buildHtlcIn(0, channelId_ab_1, paymentHash1),
+      buildHtlcOut(2, channelId_ab_1, randomBytes32), // ignored
+      buildHtlcOut(3, channelId_ab_1, randomBytes32), // ignored
+      buildHtlcIn(5, channelId_ab_1, paymentHash2)
     )
     val htlc_ab_2 = Seq(
-      buildHtlc(1, channelId_ab_2, randomBytes32, OUT), // ignored
-      buildHtlc(7, channelId_ab_2, paymentHash1, IN),
-      buildHtlc(9, channelId_ab_2, randomBytes32, OUT) // ignored
+      buildHtlcOut(1, channelId_ab_2, randomBytes32), // ignored
+      buildHtlcIn(7, channelId_ab_2, paymentHash1),
+      buildHtlcOut(9, channelId_ab_2, randomBytes32) // ignored
     )
 
     val origin_1 = Origin.TrampolineRelayed((channelId_ab_1, 0L) :: (channelId_ab_2, 7L) :: Nil, None)
@@ -448,18 +448,18 @@ object PostRestartHtlcCleanerSpec {
 
     // Downstream HTLCs.
     val htlc_bc_1 = Seq(
-      buildHtlc(1, channelId_bc_1, randomBytes32, IN), // ignored
-      buildHtlc(6, channelId_bc_1, paymentHash1, OUT),
-      buildHtlc(8, channelId_bc_1, paymentHash2, OUT)
+      buildHtlcIn(1, channelId_bc_1, randomBytes32), // ignored
+      buildHtlcOut(6, channelId_bc_1, paymentHash1),
+      buildHtlcOut(8, channelId_bc_1, paymentHash2)
     )
     val htlc_bc_2 = Seq(
-      buildHtlc(0, channelId_bc_2, randomBytes32, IN), // ignored
-      buildHtlc(1, channelId_bc_2, paymentHash2, OUT)
+      buildHtlcIn(0, channelId_bc_2, randomBytes32), // ignored
+      buildHtlcOut(1, channelId_bc_2, paymentHash2)
     )
     val htlc_bc_3 = Seq(
-      buildHtlc(3, channelId_bc_3, randomBytes32, IN), // ignored
-      buildHtlc(4, channelId_bc_3, paymentHash2, OUT),
-      buildHtlc(5, channelId_bc_3, randomBytes32, IN) // ignored
+      buildHtlcIn(3, channelId_bc_3, randomBytes32), // ignored
+      buildHtlcOut(4, channelId_bc_3, paymentHash2),
+      buildHtlcIn(5, channelId_bc_3, randomBytes32) // ignored
     )
 
     val downstream_1_1 = UpdateAddHtlc(channelId_bc_1, 6L, finalAmount, paymentHash1, finalExpiry, TestConstants.emptyOnionPacket)
