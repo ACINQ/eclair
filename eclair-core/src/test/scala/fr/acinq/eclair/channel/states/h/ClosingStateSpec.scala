@@ -435,13 +435,15 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(closingState.htlcSuccessTxs.isEmpty)
     assert(closingState.htlcTimeoutTxs.length === 4)
     assert(closingState.claimHtlcDelayedTxs.length === 4)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 42, 0, closingState.commitTx)
-    assert(relayerA.expectMsgType[ForwardOnChainFail].htlc === dust)
-    relayerA.expectNoMsg(100 millis)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainDelayedOutputTx.get), 200, 0, closingState.claimMainDelayedOutputTx.get)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.htlcTimeoutTxs.head), 201, 0, closingState.htlcTimeoutTxs.head)
+
+    // if commit tx and htlc-timeout txs end up in the same block, we may receive the htlc-timeout confirmation before the commit tx confirmation
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.htlcTimeoutTxs.head), 42, 0, closingState.htlcTimeoutTxs.head)
     val forwardedFail1 = relayerA.expectMsgType[ForwardOnChainFail].htlc
     relayerA.expectNoMsg(250 millis)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 42, 1, closingState.commitTx)
+    assert(relayerA.expectMsgType[ForwardOnChainFail].htlc === dust)
+    relayerA.expectNoMsg(250 millis)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainDelayedOutputTx.get), 200, 0, closingState.claimMainDelayedOutputTx.get)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.htlcTimeoutTxs(1)), 202, 0, closingState.htlcTimeoutTxs(1))
     val forwardedFail2 = relayerA.expectMsgType[ForwardOnChainFail].htlc
     relayerA.expectNoMsg(250 millis)
