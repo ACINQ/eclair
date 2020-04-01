@@ -138,7 +138,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
 
   private def connect(address: InetSocketAddress, origin_opt: Option[ActorRef]): ActorRef = {
     log.info(s"connecting to $address")
-    val connection = context.actorOf(Client.props(nodeParams, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
+    val connection = context.actorOf(Client.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
     context.watch(connection)
     Metrics.ReconnectionsAttempts.withoutTags().increment()
     connection

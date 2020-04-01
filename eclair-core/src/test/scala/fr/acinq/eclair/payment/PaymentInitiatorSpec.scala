@@ -48,8 +48,11 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
+    import com.softwaremill.quicklens._
     val features = if (test.tags.contains("mpp_disabled")) hex"0a8a" else hex"028a8a"
-    val nodeParams = TestConstants.Alice.nodeParams.copy(features = features)
+    val nodeParams = TestConstants.Alice.nodeParams
+        .modify(_.peerConnectionConf.features).setToIf(test.tags.contains("mpp_disabled"))(hex"0a8a")
+        .modify(_.peerConnectionConf.features).setToIf(!test.tags.contains("mpp_disabled"))(hex"028a8a")
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])

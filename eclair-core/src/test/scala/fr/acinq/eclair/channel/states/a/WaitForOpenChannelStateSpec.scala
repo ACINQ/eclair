@@ -40,7 +40,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
     val bobNodeParams = Bob.nodeParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.peerConnectionConf.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
 
     val setup = init(nodeParamsB = bobNodeParams)

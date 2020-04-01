@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.PeerConnection.PeerConnectionConf
 import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag}
@@ -48,7 +49,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement(pub2priv)).toList
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe)
+  case class FixtureParam(conf: PeerConnectionConf, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe)
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val switchboard = TestProbe()
@@ -59,12 +60,12 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val remoteNodeId = Bob.nodeParams.nodeId
 
     import com.softwaremill.quicklens._
-    val aliceParams = TestConstants.Alice.nodeParams
+    val aliceConf = TestConstants.Alice.nodeParams.peerConnectionConf
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
       .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
 
-    val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(aliceParams, switchboard.ref, router.ref))
-    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
+    val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(TestConstants.Alice.nodeParams.keyPair, aliceConf, switchboard.ref, router.ref))
+    withFixture(test.toNoArgTest(FixtureParam(aliceConf, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
   }
 
   def connect(remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features), expectSync: Boolean = false): Unit = {
@@ -107,7 +108,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     probe.watch(peerConnection)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
-    probe.expectTerminated(peerConnection, nodeParams.authTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+    probe.expectTerminated(peerConnection, conf.authTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
   }
 
   test("disconnect if init timeout") { f =>
@@ -117,7 +118,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
-    probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+    probe.expectTerminated(peerConnection, conf.initTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
   }
 
   test("disconnect if incompatible local features") { f =>
@@ -162,8 +163,8 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     )
 
     for ((configuredFeatures, sentFeatures) <- testCases) {
-      val nodeParams = TestConstants.Alice.nodeParams.copy(features = configuredFeatures.bytes)
-      val peerConnection = TestFSMRef(new PeerConnection(nodeParams, switchboard.ref, router.ref))
+      val conf = TestConstants.Alice.nodeParams.peerConnectionConf.copy(features = configuredFeatures.bytes)
+      val peerConnection = TestFSMRef(new PeerConnection(TestConstants.Alice.nodeParams.keyPair, conf, switchboard.ref, router.ref))
       probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
       transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
       probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
