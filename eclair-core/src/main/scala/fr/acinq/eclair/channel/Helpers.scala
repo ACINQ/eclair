@@ -370,7 +370,7 @@ object Helpers {
     sealed trait ClosingType
     case class MutualClose(tx: Transaction) extends ClosingType
     case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType
-    sealed trait RemoteClose extends ClosingType { def remoteCommitPublished: RemoteCommitPublished }
+    sealed trait RemoteClose extends ClosingType { def remoteCommit: RemoteCommit; def remoteCommitPublished: RemoteCommitPublished }
     case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
     case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
     case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType
@@ -833,27 +833,9 @@ object Helpers {
         // - either it is in the local commitment (it was never fulfilled)
         // - or we have already received the fulfill and forwarded it upstream
         localCommit.spec.htlcs.collect {
-            case OutgoingHtlc(add) if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
-          }
+          case OutgoingHtlc(add) if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
+        }
       }
-    }
-
-    /**
-     * In case of a unilateral close, returns all spending transactions that have reached mindepth (commit tx, claimed
-     * delayed outputs, HTLCs, etc).
-     */
-    def irrevocablySpentTxes(d: DATA_CLOSING): Set[Transaction] = {
-      val txids = (d.localCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty) ++
-        d.remoteCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty) ++
-        d.nextRemoteCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty) ++
-        d.futureRemoteCommitPublished.map(_.irrevocablySpent).getOrElse(Map.empty)).values.toSet
-      def localCommitTxes(localCommitPublished: Option[LocalCommitPublished]): List[Transaction] = localCommitPublished.map(c => c.commitTx :: c.claimMainDelayedOutputTx.toList ::: c.htlcTimeoutTxs ::: c.htlcSuccessTxs ::: c.claimHtlcDelayedTxs).getOrElse(Nil)
-      def remoteCommitTxes(remoteCommitPublished: Option[RemoteCommitPublished]): List[Transaction] = remoteCommitPublished.map(c => c.commitTx :: c.claimMainOutputTx.toList ::: c.claimHtlcTimeoutTxs ::: c.claimHtlcSuccessTxs).getOrElse(Nil)
-      val txes = localCommitTxes(d.localCommitPublished) ++
-        remoteCommitTxes(d.remoteCommitPublished) ++
-        remoteCommitTxes(d.nextRemoteCommitPublished) ++
-        remoteCommitTxes(d.futureRemoteCommitPublished)
-      txes.filter(tx => txids.contains(tx.txid)).toSet
     }
 
     /**
@@ -890,7 +872,7 @@ object Helpers {
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction, localCommitPublished: LocalCommitPublished)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def timedoutHtlcs(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec).map(_.add)
       if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -919,7 +901,7 @@ object Helpers {
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction, remoteCommitPublished: RemoteCommitPublished)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec).map(_.add)
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)

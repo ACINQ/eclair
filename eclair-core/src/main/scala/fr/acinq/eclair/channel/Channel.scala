@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -740,8 +740,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               // counterparty, so only htlcs above remote's dust_limit matter
               val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec) ++ Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
               trimmedHtlcs.map(_.add).foreach { htlc =>
-                  log.info(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
-                  nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
+                log.info(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
+                nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
               }
               if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
@@ -1304,21 +1304,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
       // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
       val d1 = d.copy(
-      localCommitPublished = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx)),
-      remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-      nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-      futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-      revokedCommitPublished = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
-    )
+        localCommitPublished = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx)),
+        remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
+        nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
+        futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
+        revokedCommitPublished = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
+      )
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
       if (d1.localCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.remoteParams.toSelfDelay.toInt))
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(c.localCommit, d.commitments.localParams.dustLimit, tx, c.localCommitPublished)
-        case Some(c: Closing.CurrentRemoteClose) => Closing.timedoutHtlcs(c.remoteCommit, d.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished)
-        case Some(c: Closing.NextRemoteClose) => Closing.timedoutHtlcs(c.remoteCommit, d.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished)
+        case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
+        case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarii (future remote commit)
       }
       timedoutHtlcs.foreach { add =>

@@ -300,7 +300,7 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
   test("ignore htlcs in closing downstream channels that have been settled on-chain") { f =>
     import f._
 
-    // There are two pending payments.
+    // There are three pending payments.
     // Payment 1:
     //  * 2 upstream htlcs
     //  * 1 downstream htlc that timed out on-chain
@@ -312,14 +312,22 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
     //  * 1 downstream htlc that timed out on-chain
     //  * 1 downstream htlc that will be resolved on-chain
     //  * this payment should be fulfilled upstream once we receive the preimage
+    // Payment 3:
+    //  * 1 upstream htlc
+    //  * 1 downstream htlc that timed out on-chain but doesn't have enough confirmations
+    //  * this payment should not be failed when the upstream channels come back online: we should wait for the htlc-timeout
+    //    transaction to have enough confirmations
 
     // Upstream HTLCs.
     val htlc_upstream_1 = Seq(buildHtlcIn(0, channelId_ab_1, paymentHash1), buildHtlcIn(5, channelId_ab_1, paymentHash2))
     val htlc_upstream_2 = Seq(buildHtlcIn(7, channelId_ab_2, paymentHash1), buildHtlcIn(9, channelId_ab_2, paymentHash2))
+    val htlc_upstream_3 = Seq(buildHtlcIn(11, randomBytes32, paymentHash3))
     val upstream_1 = Upstream.TrampolineRelayed(htlc_upstream_1.head.add :: htlc_upstream_2.head.add :: Nil)
     val upstream_2 = Upstream.TrampolineRelayed(htlc_upstream_1(1).add :: htlc_upstream_2(1).add :: Nil)
+    val upstream_3 = Upstream.TrampolineRelayed(htlc_upstream_3.head.add :: Nil)
     val data_upstream_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_1, Map.empty)
     val data_upstream_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_2, Map.empty)
+    val data_upstream_3 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_3, Map.empty)
 
     // Downstream HTLCs in closing channel.
     val (data_downstream, htlc_2_2) = {
@@ -348,6 +356,11 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
         val (_, cmd) = makeCmdAdd(30000000 msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight, preimage2, upstream_2)
         addHtlc(cmd, alice, bob, alice2bob, bob2alice)
       }
+      {
+        // Will be timed out but waiting for on-chain confirmations.
+        val (_, cmd) = makeCmdAdd(31000000 msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight + 5, preimage3, upstream_3)
+        addHtlc(cmd, alice, bob, alice2bob, bob2alice)
+      }
       crossSign(alice, bob, alice2bob, bob2alice)
 
       {
@@ -361,10 +374,10 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
 
       val closingState = localClose(alice, alice2blockchain)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 42, 0, closingState.commitTx)
-      // All committed htlcs timed out except the last one, which will be fulfilled later.
-      assert(closingState.htlcTimeoutTxs.length === 3)
+      // All committed htlcs timed out except the last two; one will be fulfilled later and the other will timeout later.
+      assert(closingState.htlcTimeoutTxs.length === 4)
       val htlcTxes = closingState.htlcTimeoutTxs.sortBy(_.txOut.map(_.amount).sum)
-      htlcTxes.reverse.tail.zipWithIndex.foreach {
+      htlcTxes.reverse.drop(2).zipWithIndex.foreach {
         case (tx, i) => alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), 201, i, tx)
       }
       (alice.stateData.asInstanceOf[DATA_CLOSING], htlc_2_2)
@@ -372,14 +385,16 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
 
     nodeParams.db.channels.addOrUpdateChannel(data_upstream_1)
     nodeParams.db.channels.addOrUpdateChannel(data_upstream_2)
+    nodeParams.db.channels.addOrUpdateChannel(data_upstream_3)
     nodeParams.db.channels.addOrUpdateChannel(data_downstream)
 
     val relayer = f.createRelayer()
     commandBuffer.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
-    val (channel_upstream_1, channel_upstream_2) = (TestProbe(), TestProbe())
+    val (channel_upstream_1, channel_upstream_2, channel_upstream_3) = (TestProbe(), TestProbe(), TestProbe())
     system.eventStream.publish(ChannelStateChanged(channel_upstream_1.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_1))
     system.eventStream.publish(ChannelStateChanged(channel_upstream_2.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_2))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_3.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_3))
 
     // Payment 1 should fail instantly.
     channel_upstream_1.expectMsg(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure), commit = true))
@@ -394,6 +409,9 @@ class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperM
       CommandBuffer.CommandSend(channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
       CommandBuffer.CommandSend(channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
     )
+
+    // Payment 3 should not be failed: we are still waiting for on-chain confirmation.
+    channel_upstream_3.expectNoMsg(100 millis)
   }
 
   test("handle a trampoline relay htlc-fail") { f =>

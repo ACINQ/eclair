@@ -331,19 +331,16 @@ object PostRestartHtlcCleaner {
             val timedoutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) =>
                 val confirmedTxs = c.localCommitPublished.commitTx :: c.localCommitPublished.htlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.localCommit, d.commitments.localParams.dustLimit, tx, c.localCommitPublished))
-              case Some(c: Closing.CurrentRemoteClose) =>
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
+              case Some(c: Closing.RemoteClose) =>
                 val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.remoteCommit, d.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished))
-              case Some(c: Closing.NextRemoteClose) =>
-                val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.remoteCommit, d.commitments.remoteParams.dustLimit, tx, c.remoteCommitPublished))
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
               case _ => Seq.empty[UpdateAddHtlc]
             }).map(_.id).toSet
             overriddenHtlcs ++ timedoutHtlcs
           case _ => Set.empty
         }
-        c.commitments.originChannels.filterKeys(htlcId => !htlcsToIgnore.contains(htlcId)).map { case (outgoingHtlcId, origin) => (origin, c.channelId, outgoingHtlcId) }
+        c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
       .groupBy { case (origin, _, _) => origin }
       .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
@@ -371,7 +368,7 @@ object PostRestartHtlcCleaner {
    * restored.
    */
   private def listLocalChannels(channelsDb: ChannelsDb): Seq[HasCommitments] =
-    channelsDb.listLocalChannels().filter(c => Closing.isClosed(c, None).isEmpty)
+    channelsDb.listLocalChannels().filterNot(c => Closing.isClosed(c, None).isDefined)
 
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]] in a database
