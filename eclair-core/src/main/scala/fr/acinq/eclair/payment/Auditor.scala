@@ -92,11 +92,11 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = e.closingType match {
-        case MutualClose => "mutual"
-        case LocalClose => "local"
+        case _: MutualClose => "mutual"
+        case _: LocalClose => "local"
         case _: RemoteClose => "remote" // can be current or next
-        case RecoveryClose => "recovery"
-        case RevokedClose => "revoked"
+        case _: RecoveryClose => "recovery"
+        case _: RevokedClose => "revoked"
       }
       db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
 
