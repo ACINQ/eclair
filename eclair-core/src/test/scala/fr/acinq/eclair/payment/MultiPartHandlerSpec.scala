@@ -42,9 +42,11 @@ import scala.concurrent.duration._
 
 class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike {
 
+  import com.softwaremill.quicklens._
+
   case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, commandBuffer: TestProbe, eventListener: TestProbe, sender: TestProbe) {
     lazy val normalHandler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, commandBuffer.ref))
-    lazy val mppHandler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = hex"028a8a"), commandBuffer.ref))
+    lazy val mppHandler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.modify(_.peerConnectionConf.features).setTo(hex"028a8a"), commandBuffer.ref))
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -168,7 +170,9 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     }
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = hex"028a8a"), TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams
+        .modify(_.enableTrampolinePayment).setTo(false)
+        .modify(_.peerConnectionConf.features).setTo(hex"028a8a"), TestProbe().ref))
       sender.send(handler, ReceivePayment(Some(42 msat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
       assert(pr.features.allowMultiPart)
@@ -184,7 +188,9 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     }
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = hex"028a8a"), TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams
+        .modify(_.enableTrampolinePayment).setTo(true)
+        .modify(_.peerConnectionConf.features).setTo(hex"028a8a"), TestProbe().ref))
       sender.send(handler, ReceivePayment(Some(42 msat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
       assert(pr.features.allowMultiPart)
@@ -327,7 +333,9 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   }
 
   test("PaymentHandler should handle multi-part payment timeout") { f =>
-    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 200 millis, features = hex"028a8a")
+    val nodeParams = Alice.nodeParams
+      .modify(_.multiPartPaymentExpiry).setTo(200 millis)
+      .modify(_.peerConnectionConf.features).setTo(hex"028a8a")
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
 
     // Partial payment missing additional parts.
@@ -365,7 +373,9 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   }
 
   test("PaymentHandler should handle multi-part payment success") { f =>
-    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = hex"028a8a")
+    val nodeParams = Alice.nodeParams
+      .modify(_.multiPartPaymentExpiry).setTo(500 millis)
+      .modify(_.peerConnectionConf.features).setTo(hex"028a8a")
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
 
     f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee"))
@@ -411,7 +421,9 @@ class MultiPartHandlerSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   }
 
   test("PaymentHandler should handle multi-part payment timeout then success") { f =>
-    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 250 millis, features = hex"028a8a")
+    val nodeParams = Alice.nodeParams
+      .modify(_.multiPartPaymentExpiry).setTo(250 millis)
+      .modify(_.peerConnectionConf.features).setTo(hex"028a8a")
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.commandBuffer.ref))
 
     f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 coffee, no sugar"))

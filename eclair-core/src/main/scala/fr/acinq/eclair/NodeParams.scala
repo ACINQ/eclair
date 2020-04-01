@@ -29,7 +29,9 @@ import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.PeerConnection.PeerConnectionConf
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
@@ -46,9 +48,6 @@ case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
-                      features: ByteVector,
-                      overrideFeatures: Map[PublicKey, ByteVector],
-                      syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
@@ -65,11 +64,6 @@ case class NodeParams(keyManager: KeyManager,
                       maxReserveToFundingRatio: Double,
                       db: Databases,
                       revocationTimeout: FiniteDuration,
-                      authTimeout: FiniteDuration,
-                      initTimeout: FiniteDuration,
-                      pingInterval: FiniteDuration,
-                      pingTimeout: FiniteDuration,
-                      pingDisconnect: Boolean,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
@@ -80,14 +74,18 @@ case class NodeParams(keyManager: KeyManager,
                       multiPartPaymentExpiry: FiniteDuration,
                       minFundingSatoshis: Satoshi,
                       maxFundingSatoshis: Satoshi,
+                      peerConnectionConf: PeerConnectionConf,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+  val keyPair = KeyPair(nodeId.value, privateKey.value)
 
   def currentBlockHeight: Long = blockCount.get
+
+  def features = peerConnectionConf.features
 }
 
 object NodeParams {
@@ -140,8 +138,17 @@ object NodeParams {
       "max-feerate-mismatch" -> "on-chain-fees.max-feerate-mismatch",
       "update-fee_min-diff-ratio" -> "on-chain-fees.update-fee-min-diff-ratio",
       // v0.3.3
-      "global-features" -> "features",
-      "local-features" -> "features"
+      "global-features" -> "peer-connection.features",
+      "local-features" -> "peer-connection.features",
+      // v0.3.4
+      "auth-timeout" -> "peer-connection.auth-timeout",
+      "init-timeout" -> "peer-connection.init-timeout",
+      "ping-interval" -> "peer-connection.ping-interval",
+      "ping-timeout" -> "peer-connection.ping-timeout",
+      "ping-disconnect" -> "peer-connection.ping-disconnect",
+      "features" -> "peer-connection.features",
+      "override-features" -> "peer-connection.override-features",
+      "sync-whitelist" -> "peer-connection.sync-whitelist"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -180,17 +187,17 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = ByteVector.fromValidHex(config.getString("features"))
+    val features = ByteVector.fromValidHex(config.getString("peer-connection.features"))
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 
-    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
+    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("peer-connection.override-features").map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = ByteVector.fromValidHex(e.getString("features"))
       p -> f
     }.toMap
 
-    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+    val syncWhitelist: Set[PublicKey] = config.getStringList("peer-connection.sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
@@ -232,9 +239,6 @@ object NodeParams {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      features = features,
-      overrideFeatures = overrideFeatures,
-      syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
@@ -257,11 +261,6 @@ object NodeParams {
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
-      authTimeout = FiniteDuration(config.getDuration("auth-timeout").getSeconds, TimeUnit.SECONDS),
-      initTimeout = FiniteDuration(config.getDuration("init-timeout").getSeconds, TimeUnit.SECONDS),
-      pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
-      pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
-      pingDisconnect = config.getBoolean("ping-disconnect"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
@@ -272,6 +271,18 @@ object NodeParams {
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
       maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
+      peerConnectionConf = PeerConnectionConf(
+        chainHash = chainHash,
+        authTimeout = FiniteDuration(config.getDuration("peer-connection.auth-timeout").getSeconds, TimeUnit.SECONDS),
+        initTimeout = FiniteDuration(config.getDuration("peer-connection.init-timeout").getSeconds, TimeUnit.SECONDS),
+        pingInterval = FiniteDuration(config.getDuration("peer-connection.ping-interval").getSeconds, TimeUnit.SECONDS),
+        pingTimeout = FiniteDuration(config.getDuration("peer-connection.ping-timeout").getSeconds, TimeUnit.SECONDS),
+        pingDisconnect = config.getBoolean("peer-connection.ping-disconnect"),
+        features = features,
+        overrideFeatures = overrideFeatures,
+        syncWhitelist = syncWhitelist,
+        maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS) // it makes sense to not delay rebroadcast by more than the rebroadcast period
+      ),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),

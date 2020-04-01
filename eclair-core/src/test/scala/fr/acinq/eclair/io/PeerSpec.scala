@@ -54,7 +54,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
+      .modify(_.peerConnectionConf.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 

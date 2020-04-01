@@ -74,9 +74,9 @@ class StartupSpec extends FunSuite {
   }
 
   test("NodeParams should fail if features are inconsistent") {
-    val legalFeaturesConf = ConfigFactory.parseString("features = \"028a8a\"")
-    val illegalButAllowedFeaturesConf = ConfigFactory.parseString("features = \"028000\"") // basic_mpp without var_onion_optin
-    val illegalFeaturesConf = ConfigFactory.parseString("features = \"020000\"") // basic_mpp without payment_secret
+    val legalFeaturesConf = ConfigFactory.parseString("peer-connection.features = \"028a8a\"")
+    val illegalButAllowedFeaturesConf = ConfigFactory.parseString("peer-connection.features = \"028000\"") // basic_mpp without var_onion_optin
+    val illegalFeaturesConf = ConfigFactory.parseString("peer-connection.features = \"020000\"") // basic_mpp without payment_secret
     assert(Try(makeNodeParamsWithDefaults(legalFeaturesConf.withFallback(defaultConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(illegalButAllowedFeaturesConf.withFallback(defaultConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(illegalFeaturesConf.withFallback(defaultConf))).isFailure)
