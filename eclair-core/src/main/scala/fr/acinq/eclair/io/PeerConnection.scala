@@ -473,8 +473,7 @@ object PeerConnection {
                                 features: ByteVector,
                                 overrideFeatures: Map[PublicKey, ByteVector],
                                 syncWhitelist: Set[PublicKey],
-                                maxRebroadcastDelay: FiniteDuration
-                               )
+                                maxRebroadcastDelay: FiniteDuration)
 
   // @formatter:off
 
