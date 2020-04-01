@@ -400,18 +400,31 @@ object Helpers {
      * @param closing channel state data
      * @return the channel closing type, if applicable
      */
-    def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = closing match {
-      case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
-        Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
-      case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
-        Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
-      case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-        Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
-      case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
-        Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
-      case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
-        Some(RevokedClose(closing.revokedCommitPublished.find(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)).get))
-      case _ => None // we don't know yet what the closing type will be
+    def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
+      // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
+      // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
+      // the type of closing.
+      def isLocalCommitConfirmed(lcp: LocalCommitPublished): Boolean = {
+        val confirmedTxs = lcp.irrevocablySpent.values.toSet
+        (lcp.commitTx :: lcp.claimMainDelayedOutputTx.toList ::: lcp.htlcSuccessTxs ::: lcp.htlcTimeoutTxs ::: lcp.claimHtlcDelayedTxs).exists(tx => confirmedTxs.contains(tx.txid))
+      }
+      def isRemoteCommitConfirmed(rcp: RemoteCommitPublished): Boolean = {
+        val confirmedTxs = rcp.irrevocablySpent.values.toSet
+        (rcp.commitTx :: rcp.claimMainOutputTx.toList ::: rcp.claimHtlcSuccessTxs ::: rcp.claimHtlcTimeoutTxs).exists(tx => confirmedTxs.contains(tx.txid))
+      }
+      closing match {
+        case _ if closing.localCommitPublished.exists(isLocalCommitConfirmed) =>
+          Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
+        case _ if closing.remoteCommitPublished.exists(isRemoteCommitConfirmed) =>
+          Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
+        case _ if closing.nextRemoteCommitPublished.exists(isRemoteCommitConfirmed) =>
+          Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
+        case _ if closing.futureRemoteCommitPublished.exists(isRemoteCommitConfirmed) =>
+          Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
+        case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
+          Some(RevokedClose(closing.revokedCommitPublished.find(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)).get))
+        case _ => None // we don't know yet what the closing type will be
+      }
     }
 
     /**
