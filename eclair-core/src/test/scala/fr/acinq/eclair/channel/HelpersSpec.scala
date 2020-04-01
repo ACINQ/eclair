@@ -17,10 +17,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{Btc, Transaction}
+import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.Helpers.Closing._
 import org.scalatest.FunSuite
 
 import scala.compat.Platform
@@ -30,8 +30,8 @@ class HelpersSpec extends FunSuite {
 
   test("compute the funding tx min depth according to funding amount") {
     assert(Helpers.minDepthForFunding(nodeParams, Btc(1)) == 4)
-    assert(Helpers.minDepthForFunding(nodeParams.copy(minDepthBlocks = 6), Btc(1)) == 6)  // 4 conf would be enough but we use min-depth=6
-    assert(Helpers.minDepthForFunding(nodeParams, Btc(6.25)) == 16)  // we use scaling_factor=15 and a fixed block reward of 6.25BTC
+    assert(Helpers.minDepthForFunding(nodeParams.copy(minDepthBlocks = 6), Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
+    assert(Helpers.minDepthForFunding(nodeParams, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
     assert(Helpers.minDepthForFunding(nodeParams, Btc(12.50)) == 31)
     assert(Helpers.minDepthForFunding(nodeParams, Btc(12.60)) == 32)
     assert(Helpers.minDepthForFunding(nodeParams, Btc(30)) == 73)
@@ -40,7 +40,7 @@ class HelpersSpec extends FunSuite {
 
   test("compute refresh delay") {
     import org.scalatest.Matchers._
-    implicit val log = NoLoggingDiagnostics
+    implicit val log: akka.event.DiagnosticLoggingAdapter = NoLoggingDiagnostics
     Helpers.nextChannelUpdateRefresh(1544400000).toSeconds should equal(0)
     Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)
@@ -48,6 +48,7 @@ class HelpersSpec extends FunSuite {
   }
 
   test("tell closing type") {
+    val commitments = CommitmentsSpec.makeCommitments(10000 msat, 15000 msat)
     val tx1 = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
     val tx2 = Transaction.read("0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000")
     val tx3 = Transaction.read("0100000002b8682539550b3182966ecaca3d1fd5b2a96d0966a0fded143aaf771cbaf4222b000000006b483045022100c4484511ea7d9cf989797ca98e403c93372ded754ce30737af4914a222c84e8e022011648b42f8756ef4b83aa4f49e6b77f86ce7c54e1b70f25a16a94c4551c99cff012102506d400d2168a4a272b026d8b95ecb822cccd60277fb7268a6873fef0a85fe96ffffffff5a68052b6c23f6f718e09ffe56378ee90ad438b94c99b398c8d9e581a3c049d0300000006b483045022100d1b0eebc8250ebbb2d692c1e293260387b748115cf4cf892891ca4a1e81029cf02202fb5daa7647355e2c86d3f8bcfde7691a163f0dd99a002aca97f0a17cc72c5da012102fe1ec7be2f1e974c7e75932c0187f61667fa2825c4f79ccb964a83f48cce442cffffffff02ba100000000000001976a914a14c305babbd3d6984a20899f078980f078d433288acc8370800000000001976a914e0b4609a38d1a4dd1196f8c66e879b4923f9ea7388ac00000000")
@@ -95,7 +96,7 @@ class HelpersSpec extends FunSuite {
     // mutual + local close, local commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
@@ -114,7 +115,7 @@ class HelpersSpec extends FunSuite {
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = None,
         revokedCommitPublished = Nil)
-    ).contains(LocalClose))
+    ).exists(_.isInstanceOf[Closing.LocalClose]))
 
     // local close + remote close, none is confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
@@ -147,7 +148,7 @@ class HelpersSpec extends FunSuite {
     // mutual + local + remote close, remote commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
@@ -172,12 +173,12 @@ class HelpersSpec extends FunSuite {
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = None,
         revokedCommitPublished = Nil)
-    ).contains(CurrentRemoteClose))
+    ).exists(_.isInstanceOf[Closing.CurrentRemoteClose]))
 
     // mutual + local + remote + next remote close, next remote commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
@@ -208,7 +209,7 @@ class HelpersSpec extends FunSuite {
         )),
         futureRemoteCommitPublished = None,
         revokedCommitPublished = Nil)
-    ).contains(NextRemoteClose))
+    ).exists(_.isInstanceOf[Closing.NextRemoteClose]))
 
     // future remote close, not confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
@@ -252,7 +253,7 @@ class HelpersSpec extends FunSuite {
           )
         )),
         revokedCommitPublished = Nil)
-    ).contains(RecoveryClose))
+    ).exists(_.isInstanceOf[Closing.RecoveryClose]))
 
     // local close + revoked close, none confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
@@ -348,8 +349,7 @@ class HelpersSpec extends FunSuite {
               irrevocablySpent = Map.empty
             ) :: Nil
       )
-    ).contains(RevokedClose))
-
+    ).exists(_.isInstanceOf[Closing.RevokedClose]))
   }
 
 }
