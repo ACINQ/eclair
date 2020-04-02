@@ -179,8 +179,10 @@ object Commitments {
       return Failure(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
 
-    if (cmd.amount < commitments.remoteParams.htlcMinimum.max(1 msat)) {
-      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum.max(1 msat), actual = cmd.amount))
+    // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)
+    val htlcMinimum = commitments.remoteParams.htlcMinimum.max(1 msat)
+    if (cmd.amount < htlcMinimum) {
+      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = cmd.amount))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -229,8 +231,10 @@ object Commitments {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
 
-    if (add.amountMsat < commitments.localParams.htlcMinimum.max(1 msat)) {
-      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum.max(1 msat), actual = add.amountMsat)
+    // we used to not enforce a strictly positive minimum, hence the max(1 msat)
+    val htlcMinimum = commitments.localParams.htlcMinimum.max(1 msat)
+    if (add.amountMsat < htlcMinimum) {
+      throw HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = add.amountMsat)
     }
 
     // let's compute the current commitment *as seen by us* including this change
