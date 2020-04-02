@@ -98,16 +98,17 @@ case class Commitments(channelVersion: ChannelVersion,
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
       val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
-      // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
-      // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
-      val htlcFees = htlcOutputFee(reduced.feeratePerKw)
-      if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
+      // the funder needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
+      // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
+      val funderFeeBuffer = commitTxFeeMsat(remoteParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
+      if (balanceNoFees - commitFees.max(funderFeeBuffer) < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees - funderFeeReserve).max(0 msat)
+        (balanceNoFees - commitFees.max(funderFeeBuffer)).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
-        (balanceNoFees - commitFees - funderFeeReserve - htlcFees).max(0 msat)
+        val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
+        val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
+        (balanceNoFees - commitFees1.max(funderFeeBuffer1)).max(0 msat)
       }
     } else {
       // The fundee doesn't pay on-chain fees.
@@ -124,16 +125,17 @@ case class Commitments(channelVersion: ChannelVersion,
     } else {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
       val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced)
-      // we expect the funder to keep an extra reserve to be able to handle fee increase without getting the channel stuck
-      // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
-      val htlcFees = htlcOutputFee(reduced.feeratePerKw)
-      if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
+      // we expect the funder to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
+      // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
+      val funderFeeBuffer = commitTxFeeMsat(localParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
+      if (balanceNoFees - commitFees.max(funderFeeBuffer) < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees - funderFeeReserve).max(0 msat)
+        (balanceNoFees - commitFees.max(funderFeeBuffer)).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
-        (balanceNoFees - commitFees - funderFeeReserve - htlcFees).max(0 msat)
+        val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
+        val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
+        (balanceNoFees - commitFees1.max(funderFeeBuffer1)).max(0 msat)
       }
     }
   }
@@ -165,7 +167,7 @@ object Commitments {
    *
    * @param commitments current commitments
    * @param cmd         add HTLC command
-   * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
+   * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right(new commitments, updateAddHtlc)
    */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Try[(Commitments, UpdateAddHtlc)] = {
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
@@ -197,10 +199,12 @@ object Commitments {
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
-    // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-    val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
-    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees + funderFeeReserve else 0.msat)
+    // the funder needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
+    // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
+    val funderFeeBuffer = commitTxFeeMsat(commitments1.remoteParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
+    // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
+    // which may result in a lower commit tx fee; this is why we take the max of the two.
+    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
       return Failure(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
