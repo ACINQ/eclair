@@ -87,7 +87,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
-      switchboard ! Authenticated(self, remoteNodeId, address, d.pendingAuth.outgoing, d.pendingAuth.origin_opt)
+      switchboard ! Authenticated(self, remoteNodeId)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
     case Event(AuthTimeout, _) =>
@@ -484,7 +484,7 @@ object PeerConnection {
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
-  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
+  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
   case class InitializeConnection(peer: ActorRef)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
