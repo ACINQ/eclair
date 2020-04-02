@@ -440,7 +440,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
-        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat
+        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey.publicKey, f.currentBlockHeight)
         sendAdd(c, cmdAdd, Local(UUID.randomUUID, None), f.currentBlockHeight) match {
           case Success((cc, _)) => c = cc
@@ -468,7 +468,7 @@ class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isFunder)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
-        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat
+        val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, amount, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
         receiveAdd(c, add) match {
           case Success(cc) => c = cc
