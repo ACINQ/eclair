@@ -228,13 +228,13 @@ object SyncHandlers {
         // - it is not stale
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
         val areDifferent = ourChecksum != theirChecksum
-        val oursIsAlmostStale = isAlmostStale(ourTimestamp)
-        val theirsIsStale = isStale(theirTimestamp)
+        val oursIsAlmostStale = StaleChannelsHandlers.isAlmostStale(ourTimestamp)
+        val theirsIsStale = StaleChannelsHandlers.isStale(theirTimestamp)
         theirsIsMoreRecent && (areDifferent || oursIsAlmostStale) && !theirsIsStale
       case (Some(theirTimestamp), None) =>
         // if we only have their timestamp, we request their channel_update if theirs is more recent than ours
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
-        val theirsIsStale = isStale(theirTimestamp)
+        val theirsIsStale = StaleChannelsHandlers.isStale(theirTimestamp)
         theirsIsMoreRecent && !theirsIsStale
       case (None, Some(theirChecksum)) =>
         // if we only have their checksum, we request their channel_update if it is different from ours

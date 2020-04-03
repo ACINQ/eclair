@@ -273,7 +273,7 @@ object ValidationHandlers {
         remoteOrigins.foreach(_ ! GossipDecision.Accepted(u))
         val origins1 = d.rebroadcast.updates(u) ++ origins
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
-      } else if (isStale(u)) {
+      } else if (StaleChannelsHandlers.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         remoteOrigins.foreach(_ ! GossipDecision.Stale(u))
         d
@@ -320,7 +320,7 @@ object ValidationHandlers {
       val publicChannel = false
       val pc = d.privateChannels(u.shortChannelId)
       val desc = if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
-      if (isStale(u)) {
+      if (StaleChannelsHandlers.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         remoteOrigins.foreach(_ ! GossipDecision.Stale(u))
         d
@@ -347,7 +347,7 @@ object ValidationHandlers {
         val graph1 = d.graph.addEdge(desc, u)
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
       }
-    } else if (db.isPruned(u.shortChannelId) && !isStale(u)) {
+    } else if (db.isPruned(u.shortChannelId) && !StaleChannelsHandlers.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
       // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
       // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
