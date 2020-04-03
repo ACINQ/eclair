@@ -70,10 +70,10 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender, eventListener)))
   }
 
-  test("send TLV payment with custom TLV records to node") { f =>
+  test("forward payment with user custom tlv records") { f =>
     import f._
     val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
-    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), tlvRecords = keySendTlvRecords)
+    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), paymentSecret = Some(paymentHash), userCustomRecords = keySendTlvRecords)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]

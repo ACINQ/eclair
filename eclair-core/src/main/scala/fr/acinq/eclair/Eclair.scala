@@ -244,7 +244,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
         case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
         case Some(invoice) =>
           val sendPayment = invoice.minFinalCltvExpiryDelta match {
-            case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, invoice_opt, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
+            case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, invoice_opt, None, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
             case None => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, paymentRequest = invoice_opt, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
           }
           (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
