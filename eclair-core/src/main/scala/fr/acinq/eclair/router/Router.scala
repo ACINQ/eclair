@@ -38,8 +38,6 @@ import fr.acinq.eclair.wire._
 import kamon.context.Context
 
 import scala.collection.immutable.SortedMap
-import scala.collection.mutable
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.Try
@@ -219,8 +217,6 @@ case object TickComputeNetworkStats
 
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
 
-  import Router._
-
   import ExecutionContext.Implicits.global
 
   // we pass these to helpers classes so that they have the logging context
@@ -309,38 +305,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       }
 
     case Event(TickPruneStaleChannels, d) =>
-      // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels.values, nodeParams.currentBlockHeight)
-      val staleChannelIds = staleChannels.map(_.ann.shortChannelId)
-      // then we remove nodes that aren't tied to any channels anymore (and deduplicate them)
-      val potentialStaleNodes = staleChannels.flatMap(c => Set(c.ann.nodeId1, c.ann.nodeId2)).toSet
-      val channels1 = d.channels -- staleChannelIds
-      // no need to iterate on all nodes, just on those that are affected by current pruning
-      val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
-
-      // let's clean the db and send the events
-      db.removeChannels(staleChannelIds) // NB: this also removes channel updates
-      // we keep track of recently pruned channels so we don't revalidate them (zombie churn)
-      db.addToPruned(staleChannelIds)
-      staleChannelIds.foreach { shortChannelId =>
-        log.info("pruning shortChannelId={} (stale)", shortChannelId)
-        context.system.eventStream.publish(ChannelLost(shortChannelId))
-      }
-
-      val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
-      staleChannels.foreach(ca => {
-        staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId1, ca.ann.nodeId2)
-        staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId2, ca.ann.nodeId1)
-      })
-
-      val graph1 = d.graph.removeEdges(staleChannelsToRemove)
-      staleNodes.foreach {
-        nodeId =>
-          log.info("pruning nodeId={} (stale)", nodeId)
-          db.removeNode(nodeId)
-          context.system.eventStream.publish(NodeLost(nodeId))
-      }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, graph = graph1)
+      stay using StaleChannelsHandlers.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.routerConf.channelExcludeDuration
@@ -459,39 +424,4 @@ object Router {
   def isRelatedTo(c: ChannelAnnouncement, nodeId: PublicKey) = nodeId == c.nodeId1 || nodeId == c.nodeId2
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[PublicChannel]): Boolean = channels.exists(c => isRelatedTo(c.ann, nodeId))
-
-  def isStale(u: ChannelUpdate): Boolean = isStale(u.timestamp)
-
-  def isStale(timestamp: Long): Boolean = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks"
-    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = (Platform.currentTime.milliseconds - 14.days).toSeconds
-    timestamp < staleThresholdSeconds
-  }
-
-  def isAlmostStale(timestamp: Long): Boolean = {
-    // we define almost stale as 2 weeks minus 4 days
-    val staleThresholdSeconds = (Platform.currentTime.milliseconds - 10.days).toSeconds
-    timestamp < staleThresholdSeconds
-  }
-
-  /**
-   * Is stale a channel that:
-   * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
-   * AND
-   * (2) has no channel_update younger than 2 weeks
-   *
-   * @param update1_opt update corresponding to one side of the channel, if we have it
-   * @param update2_opt update corresponding to the other side of the channel, if we have it
-   * @return
-   */
-  def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate], currentBlockHeight: Long): Boolean = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
-    // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
-    val staleThresholdBlocks = currentBlockHeight - 2016
-    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
-    blockHeight < staleThresholdBlocks && update1_opt.forall(isStale) && update2_opt.forall(isStale)
-  }
-
-  def getStaleChannels(channels: Iterable[PublicChannel], currentBlockHeight: Long): Iterable[PublicChannel] = channels.filter(data => isStale(data.ann, data.update_1_opt, data.update_2_opt, currentBlockHeight))
 }
