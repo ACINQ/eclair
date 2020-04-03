@@ -59,8 +59,12 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
               sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(PaymentSecretMissing) :: Nil)
           }
         case _ =>
-          // NB: we only generate legacy payment onions for now for maximum compatibility.
-          spawnPaymentFsm(paymentCfg) forward SendPayment(r.recipientNodeId, FinalLegacyPayload(r.recipientAmount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
+          val finalPayload = if (r.tlvRecords.isEmpty) {
+            FinalLegacyPayload(r.recipientAmount, finalExpiry)
+          } else { // If there are custom TLV records we make a TLV based final payload
+            Onion.createCustomRecordsFinalPayload(r.recipientAmount, finalExpiry, r.tlvRecords)
+          }
+          spawnPaymentFsm(paymentCfg) forward SendPayment(r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
 
     case r: SendTrampolinePaymentRequest =>
@@ -201,6 +205,7 @@ object PaymentInitiator {
    * @param externalId       (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param assistedRoutes   (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams      (optional) parameters to fine-tune the routing algorithm.
+   * @param tlvRecords       (optional) extra records to be added to the final payload
    */
   case class SendPaymentRequest(recipientAmount: MilliSatoshi,
                                 paymentHash: ByteVector32,
@@ -210,7 +215,8 @@ object PaymentInitiator {
                                 paymentRequest: Option[PaymentRequest] = None,
                                 externalId: Option[String] = None,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                                routeParams: Option[RouteParams] = None) {
+                                routeParams: Option[RouteParams] = None,
+                                tlvRecords: Seq[GenericTlv] = Seq.empty) {
     // We add one block in order to not have our htlcs fail when a new block has just been found.
     def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
   }

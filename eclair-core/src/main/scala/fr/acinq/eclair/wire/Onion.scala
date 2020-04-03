@@ -293,6 +293,9 @@ object Onion {
     FinalTlvPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
   }
 
+  def createCustomRecordsFinalPayload(amount: MilliSatoshi, expiry: CltvExpiry, additionalTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload =
+    FinalTlvPayload(TlvStream(records = AmountToForward(amount) :: OutgoingCltv(expiry) :: Nil, unknown = additionalTlvRecords))
+
 }
 
 object OnionCodecs {
