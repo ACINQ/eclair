@@ -248,7 +248,6 @@ object ValidationHandlers {
       db.removeNode(n.nodeId)
       d
     }
-
   }
 
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], u: ChannelUpdate, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
