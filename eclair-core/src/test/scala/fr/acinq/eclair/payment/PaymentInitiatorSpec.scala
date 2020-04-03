@@ -22,6 +22,7 @@ import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.channel.{Channel, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentPacketSpec._
@@ -30,12 +31,11 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator}
-import fr.acinq.eclair.router.{NodeHop, RouteParams}
+import fr.acinq.eclair.router.Router.{NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient, _}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomBytes32, randomKey}
-import fr.acinq.eclair.UInt64.Conversions._
 import org.scalatest.{Outcome, Tag, fixture}
 import scodec.bits.HexStringSyntax
 

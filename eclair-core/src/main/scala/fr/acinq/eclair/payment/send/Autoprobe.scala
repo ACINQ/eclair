@@ -20,7 +20,8 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
-import fr.acinq.eclair.router.{Announcements, Data, PublicChannel}
+import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.Router.{Data, PublicChannel}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams, randomBytes32, secureRandom}
 

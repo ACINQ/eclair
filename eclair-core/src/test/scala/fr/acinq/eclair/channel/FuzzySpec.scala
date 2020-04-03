@@ -20,8 +20,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
-import akka.testkit
-import akka.testkit.{TestActor, TestFSMRef, TestProbe}
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -32,7 +31,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
-import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging

@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, 
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
+import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}

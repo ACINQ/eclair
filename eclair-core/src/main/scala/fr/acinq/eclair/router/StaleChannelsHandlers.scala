@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorContext
 import akka.event.LoggingAdapter
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.router.Router.hasChannels
+import fr.acinq.eclair.router.Router.{ChannelDesc, Data, PublicChannel, hasChannels}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, TxCoordinates}
 
