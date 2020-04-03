@@ -49,7 +49,7 @@ object Logs {
     * This is useful in some cases where we can't rely on the `aroundReceive` trick to set the MDC before processing a
     * message because we don't have enough context. That's typically the case when handling `Terminated` messages.
     */
-  def withMdc(log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => Any): Any = {
+  def withMdc[T](log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => T): T = {
     val mdc0 = log.mdc // backup the current mdc
     try {
       log.mdc(mdc0 ++ mdc) // add the new mdc to the current one
