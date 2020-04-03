@@ -17,6 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.router.SyncHandlers._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._

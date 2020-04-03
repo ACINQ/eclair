@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.Onion._
 import fr.acinq.eclair.wire._

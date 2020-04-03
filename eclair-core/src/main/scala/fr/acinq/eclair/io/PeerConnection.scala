@@ -26,7 +26,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
-import fr.acinq.eclair.router._
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt

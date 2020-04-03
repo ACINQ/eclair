@@ -27,13 +27,12 @@ import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.RouteResponse
+import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
 import scodec.bits.ByteVector
 

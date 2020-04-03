@@ -30,7 +30,8 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
-import fr.acinq.eclair.router.{RouteCalculationHandlers, RouteNotFound, RouteParams, Router}
+import fr.acinq.eclair.router.Router.RouteParams
+import fr.acinq.eclair.router.{RouteCalculationHandlers, RouteNotFound}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 

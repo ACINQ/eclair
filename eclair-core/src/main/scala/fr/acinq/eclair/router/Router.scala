@@ -45,179 +45,10 @@ import scala.util.Try
 /**
  * Created by PM on 24/05/2016.
  */
-
-case class RouterConf(randomizeRouteSelection: Boolean,
-                      channelExcludeDuration: FiniteDuration,
-                      routerBroadcastInterval: FiniteDuration,
-                      networkStatsRefreshInterval: FiniteDuration,
-                      requestNodeAnnouncements: Boolean,
-                      encodingType: EncodingType,
-                      channelRangeChunkSize: Int,
-                      channelQueryChunkSize: Int,
-                      searchMaxFeeBase: Satoshi,
-                      searchMaxFeePct: Double,
-                      searchMaxRouteLength: Int,
-                      searchMaxCltv: CltvExpiryDelta,
-                      searchHeuristicsEnabled: Boolean,
-                      searchRatioCltv: Double,
-                      searchRatioChannelAge: Double,
-                      searchRatioChannelCapacity: Double)
-
-// @formatter:off
-case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
-case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
-  update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
-  update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
-
-  def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
-
-  def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-
-  def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
-}
-case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
-  val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
-
-  def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
-
-  def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-
-  def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
-}
-// @formatter:on
-
-case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
-
-trait Hop {
-  /** @return the id of the start node. */
-  def nodeId: PublicKey
-
-  /** @return the id of the end node. */
-  def nextNodeId: PublicKey
-
-  /**
-   * @param amount amount to be forwarded.
-   * @return total fee required by the current hop.
-   */
-  def fee(amount: MilliSatoshi): MilliSatoshi
-
-  /** @return cltv delta required by the current hop. */
-  def cltvExpiryDelta: CltvExpiryDelta
-}
-
-/**
- * A directed hop between two connected nodes using a specific channel.
- *
- * @param nodeId     id of the start node.
- * @param nextNodeId id of the end node.
- * @param lastUpdate last update of the channel used for the hop.
- */
-case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
-  override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
-
-  override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
-}
-
-/**
- * A directed hop between two trampoline nodes.
- * These nodes need not be connected and we don't need to know a route between them.
- * The start node will compute the route to the end node itself when it receives our payment.
- *
- * @param nodeId          id of the start node.
- * @param nextNodeId      id of the end node.
- * @param cltvExpiryDelta cltv expiry delta.
- * @param fee             total fee for that hop.
- */
-case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends Hop {
-  override def fee(amount: MilliSatoshi): MilliSatoshi = fee
-}
-
-case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
-
-case class RouteRequest(source: PublicKey,
-                        target: PublicKey,
-                        amount: MilliSatoshi,
-                        assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                        ignoreNodes: Set[PublicKey] = Set.empty,
-                        ignoreChannels: Set[ChannelDesc] = Set.empty,
-                        routeParams: Option[RouteParams] = None)
-
-case class FinalizeRoute(hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
-
-case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
-  require(allowEmpty || hops.nonEmpty, "route cannot be empty")
-}
-
-// @formatter:off
-/** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */
-case class ExcludeChannel(desc: ChannelDesc)
-case class LiftChannelExclusion(desc: ChannelDesc)
-// @formatter:on
-
-// @formatter:off
-case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
-case object GetNetworkStats
-case class GetNetworkStatsResponse(stats: Option[NetworkStats])
-case object GetRoutingState
-case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
-// @formatter:on
-
-// @formatter:off
-sealed trait GossipOrigin
-/** Gossip that we received from a remote peer. */
-case class RemoteGossip(peerConnection: ActorRef, nodeId: PublicKey) extends GossipOrigin
-/** Gossip that was generated by our node. */
-case object LocalGossip extends GossipOrigin
-
-sealed trait GossipDecision { def ann: AnnouncementMessage }
-object GossipDecision {
-  case class Accepted(ann: AnnouncementMessage) extends GossipDecision
-
-  sealed trait Rejected extends GossipDecision
-  case class Duplicate(ann: AnnouncementMessage) extends Rejected
-  case class InvalidSignature(ann: AnnouncementMessage) extends Rejected
-  case class NoKnownChannel(ann: NodeAnnouncement) extends Rejected
-  case class ValidationFailure(ann: ChannelAnnouncement) extends Rejected
-  case class InvalidAnnouncement(ann: ChannelAnnouncement) extends Rejected
-  case class ChannelPruned(ann: ChannelAnnouncement) extends Rejected
-  case class ChannelClosing(ann: ChannelAnnouncement) extends Rejected
-  case class ChannelClosed(ann: ChannelAnnouncement) extends Rejected
-  case class Stale(ann: ChannelUpdate) extends Rejected
-  case class NoRelatedChannel(ann: ChannelUpdate) extends Rejected
-}
-
-case class Stash(updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
-case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
-// @formatter:on
-
-case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
-
-case class Sync(pending: List[RoutingMessage], total: Int)
-
-case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                channels: SortedMap[ShortChannelId, PublicChannel],
-                stats: Option[NetworkStats],
-                stash: Stash,
-                rebroadcast: Rebroadcast,
-                awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                privateChannels: Map[ShortChannelId, PrivateChannel], // short_channel_id -> node_id
-                excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                graph: DirectedGraph,
-                sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
-               )
-
-// @formatter:off
-sealed trait State
-case object NORMAL extends State
-
-case object TickBroadcast
-case object TickPruneStaleChannels
-case object TickComputeNetworkStats
-// @formatter:on
-
-class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[State, Data] {
+class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
 
   import ExecutionContext.Implicits.global
+  import Router._
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
@@ -415,6 +246,177 @@ object Router {
   val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
 
   def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
+
+  case class RouterConf(randomizeRouteSelection: Boolean,
+                        channelExcludeDuration: FiniteDuration,
+                        routerBroadcastInterval: FiniteDuration,
+                        networkStatsRefreshInterval: FiniteDuration,
+                        requestNodeAnnouncements: Boolean,
+                        encodingType: EncodingType,
+                        channelRangeChunkSize: Int,
+                        channelQueryChunkSize: Int,
+                        searchMaxFeeBase: Satoshi,
+                        searchMaxFeePct: Double,
+                        searchMaxRouteLength: Int,
+                        searchMaxCltv: CltvExpiryDelta,
+                        searchHeuristicsEnabled: Boolean,
+                        searchRatioCltv: Double,
+                        searchRatioChannelAge: Double,
+                        searchRatioChannelCapacity: Double)
+
+  // @formatter:off
+  case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
+    update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
+    update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
+
+    def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
+
+    def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+
+    def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+  }
+  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
+    val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
+
+    def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
+
+    def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+
+    def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+  }
+  // @formatter:on
+
+  case class AssistedChannel(extraHop: ExtraHop, nextNodeId: PublicKey, htlcMaximum: MilliSatoshi)
+
+  trait Hop {
+    /** @return the id of the start node. */
+    def nodeId: PublicKey
+
+    /** @return the id of the end node. */
+    def nextNodeId: PublicKey
+
+    /**
+     * @param amount amount to be forwarded.
+     * @return total fee required by the current hop.
+     */
+    def fee(amount: MilliSatoshi): MilliSatoshi
+
+    /** @return cltv delta required by the current hop. */
+    def cltvExpiryDelta: CltvExpiryDelta
+  }
+
+  /**
+   * A directed hop between two connected nodes using a specific channel.
+   *
+   * @param nodeId     id of the start node.
+   * @param nextNodeId id of the end node.
+   * @param lastUpdate last update of the channel used for the hop.
+   */
+  case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
+    override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
+
+    override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, amount)
+  }
+
+  /**
+   * A directed hop between two trampoline nodes.
+   * These nodes need not be connected and we don't need to know a route between them.
+   * The start node will compute the route to the end node itself when it receives our payment.
+   *
+   * @param nodeId          id of the start node.
+   * @param nextNodeId      id of the end node.
+   * @param cltvExpiryDelta cltv expiry delta.
+   * @param fee             total fee for that hop.
+   */
+  case class NodeHop(nodeId: PublicKey, nextNodeId: PublicKey, cltvExpiryDelta: CltvExpiryDelta, fee: MilliSatoshi) extends Hop {
+    override def fee(amount: MilliSatoshi): MilliSatoshi = fee
+  }
+
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
+
+  case class RouteRequest(source: PublicKey,
+                          target: PublicKey,
+                          amount: MilliSatoshi,
+                          assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                          ignoreNodes: Set[PublicKey] = Set.empty,
+                          ignoreChannels: Set[ChannelDesc] = Set.empty,
+                          routeParams: Option[RouteParams] = None)
+
+  case class FinalizeRoute(hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
+
+  case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+    require(allowEmpty || hops.nonEmpty, "route cannot be empty")
+  }
+
+  // @formatter:off
+  /** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */
+  case class ExcludeChannel(desc: ChannelDesc)
+  case class LiftChannelExclusion(desc: ChannelDesc)
+  // @formatter:on
+
+  // @formatter:off
+  case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv])
+  case object GetNetworkStats
+  case class GetNetworkStatsResponse(stats: Option[NetworkStats])
+  case object GetRoutingState
+  case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
+  case object GetRoutingStateStreaming
+  case object RoutingStateStreamingUpToDate
+  // @formatter:on
+
+  // @formatter:off
+  sealed trait GossipOrigin
+  /** Gossip that we received from a remote peer. */
+  case class RemoteGossip(peerConnection: ActorRef, nodeId: PublicKey) extends GossipOrigin
+  /** Gossip that was generated by our node. */
+  case object LocalGossip extends GossipOrigin
+
+  sealed trait GossipDecision { def ann: AnnouncementMessage }
+  object GossipDecision {
+    case class Accepted(ann: AnnouncementMessage) extends GossipDecision
+
+    sealed trait Rejected extends GossipDecision
+    case class Duplicate(ann: AnnouncementMessage) extends Rejected
+    case class InvalidSignature(ann: AnnouncementMessage) extends Rejected
+    case class NoKnownChannel(ann: NodeAnnouncement) extends Rejected
+    case class ValidationFailure(ann: ChannelAnnouncement) extends Rejected
+    case class InvalidAnnouncement(ann: ChannelAnnouncement) extends Rejected
+    case class ChannelPruned(ann: ChannelAnnouncement) extends Rejected
+    case class ChannelClosing(ann: ChannelAnnouncement) extends Rejected
+    case class ChannelClosed(ann: ChannelAnnouncement) extends Rejected
+    case class Stale(ann: ChannelUpdate) extends Rejected
+    case class NoRelatedChannel(ann: ChannelUpdate) extends Rejected
+  }
+
+  case class Stash(updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
+  case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
+  // @formatter:on
+
+  case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
+
+  case class Sync(pending: List[RoutingMessage], total: Int)
+
+  case class Data(nodes: Map[PublicKey, NodeAnnouncement],
+                  channels: SortedMap[ShortChannelId, PublicChannel],
+                  stats: Option[NetworkStats],
+                  stash: Stash,
+                  rebroadcast: Rebroadcast,
+                  awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
+                  privateChannels: Map[ShortChannelId, PrivateChannel], // short_channel_id -> node_id
+                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  graph: DirectedGraph,
+                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                 )
+
+  // @formatter:off
+  sealed trait State
+  case object NORMAL extends State
+
+  case object TickBroadcast
+  case object TickPruneStaleChannels
+  case object TickComputeNetworkStats
+  // @formatter:on
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     // the least significant bit tells us if it is node1 or node2

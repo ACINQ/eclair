@@ -45,9 +45,11 @@ import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTrampolinePaymentRequest}
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculationHandlers.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.{NORMAL => _, State => _, _}
+import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams}
+import fr.acinq.eclair.router.Router.{NORMAL => _, State => _, _}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._

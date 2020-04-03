@@ -38,6 +38,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPay
 import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, ExcludeChannel, FinalizeRoute, RouteParams, RouteRequest, RouteResponse}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
