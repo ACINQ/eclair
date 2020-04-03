@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.Done
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
@@ -229,7 +229,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   import ExecutionContext.Implicits.global
 
   // we pass these to helpers classes so that they have the logging context
-  implicit def implicitLog: LoggingAdapter = log
+  implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
