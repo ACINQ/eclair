@@ -59,8 +59,8 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
               sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(PaymentSecretMissing) :: Nil)
           }
         case _ =>
-          // NB: we only generate legacy payment onions for now for maximum compatibility.
-          spawnPaymentFsm(paymentCfg) forward SendPayment(r.recipientNodeId, FinalLegacyPayload(r.recipientAmount, finalExpiry), r.maxAttempts, r.assistedRoutes, r.routeParams)
+          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, r.paymentSecret, r.userCustomRecords)
+          spawnPaymentFsm(paymentCfg) forward SendPayment(r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
 
     case r: SendTrampolinePaymentRequest =>
@@ -192,15 +192,17 @@ object PaymentInitiator {
   }
 
   /**
-   * @param recipientAmount  amount that should be received by the final recipient (usually from a Bolt 11 invoice).
-   * @param paymentHash      payment hash.
-   * @param recipientNodeId  id of the final recipient.
-   * @param maxAttempts      maximum number of retries.
-   * @param finalExpiryDelta expiry delta for the final recipient.
-   * @param paymentRequest   (optional) Bolt 11 invoice.
-   * @param externalId       (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
-   * @param assistedRoutes   (optional) routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams      (optional) parameters to fine-tune the routing algorithm.
+   * @param recipientAmount   amount that should be received by the final recipient (usually from a Bolt 11 invoice).
+   * @param paymentHash       payment hash.
+   * @param recipientNodeId   id of the final recipient.
+   * @param maxAttempts       maximum number of retries.
+   * @param finalExpiryDelta  expiry delta for the final recipient.
+   * @param paymentRequest    (optional) Bolt 11 invoice.
+   * @param paymentSecret     (optional) the payment secret to be attached in the final payload, only used if there isn't an invoice
+   * @param externalId        (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
+   * @param assistedRoutes    (optional) routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams       (optional) parameters to fine-tune the routing algorithm.
+   * @param userCustomRecords (optional) extra records to be added to the final payload
    */
   case class SendPaymentRequest(recipientAmount: MilliSatoshi,
                                 paymentHash: ByteVector32,
@@ -208,9 +210,11 @@ object PaymentInitiator {
                                 maxAttempts: Int,
                                 finalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                                 paymentRequest: Option[PaymentRequest] = None,
+                                paymentSecret: Option[ByteVector32] = None,
                                 externalId: Option[String] = None,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                                routeParams: Option[RouteParams] = None) {
+                                routeParams: Option[RouteParams] = None,
+                                userCustomRecords: Seq[GenericTlv] = Seq.empty) {
     // We add one block in order to not have our htlcs fail when a new block has just been found.
     def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
   }

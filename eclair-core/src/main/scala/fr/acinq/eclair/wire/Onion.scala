@@ -276,17 +276,14 @@ object Onion {
     NodeRelayPayload(TlvStream(tlvs2))
   }
 
-  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None): FinalPayload = paymentSecret match {
+  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None, additionalTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload = paymentSecret match {
     // We try to use the legacy format as much as possible for maximum compatibility, but when we have a payment secret we need to use TLV to include it.
-    case Some(paymentSecret) => FinalTlvPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)))
+    case Some(paymentSecret) => FinalTlvPayload(TlvStream(records = Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)), unknown = additionalTlvRecords))
     case None => FinalLegacyPayload(amount, expiry)
   }
 
-  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32): FinalPayload =
-    FinalTlvPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount)))
-
-  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: Seq[OnionTlv]): FinalPayload =
-    FinalTlvPayload(TlvStream(AmountToForward(amount) +: OutgoingCltv(expiry) +: PaymentData(paymentSecret, totalAmount) +: additionalTlvs))
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalOnionTlvs: Seq[OnionTlv] = Seq.empty, additionalTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload =
+    FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount)) ++ additionalOnionTlvs, unknown = additionalTlvRecords))
 
   /** Create a trampoline outer payload. */
   def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload = {
