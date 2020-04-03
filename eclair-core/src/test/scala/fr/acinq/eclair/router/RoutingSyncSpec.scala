@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
+import fr.acinq.eclair.router.SyncHandlers._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.scalatest.{FunSuiteLike, ParallelTestExecution}
@@ -284,17 +285,17 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val nodeidA = randomKey.publicKey
     val nodeidB = randomKey.publicKey
 
-    val (sync1, _) = Router.addToSync(Map.empty, nodeidA, List(req, req, req, req))
-    assert(Router.syncProgress(sync1) == SyncProgress(0.25D))
+    val (sync1, _) = addToSync(Map.empty, nodeidA, List(req, req, req, req))
+    assert(syncProgress(sync1) == SyncProgress(0.25D))
 
-    val (sync2, _) = Router.addToSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
-    assert(Router.syncProgress(sync2) == SyncProgress(0.125D))
+    val (sync2, _) = addToSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
+    assert(syncProgress(sync2) == SyncProgress(0.125D))
 
     // let's assume we made some progress
     val sync3 = sync2
       .updated(nodeidA, sync2(nodeidA).copy(pending = List(req)))
       .updated(nodeidB, sync2(nodeidB).copy(pending = List(req)))
-    assert(Router.syncProgress(sync3) == SyncProgress(0.875D))
+    assert(syncProgress(sync3) == SyncProgress(0.875D))
   }
 }
 
