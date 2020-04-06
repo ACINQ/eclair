@@ -38,11 +38,6 @@ object Monitoring {
       val Closed = "closed"
     }
 
-    object States {
-      val Offline = "offline"
-      val Closing = "closing"
-    }
-
     object Origins {
       val Local = "local"
       val Remote = "remote"

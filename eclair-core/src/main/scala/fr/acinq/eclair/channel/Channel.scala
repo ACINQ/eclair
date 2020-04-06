@@ -113,8 +113,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
 
-  Metrics.ChannelsCount.withoutTags().increment()
-
   // we assume that the peer is the channel's parent
   private val peer = context.parent
   // the last active connection we are aware of; note that the peer manages connections and asynchronously notifies
@@ -1384,7 +1382,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case _ =>
       }
       log.info("shutting down")
-      Metrics.ChannelsCount.withoutTags().decrement()
       stop(FSM.Normal)
 
     case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
@@ -1685,13 +1682,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => () // called at channel initialization
     case state -> nextState =>
       if (state != nextState) {
+        if (state != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, state.toString).decrement()
+        if (nextState != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, nextState.toString).increment()
         context.system.eventStream.publish(ChannelStateChanged(self, peer, remoteNodeId, state, nextState, nextStateData))
       }
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
       }
-
       if (nextState == OFFLINE) {
         // we can cancel the timer, we are not expecting anything when disconnected
         cancelTimer(RevocationTimeout.toString)
@@ -1736,16 +1734,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
         case _ => ()
       }
-  }
-
-  onTransition {
-    case _ -> OFFLINE => Metrics.ChannelsCount.withTag(Tags.State, Tags.States.Offline).increment()
-    case OFFLINE -> _ => Metrics.ChannelsCount.withTag(Tags.State, Tags.States.Offline).decrement()
-  }
-
-  onTransition {
-    case _ -> CLOSING => Metrics.ChannelsCount.withTag(Tags.State, Tags.States.Closing).increment()
-    case CLOSING -> _ => Metrics.ChannelsCount.withTag(Tags.State, Tags.States.Closing).decrement()
   }
 
   /*
