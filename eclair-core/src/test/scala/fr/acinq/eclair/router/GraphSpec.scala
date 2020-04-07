@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculationSpec._
+import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId}
 import org.scalatest.FunSuite

@@ -16,14 +16,27 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi}
+import fr.acinq.eclair.router.Router.GossipDecision
+import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, getSimpleClassName}
 import kamon.Kamon
+import kamon.metric.Counter
 
 object Monitoring {
 
   object Metrics {
     val FindRouteDuration = Kamon.timer("router.find-route.duration", "Path-finding duration")
     val RouteLength = Kamon.histogram("router.find-route.length", "Path-finding result length")
+
+    private val GossipResult = Kamon.counter("router.gossip.result")
+
+    // @formatter:off
+    def gossipResult(decision: GossipDecision): Counter = {
+      decision match {
+        case _: GossipDecision.Accepted => GossipResult.withTag("result", "accepted")
+        case rejected: GossipDecision.Rejected =>   GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(rejected))
+      }
+    }
+    // @formatter:on
   }
 
   object Tags {

@@ -17,10 +17,11 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.router.Router.ShortChannelIdsChunk
+import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
-import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, QueryChannelRange, QueryChannelRangeTlv, ReplyChannelRange}
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
 import org.scalatest.FunSuite
 import scodec.bits.ByteVector
@@ -36,51 +37,51 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
   test("ask for update test") {
     // they don't provide anything => we always ask for the update
-    assert(Router.shouldRequestUpdate(0, 0, None, None))
-    assert(Router.shouldRequestUpdate(Int.MaxValue, 12345, None, None))
+    assert(shouldRequestUpdate(0, 0, None, None))
+    assert(shouldRequestUpdate(Int.MaxValue, 12345, None, None))
 
     // their update is older => don't ask
     val now = Platform.currentTime / 1000
-    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), None))
-    assert(!Router.shouldRequestUpdate(now, 0, Some(now - 1), Some(12345)))
-    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), None))
-    assert(!Router.shouldRequestUpdate(now, 12344, Some(now - 1), Some(12345)))
+    assert(!shouldRequestUpdate(now, 0, Some(now - 1), None))
+    assert(!shouldRequestUpdate(now, 0, Some(now - 1), Some(12345)))
+    assert(!shouldRequestUpdate(now, 12344, Some(now - 1), None))
+    assert(!shouldRequestUpdate(now, 12344, Some(now - 1), Some(12345)))
 
     // their update is newer but stale => don't ask
     val old = now - 4 * 2016 * 24 * 3600
-    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), None))
-    assert(!Router.shouldRequestUpdate(old - 1, 0, Some(old), Some(12345)))
-    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), None))
-    assert(!Router.shouldRequestUpdate(old - 1, 12344, Some(old), Some(12345)))
+    assert(!shouldRequestUpdate(old - 1, 0, Some(old), None))
+    assert(!shouldRequestUpdate(old - 1, 0, Some(old), Some(12345)))
+    assert(!shouldRequestUpdate(old - 1, 12344, Some(old), None))
+    assert(!shouldRequestUpdate(old - 1, 12344, Some(old), Some(12345)))
 
     // their update is newer but with the same checksum, and ours is stale or about to be => ask (we want to renew our update)
-    assert(Router.shouldRequestUpdate(old, 12345, Some(now), Some(12345)))
+    assert(shouldRequestUpdate(old, 12345, Some(now), Some(12345)))
 
     // their update is newer but with the same checksum => don't ask
-    assert(!Router.shouldRequestUpdate(now - 1, 12345, Some(now), Some(12345)))
+    assert(!shouldRequestUpdate(now - 1, 12345, Some(now), Some(12345)))
 
     // their update is newer with a different checksum => always ask
-    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), None))
-    assert(Router.shouldRequestUpdate(now - 1, 0, Some(now), Some(12345)))
-    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), None))
-    assert(Router.shouldRequestUpdate(now - 1, 12344, Some(now), Some(12345)))
+    assert(shouldRequestUpdate(now - 1, 0, Some(now), None))
+    assert(shouldRequestUpdate(now - 1, 0, Some(now), Some(12345)))
+    assert(shouldRequestUpdate(now - 1, 12344, Some(now), None))
+    assert(shouldRequestUpdate(now - 1, 12344, Some(now), Some(12345)))
 
     // they just provided a 0 checksum => don't ask
-    assert(!Router.shouldRequestUpdate(0, 0, None, Some(0)))
-    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(0)))
+    assert(!shouldRequestUpdate(0, 0, None, Some(0)))
+    assert(!shouldRequestUpdate(now, 1234, None, Some(0)))
 
     // they just provided a checksum that is the same as us => don't ask
-    assert(!Router.shouldRequestUpdate(now, 1234, None, Some(1234)))
+    assert(!shouldRequestUpdate(now, 1234, None, Some(1234)))
 
     // they just provided a different checksum that is the same as us => ask
-    assert(Router.shouldRequestUpdate(now, 1234, None, Some(1235)))
+    assert(shouldRequestUpdate(now, 1234, None, Some(1235)))
   }
 
   test("compute checksums") {
-    assert(Router.crc32c(ByteVector.fromValidHex("00" * 32)) == 0x8a9136aaL)
-    assert(Router.crc32c(ByteVector.fromValidHex("FF" * 32)) == 0x62a8ab43L)
-    assert(Router.crc32c(ByteVector((0 to 31).map(_.toByte))) == 0x46dd794eL)
-    assert(Router.crc32c(ByteVector((31 to 0 by -1).map(_.toByte))) == 0x113fdb5cL)
+    assert(crc32c(ByteVector.fromValidHex("00" * 32)) == 0x8a9136aaL)
+    assert(crc32c(ByteVector.fromValidHex("FF" * 32)) == 0x62a8ab43L)
+    assert(crc32c(ByteVector((0 to 31).map(_.toByte))) == 0x46dd794eL)
+    assert(crc32c(ByteVector((31 to 0 by -1).map(_.toByte))) == 0x113fdb5cL)
   }
 
   test("compute flag tests") {
@@ -110,28 +111,28 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
 
-    assert(Router.getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(1697591108L, 3692323747L)))
+    assert(getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(1697591108L, 3692323747L)))
 
     // no extended info but we know the channel: we ask for the updates
-    assert(Router.computeFlag(channels)(ab.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
-    assert(Router.computeFlag(channels)(ab.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(computeFlag(channels)(ab.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // same checksums, newer timestamps: we don't ask anything
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 3692323747L)), true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 3692323747L)), true) === 0)
     // different checksums, newer timestamps: we ask for the updates
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3692323747L)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3692323747L)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // different checksums, older timestamps: we don't ask anything
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3692323747L)), true) === 0)
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), true) === 0)
-    assert(Router.computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3692323747L)), true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), true) === 0)
 
     // missing channel update: we ask for it
-    assert(Router.computeFlag(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
 
     // unknown channel: we ask everything
-    assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
-    assert(Router.computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
   }
 
   def makeShortChannelIds(height: Int, count: Int): List[ShortChannelId] = {
@@ -151,7 +152,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
   }
 
   def validate(chunk: ShortChannelIdsChunk) = {
-    require(chunk.shortChannelIds.forall(Router.keep(chunk.firstBlock, chunk.numBlocks, _)))
+    require(chunk.shortChannelIds.forall(keep(chunk.firstBlock, chunk.numBlocks, _)))
   }
 
   // check that chunks contain exactly the ids they were built from are are consistent i.e each chunk covers a range that immediately follows
@@ -167,7 +168,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // aggregate ids from all chunks, to check that they match our input ids exactly
     val chunkIds = SortedSet.empty[ShortChannelId] ++ chunks.flatMap(_.shortChannelIds).toSet
-    val expected = ids.filter(Router.keep(firstBlockNum, numberOfBlocks, _))
+    val expected = ids.filter(keep(firstBlockNum, numberOfBlocks, _))
 
     if (expected.isEmpty) require(chunks == List(ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil)))
     chunks.foreach(validate)
@@ -177,7 +178,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     require(noOverlap(chunks))
   }
 
-    test("limit channel ids chunk size") {
+  test("limit channel ids chunk size") {
     val ids = makeShortChannelIds(1, 3)
     val chunk = ShortChannelIdsChunk(0, 10, ids)
 
@@ -200,7 +201,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = Nil
       val firstBlockNum = 10
       val numberOfBlocks = 100
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
     }
 
@@ -209,7 +210,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 10
       val numberOfBlocks = 100
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
     }
 
@@ -218,7 +219,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 1100
       val numberOfBlocks = 100
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, Nil) :: Nil)
     }
 
@@ -227,7 +228,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 900
       val numberOfBlocks = 200
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, ids.size)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, ids) :: Nil)
     }
 
@@ -237,7 +238,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000, 0), id(1000, 1), id(1000, 2), id(1000, 3), id(1000, 4), id(1000, 5))
       val firstBlockNum = 900
       val numberOfBlocks = 200
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, ids) :: Nil)
     }
 
@@ -246,7 +247,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000), id(1005), id(1012), id(1013), id(1040), id(1050))
       val firstBlockNum = 900
       val numberOfBlocks = 200
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlockNum, 100 + 6, List(ids(0), ids(1))),
         ShortChannelIdsChunk(1006, 8, List(ids(2), ids(3))),
@@ -259,7 +260,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000), id(1005), id(1012), id(1013), id(1040), id(1050))
       val firstBlockNum = 1001
       val numberOfBlocks = 200
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlockNum, 12, List(ids(1), ids(2))),
         ShortChannelIdsChunk(1013, 1040 - 1013 + 1, List(ids(3), ids(4))),
@@ -272,20 +273,20 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 900
       val numberOfBlocks = 105
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlockNum, 100 + 2, List(ids(0), ids(1))),
         ShortChannelIdsChunk(1002, 2, List(ids(2), ids(3))),
         ShortChannelIdsChunk(1004, numberOfBlocks - 1004 + firstBlockNum, List(ids(4)))
       ))
-   }
+    }
 
     // all ids in different blocks, chunk size == 2, first and last id outside of range
     {
       val ids = List(id(1000), id(1001), id(1002), id(1003), id(1004), id(1005))
       val firstBlockNum = 1001
       val numberOfBlocks = 4
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 2)
       assert(chunks == List(
         ShortChannelIdsChunk(firstBlockNum, 2, List(ids(1), ids(2))),
         ShortChannelIdsChunk(1003, 2, List(ids(3), ids(4)))
@@ -297,7 +298,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
       val ids = makeShortChannelIds(1000, 100)
       val firstBlockNum = 900
       val numberOfBlocks = 200
-      val chunks = Router.split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 10)
+      val chunks = split(SortedSet.empty[ShortChannelId] ++ ids, firstBlockNum, numberOfBlocks, 10)
       assert(chunks == ShortChannelIdsChunk(firstBlockNum, numberOfBlocks, ids) :: Nil)
     }
   }
@@ -307,11 +308,11 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val firstBlockNum = 0
     val numberOfBlocks = 1000
 
-    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 1))
-    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 20))
-    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 50))
-    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 100))
-    validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, 1000))
+    validate(ids, firstBlockNum, numberOfBlocks, split(ids, firstBlockNum, numberOfBlocks, 1))
+    validate(ids, firstBlockNum, numberOfBlocks, split(ids, firstBlockNum, numberOfBlocks, 20))
+    validate(ids, firstBlockNum, numberOfBlocks, split(ids, firstBlockNum, numberOfBlocks, 50))
+    validate(ids, firstBlockNum, numberOfBlocks, split(ids, firstBlockNum, numberOfBlocks, 100))
+    validate(ids, firstBlockNum, numberOfBlocks, split(ids, firstBlockNum, numberOfBlocks, 1000))
   }
 
   test("split short channel ids correctly (comprehensive tests)") {
@@ -319,7 +320,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     for (firstBlockNum <- 0 to 60) {
       for (numberOfBlocks <- 1 to 60) {
         for (chunkSize <- 1 :: 2 :: 20 :: 50 :: 100 :: 1000 :: Nil) {
-          validate(ids, firstBlockNum, numberOfBlocks, Router.split(ids, firstBlockNum, numberOfBlocks, chunkSize))
+          validate(ids, firstBlockNum, numberOfBlocks, split(ids, firstBlockNum, numberOfBlocks, chunkSize))
         }
       }
     }
@@ -327,11 +328,11 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
   test("enforce maximum size of short channel lists") {
 
-    def makeChunk(startBlock: Int, count : Int) = ShortChannelIdsChunk(startBlock, count, makeShortChannelIds(startBlock, count))
+    def makeChunk(startBlock: Int, count: Int) = ShortChannelIdsChunk(startBlock, count, makeShortChannelIds(startBlock, count))
 
     def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk) = {
       require(before.shortChannelIds.containsSlice(after.shortChannelIds))
-      require(after.shortChannelIds.size <= Router.MAXIMUM_CHUNK_SIZE)
+      require(after.shortChannelIds.size <= Sync.MAXIMUM_CHUNK_SIZE)
     }
 
     def validateChunks(before: List[ShortChannelIdsChunk], after: List[ShortChannelIdsChunk]): Unit = {
@@ -341,40 +342,40 @@ class ChannelRangeQueriesSpec extends FunSuite {
     // empty chunk
     {
       val chunks = makeChunk(0, 0) :: Nil
-      assert(Router.enforceMaximumSize(chunks) == chunks)
+      assert(enforceMaximumSize(chunks) == chunks)
     }
 
     // chunks are just below the limit
     {
-      val chunks = makeChunk(0, Router.MAXIMUM_CHUNK_SIZE) :: makeChunk(Router.MAXIMUM_CHUNK_SIZE, Router.MAXIMUM_CHUNK_SIZE) :: Nil
-      assert(Router.enforceMaximumSize(chunks) == chunks)
+      val chunks = makeChunk(0, Sync.MAXIMUM_CHUNK_SIZE) :: makeChunk(Sync.MAXIMUM_CHUNK_SIZE, Sync.MAXIMUM_CHUNK_SIZE) :: Nil
+      assert(enforceMaximumSize(chunks) == chunks)
     }
-    
+
     // fuzzy tests
     {
       val chunks = collection.mutable.ArrayBuffer.empty[ShortChannelIdsChunk]
       // we select parameters to make sure that some chunks will have too many ids
-      for (i <- 0 until 100) chunks += makeChunk(0, Router.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
-      val pruned = Router.enforceMaximumSize(chunks.toList)
+      for (i <- 0 until 100) chunks += makeChunk(0, Sync.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
+      val pruned = enforceMaximumSize(chunks.toList)
       validateChunks(chunks.toList, pruned)
     }
   }
 
   test("do not encode empty lists as COMPRESSED_ZLIB") {
     {
-      val reply = Router.buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
       assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), Some(EncodedChecksums(Nil))))
     }
     {
-      val reply = Router.buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_TIMESTAMPS)), SortedMap())
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_TIMESTAMPS)), SortedMap())
       assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), None))
     }
     {
-      val reply = Router.buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_CHECKSUMS)), SortedMap())
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_CHECKSUMS)), SortedMap())
       assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, Some(EncodedChecksums(Nil))))
     }
     {
-      val reply = Router.buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, None, SortedMap())
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, None, SortedMap())
       assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, None))
     }
   }
