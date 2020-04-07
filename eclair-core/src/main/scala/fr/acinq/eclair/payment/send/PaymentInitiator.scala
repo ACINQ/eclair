@@ -60,7 +60,10 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
               sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(PaymentSecretMissing) :: Nil)
           }
         case _ =>
-          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomRecords)
+          val finalPayload = r.customTlvRecords match {
+            case Nil => FinalLegacyPayload(r.recipientAmount, finalExpiry) // If there are no user defined TLV records we use the legacy format for maximum compatibility
+            case records => Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, records)
+          }
           spawnPaymentFsm(paymentCfg) forward SendPayment(r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
 
@@ -202,7 +205,7 @@ object PaymentInitiator {
    * @param externalId        (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param assistedRoutes    (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams       (optional) parameters to fine-tune the routing algorithm.
-   * @param userCustomRecords (optional) extra records to be added to the final payload
+   * @param customTlvRecords  (optional) a list of **user defined** extra records to be added to the final payload
    */
   case class SendPaymentRequest(recipientAmount: MilliSatoshi,
                                 paymentHash: ByteVector32,
@@ -213,7 +216,7 @@ object PaymentInitiator {
                                 externalId: Option[String] = None,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                 routeParams: Option[RouteParams] = None,
-                                userCustomRecords: Seq[GenericTlv] = Seq.empty) {
+                                customTlvRecords: Seq[GenericTlv] = Seq.empty) {
     // We add one block in order to not have our htlcs fail when a new block has just been found.
     def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
   }

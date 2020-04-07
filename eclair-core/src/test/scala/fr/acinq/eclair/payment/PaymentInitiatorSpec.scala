@@ -73,7 +73,7 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   test("forward payment with user custom tlv records") { f =>
     import f._
     val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
-    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), userCustomRecords = keySendTlvRecords)
+    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), customTlvRecords = keySendTlvRecords)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]

@@ -277,10 +277,10 @@ object Onion {
     NodeRelayPayload(TlvStream(tlvs2))
   }
 
-  /** Creates a single-part final payload, we use the TLV encoding if there are user defined @param customTlvRecords otherwise the legacy format is used */
+  /** Creates a single-part final payload, we use the TLV encoding if there are user defined @param customTlvRecords or a paymentSecret, otherwise the legacy format is used */
   def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None, customTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload = paymentSecret match {
-    case Some(ps) => FinalTlvPayload(TlvStream(records = Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(ps, amount)), unknown = customTlvRecords))
-    case None if customTlvRecords.nonEmpty => FinalTlvPayload(TlvStream(records = Seq(AmountToForward(amount), OutgoingCltv(expiry)), unknown = customTlvRecords))
+    case Some(paymentSecret) => FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)), unknown = customTlvRecords))
+    case None if customTlvRecords.nonEmpty => FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry)), unknown = customTlvRecords))
     case None => FinalLegacyPayload(amount, expiry)
   }
 
