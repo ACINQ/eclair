@@ -16,15 +16,19 @@
 
 package fr.acinq.eclair
 
-import java.sql.{Connection, DriverManager}
+import java.sql.{Connection, DriverManager, Statement}
 import java.util.concurrent.atomic.AtomicLong
 
+import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
+import fr.acinq.eclair.db.psql._
+import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
@@ -55,9 +59,62 @@ object TestConstants {
     }
   }
 
-  def sqliteInMemory() = DriverManager.getConnection("jdbc:sqlite::memory:")
+  sealed trait TestDatabases {
+    val connection: Connection
+    def network(): NetworkDb
+    def audit(): AuditDb
+    def channels(): ChannelsDb
+    def peers(): PeersDb
+    def payments(): PaymentsDb
+    def pendingRelay(): PendingRelayDb
+    def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
+    def close(): Unit
+  }
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.databaseByConnections(connection, connection, connection)
+  case class TestSqliteDatabases(connection: Connection = sqliteInMemory()) extends TestDatabases {
+    override def network(): NetworkDb = new SqliteNetworkDb(connection)
+    override def audit(): AuditDb = new SqliteAuditDb(connection)
+    override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
+    override def peers(): PeersDb = new SqlitePeersDb(connection)
+    override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
+    override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
+    override def close(): Unit = ()
+  }
+
+  case class TestPsqlDatabases() extends TestDatabases {
+    private val pg = EmbeddedPostgres.start()
+
+    override val connection: Connection = pg.getPostgresDatabase.getConnection
+
+    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+
+    val config = new HikariConfig
+    config.setDataSource(pg.getPostgresDatabase)
+
+    implicit val ds = new HikariDataSource(config)
+
+    implicit val lock = NoLock
+
+    override def network(): NetworkDb = new PsqlNetworkDb
+    override def audit(): AuditDb = new PsqlAuditDb
+    override def channels(): ChannelsDb = new PsqlChannelsDb
+    override def peers(): PeersDb = new PsqlPeersDb
+    override def payments(): PaymentsDb = new PsqlPaymentsDb
+    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
+    override def close(): Unit = pg.close()
+  }
+
+  def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
+
+  def forAllDbs(f: TestDatabases => Unit): Unit = {
+    def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
+    using(TestSqliteDatabases())(f)
+    using(TestPsqlDatabases())(f)
+  }
+
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))

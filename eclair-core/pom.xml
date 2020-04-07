@@ -195,6 +195,22 @@
             <version>3.27.2.1</version>
         </dependency>
         <dependency>
+            <groupId>org.postgresql</groupId>
+            <version>42.2.8</version>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.opentable.components</groupId>
+            <artifactId>otj-pg-embedded</artifactId>
+            <version>0.13.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP-java7</artifactId>
+            <version>2.4.13</version>
+        </dependency>
+        <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
             <groupId>com.google.code.findbugs</groupId>
             <artifactId>jsr305</artifactId>
