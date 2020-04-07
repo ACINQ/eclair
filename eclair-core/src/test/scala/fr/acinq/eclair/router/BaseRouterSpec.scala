@@ -100,7 +100,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       assert(Router.getDesc(channelUpdate_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
 
 
-      // let's we set up the router
+      // let's set up the router
       val peerConnection = TestProbe()
       val watcher = TestProbe()
       val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
