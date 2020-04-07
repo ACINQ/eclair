@@ -48,6 +48,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       sender ! paymentId
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), r.paymentRequest, storeInDb = true, publishEvent = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
+      val paymentSecret = r.paymentRequest.flatMap(_.paymentSecret)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
           sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(UnsupportedFeatures(invoice.features.bitmask)) :: Nil)
@@ -59,7 +60,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
               sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(PaymentSecretMissing) :: Nil)
           }
         case _ =>
-          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, r.paymentSecret, r.userCustomRecords)
+          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomRecords)
           spawnPaymentFsm(paymentCfg) forward SendPayment(r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
 
@@ -198,7 +199,6 @@ object PaymentInitiator {
    * @param maxAttempts       maximum number of retries.
    * @param finalExpiryDelta  expiry delta for the final recipient.
    * @param paymentRequest    (optional) Bolt 11 invoice.
-   * @param paymentSecret     (optional) the payment secret to be attached in the final payload, only used if there isn't an invoice
    * @param externalId        (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param assistedRoutes    (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams       (optional) parameters to fine-tune the routing algorithm.
@@ -210,7 +210,6 @@ object PaymentInitiator {
                                 maxAttempts: Int,
                                 finalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
                                 paymentRequest: Option[PaymentRequest] = None,
-                                paymentSecret: Option[ByteVector32] = None,
                                 externalId: Option[String] = None,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                 routeParams: Option[RouteParams] = None,

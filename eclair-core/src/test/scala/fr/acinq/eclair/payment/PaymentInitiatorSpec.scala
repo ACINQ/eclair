@@ -73,13 +73,13 @@ class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.Fun
   test("forward payment with user custom tlv records") { f =>
     import f._
     val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
-    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), paymentSecret = Some(paymentHash), userCustomRecords = keySendTlvRecords)
+    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), userCustomRecords = keySendTlvRecords)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]
     val FinalTlvPayload(tlvs) = payFsm.expectMsgType[SendPayment].finalPayload
     assert(tlvs.get[AmountToForward].get.amount == finalAmount)
-    assert(tlvs.get[OutgoingCltv].get.cltv == CltvExpiryDelta(42).toCltvExpiry(nodeParams.currentBlockHeight + 1))
+    assert(tlvs.get[OutgoingCltv].get.cltv == req.finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
     assert(tlvs.unknown == keySendTlvRecords)
   }
 

@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.OnionTlv.PaymentData
 import fr.acinq.eclair.wire.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -276,9 +277,10 @@ object Onion {
     NodeRelayPayload(TlvStream(tlvs2))
   }
 
-  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None, additionalTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload = paymentSecret match {
-    // We try to use the legacy format as much as possible for maximum compatibility, but when we have a payment secret we need to use TLV to include it.
-    case Some(paymentSecret) => FinalTlvPayload(TlvStream(records = Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)), unknown = additionalTlvRecords))
+  /** Creates a single-part final payload, we use the TLV encoding if there are user defined @param customTlvRecords otherwise the legacy format is used */
+  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None, customTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload = paymentSecret match {
+    case Some(ps) => FinalTlvPayload(TlvStream(records = Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(ps, amount)), unknown = customTlvRecords))
+    case None if customTlvRecords.nonEmpty => FinalTlvPayload(TlvStream(records = Seq(AmountToForward(amount), OutgoingCltv(expiry)), unknown = customTlvRecords))
     case None => FinalLegacyPayload(amount, expiry)
   }
 
