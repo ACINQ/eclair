@@ -33,7 +33,7 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.{Random, Try}
 
-object RouteCalculationHandlers {
+object RouteCalculation {
 
   def finalizeRoute(d: Data, fr: FinalizeRoute)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors

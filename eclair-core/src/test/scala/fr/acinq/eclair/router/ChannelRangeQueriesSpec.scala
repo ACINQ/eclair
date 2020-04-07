@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.router.SyncHandlers._
+import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
@@ -332,7 +332,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk) = {
       require(before.shortChannelIds.containsSlice(after.shortChannelIds))
-      require(after.shortChannelIds.size <= SyncHandlers.MAXIMUM_CHUNK_SIZE)
+      require(after.shortChannelIds.size <= Sync.MAXIMUM_CHUNK_SIZE)
     }
 
     def validateChunks(before: List[ShortChannelIdsChunk], after: List[ShortChannelIdsChunk]): Unit = {
@@ -347,7 +347,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
 
     // chunks are just below the limit
     {
-      val chunks = makeChunk(0, SyncHandlers.MAXIMUM_CHUNK_SIZE) :: makeChunk(SyncHandlers.MAXIMUM_CHUNK_SIZE, SyncHandlers.MAXIMUM_CHUNK_SIZE) :: Nil
+      val chunks = makeChunk(0, Sync.MAXIMUM_CHUNK_SIZE) :: makeChunk(Sync.MAXIMUM_CHUNK_SIZE, Sync.MAXIMUM_CHUNK_SIZE) :: Nil
       assert(enforceMaximumSize(chunks) == chunks)
     }
 
@@ -355,7 +355,7 @@ class ChannelRangeQueriesSpec extends FunSuite {
     {
       val chunks = collection.mutable.ArrayBuffer.empty[ShortChannelIdsChunk]
       // we select parameters to make sure that some chunks will have too many ids
-      for (i <- 0 until 100) chunks += makeChunk(0, SyncHandlers.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
+      for (i <- 0 until 100) chunks += makeChunk(0, Sync.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
       val pruned = enforceMaximumSize(chunks.toList)
       validateChunks(chunks.toList, pruned)
     }

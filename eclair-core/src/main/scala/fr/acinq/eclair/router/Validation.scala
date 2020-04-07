@@ -31,7 +31,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, TxCoordinates}
 import kamon.Kamon
 
-object ValidationHandlers {
+object Validation {
 
   def sendDecision(peerConnection: ActorRef, decision: GossipDecision): Unit = {
     peerConnection ! decision
@@ -160,10 +160,10 @@ object ValidationHandlers {
                     awaiting = awaiting1)
                   // we only reprocess updates and nodes if validation succeeded
                   val d2 = reprocessUpdates.foldLeft(d1) {
-                    case (d, (u, origins)) => ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u, wasStashed = true)
+                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u, wasStashed = true)
                   }
                   val d3 = reprocessNodes.foldLeft(d2) {
-                    case (d, (n, origins)) => ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, origins, n, wasStashed = true)
+                    case (d, (n, origins)) => Validation.handleNodeAnnouncement(d, nodeParams.db.network, origins, n, wasStashed = true)
                   }
                   d3
                 }
@@ -279,7 +279,7 @@ object ValidationHandlers {
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
         val origins1 = d.rebroadcast.updates(u) ++ origins
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
-      } else if (StaleChannelsHandlers.isStale(u)) {
+      } else if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Stale(u)))
         d
@@ -326,7 +326,7 @@ object ValidationHandlers {
       val publicChannel = false
       val pc = d.privateChannels(u.shortChannelId)
       val desc = if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
-      if (StaleChannelsHandlers.isStale(u)) {
+      if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Stale(u)))
         d
@@ -353,7 +353,7 @@ object ValidationHandlers {
         val graph1 = d.graph.addEdge(desc, u)
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
       }
-    } else if (db.isPruned(u.shortChannelId) && !StaleChannelsHandlers.isStale(u)) {
+    } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
       // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
       // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
@@ -376,7 +376,7 @@ object ValidationHandlers {
             case None =>
               // we send the query right away
               peerConnection ! query
-              d.copy(sync = d.sync + (remoteNodeId -> Sync(pending = Nil, total = 1)))
+              d.copy(sync = d.sync + (remoteNodeId -> Syncing(pending = Nil, total = 1)))
           }
         case _ =>
           // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).
