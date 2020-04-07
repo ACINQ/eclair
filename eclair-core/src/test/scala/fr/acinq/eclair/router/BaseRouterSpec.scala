@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, 
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
+import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
@@ -99,30 +100,31 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       assert(Router.getDesc(channelUpdate_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
 
 
-      // let's we set up the router
+      // let's set up the router
+      val peerConnection = TestProbe()
       val watcher = TestProbe()
       val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
       // we announce channels
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_ab)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_bc)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_cd)
-      router ! PeerRoutingMessage(null, remoteNodeId, chan_ef)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_cd))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ef))
       // then nodes
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_a)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_b)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_c)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_d)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_e)
-      router ! PeerRoutingMessage(null, remoteNodeId, ann_f)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_a))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_b))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_c))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_d))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_e))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_f))
       // then channel updates
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ab)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ba)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_bc)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_cb)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_cd)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_dc)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_ef)
-      router ! PeerRoutingMessage(null, remoteNodeId, channelUpdate_fe)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_ab))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_ba))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cb))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_dc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_ef))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_fe))
       // watcher receives the get tx requests
       watcher.expectMsg(ValidateRequest(chan_ab))
       watcher.expectMsg(ValidateRequest(chan_bc))
