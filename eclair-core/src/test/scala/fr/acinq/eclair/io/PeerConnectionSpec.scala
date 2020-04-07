@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.{Inet4Address, InetSocketAddress}
 
-import akka.actor.{ActorRef, PoisonPill}
+import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.router.Router.{GossipDecision, GossipOrigin, LocalGossip, Rebroadcast, RemoteGossip, SendChannelQuery}
 import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag}
@@ -260,7 +261,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("filter gossip message (no filtering)") { f =>
     import f._
     val probe = TestProbe()
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peerConnection, rebroadcast)
@@ -270,12 +271,12 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("filter gossip message (filtered by origin)") { f =>
     import f._
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
-    val pcActor: ActorRef = peerConnection
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
+    val bobOrigin = RemoteGossip(peerConnection, remoteNodeId)
     val rebroadcast = Rebroadcast(
-      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(RemoteGossip(pcActor))),
-      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + RemoteGossip(pcActor))) + (updates(10) -> Set(RemoteGossip(pcActor))),
-      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(RemoteGossip(pcActor))))
+      channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(bobOrigin)),
+      updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + bobOrigin)) + (updates(10) -> Set(bobOrigin)),
+      nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(bobOrigin)))
     val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
     transport.send(peerConnection, filter)
     transport.expectMsg(TransportHandler.ReadAck(filter))
@@ -289,7 +290,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("filter gossip message (filtered by timestamp)") { f =>
     import f._
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     val timestamps = updates.map(_.timestamp).sorted.slice(10, 30)
     val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, timestamps.head, timestamps.last - timestamps.head)
@@ -307,7 +308,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref))
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     val rebroadcast = Rebroadcast(
       channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(LocalGossip)),
       updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + LocalGossip)) + (updates(10) -> Set(LocalGossip)),
@@ -340,7 +341,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // let's assume that the router isn't happy with those channels because the funding tx is already spent
     for (c <- channels) {
-      router.send(peerConnection, PeerConnection.ChannelClosed(c))
+      router.send(peerConnection, GossipDecision.ChannelClosed(c))
     }
     // peer will temporary ignore announcements coming from bob
     for (ann <- channels ++ updates) {
@@ -363,14 +364,14 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
     // now let's assume that the router isn't happy with those channels because the announcement is invalid
-    router.send(peerConnection, PeerConnection.InvalidAnnouncement(channels(0)))
+    router.send(peerConnection, GossipDecision.InvalidAnnouncement(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error1 = transport.expectMsgType[Error]
     assert(error1.channelId === Peer.CHANNELID_ZERO)
     assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
 
     // let's assume that one of the sigs were invalid
-    router.send(peerConnection, PeerConnection.InvalidSignature(channels(0)))
+    router.send(peerConnection, GossipDecision.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
     val error2 = transport.expectMsgType[Error]
     assert(error2.channelId === Peer.CHANNELID_ZERO)

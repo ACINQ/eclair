@@ -30,7 +30,8 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
-import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}
+import fr.acinq.eclair.router.Router.RouteParams
+import fr.acinq.eclair.router.{RouteCalculationHandlers, RouteNotFound}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
@@ -246,7 +247,7 @@ object NodeRelayer {
   private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDeltaBlocks
     val routeMaxFee = amountIn - amountOut - nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, amountOut)
-    Router.getDefaultRouteParams(nodeParams.routerConf).copy(
+    RouteCalculationHandlers.getDefaultRouteParams(nodeParams.routerConf).copy(
       maxFeeBase = routeMaxFee,
       routeMaxCltv = routeMaxCltv,
       maxFeePct = 0 // we disable percent-based max fee calculation, we're only interested in collecting our node fee
