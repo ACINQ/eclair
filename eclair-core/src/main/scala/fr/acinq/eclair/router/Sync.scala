@@ -35,7 +35,7 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 
-object SyncHandlers {
+object Sync {
 
   // maximum number of ids we can keep in a single chunk and still have an encoded reply that is smaller than 65Kb
   // please note that:
@@ -228,13 +228,13 @@ object SyncHandlers {
         // - it is not stale
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
         val areDifferent = ourChecksum != theirChecksum
-        val oursIsAlmostStale = StaleChannelsHandlers.isAlmostStale(ourTimestamp)
-        val theirsIsStale = StaleChannelsHandlers.isStale(theirTimestamp)
+        val oursIsAlmostStale = StaleChannels.isAlmostStale(ourTimestamp)
+        val theirsIsStale = StaleChannels.isStale(theirTimestamp)
         theirsIsMoreRecent && (areDifferent || oursIsAlmostStale) && !theirsIsStale
       case (Some(theirTimestamp), None) =>
         // if we only have their timestamp, we request their channel_update if theirs is more recent than ours
         val theirsIsMoreRecent = ourTimestamp < theirTimestamp
-        val theirsIsStale = StaleChannelsHandlers.isStale(theirTimestamp)
+        val theirsIsStale = StaleChannels.isStale(theirTimestamp)
         theirsIsMoreRecent && !theirsIsStale
       case (None, Some(theirChecksum)) =>
         // if we only have their checksum, we request their channel_update if it is different from ours
@@ -353,7 +353,7 @@ object SyncHandlers {
    *
    * @return a sync progress indicator (1 means fully synced)
    */
-  def syncProgress(sync: Map[PublicKey, Sync]): SyncProgress = {
+  def syncProgress(sync: Map[PublicKey, Syncing]): SyncProgress = {
     // NB: progress is in terms of requests, not individual channels
     val (pending, total) = sync.foldLeft((0, 0)) {
       case ((p, t), (_, sync)) => (p + sync.pending.size, t + sync.total)
@@ -493,7 +493,7 @@ object SyncHandlers {
       checksums = checksums)
   }
 
-  def addToSync(syncMap: Map[PublicKey, Sync], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Sync], Option[RoutingMessage]) = {
+  def addToSync(syncMap: Map[PublicKey, Syncing], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Syncing], Option[RoutingMessage]) = {
     pending match {
       case head +: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
@@ -501,10 +501,10 @@ object SyncHandlers {
         syncMap.get(remoteNodeId) match {
           case None =>
             // we don't have a pending query with this peer, let's send it
-            (syncMap + (remoteNodeId -> Sync(rest, pending.size)), Some(head))
+            (syncMap + (remoteNodeId -> Syncing(rest, pending.size)), Some(head))
           case Some(sync) =>
             // we already have a pending query with this peer, add missing ids to our "sync" state
-            (syncMap + (remoteNodeId -> Sync(sync.pending ++ pending, sync.total + pending.size)), None)
+            (syncMap + (remoteNodeId -> Syncing(sync.pending ++ pending, sync.total + pending.size)), None)
         }
       case Nil =>
         // there is nothing to send

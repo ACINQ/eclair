@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-object StaleChannelsHandlers {
+object StaleChannels {
 
   def handlePruneStaleChannels(d: Data, db: NetworkDb, currentBlockHeight: Long)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     // first we select channels that we will prune

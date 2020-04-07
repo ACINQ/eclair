@@ -136,7 +136,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       }
 
     case Event(TickPruneStaleChannels, d) =>
-      stay using StaleChannelsHandlers.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
+      stay using StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.routerConf.channelExcludeDuration
@@ -170,10 +170,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(fr: FinalizeRoute, d) =>
-      stay using RouteCalculationHandlers.finalizeRoute(d, fr)
+      stay using RouteCalculation.finalizeRoute(d, fr)
 
     case Event(r: RouteRequest, d) =>
-      stay using RouteCalculationHandlers.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
+      stay using RouteCalculation.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -182,48 +182,48 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
-      stay using ValidationHandlers.handleChannelAnnouncement(d, nodeParams.db.network, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
+      stay using Validation.handleChannelAnnouncement(d, nodeParams.db.network, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
 
     case Event(r: ValidateResult, d) =>
-      stay using ValidationHandlers.handleChannelValidationResponse(d, nodeParams, watcher, r)
+      stay using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
     case Event(WatchEventSpentBasic(e: BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT), d) if d.channels.contains(e.shortChannelId) =>
-      stay using ValidationHandlers.handleChannelSpent(d, nodeParams.db.network, e)
+      stay using Validation.handleChannelSpent(d, nodeParams.db.network, e)
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      stay using ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
+      stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
-      stay using ValidationHandlers.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
+      stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
 
     case Event(u: ChannelUpdate, d: Data) =>
-      stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
-      stay using ValidationHandlers.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(peerConnection, remoteNodeId)), u)
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(peerConnection, remoteNodeId)), u)
 
     case Event(lcu: LocalChannelUpdate, d: Data) =>
-      stay using ValidationHandlers.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
+      stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
-      stay using ValidationHandlers.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
+      stay using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
     case Event(s: SendChannelQuery, d) =>
-      stay using SyncHandlers.handleSendChannelQuery(d, s)
+      stay using Sync.handleSendChannelQuery(d, s)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
-      SyncHandlers.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+      Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
-      stay using SyncHandlers.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
+      stay using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
-      SyncHandlers.handleQueryShortChannelIds(d.nodes, d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+      Sync.handleQueryShortChannelIds(d.nodes, d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
-      stay using SyncHandlers.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
+      stay using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
 
   }
 
@@ -395,7 +395,7 @@ object Router {
 
   case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
 
-  case class Sync(pending: List[RoutingMessage], total: Int)
+  case class Syncing(pending: List[RoutingMessage], total: Int)
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[ShortChannelId, PublicChannel],
@@ -406,7 +406,7 @@ object Router {
                   privateChannels: Map[ShortChannelId, PrivateChannel], // short_channel_id -> node_id
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
-                  sync: Map[PublicKey, Sync] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  )
 
   // @formatter:off
