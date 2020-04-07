@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.OnionTlv.PaymentData
 import fr.acinq.eclair.wire.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -277,15 +276,14 @@ object Onion {
     NodeRelayPayload(TlvStream(tlvs2))
   }
 
-  /** Creates a single-part final payload, we use the TLV encoding if there are user defined @param customTlvRecords or a paymentSecret, otherwise the legacy format is used */
-  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None, customTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload = paymentSecret match {
-    case Some(paymentSecret) => FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)), unknown = customTlvRecords))
-    case None if customTlvRecords.nonEmpty => FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry)), unknown = customTlvRecords))
+  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32] = None, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = paymentSecret match {
+    case Some(paymentSecret) => FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)), userCustomTlvs))
+    case None if userCustomTlvs.nonEmpty => FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry)), userCustomTlvs))
     case None => FinalLegacyPayload(amount, expiry)
   }
 
-  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalOnionTlvs: Seq[OnionTlv] = Seq.empty, additionalTlvRecords: Seq[GenericTlv] = Seq.empty): FinalPayload =
-    FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount)) ++ additionalOnionTlvs, unknown = additionalTlvRecords))
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: Seq[OnionTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload =
+    FinalTlvPayload(TlvStream(AmountToForward(amount) +: OutgoingCltv(expiry) +: PaymentData(paymentSecret, totalAmount) +: additionalTlvs, userCustomTlvs))
 
   /** Create a trampoline outer payload. */
   def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload = {
