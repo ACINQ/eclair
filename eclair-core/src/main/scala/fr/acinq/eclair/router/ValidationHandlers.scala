@@ -423,8 +423,7 @@ object ValidationHandlers {
     }
   }
 
-  def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+  def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId, shortChannelId}
     // a local channel has permanently gone down
     if (d.channels.contains(shortChannelId)) {
