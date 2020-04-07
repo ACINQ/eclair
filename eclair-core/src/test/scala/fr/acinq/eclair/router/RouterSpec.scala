@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.QueryShortChannelIds
+import fr.acinq.eclair.wire.{Color, QueryShortChannelIds}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, randomKey}
 import scodec.bits._
 
@@ -67,6 +67,7 @@ class RouterSpec extends BaseRouterSpec {
     val priv_funding_z = randomKey
     val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
     val update_az = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_z.publicKey, chan_az.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat)
+    val node_z = Announcements.makeNodeAnnouncement(priv_z, "node-z", Color(0, 0, 0), List.empty, ByteVector.empty)
 
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac)
@@ -75,17 +76,38 @@ class RouterSpec extends BaseRouterSpec {
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az)
     // router won't validate channels before it has a recent enough channel update
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ac)
+    peerConnection.expectMsg(TransportHandler.ReadAck(update_ac))
+    assert(peerConnection.sender() == router)
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ax)
+    peerConnection.expectMsg(TransportHandler.ReadAck(update_ax))
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay)
+    peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_az)
+    peerConnection.expectMsg(TransportHandler.ReadAck(update_az))
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_z)
+    peerConnection.expectMsg(TransportHandler.ReadAck(node_z))
     watcher.expectMsg(ValidateRequest(chan_ac))
     watcher.expectMsg(ValidateRequest(chan_ax))
     watcher.expectMsg(ValidateRequest(chan_ay))
     watcher.expectMsg(ValidateRequest(chan_az))
     watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+    peerConnection.expectMsg(TransportHandler.ReadAck(chan_ac))
+    peerConnection.expectMsg(GossipDecision.Accepted(chan_ac))
+    assert(peerConnection.sender() == router)
+    peerConnection.expectMsg(GossipDecision.Accepted(update_ac))
     watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException(s"funding tx not found"))))
+    peerConnection.expectMsg(TransportHandler.ReadAck(chan_ax))
+    peerConnection.expectMsg(GossipDecision.ValidationFailure(chan_ax))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ax))
     watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+    peerConnection.expectMsg(TransportHandler.ReadAck(chan_ay))
+    peerConnection.expectMsg(GossipDecision.InvalidAnnouncement(chan_ay))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
     watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
+    peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
+    peerConnection.expectMsg(GossipDecision.ChannelClosed(chan_az))
+    peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_az))
+    peerConnection.expectMsg(GossipDecision.NoKnownChannel(node_z))
     watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 

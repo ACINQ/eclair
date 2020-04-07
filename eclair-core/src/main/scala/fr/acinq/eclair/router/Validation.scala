@@ -33,7 +33,7 @@ import kamon.Kamon
 
 object Validation {
 
-  def sendDecision(peerConnection: ActorRef, decision: GossipDecision): Unit = {
+  def sendDecision(peerConnection: ActorRef, decision: GossipDecision)(implicit sender: ActorRef): Unit = {
     peerConnection ! decision
     Metrics.gossipResult(decision).increment()
   }
@@ -168,6 +168,8 @@ object Validation {
                   d3
                 }
               case None =>
+                reprocessUpdates.foreach { case (u, origins) => origins.collect { case o: RemoteGossip => sendDecision(o.peerConnection, GossipDecision.NoRelatedChannel(u)) } }
+                reprocessNodes.foreach { case (n, origins) => origins.collect { case o: RemoteGossip => sendDecision(o.peerConnection, GossipDecision.NoKnownChannel(n)) } }
                 d0.copy(stash = stash1, awaiting = awaiting1)
             }
           }
