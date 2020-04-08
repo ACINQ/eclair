@@ -27,6 +27,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
+import fr.acinq.eclair.router.Router.{Data, GossipDecision, PublicChannel, SendChannelQuery, State}
+import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.scalatest.{FunSuiteLike, ParallelTestExecution}
@@ -77,10 +79,12 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     pipe.ignoreMsg {
       case _: TransportHandler.ReadAck => true
       case _: GossipTimestampFilter => true
+      case _: GossipDecision.Duplicate => true
+      case _: GossipDecision.Accepted => true
     }
     val srcId = src.underlyingActor.nodeParams.nodeId
     val tgtId = tgt.underlyingActor.nodeParams.nodeId
-    sender.send(src, SendChannelQuery(tgtId, pipe.ref, extendedQueryFlags_opt))
+    sender.send(src, SendChannelQuery(src.underlyingActor.nodeParams.chainHash, tgtId, pipe.ref, extendedQueryFlags_opt))
     // src sends a query_channel_range to bob
     val qcr = pipe.expectMsgType[QueryChannelRange]
     pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, qcr))
@@ -253,7 +257,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, None))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
 
@@ -269,7 +273,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     assert(sync.total == 1)
 
     // simulate a re-connection
-    sender.send(router, SendChannelQuery(remoteNodeId, sender.ref, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).isEmpty)
@@ -282,17 +286,17 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val nodeidA = randomKey.publicKey
     val nodeidB = randomKey.publicKey
 
-    val (sync1, _) = Router.addToSync(Map.empty, nodeidA, List(req, req, req, req))
-    assert(Router.syncProgress(sync1) == SyncProgress(0.25D))
+    val (sync1, _) = addToSync(Map.empty, nodeidA, List(req, req, req, req))
+    assert(syncProgress(sync1) == SyncProgress(0.25D))
 
-    val (sync2, _) = Router.addToSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
-    assert(Router.syncProgress(sync2) == SyncProgress(0.125D))
+    val (sync2, _) = addToSync(sync1, nodeidB, List(req, req, req, req, req, req, req, req, req, req, req, req))
+    assert(syncProgress(sync2) == SyncProgress(0.125D))
 
     // let's assume we made some progress
     val sync3 = sync2
       .updated(nodeidA, sync2(nodeidA).copy(pending = List(req)))
       .updated(nodeidB, sync2(nodeidB).copy(pending = List(req)))
-    assert(Router.syncProgress(sync3) == SyncProgress(0.875D))
+    assert(syncProgress(sync3) == SyncProgress(0.875D))
   }
 }
 
