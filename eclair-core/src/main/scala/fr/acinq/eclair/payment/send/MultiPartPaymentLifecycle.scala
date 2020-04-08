@@ -304,6 +304,7 @@ object MultiPartPaymentLifecycle {
    * @param assistedRoutes routing hints (usually from a Bolt 11 invoice).
    * @param routeParams    parameters to fine-tune the routing algorithm.
    * @param additionalTlvs when provided, additional tlvs that will be added to the onion sent to the target node.
+   * @param userCustomTlvs when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
    */
   case class SendMultiPartPayment(paymentSecret: ByteVector32,
                                   targetNodeId: PublicKey,
@@ -312,7 +313,8 @@ object MultiPartPaymentLifecycle {
                                   maxAttempts: Int,
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                   routeParams: Option[RouteParams] = None,
-                                  additionalTlvs: Seq[OnionTlv] = Nil) {
+                                  additionalTlvs: Seq[OnionTlv] = Nil,
+                                  userCustomTlvs: Seq[GenericTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
 
@@ -416,7 +418,7 @@ object MultiPartPaymentLifecycle {
   private def createChildPayment(nodeParams: NodeParams, request: SendMultiPartPayment, childAmount: MilliSatoshi, channel: OutgoingChannel): SendPayment = {
     SendPayment(
       request.targetNodeId,
-      Onion.createMultiPartPayload(childAmount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs),
+      Onion.createMultiPartPayload(childAmount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs),
       request.maxAttempts,
       request.assistedRoutes,
       request.routeParams,
