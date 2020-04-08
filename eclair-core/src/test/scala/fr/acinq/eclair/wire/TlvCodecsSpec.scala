@@ -302,17 +302,14 @@ class TlvCodecsSpec extends FunSuite {
     }
   }
 
-  test("encode unordered tlv stream (codec should sort appropriately)") {
-    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(13, hex"2a"), GenericTlv(11, hex"2b")))
-    assert(testTlvStreamCodec.encode(stream).require.toByteVector === hex"01012a 0b012b 0d012a fd00fe02002a")
-    assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector === hex"0f 01012a 0b012b 0d012a fd00fe02002a")
+  test("encode unordered tlv stream (codec should sort appropriately and allow unknown even tlvs)") {
+    val stream = TlvStream[TestTlv](Seq(TestType254(42), TestType1(42)), Seq(GenericTlv(14, hex"2a"), GenericTlv(11, hex"2b")))
+    assert(testTlvStreamCodec.encode(stream).require.toByteVector === hex"01012a 0b012b 0e012a fd00fe02002a")
+    assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector === hex"0f 01012a 0b012b 0e012a fd00fe02002a")
   }
 
   test("encode invalid tlv stream") {
     val testCases = Seq(
-      // Unknown even type.
-      TlvStream[TestTlv](Nil, Seq(GenericTlv(42, hex"2a"))),
-      TlvStream[TestTlv](Seq(TestType1(561), TestType2(ShortChannelId(1105))), Seq(GenericTlv(42, hex"2a"))),
       // Duplicate type.
       TlvStream[TestTlv](TestType1(561), TestType1(1105)),
       TlvStream[TestTlv](Seq(TestType1(561)), Seq(GenericTlv(1, hex"0451")))
