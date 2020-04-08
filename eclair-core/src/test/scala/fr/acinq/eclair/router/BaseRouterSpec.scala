@@ -43,7 +43,7 @@ import scala.concurrent.duration._
 
 abstract class BaseRouterSpec extends TestkitBaseClass {
 
-  case class FixtureParam(router: ActorRef, watcher: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, router: ActorRef, watcher: TestProbe)
 
   val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
@@ -56,12 +56,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
-  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, hex"0200")
-  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, hex"")
-  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200")
-  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, hex"00")
-  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, hex"00")
-  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, hex"00")
+  val node_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, hex"0200")
+  val node_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, hex"")
+  val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200")
+  val node_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, hex"00")
+  val node_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, hex"00")
+  val node_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, hex"00")
 
   val channelId_ab = ShortChannelId(420000, 1, 0)
   val channelId_bc = ShortChannelId(420000, 2, 0)
@@ -79,14 +79,14 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
-  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
-  val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
+  val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000 msat)
+  val update_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = 500000000 msat)
+  val update_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000 msat)
+  val update_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, CltvExpiryDelta(5), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 1, htlcMaximumMsat = 500000000 msat)
+  val update_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000 msat)
+  val update_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = 500000000 msat)
+  val update_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
+  val update_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
 
   override def withFixture(test: OneArgTest): Outcome = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
@@ -94,37 +94,38 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
     within(30 seconds) {
 
       // first we make sure that we correctly resolve channelId+direction to nodeId
-      assert(Router.getDesc(channelUpdate_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, priv_a.publicKey, priv_b.publicKey))
-      assert(Router.getDesc(channelUpdate_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, priv_b.publicKey, priv_c.publicKey))
-      assert(Router.getDesc(channelUpdate_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, priv_c.publicKey, priv_d.publicKey))
-      assert(Router.getDesc(channelUpdate_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
+      assert(Router.getDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, priv_a.publicKey, priv_b.publicKey))
+      assert(Router.getDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, priv_b.publicKey, priv_c.publicKey))
+      assert(Router.getDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, priv_c.publicKey, priv_d.publicKey))
+      assert(Router.getDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
 
 
       // let's set up the router
       val peerConnection = TestProbe()
       val watcher = TestProbe()
-      val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
+      val nodeParams = Alice.nodeParams
+      val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bc))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_cd))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ef))
       // then nodes
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_a))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_b))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_c))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_d))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_e))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_f))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_a))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_b))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_d))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_e))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_f))
       // then channel updates
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_ab))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_ba))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bc))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cb))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_dc))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_ef))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_fe))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ba))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_bc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_cb))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_cd))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_dc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ef))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_fe))
       // watcher receives the get tx requests
       watcher.expectMsg(ValidateRequest(chan_ab))
       watcher.expectMsg(ValidateRequest(chan_bc))
@@ -153,7 +154,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         nodes.size === 6 && channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
-      withFixture(test.toNoArgTest(FixtureParam(router, watcher)))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, watcher)))
     }
   }
 }

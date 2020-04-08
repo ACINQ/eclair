@@ -352,7 +352,15 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
               setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
             }
-          case _ => d.behavior // other rejections are not considered punishable offenses
+          // other rejections are not considered punishable offenses
+          // we are not using a catch-all on purpose, to make compiler warn us when a new error is added
+          case _: GossipDecision.Duplicate => d.behavior
+          case _: GossipDecision.NoKnownChannel => d.behavior
+          case _: GossipDecision.ValidationFailure => d.behavior
+          case _: GossipDecision.ChannelPruned => d.behavior
+          case _: GossipDecision.ChannelClosing => d.behavior
+          case _: GossipDecision.Stale => d.behavior
+          case _: GossipDecision.NoRelatedChannel => d.behavior
         }
         stay using d.copy(behavior = behavior1)
 
