@@ -306,14 +306,14 @@ class TlvCodecsSpec extends FunSuite {
     assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector === hex"0f 01012a 0b012b 0d012a fd00fe02002a")
   }
 
-  test("encode/decode even generic tlv types above high range") {
+  test("encode/decode custom even tlv records") {
     val lowRangeEven = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(124, hex"2a")))
     val highRangeEven = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(67876545678L, hex"2b")))
 
     assert(testTlvStreamCodec.encode(lowRangeEven).isFailure)
     assert(testTlvStreamCodec.encode(highRangeEven).isSuccessful)
     assert(testTlvStreamCodec.decode(hex"7c 01 2a".toBitVector).isFailure) // lowRangeEven
-    assert(testTlvStreamCodec.decode(testTlvStreamCodec.encode(highRangeEven).require.bytes.toBitVector).isSuccessful)
+    assert(testTlvStreamCodec.decode(testTlvStreamCodec.encode(highRangeEven).require).isSuccessful)
   }
 
   test("encode invalid tlv stream") {
