@@ -29,14 +29,10 @@ object Monitoring {
 
     private val GossipResult = Kamon.counter("router.gossip.result")
 
-    // @formatter:off
-    def gossipResult(decision: GossipDecision): Counter = {
-      decision match {
-        case _: GossipDecision.Accepted => GossipResult.withTag("result", "accepted")
-        case rejected: GossipDecision.Rejected =>   GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(rejected))
-      }
+    def gossipResult(decision: GossipDecision): Counter = decision match {
+      case _: GossipDecision.Accepted => GossipResult.withTag("result", "accepted")
+      case rejected: GossipDecision.Rejected => GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(rejected))
     }
-    // @formatter:on
   }
 
   object Tags {
