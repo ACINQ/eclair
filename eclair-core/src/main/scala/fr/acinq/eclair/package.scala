@@ -186,7 +186,7 @@ package object eclair {
   }
 
   /**
-   * Apparently .getClass.getSimpleName can crashes java 8 with a "Malformed class name" error
+   * Apparently .getClass.getSimpleName can crash java 8 with a "Malformed class name" error
    */
   def getSimpleClassName(o: Any): String = o.getClass.getName.split("\\$").last
 
