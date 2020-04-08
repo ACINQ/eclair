@@ -229,9 +229,7 @@ class TlvCodecsSpec extends FunSuite {
       hex"12 00",
       hex"0a 00",
       hex"fd0102 00",
-      hex"fe01000002 00",
       hex"01020101 0a0101",
-      hex"ff0100000000000002 00",
       // Invalid TestTlv1.
       hex"01 01 00", // not minimally-encoded
       hex"01 02 0001", // not minimally-encoded
@@ -308,11 +306,25 @@ class TlvCodecsSpec extends FunSuite {
     assert(lengthPrefixedTestTlvStreamCodec.encode(stream).require.toByteVector === hex"0f 01012a 0b012b 0d012a fd00fe02002a")
   }
 
+  test("encode all even generic tlv types and decode even types above high range") {
+    val lowRangeOdd = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(123, hex"0a")))
+    val lowRangeEven = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(124, hex"0a")))
+    val highRangeOdd = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(67876545677L, hex"0a")))
+    val highRangeEven = TlvStream[TestTlv](records = Nil, unknown = Seq(GenericTlv(67876545678L, hex"0a")))
+
+    assert(testTlvStreamCodec.encode(lowRangeOdd).isSuccessful)
+    assert(testTlvStreamCodec.encode(lowRangeEven).isSuccessful)
+    assert(testTlvStreamCodec.encode(highRangeOdd).isSuccessful)
+    assert(testTlvStreamCodec.encode(highRangeEven).isSuccessful)
+
+    assert(testTlvStreamCodec.decode(testTlvStreamCodec.encode(lowRangeOdd).require).isSuccessful)
+    assert(testTlvStreamCodec.decode(testTlvStreamCodec.encode(lowRangeEven).require).isFailure)
+    assert(testTlvStreamCodec.decode(testTlvStreamCodec.encode(highRangeOdd).require).isSuccessful)
+    assert(testTlvStreamCodec.decode(testTlvStreamCodec.encode(highRangeEven).require).isSuccessful)
+  }
+
   test("encode invalid tlv stream") {
     val testCases = Seq(
-      // Unknown even type.
-      TlvStream[TestTlv](Nil, Seq(GenericTlv(42, hex"2a"))),
-      TlvStream[TestTlv](Seq(TestType1(561), TestType2(ShortChannelId(1105))), Seq(GenericTlv(42, hex"2a"))),
       // Duplicate type.
       TlvStream[TestTlv](TestType1(561), TestType1(1105)),
       TlvStream[TestTlv](Seq(TestType1(561)), Seq(GenericTlv(1, hex"0451")))

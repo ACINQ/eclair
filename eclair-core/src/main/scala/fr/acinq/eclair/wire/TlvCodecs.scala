@@ -26,8 +26,9 @@ import scodec.{Attempt, Codec, Err}
 /**
  * Created by t-bast on 20/06/2019.
  */
-
 object TlvCodecs {
+
+  private val TLV_TYPE_HIGH_RANGE = 65536
 
   /**
    * Truncated uint64 (0 to 8 bytes unsigned integer).
@@ -104,14 +105,17 @@ object TlvCodecs {
   val ltu16: Codec[Int] = variableSizeBytes(uint8, tu16)
 
   private def validateGenericTlv(g: GenericTlv): Attempt[GenericTlv] = {
-    if (g.tag.toBigInt % 2 == 0) {
+    if (g.tag < TLV_TYPE_HIGH_RANGE && g.tag.toBigInt % 2 == 0) {
       Attempt.Failure(Err("unknown even tlv type"))
     } else {
       Attempt.Successful(g)
     }
   }
 
-  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(validateGenericTlv, validateGenericTlv)
+  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(
+    validateGenericTlv, // we must reject incoming even unknown tlv records
+    g => Attempt.Successful(g) // but we allow outgoing even unknown tlv records (so that users can provide experimental tlv records)
+  )
 
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: Either[GenericTlv, T]): UInt64 = record match {
     case Left(generic) => generic.tag
