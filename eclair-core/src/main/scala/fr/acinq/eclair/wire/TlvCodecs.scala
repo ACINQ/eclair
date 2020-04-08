@@ -27,7 +27,7 @@ import scodec.{Attempt, Codec, Err}
  * Created by t-bast on 20/06/2019.
  */
 object TlvCodecs {
-
+  // high range types are greater than or equal 2^16, see https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#type-length-value-format
   private val TLV_TYPE_HIGH_RANGE = 65536
 
   /**
@@ -112,10 +112,7 @@ object TlvCodecs {
     }
   }
 
-  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(
-    validateGenericTlv, // we must reject incoming even unknown tlv records
-    g => Attempt.Successful(g) // but we allow outgoing even unknown tlv records (so that users can provide experimental tlv records)
-  )
+  private val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv].exmap(validateGenericTlv, validateGenericTlv)
 
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: Either[GenericTlv, T]): UInt64 = record match {
     case Left(generic) => generic.tag
