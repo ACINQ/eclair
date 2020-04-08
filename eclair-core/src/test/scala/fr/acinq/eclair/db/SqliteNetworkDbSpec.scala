@@ -22,7 +22,8 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.router.{Announcements, PublicChannel}
+import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.FunSuite

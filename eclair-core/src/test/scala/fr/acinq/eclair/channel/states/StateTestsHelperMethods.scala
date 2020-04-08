@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPacket
-import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
