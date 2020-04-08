@@ -27,6 +27,9 @@ import scodec.{Attempt, Codec, Err}
  * Created by t-bast on 20/06/2019.
  */
 object TlvCodecs {
+
+  private val TLV_TYPE_HIGH_RANGE = 65536
+
   /**
    * Truncated uint64 (0 to 8 bytes unsigned integer).
    * The encoder minimally-encodes every value, and the decoder verifies that values are minimally-encoded.
@@ -102,7 +105,7 @@ object TlvCodecs {
   val ltu16: Codec[Int] = variableSizeBytes(uint8, tu16)
 
   private def validateGenericTlv(g: GenericTlv): Attempt[GenericTlv] = {
-    if (g.tag.toBigInt % 2 == 0) {
+    if (g.tag < TLV_TYPE_HIGH_RANGE && g.tag.toBigInt % 2 == 0) {
       Attempt.Failure(Err("unknown even tlv type"))
     } else {
       Attempt.Successful(g)

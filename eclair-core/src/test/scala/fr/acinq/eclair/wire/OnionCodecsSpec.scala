@@ -188,7 +188,7 @@ class OnionCodecsSpec extends FunSuite {
 
     val encoded = finalPerHopPayloadCodec.encode(FinalTlvPayload(tlvs)).require.bytes
     assert(encoded === bin)
-    assert(finalPerHopPayloadCodec.decode(bin.bits).isFailure)
+    assert(finalPerHopPayloadCodec.decode(bin.bits).require.value == FinalTlvPayload(tlvs))
   }
 
   test("decode multi-part final per-hop payload") {
