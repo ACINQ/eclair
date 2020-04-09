@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
-import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
@@ -163,7 +163,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
     val check = ByteVector.fromValidHex("010276df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c8029328206226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006700000100005d50f933000000900000000000000000000003e80000000a")
     assert(LightningMessageCodecs.channelUpdateCodec.encode(update).require.bytes == check.drop(2))
 
-    val checksum = Router.getChecksum(update)
+    val checksum = Sync.getChecksum(update)
     assert(checksum == 0x1112fa30L)
   }
 
@@ -184,7 +184,7 @@ class ExtendedQueriesCodecsSpec extends FunSuite {
     val check = ByteVector.fromValidHex("010206737e9e18d3e4d0ab4066ccaecdcc10e648c5f1c5413f1610747e0d463fa7fa39c1b02ea2fd694275ecfefe4fe9631f24afd182ab75b805e16cd550941f858c06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00006d00000100005d50f935010000300000000000000000000000640000000b00000000000186a0")
     assert(LightningMessageCodecs.channelUpdateCodec.encode(update).require.bytes == check.drop(2))
 
-    val checksum = Router.getChecksum(update)
+    val checksum = Sync.getChecksum(update)
     assert(checksum == 0xf32ce968L)
   }
 }
