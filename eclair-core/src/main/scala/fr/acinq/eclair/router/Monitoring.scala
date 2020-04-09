@@ -17,15 +17,39 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.eclair.router.Router.GossipDecision
+import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, getSimpleClassName}
 import kamon.Kamon
-import kamon.metric.Counter
+import kamon.metric.{Counter, MeasurementUnit}
 
 object Monitoring {
 
   object Metrics {
     val FindRouteDuration = Kamon.timer("router.find-route.duration", "Path-finding duration")
     val RouteLength = Kamon.histogram("router.find-route.length", "Path-finding result length")
+
+    val QueryChannelRangeBlocksCount = Kamon.histogram("router.gossip.query-channel-range.blocks-count", "Number of blocks requested in query-channel-range")
+    val QueryChannelRangeRepliesCount = Kamon.histogram("router.gossip.query-channel-range.replies-count", "Number of reply-channel-range replies sent")
+
+    val ReplyChannelRangeIdsCount = Kamon.histogram("router.gossip.reply-channel-range.ids-count", "Number of short channel ids in reply-channel-range")
+    val ReplyChannelRangeBlocksCount = Kamon.histogram("router.gossip.reply-channel-range.blocks-count", "Number of blocks in reply-channel-range")
+    val NewChannelAnnouncements = Kamon.histogram("router.gossip.reply-channel-range.new-channel-announcements", "Number of new channel announcements discovered in reply-channel-range")
+    val NewChannelUpdates = Kamon.histogram("router.gossip.reply-channel-range.new-channel-updates", "Number of new channel updates discovered in reply-channel-range")
+
+    val QueryShortChannelIdsNodesCount = Kamon.histogram("router.gossip.query-short-channel-ids.node-announcements", "Number of node announcements sent in response to a query-short-channel-ids")
+    val QueryShortChannelIdsChannelAnnouncementsCount = Kamon.histogram("router.gossip.query-short-channel-ids.channel-announcements", "Number of channel announcements sent in response to a query-short-channel-ids")
+    val QueryShortChannelIdsChannelUpdatesCount = Kamon.histogram("router.gossip.query-short-channel-ids.channel-updates", "Number of channel updates sent in response to a query-short-channel-ids")
+
+    val NodesCount = Kamon.gauge("router.gossip.nodes", "Number of known nodes in the network")
+    val ChannelsCount = Kamon.gauge("router.gossip.channels", "Number of known channels in the network")
+    val SyncProgress = Kamon.gauge("router.gossip.sync-progress", "Routing table sync progress (%)", MeasurementUnit.percentage)
+
+    private val ChannelUpdateRefreshRate = Kamon.histogram("router.gossip.channel-update-refresh-rate", "Rate at which channels update their fee policy (minutes)")
+
+    def channelUpdateRefreshed(update: ChannelUpdate, previous: ChannelUpdate, public: Boolean): Unit = {
+      val elapsed = (update.timestamp - previous.timestamp) / 60
+      ChannelUpdateRefreshRate.withTag(Tags.Announced, public).record(elapsed)
+    }
 
     private val GossipResult = Kamon.counter("router.gossip.result")
 
@@ -36,8 +60,15 @@ object Monitoring {
   }
 
   object Tags {
-    val NumberOfRoutes = "numRoutes"
     val Amount = "amount"
+    val Announced = "announced"
+    val Direction = "direction"
+    val NumberOfRoutes = "numRoutes"
+
+    object Directions {
+      val Incoming = "incoming"
+      val Outgoing = "outgoing"
+    }
 
     /**
      * We split amounts in buckets that can be used to tag metrics.
