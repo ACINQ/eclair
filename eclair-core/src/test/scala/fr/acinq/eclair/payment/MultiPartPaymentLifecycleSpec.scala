@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError}
+import fr.acinq.eclair.router.Router.{ChannelHop, GetNetworkStats, GetNetworkStatsResponse, RouteParams, TickComputeNetworkStats}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import org.scalatest.{Outcome, Tag, fixture}

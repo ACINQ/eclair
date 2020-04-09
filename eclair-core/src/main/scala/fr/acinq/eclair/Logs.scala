@@ -28,6 +28,7 @@ import fr.acinq.eclair.channel.{LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 
@@ -44,12 +45,12 @@ object Logs {
     ).flatten.toMap
 
   /**
-    * Temporarily add the provided MDC to the current one, and then restore the original one.
-    *
-    * This is useful in some cases where we can't rely on the `aroundReceive` trick to set the MDC before processing a
-    * message because we don't have enough context. That's typically the case when handling `Terminated` messages.
-    */
-  def withMdc(log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => Any): Any = {
+   * Temporarily add the provided MDC to the current one, and then restore the original one.
+   *
+   * This is useful in some cases where we can't rely on the `aroundReceive` trick to set the MDC before processing a
+   * message because we don't have enough context. That's typically the case when handling `Terminated` messages.
+   */
+  def withMdc[T](log: DiagnosticLoggingAdapter)(mdc: MDC)(f: => T): T = {
     val mdc0 = log.mdc // backup the current mdc
     try {
       log.mdc(mdc0 ++ mdc) // add the new mdc to the current one
