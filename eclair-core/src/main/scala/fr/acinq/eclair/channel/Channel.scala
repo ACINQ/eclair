@@ -1682,8 +1682,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => () // called at channel initialization
     case state -> nextState =>
       if (state != nextState) {
-        if (state != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, state.toString).decrement()
-        if (nextState != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, nextState.toString).increment()
         context.system.eventStream.publish(ChannelStateChanged(self, peer, remoteNodeId, state, nextState, nextStateData))
       }
       if (nextState == CLOSED) {
@@ -1734,6 +1732,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
         case _ => ()
       }
+  }
+
+  onTransition {
+    case state -> nextState if state != nextState =>
+      if (state != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, state.toString).decrement()
+      if (nextState != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, nextState.toString).increment()
   }
 
   /*
