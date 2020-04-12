@@ -16,30 +16,23 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.router.Rebroadcast
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
 
-  authenticator ! self
-
-  // we load peers and channels from database
+  // we load channels from database
   {
-    val peers = nodeParams.db.peers.listPeers()
-
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
@@ -51,16 +44,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
     channels
       .groupBy(_.commitments.remoteParams.nodeId)
-      .map {
-        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
-      }
-      .foreach {
-        case (remoteNodeId, states, nodeaddress_opt) =>
-          // we might not have an address if we didn't initiate the connection in the first place
-          val address_opt = nodeaddress_opt.map(_.socketAddress)
-          val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
-          peer ! Peer.Reconnect
-      }
+      .map { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
   }
 
   def receive: Receive = {
@@ -70,7 +54,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
     case c: Peer.Connect =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(c.nodeId, previousKnownAddress = None, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(c.nodeId, offlineChannels = Set.empty)
       peer forward c
 
     case d: Peer.Disconnect =>
@@ -85,10 +69,10 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
+    case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
-      peer forward auth
+      val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
 
     case 'peers => sender ! context.children
 
@@ -105,19 +89,16 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
-    Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, paymentHandler, wallet),
+    Peer.props(nodeParams, remoteNodeId, self, router, watcher, relayer, paymentHandler, wallet),
     name = peerActorName(remoteNodeId))
 
-  /**
-   * @param previousKnownAddress only to be set if we know for sure that this ip worked in the past
-   */
-  def createOrGetPeer(remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]): ActorRef = {
+  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[HasCommitments]): ActorRef = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${context.children.size}")
         val peer = createPeer(remoteNodeId)
-        peer ! Peer.Init(previousKnownAddress, offlineChannels)
+        peer ! Peer.Init(offlineChannels)
         peer
     }
   }
@@ -130,7 +111,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, paymentHandler, wallet))
+  def props(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, router, watcher, relayer, paymentHandler, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 

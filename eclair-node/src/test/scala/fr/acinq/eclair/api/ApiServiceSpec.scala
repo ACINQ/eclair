@@ -21,11 +21,18 @@ import java.util.UUID
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.eclair._
+import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.channel.ChannelCommandResponse.ChannelClosed
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
+import fr.acinq.eclair.payment.{PaymentFailed, _}
+import fr.acinq.eclair.router.{NetworkStats, Stats}
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 import fr.acinq.eclair.wire.NodeAddress
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi, _}
 import org.mockito.scalatest.IdiomaticMockito
@@ -171,7 +178,10 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest wit
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       blockHeight = 9999,
-      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil
+      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
+      version = "1.0.0-SNAPSHOT-e3f1ec0",
+      color = "#000102",
+      features = ""
     ))
 
     Post("/getinfo") ~>
@@ -192,7 +202,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest wit
     val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
     val mockEclair = mock[Eclair]
     val service = new MockService(mockEclair)
-    mockEclair.close(any, any)(any[Timeout]) returns Future.successful(aliceNodeId.toString())
+    mockEclair.close(any, any)(any[Timeout]) returns Future.successful(ChannelClosed(ByteVector32.fromValidHex(channelId)))
 
     Post("/close", FormData(Map("shortChannelId" -> shortChannelIdSerialized))) ~>
       addCredentials(BasicHttpCredentials("", mockPassword)) ~>
@@ -202,7 +212,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest wit
         assert(handled)
         assert(status == OK)
         val resp = responseAs[String]
-        assert(resp.contains(aliceNodeId.toString))
+        assert(resp.contains(channelId.toString))
         mockEclair.close(Right(ShortChannelId(shortChannelIdSerialized)), None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
@@ -215,7 +225,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest wit
         assert(handled)
         assert(status == OK)
         val resp = responseAs[String]
-        assert(resp.contains(aliceNodeId.toString))
+        assert(resp.contains(channelId.toString))
         mockEclair.close(Left(ByteVector32.fromValidHex(channelId)), None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }

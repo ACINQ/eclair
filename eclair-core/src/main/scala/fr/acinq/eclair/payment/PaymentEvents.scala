@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.router.Router.Hop
 
 import scala.compat.Platform
 

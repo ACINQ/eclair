@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, 
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.router.RouterConf
+import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
@@ -95,6 +95,8 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
+      authTimeout = 10 seconds,
+      initTimeout = 10 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
@@ -107,6 +109,7 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
+      maxFundingSatoshis = 16777215 sat,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
@@ -174,6 +177,8 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
+      authTimeout = 10 seconds,
+      initTimeout = 10 seconds,
       pingInterval = 30 seconds,
       pingTimeout = 10 seconds,
       pingDisconnect = true,
@@ -186,6 +191,7 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
+      maxFundingSatoshis = 16777215 sat,
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,

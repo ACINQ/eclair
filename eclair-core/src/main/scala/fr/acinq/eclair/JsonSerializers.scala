@@ -9,7 +9,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, GenericTlv, Init, NodeAddress, OnionRoutingPacket, OpenChannel, OpenTlv, Shutdown, Tlv, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.ChannelTlv.UpfrontShutdownScript
+import fr.acinq.eclair.wire.{AcceptChannel, AcceptChannelTlv, ChannelAnnouncement, ChannelUpdate, ClosingSigned, CommitSig, FundingCreated, FundingLocked, FundingSigned, GenericTlv, Init, NodeAddress, OnionRoutingPacket, OpenChannel, OpenChannelTlv, Shutdown, Tlv, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, UpdateMessage}
 import scodec.bits.{BitVector, ByteVector}
 
 object JsonSerializers {
@@ -27,10 +28,6 @@ object JsonSerializers {
   implicit val channelVersionReadWriter: ReadWriter[ChannelVersion] = readwriter[String].bimap[ChannelVersion](_.bits.toBin, s => ChannelVersion(BitVector.fromValidBin(s)))
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
-  implicit val directionReadWriter: ReadWriter[Direction] = readwriter[String].bimap[Direction](_ match {
-    case OUT => "OUT"
-    case IN => "IN"
-  }, s => null)
   implicit val onionRoutingPacketReadWriter: ReadWriter[OnionRoutingPacket] = macroRW
   implicit val updateAddHtlcReadWriter: ReadWriter[UpdateAddHtlc] = macroRW
   implicit val updateFailHtlcReadWriter: ReadWriter[UpdateFailHtlc] = macroRW
@@ -38,6 +35,8 @@ object JsonSerializers {
   implicit val updateFeeReadWriter: ReadWriter[UpdateFee] = macroRW
   implicit val updateFulfillHtlcReadWriter: ReadWriter[UpdateFulfillHtlc] = macroRW
   implicit val updateMessageReadWriter: ReadWriter[UpdateMessage] = ReadWriter.merge(macroRW[UpdateAddHtlc], macroRW[UpdateFailHtlc], macroRW[UpdateFailMalformedHtlc], macroRW[UpdateFee], macroRW[UpdateFulfillHtlc])
+  implicit val incomingHtlcReadWriter: ReadWriter[IncomingHtlc] = macroRW
+  implicit val outgoingHtlcReadWriter: ReadWriter[OutgoingHtlc] = macroRW
   implicit val directedHtlcReadWriter: ReadWriter[DirectedHtlc] = macroRW
   implicit val commitmentSpecReadWriter: ReadWriter[CommitmentSpec] = macroRW
   implicit val localChangesReadWriter: ReadWriter[LocalChanges] = macroRW
@@ -61,11 +60,11 @@ object JsonSerializers {
   implicit val relayedOriginReadWriter: ReadWriter[Origin.Relayed] = macroRW
   implicit val paymentOriginReadWriter: ReadWriter[Origin] = ReadWriter.merge(localOriginReadWriter, relayedOriginReadWriter)
   implicit val remoteChangesReadWriter: ReadWriter[RemoteChanges] = macroRW
-  implicit val openTlvPlaceholderReadWriter: ReadWriter[OpenTlv.Placeholder] = macroRW
-  implicit val openTlvReadWriter: ReadWriter[OpenTlv] = ReadWriter.merge(openTlvPlaceholderReadWriter)
   implicit val genericTlvReadWriter: ReadWriter[GenericTlv] = macroRW
   implicit val tlvReadWriter: ReadWriter[Tlv] = ReadWriter.merge(genericTlvReadWriter)
-  implicit val tlvStreamOpenTlvReadWriter: ReadWriter[TlvStream[OpenTlv]] = readwriter[String].bimap[TlvStream[OpenTlv]](s => "N/A", s2 => TlvStream(List.empty[OpenTlv]))
+  implicit val tlvStreamOpenTlvReadWriter: ReadWriter[TlvStream[Tlv]] = readwriter[String].bimap[TlvStream[Tlv]](s => "N/A", s2 => TlvStream(List.empty[Tlv]))
+  implicit val tlvStreamOpenChannelTlvReadWriter: ReadWriter[TlvStream[OpenChannelTlv]] = readwriter[String].bimap[TlvStream[OpenChannelTlv]](s => "N/A", s2 => TlvStream(List.empty[OpenChannelTlv]))
+  implicit val tlvStreamAcceptChannelTlvReadWriter: ReadWriter[TlvStream[AcceptChannelTlv]] = readwriter[String].bimap[TlvStream[AcceptChannelTlv]](s => "N/A", s2 => TlvStream(List.empty[AcceptChannelTlv]))
 
   case class ShaChain2(knownHashes: Map[Long, ByteVector32], lastIndex: Option[Long] = None) {
     def toShaChain = ShaChain(knownHashes.map { case (k, v) => ShaChain.moves(k) -> v }, lastIndex)
@@ -80,6 +79,9 @@ object JsonSerializers {
   implicit val actorRefReadWriter: ReadWriter[ActorRef] = readwriter[String].bimap[ActorRef](_.toString, _ => ActorRef.noSender)
   implicit val shortChannelIdReadWriter: ReadWriter[ShortChannelId] = readwriter[String].bimap[ShortChannelId](_.toString, s => ShortChannelId(s))
 
+  implicit val upfrontShutdownScriptWriter: ReadWriter[UpfrontShutdownScript] = macroRW
+  implicit val openChannelTlvWriter: ReadWriter[OpenChannelTlv] = macroRW
+  implicit val acceptChannelTlvWriter: ReadWriter[AcceptChannelTlv] = macroRW
   implicit val initReadWriter: ReadWriter[Init] = readwriter[ByteVector].bimap[Init](_.features, s => Init(s))
   implicit val openChannelReadWriter: ReadWriter[OpenChannel] = macroRW
   implicit val acceptChannelReadWriter: ReadWriter[AcceptChannel] = macroRW

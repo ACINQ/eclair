@@ -21,18 +21,16 @@ import java.util.UUID
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Channel.{LocalError, RemoteError}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, ChannelErrorOccurred, NetworkFeePaid}
+import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.{ChannelCodecs, ChannelCodecsSpec}
+import fr.acinq.eclair.wire.ChannelCodecs
 import org.scalatest.{FunSuite, Tag}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
-
 
 class SqliteAuditDbSpec extends FunSuite {
 

@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
 import com.typesafe.config.ConfigFactory

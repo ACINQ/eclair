@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.router.RouterConf
+import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
@@ -66,6 +66,8 @@ case class NodeParams(keyManager: KeyManager,
                       maxReserveToFundingRatio: Double,
                       db: Databases,
                       revocationTimeout: FiniteDuration,
+                      authTimeout: FiniteDuration,
+                      initTimeout: FiniteDuration,
                       pingInterval: FiniteDuration,
                       pingTimeout: FiniteDuration,
                       pingDisconnect: Boolean,
@@ -78,6 +80,7 @@ case class NodeParams(keyManager: KeyManager,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       minFundingSatoshis: Satoshi,
+                      maxFundingSatoshis: Satoshi,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
@@ -161,6 +164,9 @@ object NodeParams {
       require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
     }
 
+    val htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat"))
+    require(htlcMinimum > 0.msat, "htlc-minimum-msat must be strictly greater than 0")
+
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
@@ -242,7 +248,7 @@ object NodeParams {
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
       fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
-      htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat")),
+      htlcMinimum = htlcMinimum,
       toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
@@ -252,6 +258,8 @@ object NodeParams {
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS),
+      authTimeout = FiniteDuration(config.getDuration("auth-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS),
+      initTimeout = FiniteDuration(config.getDuration("init-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       pingTimeout = FiniteDuration(config.getDuration("ping-timeout", TimeUnit.SECONDS), TimeUnit.SECONDS),
       pingDisconnect = config.getBoolean("ping-disconnect"),
@@ -264,6 +272,7 @@ object NodeParams {
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry", TimeUnit.SECONDS), TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry", TimeUnit.SECONDS), TimeUnit.SECONDS),
       minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
+      maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration", TimeUnit.SECONDS), TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),

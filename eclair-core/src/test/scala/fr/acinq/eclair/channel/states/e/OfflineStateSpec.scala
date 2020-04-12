@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.channel.Channel.LocalError
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment.relay.CommandBuffer
@@ -34,7 +33,6 @@ import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -99,9 +97,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
 
     // a didn't receive any update or sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
     // b didn't receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(bobCurrentPerCommitmentPoint)))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -186,9 +184,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(aliceCurrentPerCommitmentPoint)))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
     // b did receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, Some(PrivateKey(ByteVector32.Zeroes)), Some(bobCurrentPerCommitmentPoint)))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -276,7 +274,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice will receive neither the revocation nor the commit sig
@@ -343,7 +341,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice then finds out bob is lying
     bob2alice.send(alice, ba_reestablish_forged)
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret.get).getMessage)
+    assert(new String(error.data.toArray) === InvalidRevokedCommitProof(channelId(alice), 0, 42, ba_reestablish_forged.yourLastPerCommitmentSecret).getMessage)
   }
 
   test("change relay fee while offline") { f =>
@@ -361,7 +359,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     // we make alice update here relay fee
     sender.send(alice, CMD_UPDATE_RELAY_FEE(4200 msat, 123456))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
 
     // alice doesn't broadcast the new channel_update yet
     channelUpdateListener.expectNoMsg(300 millis)
@@ -436,7 +434,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
-    assert(err.isInstanceOf[HtlcWillTimeoutUpstream])
+    assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
@@ -535,5 +533,70 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // bob is fundee
     sender.send(bob, CurrentFeerates(highFeerate))
     bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+  }
+
+  test("re-send channel_update at reconnection for private channels") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection / reconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // at this point the channel isn't deeply buried: channel_update isn't sent again
+    alice2bob.expectMsgType[FundingLocked]
+    bob2alice.expectMsgType[FundingLocked]
+    alice2bob.expectNoMsg()
+    bob2alice.expectNoMsg()
+
+    // we make the peers exchange a few messages
+    addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // we simulate a disconnection / reconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    //  at this point the channel still isn't deeply buried: channel_update isn't sent again
+    alice2bob.expectNoMsg()
+    bob2alice.expectNoMsg()
+
+    // funding tx gets 6 confirmations, channel is private so there is no announcement sigs
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate]
+
+    // we get disconnected again
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // this time peers re-send their channel_update
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[ChannelUpdate]
   }
 }

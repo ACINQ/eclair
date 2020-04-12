@@ -23,13 +23,15 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
-import fr.acinq.eclair.router.{RouteNotFound, RouteParams, Router}
+import fr.acinq.eclair.router.Router.RouteParams
+import fr.acinq.eclair.router.{RouteCalculation, RouteNotFound}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
@@ -54,25 +56,25 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     // We make sure we receive all payment parts before forwarding to the next trampoline node.
     case IncomingPacket.NodeRelayPacket(add, outer, inner, next) => outer.paymentSecret match {
       case None =>
-        log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: missing payment secret")
+        log.warning("rejecting htlcId={} channelId={}: missing payment secret", add.id, add.channelId)
         rejectHtlc(add.id, add.channelId, add.amountMsat)
       case Some(secret) =>
         pendingOutgoing.get(add.paymentHash) match {
           case Some(outgoing) =>
-            log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: already relayed out with id=${outgoing.paymentId}")
+            log.warning("rejecting htlcId={} channelId={}: already relayed out with id={}", add.id, add.channelId, outgoing.paymentId)
             rejectHtlc(add.id, add.channelId, add.amountMsat)
           case None => pendingIncoming.get(add.paymentHash) match {
             case Some(relay) =>
               if (relay.secret != secret) {
-                log.warning(s"rejecting htlcId=${add.id} channelId=${add.channelId}: payment secret doesn't match other HTLCs in the set")
+                log.warning("rejecting htlcId={} channelId={}: payment secret doesn't match other HTLCs in the set", add.id, add.channelId)
                 rejectHtlc(add.id, add.channelId, add.amountMsat)
               } else {
-                relay.handler ! MultiPartPaymentFSM.MultiPartHtlc(outer.totalAmount, add)
+                relay.handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
                 context become main(pendingIncoming + (add.paymentHash -> relay.copy(htlcs = relay.htlcs :+ add)), pendingOutgoing)
               }
             case None =>
               val handler = context.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, outer.totalAmount, self))
-              handler ! MultiPartPaymentFSM.MultiPartHtlc(outer.totalAmount, add)
+              handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
               context become main(pendingIncoming + (add.paymentHash -> PendingRelay(Queue(add), secret, inner, next, handler)), pendingOutgoing)
           }
         }
@@ -80,15 +82,16 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
     // We always fail extraneous HTLCs. They are a spec violation from the sender, but harmless in the relay case.
     // By failing them fast (before the payment has reached the final recipient) there's a good chance the sender won't lose any money.
-    case MultiPartPaymentFSM.ExtraHtlcReceived(_, p, failure) => rejectHtlc(p.htlcId, p.payment.fromChannelId, p.payment.amount, failure)
+    case MultiPartPaymentFSM.ExtraPaymentReceived(_, p: MultiPartPaymentFSM.HtlcPart, failure) => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, failure)
 
-    case MultiPartPaymentFSM.MultiPartHtlcFailed(paymentHash, failure, parts) =>
-      log.warning(s"could not relay payment (paidAmount=${parts.map(_.payment.amount).sum} failure=$failure)")
+    case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) =>
+      log.warning("could not relay payment (paidAmount={} failure={})", parts.map(_.amount).sum, failure)
+      Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
       pendingIncoming.get(paymentHash).foreach(_.handler ! PoisonPill)
-      parts.foreach(p => rejectHtlc(p.htlcId, p.payment.fromChannelId, p.payment.amount, Some(failure)))
+      parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
       context become main(pendingIncoming - paymentHash, pendingOutgoing)
 
-    case MultiPartPaymentFSM.MultiPartHtlcSucceeded(paymentHash, parts) => pendingIncoming.get(paymentHash) match {
+    case MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) => pendingIncoming.get(paymentHash) match {
       case Some(PendingRelay(htlcs, _, nextPayload, nextPacket, handler)) =>
         val upstream = Upstream.TrampolineRelayed(htlcs)
         handler ! PoisonPill
@@ -105,19 +108,22 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       case None => log.error("could not find pending incoming payment: payment will not be relayed: please investigate")
     }
 
-    case Relayer.ForwardFulfill(fulfill, Origin.TrampolineRelayed(_, Some(paymentSender)), _) =>
-      paymentSender ! fulfill
-      val paymentHash = Crypto.sha256(fulfill.paymentPreimage)
-      pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
-        // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
-        log.debug("trampoline payment successfully relayed")
-        fulfillPayment(p.upstream, fulfill.paymentPreimage)
-        context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
-      })
+    case ff: Relayer.ForwardFulfill => ff.to match {
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) =>
+        paymentSender ! ff
+        val paymentHash = Crypto.sha256(ff.paymentPreimage)
+        pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
+          // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
+          log.debug("trampoline payment successfully relayed")
+          fulfillPayment(p.upstream, ff.paymentPreimage)
+          context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
+        })
+      case _ => log.error(s"unexpected non-trampoline fulfill: $ff")
+    }
 
     case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
-      log.debug(s"trampoline payment fully resolved downstream (id=$id)")
+      log.debug("trampoline payment fully resolved downstream (id={})", id)
       pendingOutgoing.get(paymentHash).foreach(p => {
         if (!p.fulfilledUpstream) {
           fulfillPayment(p.upstream, paymentPreimage)
@@ -129,7 +135,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
       context become main(pendingIncoming, pendingOutgoing - paymentHash)
 
     case PaymentFailed(id, paymentHash, failures, _) =>
-      log.debug(s"trampoline payment failed downstream (id=$id)")
+      log.debug("trampoline payment failed downstream (id={})", id)
       pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
         rejectPayment(p.upstream, translateError(failures, p.nextPayload.outgoingNodeId))
       })
@@ -175,8 +181,10 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
   }
 
-  private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage] = None): Unit =
+  private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage]): Unit = {
+    Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
     upstream.adds.foreach(add => rejectHtlc(add.id, add.channelId, upstream.amountIn, failure))
+  }
 
   private def fulfillPayment(upstream: Upstream.TrampolineRelayed, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
@@ -186,9 +194,9 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case m: IncomingPacket.NodeRelayPacket => Some(m.add.paymentHash)
-      case m: MultiPartPaymentFSM.MultiPartHtlcFailed => Some(m.paymentHash)
-      case m: MultiPartPaymentFSM.MultiPartHtlcSucceeded => Some(m.paymentHash)
-      case m: MultiPartPaymentFSM.ExtraHtlcReceived => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.MultiPartPaymentFailed => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.MultiPartPaymentSucceeded => Some(m.paymentHash)
+      case m: MultiPartPaymentFSM.ExtraPaymentReceived => Some(m.paymentHash)
       case m: PaymentFailed => Some(m.paymentHash)
       case m: PaymentSent => Some(m.paymentHash)
       case _ => None
@@ -239,7 +247,7 @@ object NodeRelayer {
   private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDeltaBlocks
     val routeMaxFee = amountIn - amountOut - nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, amountOut)
-    Router.getDefaultRouteParams(nodeParams.routerConf).copy(
+    RouteCalculation.getDefaultRouteParams(nodeParams.routerConf).copy(
       maxFeeBase = routeMaxFee,
       routeMaxCltv = routeMaxCltv,
       maxFeePct = 0 // we disable percent-based max fee calculation, we're only interested in collecting our node fee

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,17 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.TlvCodecs.tlvStream
-import scodec.Codec
-import scodec.bits.ByteVector
-import scodec.codecs._
+import kamon.Kamon
 
-sealed trait OpenTlv extends Tlv
+object Monitoring {
 
-object OpenTlv {
+  object Metrics {
+    val DecodeDuration = Kamon.timer("scodec.decode.time")
+    val EncodeDuration = Kamon.timer("scodec.encode.time")
+  }
 
-  case class Placeholder(b: ByteVector) extends OpenTlv
-
-  val openTlvCodec: Codec[TlvStream[OpenTlv]] = tlvStream(discriminated.by(varint)
-    .typecase(UInt64(65717), variableSizeBytesLong(varintoverflow, bytes).as[Placeholder])
-  )
+  object Tags {
+    val MessageType = "type"
+  }
 
 }

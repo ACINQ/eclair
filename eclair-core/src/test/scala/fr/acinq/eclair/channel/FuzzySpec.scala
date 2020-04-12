@@ -18,9 +18,10 @@ package fr.acinq.eclair.channel
 
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
-import akka.testkit.{TestFSMRef, TestProbe}
+import akka.testkit.{TestActorRef, TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -31,7 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
-import fr.acinq.eclair.router.ChannelHop
+import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
@@ -47,11 +48,22 @@ import scala.util.Random
 
 class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
+  private val number = new AtomicLong
+
+  private def randomName: String = {
+    val l = number.getAndIncrement()
+    "$" + akka.util.Helpers.base64(l)
+  }
+
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
+    val alicePeer = TestProbe()
+    val bobPeer = TestProbe()
+    TestUtils.forwardOutgoingToPipe(alicePeer, pipe)
+    TestUtils.forwardOutgoingToPipe(bobPeer, pipe)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val registerA = system.actorOf(Props(new TestRegister()))
@@ -62,10 +74,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, commandBufferB)))
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, TestProbe().ref, registerA, commandBufferA, paymentHandlerA))
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, TestProbe().ref, registerB, commandBufferB, paymentHandlerB))
-    val router = TestProbe()
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayerA))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayerB))
+    val alice: TestFSMRef[State, Data, Channel] = new TestFSMRef(system, Channel.props(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA, None), alicePeer.ref, randomName)
+    val bob: TestFSMRef[State, Data, Channel] = new TestFSMRef(system, Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB, None), bobPeer.ref, randomName)
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.features)
       val bobInit = Init(Bob.channelParams.features)
@@ -131,11 +142,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
-              case u: UpdateFulfillHtlc =>
-                log.info(s"successfully sent htlc #${u.id}")
+              case u: Relayer.ForwardFulfill =>
+                log.info(s"successfully sent htlc #${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case u: UpdateFailHtlc =>
-                log.warning(s"htlc failed: ${u.id}")
+              case u: Relayer.ForwardFail =>
+                log.warning(s"htlc failed: ${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
               case Status.Failure(t) =>
                 log.error(s"htlc error: ${t.getMessage}")
@@ -186,7 +197,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) == "ok"
+      sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure]) == ChannelCommandResponse.Ok
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)
@@ -203,11 +214,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val sender = TestProbe()
     awaitCond({
       sender.send(alice, CMD_CLOSE(None))
-      val resa = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
+      val resa = sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure])
       sender.send(bob, CMD_CLOSE(None))
-      val resb = sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure])
+      val resb = sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure])
       // we only need that one of them succeeds
-      resa == "ok" || resb == "ok"
+      resa == ChannelCommandResponse.Ok || resb == ChannelCommandResponse.Ok
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)

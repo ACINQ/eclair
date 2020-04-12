@@ -22,17 +22,17 @@ import java.util.UUID
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.channel.{ChannelVersion, State}
+import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.RouteResponse
-import fr.acinq.eclair.transactions.Direction
+import fr.acinq.eclair.router.Router.RouteResponse
+import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, TypeHints, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
 import scodec.bits.ByteVector
 import spray.httpx.{Json4sJacksonSupport, Json4sSupport}
 
@@ -124,6 +124,12 @@ class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
   case x: ChannelVersion => JString(x.bits.toBin)
 }))
 
+class ChannelCommandResponseSerializer extends CustomSerializer[ChannelCommandResponse](_ => ( {
+  null
+}, {
+  case x: ChannelCommandResponse => JString(x.toString)
+}))
+
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
   null
 }, {
@@ -202,10 +208,16 @@ class NodeAddressSerializer extends CustomSerializer[NodeAddress](_ => ( {
   case n: NodeAddress => JString(HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString)
 }))
 
-class DirectionSerializer extends CustomSerializer[Direction](_ => ( {
+class DirectedHtlcSerializer extends CustomSerializer[DirectedHtlc](_ => ( {
   null
 }, {
-  case d: Direction => JString(d.toString)
+  case h: DirectedHtlc => new JObject(List(("direction", JString(h.direction)), ("add", Extraction.decompose(h.add)(
+    DefaultFormats +
+      new ByteVector32Serializer +
+      new ByteVectorSerializer +
+      new PublicKeySerializer +
+      new MilliSatoshiSerializer +
+      new CltvExpirySerializer))))
 }))
 
 class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
@@ -260,13 +272,14 @@ object JsonSupport extends Json4sJacksonSupport {
     new OutPointSerializer +
     new OutPointKeySerializer +
     new ChannelVersionSerializer +
+    new ChannelCommandResponseSerializer +
     new InputInfoSerializer +
     new ColorSerializer +
     new RouteResponseSerializer +
     new ThrowableSerializer +
     new FailureMessageSerializer +
     new NodeAddressSerializer +
-    new DirectionSerializer +
+    new DirectedHtlcSerializer +
     new PaymentRequestSerializer +
     new JavaUUIDSerializer
 

@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKB, FeeratesPerK
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases
-import fr.acinq.eclair.io.{Authenticator, NodeURI, Peer}
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import grizzled.slf4j.Logging
@@ -96,15 +96,13 @@ class SyncLiteSetup(datadir: File,
     val watcher = system.actorOf(Props[YesWatcher], "yes-watcher")
     val relayer = system.deadLetters
     val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
-    val authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
 
     // actor watching synchronisation progress
     val pSyncDone = Promise[Boolean]()
     system.actorOf(Props(new SyncListener(pSyncDone)))
     // connect to the provided node with a sync global feature flag
-    val peer = system.actorOf(Peer.props(nodeParams, syncNodeURI.nodeId, authenticator, watcher, router, relayer, null, null), "peer")
-    authenticator ! peer
-    peer ! Peer.Init(previousKnownAddress = None, storedChannels = Set.empty)
+    val peer = system.actorOf(Peer.props(nodeParams, syncNodeURI.nodeId, watcher, router, relayer, null, null, null), "peer")
+    peer ! Peer.Init(storedChannels = Set.empty)
     peer ! Peer.Connect(syncNodeURI)
     pSyncDone.future
   }

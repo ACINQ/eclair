@@ -38,6 +38,7 @@ sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
+sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
 sealed trait HasTimestamp extends LightningMessage { def timestamp: Long }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
@@ -64,8 +65,8 @@ case class Pong(data: ByteVector) extends SetupMessage
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
-                              yourLastPerCommitmentSecret: Option[PrivateKey] = None,
-                              myCurrentPerCommitmentPoint: Option[PublicKey] = None) extends ChannelMessage with HasChannelId
+                              yourLastPerCommitmentSecret: PrivateKey,
+                              myCurrentPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
@@ -85,8 +86,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        htlcBasepoint: PublicKey,
                        firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte,
-                       upfrontShutdownScript: Option[ByteVector] = None,
-                       tlvStream_opt: Option[TlvStream[OpenTlv]] = None) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
+                       tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
                          dustLimitSatoshis: Satoshi,
@@ -102,7 +102,7 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          delayedPaymentBasepoint: PublicKey,
                          htlcBasepoint: PublicKey,
                          firstPerCommitmentPoint: PublicKey,
-                         upfrontShutdownScript: Option[ByteVector] = None) extends ChannelMessage with HasTemporaryChannelId
+                         tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,
@@ -169,7 +169,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
                                bitcoinKey2: PublicKey,
-                               unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasChainHash
+                               unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasChainHash
 
 case class Color(r: Byte, g: Byte, b: Byte) {
   override def toString: String = f"#$r%02x$g%02x$b%02x" // to hexa s"#  ${r}%02x ${r & 0xFF}${g & 0xFF}${b & 0xFF}"
@@ -212,7 +212,7 @@ case class NodeAnnouncement(signature: ByteVector64,
                             rgbColor: Color,
                             alias: String,
                             addresses: List[NodeAddress],
-                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp
+                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
 
 case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
@@ -225,7 +225,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[MilliSatoshi],
-                         unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with HasTimestamp with HasChainHash {
+                         unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 
   def isNode1 = Announcements.isNode1(channelFlags)

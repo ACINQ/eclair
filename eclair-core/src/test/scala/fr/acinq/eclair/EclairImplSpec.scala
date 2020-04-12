@@ -34,7 +34,8 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
-import fr.acinq.eclair.router.{Announcements, GetNetworkStats, GetNetworkStatsResponse, NetworkStats, PublicChannel, Router, Stats}
+import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PublicChannel}
+import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.{Outcome, ParallelTestExecution, fixture}

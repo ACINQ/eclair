@@ -29,15 +29,15 @@ class CommitmentSpecSpec extends FunSuite {
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, add1 :: Nil, Nil)
-    assert(spec1 === spec.copy(htlcs = Set(DirectedHtlc(OUT, add1)), toLocal = 3000000 msat))
+    assert(spec1 === spec.copy(htlcs = Set(OutgoingHtlc(add1)), toLocal = 3000000 msat))
 
     val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, add2 :: Nil, Nil)
-    assert(spec2 === spec1.copy(htlcs = Set(DirectedHtlc(OUT, add1), DirectedHtlc(OUT, add2)), toLocal = 2000000 msat))
+    assert(spec2 === spec1.copy(htlcs = Set(OutgoingHtlc(add1), OutgoingHtlc(add2)), toLocal = 2000000 msat))
 
     val ful1 = UpdateFulfillHtlc(ByteVector32.Zeroes, add1.id, R)
     val spec3 = CommitmentSpec.reduce(spec2, Nil, ful1 :: Nil)
-    assert(spec3 === spec2.copy(htlcs = Set(DirectedHtlc(OUT, add2)), toRemote = 2000000 msat))
+    assert(spec3 === spec2.copy(htlcs = Set(OutgoingHtlc(add2)), toRemote = 2000000 msat))
 
     val fail1 = UpdateFailHtlc(ByteVector32.Zeroes, add2.id, R)
     val spec4 = CommitmentSpec.reduce(spec3, Nil, fail1 :: Nil)
@@ -51,15 +51,15 @@ class CommitmentSpecSpec extends FunSuite {
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
-    assert(spec1 === spec.copy(htlcs = Set(DirectedHtlc(IN, add1)), toRemote = (3000 * 1000 msat)))
+    assert(spec1 === spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = (3000 * 1000 msat)))
 
     val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
-    assert(spec2 === spec1.copy(htlcs = Set(DirectedHtlc(IN, add1), DirectedHtlc(IN, add2)), toRemote = (2000 * 1000) msat))
+    assert(spec2 === spec1.copy(htlcs = Set(IncomingHtlc(add1), IncomingHtlc(add2)), toRemote = (2000 * 1000) msat))
 
     val ful1 = UpdateFulfillHtlc(ByteVector32.Zeroes, add1.id, R)
     val spec3 = CommitmentSpec.reduce(spec2, ful1 :: Nil, Nil)
-    assert(spec3 === spec2.copy(htlcs = Set(DirectedHtlc(IN, add2)), toLocal = (2000 * 1000) msat))
+    assert(spec3 === spec2.copy(htlcs = Set(IncomingHtlc(add2)), toLocal = (2000 * 1000) msat))
 
     val fail1 = UpdateFailHtlc(ByteVector32.Zeroes, add2.id, R)
     val spec4 = CommitmentSpec.reduce(spec3, fail1 :: Nil, Nil)
