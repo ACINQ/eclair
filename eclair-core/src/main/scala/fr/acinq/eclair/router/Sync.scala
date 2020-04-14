@@ -69,7 +69,7 @@ object Sync {
   def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(q)
-    Metrics.QueryChannelRangeBlocksCount.withoutTags().record(q.numberOfBlocks)
+    Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
     Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
         log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
@@ -79,13 +79,13 @@ object Sync {
         val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
           split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
         }
-        Metrics.QueryChannelRangeRepliesCount.withoutTags().record(chunks.size)
+        Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
         Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
           chunks.foreach { chunk =>
             val reply = buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
             origin.peerConnection ! reply
-            Metrics.ReplyChannelRangeBlocksCount.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
-            Metrics.ReplyChannelRangeIdsCount.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+            Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
+            Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
           }
         }
       }
@@ -96,8 +96,8 @@ object Sync {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(r)
 
-    Metrics.ReplyChannelRangeBlocksCount.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.numberOfBlocks)
-    Metrics.ReplyChannelRangeIdsCount.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.shortChannelIds.array.size)
+    Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.numberOfBlocks)
+    Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.shortChannelIds.array.size)
 
     Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("reply-channel-range").start(), finishSpan = true) {
@@ -126,8 +126,8 @@ object Sync {
             (c1, u1)
         }
         log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", r.shortChannelIds.array.size, channelCount, updatesCount, r.shortChannelIds.encoding)
-        Metrics.NewChannelAnnouncements.withoutTags().record(channelCount)
-        Metrics.NewChannelUpdates.withoutTags().record(updatesCount)
+        Metrics.ReplyChannelRange.NewChannelAnnouncements.withoutTags().record(channelCount)
+        Metrics.ReplyChannelRange.NewChannelUpdates.withoutTags().record(updatesCount)
 
         def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
           // always encode empty lists as UNCOMPRESSED
@@ -185,9 +185,9 @@ object Sync {
             origin.peerConnection ! na
           }
         )
-        Metrics.QueryShortChannelIdsNodesCount.withoutTags().record(nodeCount)
-        Metrics.QueryShortChannelIdsChannelAnnouncementsCount.withoutTags().record(channelCount)
-        Metrics.QueryShortChannelIdsChannelUpdatesCount.withoutTags().record(updateCount)
+        Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
+        Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
+        Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
         log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
         origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
       }

@@ -68,8 +68,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     log.info("loading network announcements from db...")
     val channels = db.listChannels()
     val nodes = db.listNodes()
-    Metrics.NodesCount.withoutTags().update(nodes.size)
-    Metrics.ChannelsCount.withoutTags().update(channels.size)
+    Metrics.Nodes.withoutTags().update(nodes.size)
+    Metrics.Channels.withoutTags().update(channels.size)
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
     val initChannels = channels
     // this will be used to calculate routes
@@ -133,9 +133,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(TickComputeNetworkStats, d) =>
       if (d.channels.nonEmpty) {
-        Metrics.NodesCount.withoutTags().update(d.nodes.size)
-        Metrics.ChannelsCount.withTag(Tags.Announced, value = true).update(d.channels.size)
-        Metrics.ChannelsCount.withTag(Tags.Announced, value = false).update(d.privateChannels.size)
+        Metrics.Nodes.withoutTags().update(d.nodes.size)
+        Metrics.Channels.withTag(Tags.Announced, value = true).update(d.channels.size)
+        Metrics.Channels.withTag(Tags.Announced, value = false).update(d.privateChannels.size)
         log.info("re-computing network statistics")
         stay using d.copy(stats = NetworkStats.computeStats(d.channels.values))
       } else {
