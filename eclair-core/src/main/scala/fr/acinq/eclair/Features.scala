@@ -69,6 +69,11 @@ object Features {
     val mandatory = 10
   }
 
+  case object StaticRemoteKey extends Feature {
+    val rfcName = "staticremotekey"
+    val mandatory = 12
+  }
+
   case object PaymentSecret extends Feature {
     val rfcName = "payment_secret"
     val mandatory = 14
