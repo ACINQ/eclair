@@ -33,6 +33,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import kamon.context.Context
@@ -47,8 +48,9 @@ import scala.util.Try
  */
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
 
-  import ExecutionContext.Implicits.global
   import Router._
+
+  import ExecutionContext.Implicits.global
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
@@ -66,6 +68,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     log.info("loading network announcements from db...")
     val channels = db.listChannels()
     val nodes = db.listNodes()
+    Metrics.Nodes.withoutTags().update(nodes.size)
+    Metrics.Channels.withoutTags().update(channels.size)
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
     val initChannels = channels
     // this will be used to calculate routes
@@ -101,6 +105,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   when(NORMAL) {
 
     case Event(SyncProgress(progress), d: Data) =>
+      Metrics.SyncProgress.withoutTags().update(100 * progress)
       if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
         log.info("initial routing sync done: computing network statistics")
         self ! TickComputeNetworkStats
@@ -128,6 +133,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(TickComputeNetworkStats, d) =>
       if (d.channels.nonEmpty) {
+        Metrics.Nodes.withoutTags().update(d.nodes.size)
+        Metrics.Channels.withTag(Tags.Announced, value = true).update(d.channels.size)
+        Metrics.Channels.withTag(Tags.Announced, value = false).update(d.privateChannels.size)
         log.info("re-computing network statistics")
         stay using d.copy(stats = NetworkStats.computeStats(d.channels.values))
       } else {
@@ -219,7 +227,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
-      Sync.handleQueryShortChannelIds(d.nodes, d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+      Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
