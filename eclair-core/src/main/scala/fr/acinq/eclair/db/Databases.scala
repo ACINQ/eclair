@@ -162,11 +162,11 @@ object Databases extends Logging {
     val database = dbConfig.getString("psql.database")
     val host = dbConfig.getString("psql.host")
     val port = dbConfig.getInt("psql.port")
-    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isBlank)
+    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isEmpty)
       None
     else
       Some(dbConfig.getString("psql.username"))
-    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isBlank)
+    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isEmpty)
       None
     else
       Some(dbConfig.getString("psql.password"))
