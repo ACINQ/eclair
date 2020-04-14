@@ -87,7 +87,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
-      switchboard ! Authenticated(self, remoteNodeId)
+      switchboard ! Authenticated(remoteNodeId)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
     case Event(AuthTimeout, _) =>
@@ -96,8 +96,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   }
 
   when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer), d: BeforeInitData) =>
+    case Event(InitializeConnection, d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
+      val peer = sender
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
@@ -144,7 +145,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           stay
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
-          d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
+          d.peer ! ConnectionReady(d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
           d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
 
@@ -160,7 +161,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
             if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
               log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(nodeParams.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
+              router ! SendChannelQuery(nodeParams.chainHash, d.remoteNodeId, flags_opt = flags_opt)
             } else {
               log.info("not syncing with this peer")
             }
@@ -307,7 +308,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             d.transport ! TransportHandler.ReadAck(msg)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            router ! Peer.PeerRoutingMessage(d.remoteNodeId, msg)
         }
         stay
 
@@ -496,9 +497,9 @@ object PeerConnection {
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
-  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
-  case class InitializeConnection(peer: ActorRef)
-  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
+  case class Authenticated(remoteNodeId: PublicKey)
+  case object InitializeConnection
+  case class ConnectionReady(remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 
