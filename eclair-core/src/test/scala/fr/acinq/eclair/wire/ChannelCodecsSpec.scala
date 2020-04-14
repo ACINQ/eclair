@@ -23,7 +23,7 @@ import akka.actor.ActorSystem
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
@@ -74,13 +74,16 @@ class ChannelCodecsSpec extends FunSuite {
     val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current02 = hex"010000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val current03 = hex"010000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current04 = hex"010000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
     assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
     assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
     assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
     assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
+    assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
 
     assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
   }
 
   test("encode/decode localparams") {
@@ -94,16 +97,36 @@ class ChannelCodecsSpec extends FunSuite {
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+      localPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       features = randomBytes(256))
-    val encoded = localParamsCodec.encode(o).require
-    val decoded = localParamsCodec.decode(encoded).require
+    val encoded = localParamsCodec(ChannelVersion.ZEROES).encode(o).require
+    val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require
+    assert(o.localPaymentBasepoint.isEmpty)
     assert(o === decoded.value)
 
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
-    val withGlobalFeaturesDecoded = localParamsCodec.decode(withGlobalFeatures.bits).require.value
+    val withGlobalFeaturesDecoded = localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
     assert(withGlobalFeaturesDecoded.features === hex"0a8a")
+
+    val o1 = LocalParams(
+      nodeId = randomKey.publicKey,
+      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
+      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
+      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      localPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
+      isFunder = Random.nextBoolean(),
+      features = randomBytes(256))
+    val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
+    val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require
+    assert(o1.localPaymentBasepoint.isDefined)
+    assert(o1 === decoded1.value)
   }
 
   test("encode/decode remoteparams") {
@@ -395,6 +418,7 @@ object ChannelCodecsSpec {
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
+    localPaymentBasepoint = None,
     isFunder = true,
     features = hex"deadbeef")
 
