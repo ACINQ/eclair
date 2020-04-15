@@ -69,6 +69,11 @@ object Features {
     val mandatory = 10
   }
 
+  case object StaticRemoteKey extends Feature {
+    val rfcName = "option_static_remotekey"
+    val mandatory = 12
+  }
+
   case object PaymentSecret extends Feature {
     val rfcName = "payment_secret"
     val mandatory = 14
@@ -125,6 +130,11 @@ object Features {
   def hasFeature(features: ByteVector, feature: Feature): Boolean = hasFeature(features.bits, feature)
 
   def hasFeature(features: ByteVector, feature: Feature, support: Option[FeatureSupport]): Boolean = hasFeature(features.bits, feature, support)
+
+  /** returns true if both have at least optional support */
+  def canUseFeature(localFeatures: ByteVector, remoteFeatures: ByteVector, feature: Feature): Boolean = {
+    hasFeature(localFeatures, feature) && hasFeature(remoteFeatures, feature)
+  }
 
   /**
    * Check that the features that we understand are correctly specified, and that there are no mandatory features that

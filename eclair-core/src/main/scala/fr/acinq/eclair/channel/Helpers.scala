@@ -32,6 +32,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
+import fr.acinq.eclair.channel.ChannelVersion.USE_STATIC_REMOTEKEY_BIT
 import scodec.bits.ByteVector
 
 import scala.compat.Platform
@@ -253,9 +254,13 @@ object Helpers {
 
   def getFinalScriptPubKey(wallet: EclairWallet, chainHash: ByteVector32): ByteVector = {
     import scala.concurrent.duration._
-    val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
+    val finalAddress = Await.result(wallet.getReceiveAddress, 40 seconds)
 
     Script.write(addressToPublicKeyScript(finalAddress, chainHash))
+  }
+
+  def getWalletPaymentBasepoint(wallet: EclairWallet): PublicKey = {
+    Await.result(wallet.getReceivePubkey(), 40 seconds)
   }
 
   object Funding {
@@ -600,7 +605,8 @@ object Helpers {
 
     /**
      *
-     * Claim all the HTLCs that we've received from their current commit tx
+     * Claim all the HTLCs that we've received from their current commit tx, if the channel used option_static_remotekey
+     * we don't need to claim our main output because it directly pays to one of our wallet's p2wpkh addresses.
      *
      * @param commitments  our commitment data, which include payment preimages
      * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
@@ -647,15 +653,26 @@ object Helpers {
         })
       }.toSeq.flatten
 
-      claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
-        claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
-        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
-      )
+      channelVersion match {
+        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+          RemoteCommitPublished(
+            commitTx = tx,
+            claimMainOutputTx = None,
+            claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+            claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx },
+            irrevocablySpent = Map.empty
+          )
+        case _ =>
+          claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
+          claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+          claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+        )
+      }
     }
 
     /**
      *
-     * Claim our Main output only
+     * Claim our Main output only, not used if option_static_remotekey was negotiated
      *
      * @param commitments              either our current commitment data in case of usual remote uncooperative closing
      *                                 or our outdated commitment data in case of data loss protection procedure; in any case it is used only
@@ -667,9 +684,7 @@ object Helpers {
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
       val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-
       val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
-
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit,
           localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
@@ -701,8 +716,12 @@ object Helpers {
       //val fundingPubKey = commitments.localParams.fundingPubKey(keyManager)
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
+      val localPaymentPoint = channelVersion match {
+        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
+        case _ => keyManager.paymentPoint(channelKeyPath).publicKey
+      }
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, keyManager.paymentPoint(channelKeyPath).publicKey)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       log.warning(s"a revoked commit has been published with txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
@@ -721,11 +740,16 @@ object Helpers {
           val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 2)
 
           // first we will claim our main output right away
-          val mainTx = generateTx("claim-p2wpkh-output")(Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
-            Transactions.addSigs(claimMain, localPaymentPubkey, sig)
-          })
+          val mainTx = channelVersion match {
+            case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+              log.info(s"channel uses option_static_remotekey, not claiming our p2wpkh output")
+              None
+            case _ => generateTx("claim-p2wpkh-output")(Try {
+              val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
+              val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+              Transactions.addSigs(claimMain, localPaymentPubkey, sig)
+            })
+          }
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
