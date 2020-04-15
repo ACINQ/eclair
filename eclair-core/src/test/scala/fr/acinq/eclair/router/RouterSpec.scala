@@ -464,9 +464,9 @@ class RouterSpec extends BaseRouterSpec {
 
     // we want to make sure that transport receives the query
     val peerConnection = TestProbe()
-    peerConnection.ignoreMsg { case _: GossipDecision.Duplicate => true }
     probe.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update1))
     peerConnection.expectMsg(TransportHandler.ReadAck(update1))
+    peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(update1))
     val query = peerConnection.expectMsgType[QueryShortChannelIds]
     assert(query.shortChannelIds.array == List(channelId))
   }
