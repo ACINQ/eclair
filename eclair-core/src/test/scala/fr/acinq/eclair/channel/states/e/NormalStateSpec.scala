@@ -22,7 +22,7 @@ import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Bech32, ByteVector32, ByteVector64, Crypto, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
@@ -43,7 +43,6 @@ import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, _}
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
-import scala.concurrent.Future
 import scala.concurrent.duration._
 
 /**
@@ -57,19 +56,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val testWallet = if(test.tags.contains("static_remotekey")){
-      val randomKey = PrivateKey(randomBytes32).publicKey
-      new TestWallet{
-        override def getReceivePubkey(receiveAddress: Option[String] = None): Future[Crypto.PublicKey] = Future.successful(randomKey)
-        override def getReceiveAddress: Future[String] = Future.successful({
-          val scriptPubKey = Script.write(Script.pay2wpkh(randomKey))
-          Bech32.encodeWitnessAddress("bcrt", 0, scriptPubKey)
-        })
-      }
-    } else {
-      new TestWallet
-    }
-    val setup = init(wallet = testWallet)
+    val setup = init()
     import setup._
     within(30 seconds) {
       reachNormal(setup, test.tags)
@@ -1119,7 +1106,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
     val sender = TestProbe()
 
-      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
 
     def aliceToRemoteScript() = {
@@ -1169,8 +1156,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     peer.expectMsg(Peer.Disconnect(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId))
   }
 
-  test("recv CMD_FULFILL_HTLC") { f =>
+  private def testReceiveCmdFulfillHtlc(f: FixtureParam): Unit = {
     import f._
+
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -1184,6 +1172,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
   }
+
+  test("recv CMD_FULFILL_HTLC") { testReceiveCmdFulfillHtlc _ }
+
+  test("recv CMD_FULFILL_HTLC (static_remotekey)", Tag("static_remotekey")) { testReceiveCmdFulfillHtlc _ }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
     import f._
@@ -1219,7 +1211,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
-  test("recv UpdateFulfillHtlc") { f =>
+  private def testUpdateFulfillHtlc(f: FixtureParam) = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1238,6 +1230,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(forward.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }
+
+  test("recv UpdateFulfillHtlc") { testUpdateFulfillHtlc _ }
+
+  test("recv UpdateFulfillHtlc (static_remotekey)", Tag("(static_remotekey)")) { testUpdateFulfillHtlc _ }
 
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
     import f._
@@ -1294,7 +1290,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
 
-  test("recv CMD_FAIL_HTLC") { f =>
+  private def testCmdFailHtlc(f: FixtureParam) = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1308,7 +1304,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+
   }
+
+  test("recv CMD_FAIL_HTLC") { testCmdFailHtlc _ }
+
+  test("recv CMD_FAIL_HTLC (static_remotekey)", Tag("static_remotekey")) { testCmdFailHtlc _ }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
     import f._
@@ -1377,7 +1378,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
-  test("recv UpdateFailHtlc") { f =>
+  private def testUpdateFailHtlc(f: FixtureParam) = {
     import f._
     val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1394,6 +1395,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice won't forward the fail before it is cross-signed
     relayerA.expectNoMsg()
   }
+
+  test("recv UpdateFailHtlc") { testUpdateFailHtlc _ }
+  test("recv UpdateFailHtlc (static_remotekey)", Tag("static_remotekey")) { testUpdateFailHtlc _ }
 
   test("recv UpdateFailMalformedHtlc") { f =>
     import f._

@@ -850,7 +850,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val pr = sender.expectMsgType[PaymentRequest]
 
     // then we make the actual payment
-    sender.send(nodes("C").paymentInitiator, SendPaymentRequest(amountMsat, pr.paymentHash, nodes("F6").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 1))
+    sender.send(nodes("C").paymentInitiator, SendPaymentRequest(amountMsat, pr.paymentHash, nodes("F6").nodeParams.nodeId, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID](5 seconds)
     val ps = sender.expectMsgType[PaymentSent](5 seconds)
     assert(ps.id == paymentId)
@@ -865,7 +865,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(commitmentIndex == initialCommitmentIndex + 1)
 
     // script pubkeys of toRemote output remained the same across commitments
-    assert(toRemoteOutC.publicKeyScript == toRemoteOutCNew.publicKeyScript)
+    assert(toRemoteOutCNew.publicKeyScript == toRemoteOutC.publicKeyScript)
+    assert(toRemoteOutCNew.amount < toRemoteOutC.amount)
 
     // now let's force close the channel and check the toRemote is what we had at the beginning
     sender.send(nodes("F6").register, Forward(channelId, CMD_FORCECLOSE))
@@ -881,6 +882,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // the unilateral close contains the static toRemote output
     assert(Transaction.read(rawTx).txOut.exists(_.publicKeyScript == toRemoteOutC.publicKeyScript))
+
+    // bury the unilateral close in a block, since there are no outputs to claim the channel can go to CLOSED state
+    generateBlocks(bitcoincli, 2)
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSED
+    }, max = 20 seconds, interval = 1 second)
   }
 
   /**
