@@ -2104,7 +2104,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
         val remoteCommitPublished = RemoteCommitPublished(commitTx, None, List.empty, List.empty, Map.empty)
         val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-        goto(CLOSING) using nextData storing()
+        goto(CLOSING) using nextData storing() // we don't need to claim our main output in the remote commit because it already spends to our wallet address
       case _ =>
         val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)

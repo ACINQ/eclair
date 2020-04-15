@@ -629,8 +629,8 @@ object Commitments {
       case _ => keyManager.paymentPoint(channelKeyPath).publicKey
     }
     val localPaymentPubkey = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-      case _ => Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localPaymentBasepoint
+      case _ => Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
     }
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)

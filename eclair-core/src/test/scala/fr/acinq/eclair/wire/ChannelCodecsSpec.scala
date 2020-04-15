@@ -101,9 +101,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
       isFunder = Random.nextBoolean(),
       features = randomBytes(256))
     val encoded = localParamsCodec(ChannelVersion.ZEROES).encode(o).require
-    val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require
-    assert(o.localPaymentBasepoint.isEmpty)
-    assert(o === decoded.value)
+    val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require.value
+    assert(decoded.localPaymentBasepoint.isEmpty)
+    assert(o === decoded)
 
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
@@ -124,9 +124,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
       isFunder = Random.nextBoolean(),
       features = randomBytes(256))
     val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
-    val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require
-    assert(o1.localPaymentBasepoint.isDefined)
-    assert(o1 === decoded1.value)
+    val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require.value
+    assert(decoded1.localPaymentBasepoint.isDefined)
+    assert(o1 === decoded1)
   }
 
   test("encode/decode remoteparams") {
