@@ -606,7 +606,7 @@ object Helpers {
     /**
      *
      * Claim all the HTLCs that we've received from their current commit tx, if the channel used option_static_remotekey
-     * we don't claim our main output.
+     * we don't need to claim our main output because it directly pays to one of our wallet's p2wpkh addresses.
      *
      * @param commitments  our commitment data, which include payment preimages
      * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)

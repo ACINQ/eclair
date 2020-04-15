@@ -70,7 +70,7 @@ object Features {
   }
 
   case object StaticRemoteKey extends Feature {
-    val rfcName = "staticremotekey"
+    val rfcName = "option_static_remotekey"
     val mandatory = 12
   }
 
@@ -132,8 +132,8 @@ object Features {
   def hasFeature(features: ByteVector, feature: Feature, support: Option[FeatureSupport]): Boolean = hasFeature(features.bits, feature, support)
 
   /** returns true if both have at least optional support */
-  def canUseFeature(localFeatures: ByteVector, remoteFeatures: ByteVector, feature: Feature, support: Option[FeatureSupport] = None): Boolean = {
-    hasFeature(localFeatures, feature, support) && hasFeature(remoteFeatures, feature, support)
+  def canUseFeature(localFeatures: ByteVector, remoteFeatures: ByteVector, feature: Feature): Boolean = {
+    hasFeature(localFeatures, feature) && hasFeature(remoteFeatures, feature)
   }
 
   /**
