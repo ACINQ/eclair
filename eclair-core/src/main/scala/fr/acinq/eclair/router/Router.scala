@@ -387,6 +387,7 @@ object Router {
     case class ChannelClosed(ann: ChannelAnnouncement) extends Rejected
     case class Stale(ann: ChannelUpdate) extends Rejected
     case class NoRelatedChannel(ann: ChannelUpdate) extends Rejected
+    case class RelatedChannelPruned(ann: ChannelUpdate) extends Rejected
   }
 
   case class Stash(updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])

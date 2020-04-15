@@ -361,6 +361,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           case _: GossipDecision.ChannelClosing => d.behavior
           case _: GossipDecision.Stale => d.behavior
           case _: GossipDecision.NoRelatedChannel => d.behavior
+          case _: GossipDecision.RelatedChannelPruned => d.behavior
         }
         stay using d.copy(behavior = behavior1)
 

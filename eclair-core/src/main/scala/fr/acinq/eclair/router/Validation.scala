@@ -362,7 +362,7 @@ object Validation {
       // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
       // about that channel. We can ignore this update since we will receive it again
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
-      remoteOrigins.foreach(sendDecision(_, GossipDecision.Duplicate(u)))
+      remoteOrigins.foreach(sendDecision(_, GossipDecision.RelatedChannelPruned(u)))
       db.removeFromPruned(u.shortChannelId)
 
       // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
