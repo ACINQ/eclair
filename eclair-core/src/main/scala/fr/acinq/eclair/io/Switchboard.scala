@@ -72,7 +72,7 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
+      sender.tell(PeerConnection.InitializeConnection, peer) // switchboard impersonates the peer, which will appear as the sender
 
     case 'peers => sender ! context.children
 

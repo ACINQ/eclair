@@ -71,7 +71,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // let's simulate a connection
     switchboard.send(peer, Peer.Init(channels))
     val localInit = wire.Init(peer.underlyingActor.nodeParams.features)
-    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
+    peerConnection.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
