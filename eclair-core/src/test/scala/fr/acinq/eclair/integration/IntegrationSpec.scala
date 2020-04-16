@@ -1259,7 +1259,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
     announcements.foreach { ann =>
-      nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann)
+      sender.send(nodes("A").router, PeerRoutingMessage(remoteNodeId, ann))
       sender.expectMsg(TransportHandler.ReadAck(ann))
       sender.expectMsg(GossipDecision.Accepted(ann))
     }
