@@ -824,7 +824,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f)
-    // using option_static_remotekey alice doesn't need to swipe her output
+    // using option_static_remotekey alice doesn't need to sweep her output
     awaitCond(alice.stateName == CLOSING, 10 seconds)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
     // after the commit tx is confirmed the channel is closed, no claim transactions needed

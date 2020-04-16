@@ -18,7 +18,6 @@ package fr.acinq.eclair.io
 
 import java.net.{InetAddress, ServerSocket}
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
@@ -28,7 +27,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, ChannelVersion, DATA_NORMAL, HasCommitments, NORMAL, RES_GETINFO}
+import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, ChannelVersion, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
 import org.scalatest.{Outcome, Tag}
@@ -201,14 +200,16 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val probe = TestProbe()
     connect(remoteNodeId, switchboard, peer, peerConnection, remoteInit = wire.Init(hex"2200")) // Bob supports option_static_remotekey
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None))
+    awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>
       probe.send(channelRef, CMD_GETINFO)
       val info = probe.expectMsgType[RES_GETINFO]
-      assert(info.state == NORMAL)
-      val commitments = info.data.asInstanceOf[DATA_NORMAL].commitments
-      assert(commitments.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
-      assert(commitments.localParams.localPaymentBasepoint.isDefined)
-      assert(commitments.localParams.defaultFinalScriptPubKey === Script.pay2wpkh(commitments.localParams.localPaymentBasepoint.get))
+      assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
+      val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
+      assert(inputInit.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
+      assert(inputInit.localParams.localPaymentBasepoint.isDefined)
+      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.localPaymentBasepoint.get)))
     }
   }
 }
