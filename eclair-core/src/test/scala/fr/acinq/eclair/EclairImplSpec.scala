@@ -181,7 +181,7 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
       (ann_cd, makeUpdate(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
       (ann_ec, makeUpdate(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
     ).foreach { case (ann, (desc, update)) =>
-      channels = channels + (desc.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = 0)), None))
+      channels = channels + (desc.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, None, Some(update.copy(channelFlags = 0)), None, None))
     }
 
     val mockNetworkDb = mock[NetworkDb]
