@@ -728,9 +728,10 @@ object Helpers {
               None
             case _ => generateTx("claim-p2wpkh-output") {
               Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
-              val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
-              Transactions.addSigs(claimMain, localPaymentPubkey, sig)
-            })}
+                val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint)
+                Transactions.addSigs(claimMain, localPaymentPubkey, sig)
+              })
+            }
           }
 
           // then we punish them by stealing their main output
