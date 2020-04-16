@@ -18,17 +18,16 @@ package fr.acinq.eclair.io
 
 import java.net.{InetAddress, ServerSocket}
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Btc
+import fr.acinq.bitcoin.{Btc, Script}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{Channel, ChannelCreated, HasCommitments}
+import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, ChannelVersion, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
 import org.scalatest.{Outcome, Tag}
@@ -54,6 +53,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
+      .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(hex"2200")
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(hex"80000")
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
@@ -193,5 +193,23 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val channelCreated = probe.expectMsgType[ChannelCreated]
     assert(channelCreated.initialFeeratePerKw == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.commitmentBlockTarget))
     assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
+  }
+
+  test("use correct final script if option_static_remotekey is negotiated", Tag("static_remotekey")) { f =>
+    import f._
+
+    val probe = TestProbe()
+    connect(remoteNodeId, switchboard, peer, peerConnection, remoteInit = wire.Init(hex"2200")) // Bob supports option_static_remotekey
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None))
+    awaitCond(peer.stateData.channels.nonEmpty)
+    peer.stateData.channels.foreach { case (_, channelRef) =>
+      probe.send(channelRef, CMD_GETINFO)
+      val info = probe.expectMsgType[RES_GETINFO]
+      assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
+      val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
+      assert(inputInit.channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))
+      assert(inputInit.localParams.localPaymentBasepoint.isDefined)
+      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.localPaymentBasepoint.get)))
+    }
   }
 }
