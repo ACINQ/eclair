@@ -211,10 +211,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(sender, remoteNodeId)), n)
 
     case Event(u: ChannelUpdate, d: Data) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), Right(u))
 
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(sender, remoteNodeId)), u)
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(sender, remoteNodeId)), Right(u))
 
     case Event(lcu: LocalChannelUpdate, d: Data) =>
       stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
