@@ -35,8 +35,9 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
-import fr.acinq.eclair.transactions.{IN, OUT, Transactions}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, _}
 import org.scalatest.{Outcome, Tag}
@@ -720,7 +721,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // bob replies immediately with a signature
     bob2alice.expectMsgType[CommitSig]
 
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.collect(incoming).exists(_.id == htlc.id))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocal == initialState.commitments.localCommit.spec.toLocal)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.acked.size == 0)
@@ -745,7 +746,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
 
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == OUT))
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.collect(outgoing).exists(_.id == htlc.id))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocal == initialState.commitments.localCommit.spec.toLocal)
   }
@@ -822,7 +823,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     crossSign(alice, bob, alice2bob, bob2alice)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc1.id && h.direction == IN))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.collect(incoming).exists(_.id == htlc1.id))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.htlcTxsAndSigs.size == 2)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocal == initialState.commitments.localCommit.spec.toLocal)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx.txOut.count(_.amount == 50000.sat) == 2)
@@ -2086,8 +2087,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv BITCOIN_FUNDING_SPENT (revoked commit)") { f =>
     import f._
-    val sender = TestProbe()
-
     // initially we have :
     // alice = 800 000
     //   bob = 200 000

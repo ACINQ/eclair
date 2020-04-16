@@ -104,6 +104,10 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.DISCONNECTED, Peer.CONNECTED))
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
+    // NB: we change the data to make it appear like we have been connected for a long time
+    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = 0.seconds))
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
+
     // disconnection
     peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.CONNECTED, Peer.DISCONNECTED))
 
@@ -125,8 +129,15 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
 
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
+    // connection finally succeeds
+    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.DISCONNECTED, Peer.CONNECTED))
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
-    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData3: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    // we are disconnected one more time
+    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.CONNECTED, Peer.DISCONNECTED))
+
+    // the auto reconnect kicks off again, but this time we pick up the reconnect delay where we left it
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData3: WaitingData) = monitor.expectMsgType[TransitionWithData]
     assert(waitingData3.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 8))
   }
 

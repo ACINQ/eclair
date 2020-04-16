@@ -21,7 +21,7 @@ import java.io.Closeable
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.router.PublicChannel
+import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
 import scala.collection.immutable.SortedMap

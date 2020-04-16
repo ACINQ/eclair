@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
+import org.json4s.JsonAST.JDecimal
 import scodec.bits.ByteVector
 
 import scala.collection.{Set, SortedMap}
@@ -85,6 +86,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
+      client.rpcClient.invoke("getbalance").collect {
+        // We track our balance in mBTC because a rounding issue in BTC would be too impactful.
+        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue() * 1000)
+      }
       // TODO: beware of the herd effect
       KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
         Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
@@ -112,7 +117,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       w match {
         case WatchSpentBasic(_, txid, outputIndex, _, _) =>
           // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
-          client.isTransactionOutputSpendable(txid.toString(), outputIndex, includeMempool = true).collect {
+          client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
             case false =>
               log.info(s"output=$outputIndex of txid=$txid has already been spent")
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
@@ -120,17 +125,17 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
         case WatchSpent(_, txid, outputIndex, _, _) =>
           // first let's see if the parent tx was published or not
-          client.getTxConfirmations(txid.toString()).collect {
+          client.getTxConfirmations(txid).collect {
             case Some(_) =>
               // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOutputSpendable(txid.toString(), outputIndex, includeMempool = true).collect {
+              client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
                 case false =>
                   log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
                   client.getMempool().map { mempoolTxs =>
                     mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
                       case Nil =>
                         log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
+                        client.lookForSpendingTx(None, txid, outputIndex).map { tx =>
                           log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
                           self ! NewTransaction(tx)
                         }
@@ -182,7 +187,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
 
-    case GetTxWithMeta(txid) => client.getTransactionMeta(txid.toString()).pipeTo(sender)
+    case GetTxWithMeta(txid) => client.getTransactionMeta(txid).pipeTo(sender)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
@@ -214,10 +219,10 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
     log.debug("checking confirmations of txid={}", w.txId)
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth
-    client.getTxConfirmations(w.txId.toString).flatMap {
+    client.getTxConfirmations(w.txId).flatMap {
       case Some(confirmations) if confirmations >= w.minDepth =>
-        client.getTransaction(w.txId.toString).flatMap { tx =>
-          client.getTransactionShortId(w.txId.toString).map {
+        client.getTransaction(w.txId).flatMap { tx =>
+          client.getTransactionShortId(w.txId).map {
             case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index, tx))
           }
         }

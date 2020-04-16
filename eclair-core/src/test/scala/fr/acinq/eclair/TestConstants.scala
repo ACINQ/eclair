@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -30,7 +30,7 @@ import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
 import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.router.RouterConf
+import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 

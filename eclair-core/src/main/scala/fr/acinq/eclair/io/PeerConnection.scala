@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, PoisonPill, Props, Status, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -26,7 +26,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
-import fr.acinq.eclair.router._
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
@@ -68,7 +68,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       val transport = p.transport_opt match {
         case Some(transport) => transport // used in tests to bypass encryption
         case None =>
-          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
+          Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
           context.actorOf(TransportHandler.props(
             keyPair = KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
             rs = p.remoteNodeId_opt.map(_.value),
@@ -86,8 +86,8 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       cancelTimer(AUTH_TIMER)
       import d.pendingAuth.address
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
-      switchboard ! Authenticated(self, remoteNodeId, address, d.pendingAuth.outgoing, d.pendingAuth.origin_opt)
+      Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
+      switchboard ! Authenticated(self, remoteNodeId)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
     case Event(AuthTimeout, _) =>
@@ -98,7 +98,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   when(BEFORE_INIT) {
     case Event(InitializeConnection(peer), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
-      Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
+      Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
         case None =>
@@ -143,7 +143,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           d.transport ! PoisonPill
           stay
         } else {
-          Metrics.PeerConnections.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
+          Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
           d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
@@ -160,7 +160,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
             if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
               log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(d.remoteNodeId, self, flags_opt = flags_opt)
+              router ! SendChannelQuery(nodeParams.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
             } else {
               log.info("not syncing with this peer")
             }
@@ -258,11 +258,12 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
+        val thisRemote = RemoteGossip(self, d.remoteNodeId)
         /**
          * Send and count in a single iteration
          */
         def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[GossipOrigin]]): Int = msgs.foldLeft(0) {
-          case (count, (_, origins)) if origins.contains(RemoteGossip(self)) =>
+          case (count, (_, origins)) if origins.contains(thisRemote) =>
             // the announcement came from this peer, we don't send it back
             count
           case (count, (msg, origins)) if !timestampInRange(d.nodeParams, msg, origins, d.gossipTimestampFilter) =>
@@ -321,9 +322,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         d.transport forward readAck
         stay
 
-      case Event(badMessage: BadMessage, d: ConnectedData) =>
-        val behavior1 = badMessage match {
-          case InvalidSignature(r) =>
+      case Event(rejectedGossip: GossipDecision.Rejected, d: ConnectedData) =>
+        val behavior1 = rejectedGossip match {
+          case GossipDecision.InvalidSignature(r) =>
             val bin: String = LightningMessageCodecs.meteredLightningMessageCodec.encode(r) match {
               case Attempt.Successful(b) => b.toHex
               case _ => "unknown"
@@ -333,14 +334,14 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
             d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"bad announcement sig! bin=$bin".getBytes()))
             d.behavior
-          case InvalidAnnouncement(c) =>
+          case GossipDecision.InvalidAnnouncement(c) =>
             // they seem to be sending us fake announcements?
             log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
             // for now we just return an error, maybe ban the peer in the future?
             // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
             d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes()))
             d.behavior
-          case ChannelClosed(_) =>
+          case GossipDecision.ChannelClosed(_) =>
             if (d.behavior.ignoreNetworkAnnouncement) {
               // we already are ignoring announcements, we may have additional notifications for announcements that were received right before our ban
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
@@ -351,6 +352,16 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
               setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
             }
+          // other rejections are not considered punishable offenses
+          // we are not using a catch-all on purpose, to make compiler warn us when a new error is added
+          case _: GossipDecision.Duplicate => d.behavior
+          case _: GossipDecision.NoKnownChannel => d.behavior
+          case _: GossipDecision.ValidationFailure => d.behavior
+          case _: GossipDecision.ChannelPruned => d.behavior
+          case _: GossipDecision.ChannelClosing => d.behavior
+          case _: GossipDecision.Stale => d.behavior
+          case _: GossipDecision.NoRelatedChannel => d.behavior
+          case _: GossipDecision.RelatedChannelPruned => d.behavior
         }
         stay using d.copy(behavior = behavior1)
 
@@ -373,6 +384,10 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       }
       stop(FSM.Normal)
 
+    case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
+
+    case Event(_: GossipDecision.Rejected, _) => stay // we got disconnected while syncing
+
     case Event(_: Rebroadcast, _) => stay // ignored
 
     case Event(_: DelayedRebroadcast, _) => stay // ignored
@@ -386,9 +401,14 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
     case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
 
     case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+  }
 
-    case Event(_: BadMessage, _) => stay // we got disconnected while syncing
+  onTransition {
+    case _ -> CONNECTED => Metrics.PeerConnectionsConnected.withoutTags().increment()
+  }
 
+  onTermination {
+    case StopEvent(_, CONNECTED, _: ConnectedData) => Metrics.PeerConnectionsConnected.withoutTags().decrement()
   }
 
   /**
@@ -415,6 +435,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   }
 
   initialize()
+
+  // we should not restart a failing transport-handler (NB: logging is handled in the transport)
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = false) { case _ => SupervisorStrategy.Stop }
 
   override def mdc(currentMessage: Any): MDC = {
     val (category_opt, remoteNodeId_opt) = stateData match {
@@ -454,9 +477,9 @@ object PeerConnection {
   // @formatter:off
 
   sealed trait Data
-  sealed trait HasTransport extends Data { def transport: ActorRef }
+  sealed trait HasTransport { this: Data => def transport: ActorRef }
   case object Nothing extends Data
-  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data
+  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
   case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
@@ -473,16 +496,11 @@ object PeerConnection {
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
-  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
+  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
   case class InitializeConnection(peer: ActorRef)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
-
-  sealed trait BadMessage
-  case class InvalidSignature(r: RoutingMessage) extends BadMessage
-  case class InvalidAnnouncement(c: ChannelAnnouncement) extends BadMessage
-  case class ChannelClosed(c: ChannelAnnouncement) extends BadMessage
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
@@ -491,7 +509,6 @@ object PeerConnection {
   /**
    * PeerConnection may want to filter announcements based on timestamp.
    *
-   * @param nodeParams
    * @param gossipTimestampFilter_opt optional gossip timestamp range
    * @return
    *         - true if this is our own gossip

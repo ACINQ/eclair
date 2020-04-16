@@ -19,7 +19,7 @@ package fr.acinq.eclair.db.psql
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.router.PublicChannel
+import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging

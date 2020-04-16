@@ -26,8 +26,9 @@ import scodec.{Attempt, Codec, Err}
 /**
  * Created by t-bast on 20/06/2019.
  */
-
 object TlvCodecs {
+  // high range types are greater than or equal 2^16, see https://github.com/lightningnetwork/lightning-rfc/blob/master/01-messaging.md#type-length-value-format
+  private val TLV_TYPE_HIGH_RANGE = 65536
 
   /**
    * Truncated uint64 (0 to 8 bytes unsigned integer).
@@ -104,7 +105,7 @@ object TlvCodecs {
   val ltu16: Codec[Int] = variableSizeBytes(uint8, tu16)
 
   private def validateGenericTlv(g: GenericTlv): Attempt[GenericTlv] = {
-    if (g.tag.toBigInt % 2 == 0) {
+    if (g.tag < TLV_TYPE_HIGH_RANGE && g.tag.toBigInt % 2 == 0) {
       Attempt.Failure(Err("unknown even tlv type"))
     } else {
       Attempt.Successful(g)

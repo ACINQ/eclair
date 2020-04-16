@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.psql.PsqlPaymentsDb
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.{ChannelHop, NodeHop}
+import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.FunSuite
