@@ -28,7 +28,7 @@ import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Logs, LongToBtcAmount, NodeParams, ShortChannelId, TxCoordinates}
 import kamon.Kamon
 
 object Validation {
@@ -108,7 +108,6 @@ object Validation {
                   None
                 } else {
                   watcher ! WatchSpentBasic(ctx.self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
-                  // TODO: check feature bit set
                   log.debug("added channel channelId={}", c.shortChannelId)
                   remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c))))
                   val capacity = tx.txOut(outputIndex).amount
@@ -122,7 +121,7 @@ object Validation {
                     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features)
                     ctx.self ! nodeAnn
                   }
-                  Some(PublicChannel(c, tx.txid, capacity, None, None))
+                  Some(PublicChannel(c, tx.txid, capacity, None, None, None, None))
                 }
               case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
                 if (fundingTxStatus.spendingTxConfirmed) {
@@ -328,7 +327,7 @@ object Validation {
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
       val pc = d.privateChannels(u.shortChannelId)
-      val desc = if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
+      val desc = getDesc(u, pc)
       if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Stale(u)))
@@ -347,7 +346,11 @@ object Validation {
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
-        val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
+        val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
+          d.graph.removeEdge(desc).addEdge(desc, u)
+        } else {
+          d.graph.removeEdge(desc)
+        }
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
@@ -366,7 +369,6 @@ object Validation {
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
       remoteOrigins.foreach(sendDecision(_, GossipDecision.RelatedChannelPruned(u)))
       db.removeFromPruned(u.shortChannelId)
-
       // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
       // when we're sending updates to ourselves
       origins head match {
@@ -421,7 +423,8 @@ object Validation {
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
             log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, shortChannelId)
-            val d1 = d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(localNodeId, lcu.remoteNodeId, None, None)))
+            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, 0 msat, None, 0 msat, None).updateBalances(lcu.commitments)
+            val d1 = d.copy(privateChannels = d.privateChannels + (shortChannelId -> pc))
             handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
         }
     }
