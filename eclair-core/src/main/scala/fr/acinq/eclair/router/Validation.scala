@@ -159,7 +159,7 @@ object Validation {
                     awaiting = awaiting1)
                   // we only reprocess updates and nodes if validation succeeded
                   val d2 = reprocessUpdates.foldLeft(d1) {
-                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u, wasStashed = true)
+                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, Right(u), wasStashed = true)
                   }
                   val d3 = reprocessNodes.foldLeft(d2) {
                     case (d, (n, origins)) => Validation.handleNodeAnnouncement(d, nodeParams.db.network, origins, n, wasStashed = true)
@@ -257,8 +257,9 @@ object Validation {
     }
   }
 
-  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], u: ChannelUpdate, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], update: Either[LocalChannelUpdate, ChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    val u: ChannelUpdate = update.fold(lcu => lcu.channelUpdate, rcu => rcu)
     val remoteOrigins = origins flatMap {
       case r: RemoteGossip if wasStashed =>
         Some(r.peerConnection)
@@ -274,12 +275,17 @@ object Validation {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
       val pc = d.channels(u.shortChannelId)
+      val pc1 = update match {
+        case Left(lcu) => pc.updateChannelUpdateSameSideAs(u).updateBalances(lcu.commitments)
+        case Right(_) => pc.updateChannelUpdateSameSideAs(u)
+      }
       val desc = getDesc(u, pc.ann)
       if (d.rebroadcast.updates.contains(u)) {
         log.debug("ignoring {} (pending rebroadcast)", u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
         val origins1 = d.rebroadcast.updates(u) ++ origins
-        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
+        // NB: we update the channels because the balances may have changed even if the channel_update is the same.
+        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (u.shortChannelId -> pc1))
       } else if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Stale(u)))
@@ -304,7 +310,7 @@ object Validation {
         } else {
           d.graph.removeEdge(desc)
         }
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
@@ -312,7 +318,7 @@ object Validation {
         db.updateChannel(u)
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -327,6 +333,10 @@ object Validation {
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
       val pc = d.privateChannels(u.shortChannelId)
+      val pc1 = update match {
+        case Left(lcu) => pc.updateChannelUpdateSameSideAs(u).updateBalances(lcu.commitments)
+        case Right(_) => pc.updateChannelUpdateSameSideAs(u)
+      }
       val desc = getDesc(u, pc)
       if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
@@ -351,14 +361,14 @@ object Validation {
         } else {
           d.graph.removeEdge(desc)
         }
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val graph1 = d.graph.addEdge(desc, u)
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
@@ -399,33 +409,32 @@ object Validation {
 
   def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: ActorRef, lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    import lcu.{channelAnnouncement_opt, shortChannelId, channelUpdate => u}
-    d.channels.get(shortChannelId) match {
+    d.channels.get(lcu.shortChannelId) match {
       case Some(_) =>
         // channel has already been announced and router knows about it, we can process the channel_update
-        handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+        handleChannelUpdate(d, db, routerConf, Set(LocalGossip), Left(lcu))
       case None =>
-        channelAnnouncement_opt match {
+        lcu.channelAnnouncement_opt match {
           case Some(c) if d.awaiting.contains(c) =>
             // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), Left(lcu))
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(c)
             val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
-            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
-          case None if d.privateChannels.contains(shortChannelId) =>
+            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), Left(lcu))
+          case None if d.privateChannels.contains(lcu.shortChannelId) =>
             // channel isn't announced but we already know about it, we can process the channel_update
-            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), Left(lcu))
           case None =>
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
-            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, shortChannelId)
+            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
             val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, 0 msat, None, 0 msat, None).updateBalances(lcu.commitments)
-            val d1 = d.copy(privateChannels = d.privateChannels + (shortChannelId -> pc))
-            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
+            val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
+            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), Left(lcu))
         }
     }
   }
