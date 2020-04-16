@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -84,7 +84,7 @@ class RouterSpec extends BaseRouterSpec {
       // valid channel announcement, stashing while validating channel announcement
       val priv_u = randomKey
       val priv_funding_u = randomKey
-      val chan_uc = channelAnnouncement(ShortChannelId(420000, 6, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
+      val chan_uc = channelAnnouncement(ShortChannelId(420000, 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat)
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, hex"00")
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_uc))
@@ -129,7 +129,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // invalid signatures
       val invalid_node_a = node_a.copy(timestamp = node_a.timestamp + 10)
-      val invalid_chan_a = channelAnnouncement(ShortChannelId(420000, 5, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey.publicKey)
+      val invalid_chan_a = channelAnnouncement(ShortChannelId(420000, 101, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey.publicKey)
       val invalid_update_ab = update_ab.copy(cltvExpiryDelta = CltvExpiryDelta(21), timestamp = update_ab.timestamp + 1)
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, invalid_node_a))
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_node_a))
@@ -149,7 +149,7 @@ class RouterSpec extends BaseRouterSpec {
       // pruned channel
       val priv_v = randomKey
       val priv_funding_v = randomKey
-      val chan_vc = channelAnnouncement(ShortChannelId(420000, 7, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
+      val chan_vc = channelAnnouncement(ShortChannelId(420000, 102, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
       nodeParams.db.network.addToPruned(chan_vc.shortChannelId :: Nil)
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_vc))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_vc))
@@ -285,7 +285,7 @@ class RouterSpec extends BaseRouterSpec {
   test("handle bad signature for ChannelAnnouncement") { fixture =>
     import fixture._
     val peerConnection = TestProbe()
-    val channelId_ac = ShortChannelId(420000, 5, 0)
+    val channelId_ac = ShortChannelId(420000, 105, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
     peerConnection.send(router, PeerRoutingMessage(remoteNodeId, buggy_chan_ac))
@@ -296,10 +296,10 @@ class RouterSpec extends BaseRouterSpec {
   test("handle bad signature for NodeAnnouncement") { fixture =>
     import fixture._
     val peerConnection = TestProbe()
-    val buggy_ann_a = node_a.copy(signature = node_b.signature, timestamp = node_a.timestamp + 1)
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, buggy_ann_a))
-    peerConnection.expectMsg(TransportHandler.ReadAck(buggy_ann_a))
-    peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_ann_a))
+    val buggy_ann_b = node_b.copy(signature = node_c.signature, timestamp = node_b.timestamp + 1)
+    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, buggy_ann_b))
+    peerConnection.expectMsg(TransportHandler.ReadAck(buggy_ann_b))
+    peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_ann_b))
   }
 
   test("handle bad signature for ChannelUpdate") { fixture =>
@@ -375,6 +375,20 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsg(Failure(RouteNotFound))
   }
 
+  test("route not found (private channel disabled)") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    val res = sender.expectMsgType[RouteResponse]
+    assert(res.hops.map(_.nodeId).toList === a :: g :: Nil)
+    assert(res.hops.last.nextNodeId === h)
+
+    val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag, CltvExpiryDelta(7), 0 msat, 10 msat, 10, 500000000 msat, enable = false)
+    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.expectMsg(Failure(RouteNotFound))
+  }
+
   test("temporary channel exclusion") { fixture =>
     import fixture._
     val sender = TestProbe()
@@ -399,9 +413,9 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
     val state = sender.expectMsgType[RoutingState]
-    assert(state.channels.size == 4)
-    assert(state.nodes.size == 6)
-    assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 8)
+    assert(state.channels.size == 5)
+    assert(state.nodes.size == 8)
+    assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 10)
   }
 
   test("send network statistics") { fixture =>
@@ -421,10 +435,10 @@ class RouterSpec extends BaseRouterSpec {
     val GetNetworkStatsResponse(Some(stats)) = sender.expectMsgType[GetNetworkStatsResponse]
     // if you change this test update test "router returns Network Stats" in EclairImpSpec that mocks this call.
     // else will break the networkstats API call
-    assert(stats.channels === 4)
-    assert(stats.nodes === 6)
+    assert(stats.channels === 5)
+    assert(stats.nodes === 8)
     assert(stats.capacity.median === 1000000.sat)
-    assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(6))
+    assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(7))
   }
 
   test("given a pre-computed route add the proper channel updates") { fixture =>
@@ -470,6 +484,30 @@ class RouterSpec extends BaseRouterSpec {
     peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(recentUpdate))
     val query = peerConnection.expectMsgType[QueryShortChannelIds]
     assert(query.shortChannelIds.array == List(channelId))
+  }
+
+  test("update local channels balances") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    sender.send(router, GetRoutingState)
+    val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+    assert(channel_ab.balance_1_opt === None)
+    assert(channel_ab.balance_2_opt === None)
+
+    // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
+    val commitments1 = CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, b, announceChannel = true)
+    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
+    sender.send(router, GetRoutingState)
+    val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+    assert(Set(channel_ab1.balance_1_opt, channel_ab1.balance_2_opt) === Set(Some(10000 msat), Some(15000 msat)))
+
+    // When HTLCs are relayed through the channel, balance changes are sent to the router.
+    val commitments2 = CommitmentsSpec.makeCommitments(12000 msat, 13000 msat, a, b, announceChannel = true)
+    sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ab, commitments2))
+    sender.send(router, GetRoutingState)
+    val channel_ab2 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+    assert(Set(channel_ab2.balance_1_opt, channel_ab2.balance_2_opt) === Set(Some(12000 msat), Some(13000 msat)))
   }
 
 }
