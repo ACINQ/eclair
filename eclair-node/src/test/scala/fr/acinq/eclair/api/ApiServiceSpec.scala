@@ -29,6 +29,8 @@ import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.ChannelCommandResponse
 import fr.acinq.eclair.db._
@@ -170,7 +172,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
     eclair.getInfoResponse()(any[Timeout]) returns Future.successful(GetInfoResponse(
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = Color(0.toByte, 1.toByte, 2.toByte).toString,
-      features = "",
+      features = Seq(HumanReadableFeature(OptionDataLossProtect.rfcName, Mandatory.toString), HumanReadableFeature(ChannelRangeQueriesExtended.rfcName, Optional.toString)),
       nodeId = aliceNodeId,
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),

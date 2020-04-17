@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import com.typesafe.config.ConfigFactory
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -126,6 +128,84 @@ class FeaturesSpec extends FunSuite {
     for ((testCase, expected) <- testCases) {
       assert(areSupported(testCase) === expected, testCase)
     }
+  }
+
+  test("parse features from configuration") {
+    import Features.Resolution._
+    assert(fromFeatureBits(Seq(OptionDataLossProtect.mandatory)) === hex"01")
+    assert(fromFeatureBits(Seq(OptionDataLossProtect.optional)) === hex"02")
+    assert(fromFeatureBits(Seq(VariableLengthOnion.mandatory)) === hex"0100")
+    assert(fromFeatureBits(Seq(VariableLengthOnion.optional)) === hex"0200")
+    assert(fromFeatureBits(Seq(Wumbo.mandatory, TrampolinePayment.optional)) === hex"8000000040000")
+    assert(fromFeatureBits(Seq(
+      OptionDataLossProtect.optional,
+      InitialRoutingSync.optional,
+      VariableLengthOnion.mandatory)) === hex"010a")
+
+    assert(fromFeatureBits(Seq(
+      InitialRoutingSync.optional,
+      OptionDataLossProtect.optional,
+      ChannelRangeQueries.optional,
+      ChannelRangeQueriesExtended.optional,
+      VariableLengthOnion.optional
+    )) === hex"0a8a")
+
+    val commonConf = ConfigFactory.parseString(
+      """
+        |features {
+        |  option_data_loss_protect = optional
+        |  initial_routing_sync = optional
+        |  gossip_queries = optional
+        |  gossip_queries_ex = optional
+        |  var_onion_optin = optional
+        |  payment_secret = optional
+        |  basic_mpp = optional
+        |}
+      """.stripMargin)
+
+    assert(fromConfiguration(commonConf) === hex"028a8a")
+
+    val conf = ConfigFactory.parseString(
+      """
+        |  features {
+        |    initial_routing_sync = optional
+        |    option_data_loss_protect = optional
+        |    gossip_queries = optional
+        |    gossip_queries_ex = mandatory
+        |    var_onion_optin = optional
+        |  }
+        |
+      """.stripMargin
+    )
+
+    val features = fromFeatureBits(fromConfig(conf))
+    assert(hasFeature(features, InitialRoutingSync, Some(Optional)))
+    assert(hasFeature(features, OptionDataLossProtect, Some(Optional)))
+    assert(hasFeature(features, ChannelRangeQueries, Some(Optional)))
+    assert(hasFeature(features, ChannelRangeQueriesExtended, Some(Mandatory)))
+    assert(hasFeature(features, VariableLengthOnion, Some(Optional)))
+
+    val confWithUnknownFeatures = ConfigFactory.parseString(
+      """
+        |features {
+        |  option_non_existent = mandatory # this is ignored
+        |  gossip_queries = optional
+        |  payment_secret = mandatory
+        |}
+      """.stripMargin)
+
+    assert(fromFeatureBits(fromConfig(confWithUnknownFeatures)) === hex"4080")
+
+    val confWithUnknownSupport = ConfigFactory.parseString(
+      """
+        |features {
+        |  option_data_loss_protect = what
+        |  gossip_queries = optional
+        |  payment_secret = mandatory
+        |}
+      """.stripMargin)
+
+    assertThrows[RuntimeException](fromFeatureBits(fromConfig(confWithUnknownSupport)))
   }
 
 }

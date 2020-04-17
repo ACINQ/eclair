@@ -118,7 +118,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           }).reverse.bytes.dropWhile(_ == 0)
           tweakedFeatures
       }
-      log.info(s"using features=${localFeatures.toBin}")
+      log.info(s"using features=${Features.Resolution.fromBytes(localFeatures)}")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit
       setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
@@ -131,7 +131,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         cancelTimer(INIT_TIMER)
         d.transport ! TransportHandler.ReadAck(remoteInit)
 
-        log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
+        log.info(s"peer is using features=${Features.Resolution.fromBytes(remoteInit.features)}, networks=${remoteInit.networks.mkString(",")}")
 
         if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
