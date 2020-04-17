@@ -83,9 +83,9 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
   }
 
   test("Payment Request") {
-    val ref = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+    val ref = "lnbcrt50n1p0fm9cdpp5al3wvsfkc6p7fxy89eu8gm4aww9mseu9syrcqtpa4mvx42qelkwqdq9v9ekgxqrrss9qypqsqsp5wl2t45v0hj4lgud0zjxcnjccd29ts0p2kh4vpw75vnhyyzyjtjtqarpvqg33asgh3z5ghfuvhvtf39xtnu9e7aqczpgxa9quwsxkd9rnwmx06pve9awgeewxqh90dqgrhzgsqc09ek6uejr93z8puafm6gsqgrk0hy"
     val pr = PaymentRequest.read(ref)
-    JsonSupport.serialization.write(pr)(JsonSupport.formats) shouldBe """{"prefix":"lnbc","timestamp":1496314658,"nodeId":"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad","serialized":"lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp","description":"1 cup coffee","paymentHash":"0001020304050607080900010203040506070809000102030405060708090102","expiry":60,"amount":250000000}"""
+    JsonSupport.serialization.write(pr)(JsonSupport.formats) shouldBe """{"prefix":"lnbcrt","timestamp":1587386125,"nodeId":"03b207771ddba774e318970e9972da2491ff8e54f777ad0528b6526773730248a0","serialized":"lnbcrt50n1p0fm9cdpp5al3wvsfkc6p7fxy89eu8gm4aww9mseu9syrcqtpa4mvx42qelkwqdq9v9ekgxqrrss9qypqsqsp5wl2t45v0hj4lgud0zjxcnjccd29ts0p2kh4vpw75vnhyyzyjtjtqarpvqg33asgh3z5ghfuvhvtf39xtnu9e7aqczpgxa9quwsxkd9rnwmx06pve9awgeewxqh90dqgrhzgsqc09ek6uejr93z8puafm6gsqgrk0hy","description":"asd","paymentHash":"efe2e64136c683e498872e78746ebd738bb867858107802c3daed86aa819fd9c","expiry":3600,"amount":5000,"features":[{"name":"var_onion_optin","support":"optional"},{"name":"payment_secret","support":"optional"}]}"""
   }
 
   test("type hints") {

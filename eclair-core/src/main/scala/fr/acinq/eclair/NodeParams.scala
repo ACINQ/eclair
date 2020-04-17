@@ -180,7 +180,7 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = ByteVector.fromValidHex(config.getString("features"))
+    val features = Features.Resolution.fromConfiguration(config)
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 

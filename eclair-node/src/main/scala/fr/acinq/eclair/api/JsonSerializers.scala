@@ -31,7 +31,7 @@ import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
 import scodec.bits.ByteVector
@@ -227,6 +227,9 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
+    val features = Seq(JField("features", JArray(Features.Resolution.toHumanReadable(p.features.toByteVector).map(hrf =>
+      JObject(JField("name", JString(hrf.name)), JField("support", JString(hrf.support.toString)))).toList
+    )))
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
@@ -238,7 +241,8 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
       expiry ++
       minFinalCltvExpiry ++
-      amount
+      amount ++
+      features
     JObject(fieldList)
 }))
 

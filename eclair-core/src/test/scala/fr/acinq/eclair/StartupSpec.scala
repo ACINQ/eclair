@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -74,9 +75,27 @@ class StartupSpec extends AnyFunSuite {
   }
 
   test("NodeParams should fail if features are inconsistent") {
-    val legalFeaturesConf = ConfigFactory.parseString("features = \"028a8a\"")
-    val illegalButAllowedFeaturesConf = ConfigFactory.parseString("features = \"028000\"") // basic_mpp without var_onion_optin
-    val illegalFeaturesConf = ConfigFactory.parseString("features = \"020000\"") // basic_mpp without payment_secret
+    val legalFeaturesConf = ConfigFactory.parseMap(Map(
+      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${InitialRoutingSync.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueries.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
+      s"features.${VariableLengthOnion.rfcName}" -> "optional",
+      s"features.${PaymentSecret.rfcName}" -> "optional",
+      s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
+    ))
+
+    // basic_mpp without var_onion_optin
+    val illegalButAllowedFeaturesConf = ConfigFactory.parseMap(Map(
+      s"features.${PaymentSecret.rfcName}" -> "optional",
+      s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
+    ))
+
+    // basic_mpp without payment_secret
+    val illegalFeaturesConf = ConfigFactory.parseMap(Map(
+      s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
+    ))
+
     assert(Try(makeNodeParamsWithDefaults(legalFeaturesConf.withFallback(defaultConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(illegalButAllowedFeaturesConf.withFallback(defaultConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(illegalFeaturesConf.withFallback(defaultConf))).isFailure)
