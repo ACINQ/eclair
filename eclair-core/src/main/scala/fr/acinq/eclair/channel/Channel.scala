@@ -941,6 +941,16 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing() replying ChannelCommandResponse.Ok
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
+      // We usually handle feerate updates once per block (~10 minutes), but when our remote is a mobile wallet that only
+      // briefly connects and then disconnects, we may never have the opportunity to send our `update_fee`, so we always
+      // send it (if needed) when reconnected.
+      if (reason == Reconnected && d.commitments.localParams.isFunder) {
+        val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
+        val networkFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+        if (Helpers.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.updateFeeMinDiffRatio)) {
+          self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
+        }
+      }
       val age = Platform.currentTime.milliseconds - d.channelUpdate.timestamp.seconds
       val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
       reason match {
