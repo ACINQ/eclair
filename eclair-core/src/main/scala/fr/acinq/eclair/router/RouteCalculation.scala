@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.{ActorContext, ActorRef, Status}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -38,14 +38,16 @@ object RouteCalculation {
   def finalizeRoute(d: Data, fr: FinalizeRoute)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-    // NB: using a capacity of 0 msat will impact the path-finding algorithm. However here we don't run any path-finding, so it's ok.
-    val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.hops.last, 0 msat)).toMap
-    val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
+    val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.hops.last, fr.amount)).toMap
+    val extraEdges = assistedChannels.values.map(ac =>
+      GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
+    ).toSet
     val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
     // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
     fr.hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
       case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
-        val selectedEdges = edges.map(_.maxBy(_.update.htlcMaximumMsat.getOrElse(0 msat))) // select the largest edge
+        // select the largest edge (using balance when available, otherwise capacity).
+        val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
         val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
         ctx.sender ! RouteResponse(hops, Set.empty, Set.empty)
       case _ => // some nodes in the supplied route aren't connected in our graph
@@ -56,21 +58,22 @@ object RouteCalculation {
 
   def handleRouteRequest(d: Data, routerConf: RouterConf, currentBlockHeight: Long, r: RouteRequest)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    import r._
 
     // we convert extra routing info provided in the payment request to fake channel_update
     // it takes precedence over all other channel_updates we know
-    val assistedChannels: Map[ShortChannelId, AssistedChannel] = assistedRoutes.flatMap(toAssistedChannels(_, target, amount)).toMap
-    val extraEdges = assistedChannels.values.map(ac => GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum))).toSet
-    val ignoredEdges = ignoreChannels ++ d.excludedChannels
+    val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount)).toMap
+    val extraEdges = assistedChannels.values.map(ac =>
+      GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
+    ).toSet
+    val ignoredEdges = r.ignoreChannels ++ d.excludedChannels
     val defaultRouteParams: RouteParams = getDefaultRouteParams(routerConf)
-    val params = routeParams.getOrElse(defaultRouteParams)
+    val params = r.routeParams.getOrElse(defaultRouteParams)
     val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
-
-    log.info(s"finding a route $source->$target with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), ignoreNodes.map(_.value).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+    
+    log.info(s"finding a route ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
     log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-    findRoute(d.graph, source, target, amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = ignoreNodes, routeParams = params, currentBlockHeight)
-      .map(r => ctx.sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
+    findRoute(d.graph, r.source, r.target, r.amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = r.ignoreNodes, routeParams = params, currentBlockHeight)
+      .map(route => ctx.sender ! RouteResponse(route, r.ignoreNodes, r.ignoreChannels))
       .recover { case t => ctx.sender ! Status.Failure(t) }
     d
   }
@@ -95,6 +98,9 @@ object RouteCalculation {
         (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount)))
     }._2
   }
+
+  /** Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount. */
+  def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi + 1.sat
 
   /**
    * This method is used after a payment failed, and we want to exclude some nodes that we know are failing

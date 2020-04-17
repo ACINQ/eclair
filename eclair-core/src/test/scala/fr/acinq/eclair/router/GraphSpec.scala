@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId}
 import org.scalatest.FunSuite
 import scodec.bits._
@@ -37,29 +36,22 @@ class GraphSpec extends FunSuite {
     PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f") //g
   )
 
-  /**
-   * /--> D --\
-   * A --> B --> C
-   * \-> E/
-   *
-   * @return
-   */
-  def makeTestGraph() = {
-
-    val updates = Seq(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, a, d, 0 msat, 0),
-      makeUpdate(4L, d, c, 0 msat, 0),
-      makeUpdate(5L, c, e, 0 msat, 0),
-      makeUpdate(6L, b, e, 0 msat, 0)
-    )
-
-    DirectedGraph().addEdges(updates)
-  }
+  // +---- D -------+
+  // |              |
+  // A --- B ------ C
+  //       |        |
+  //       +--- E --+
+  def makeTestGraph() =
+    DirectedGraph().addEdges(Seq(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, a, d, 0 msat, 0),
+      makeEdge(4L, d, c, 0 msat, 0),
+      makeEdge(5L, c, e, 0 msat, 0),
+      makeEdge(6L, b, e, 0 msat, 0)
+    ))
 
   test("instantiate a graph, with vertices and then add edges") {
-
     val graph = DirectedGraph(a)
       .addVertex(b)
       .addVertex(c)
@@ -69,22 +61,22 @@ class GraphSpec extends FunSuite {
     assert(graph.containsVertex(a) && graph.containsVertex(e))
     assert(graph.vertexSet().size === 5)
 
-    val otherGraph = graph.addVertex(a) //adding the same vertex twice!
+    val otherGraph = graph.addVertex(a) // adding the same vertex twice!
     assert(otherGraph.vertexSet().size === 5)
 
     // add some edges to the graph
-    val (descAB, updateAB) = makeUpdate(1L, a, b, 0 msat, 0)
-    val (descBC, updateBC) = makeUpdate(2L, b, c, 0 msat, 0)
-    val (descAD, updateAD) = makeUpdate(3L, a, d, 0 msat, 0)
-    val (descDC, updateDC) = makeUpdate(4L, d, c, 0 msat, 0)
-    val (descCE, updateCE) = makeUpdate(5L, c, e, 0 msat, 0)
+    val edgeAB = makeEdge(1L, a, b, 0 msat, 0)
+    val edgeBC = makeEdge(2L, b, c, 0 msat, 0)
+    val edgeAD = makeEdge(3L, a, d, 0 msat, 0)
+    val edgeDC = makeEdge(4L, d, c, 0 msat, 0)
+    val edgeCE = makeEdge(5L, c, e, 0 msat, 0)
 
     val graphWithEdges = graph
-      .addEdge(descAB, updateAB)
-      .addEdge(descAD, updateAD)
-      .addEdge(descBC, updateBC)
-      .addEdge(descDC, updateDC)
-      .addEdge(descCE, updateCE)
+      .addEdge(edgeAB)
+      .addEdge(edgeAD)
+      .addEdge(edgeBC)
+      .addEdge(edgeDC)
+      .addEdge(edgeCE)
 
     assert(graphWithEdges.edgesOf(a).size === 2)
     assert(graphWithEdges.edgesOf(b).size === 1)
@@ -92,26 +84,24 @@ class GraphSpec extends FunSuite {
     assert(graphWithEdges.edgesOf(d).size === 1)
     assert(graphWithEdges.edgesOf(e).size === 0)
 
-    val withRemovedEdges = graphWithEdges.removeEdge(descAD)
-
+    val withRemovedEdges = graphWithEdges.removeEdge(edgeAD.desc)
     assert(withRemovedEdges.edgesOf(d).size === 1)
   }
 
   test("instantiate a graph adding edges only") {
-
-    val edgeAB = edgeFromDesc(makeUpdate(1L, a, b, 0 msat, 0))
-    val (descBC, updateBC) = makeUpdate(2L, b, c, 0 msat, 0)
-    val (descAD, updateAD) = makeUpdate(3L, a, d, 0 msat, 0)
-    val (descDC, updateDC) = makeUpdate(4L, d, c, 0 msat, 0)
-    val (descCE, updateCE) = makeUpdate(5L, c, e, 0 msat, 0)
-    val (descBE, updateBE) = makeUpdate(6L, b, e, 0 msat, 0)
+    val edgeAB = makeEdge(1L, a, b, 0 msat, 0)
+    val edgeBC = makeEdge(2L, b, c, 0 msat, 0)
+    val edgeAD = makeEdge(3L, a, d, 0 msat, 0)
+    val edgeDC = makeEdge(4L, d, c, 0 msat, 0)
+    val edgeCE = makeEdge(5L, c, e, 0 msat, 0)
+    val edgeBE = makeEdge(6L, b, e, 0 msat, 0)
 
     val graph = DirectedGraph(edgeAB)
-      .addEdge(descAD, updateAD)
-      .addEdge(descBC, updateBC)
-      .addEdge(descDC, updateDC)
-      .addEdge(descCE, updateCE)
-      .addEdge(descBE, updateBE)
+      .addEdge(edgeAD)
+      .addEdge(edgeBC)
+      .addEdge(edgeDC)
+      .addEdge(edgeCE)
+      .addEdge(edgeBE)
 
     assert(graph.vertexSet().size === 5)
     assert(graph.edgesOf(c).size === 1)
@@ -120,15 +110,12 @@ class GraphSpec extends FunSuite {
   }
 
   test("containsEdge should return true if the graph contains that edge, false otherwise") {
-
-    val updates = Seq(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    )
-
-    val graph = DirectedGraph().addEdges(updates)
+    val graph = DirectedGraph(Seq(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     assert(graph.containsEdge(descFromNodes(1, a, b)))
     assert(!graph.containsEdge(descFromNodes(5, b, a)))
@@ -142,48 +129,42 @@ class GraphSpec extends FunSuite {
   }
 
   test("should remove a set of edges") {
-
     val graph = makeTestGraph()
 
-    val (descBE, _) = makeUpdate(6L, b, e, 0 msat, 0)
-    val (descCE, _) = makeUpdate(5L, c, e, 0 msat, 0)
-    val (descAD, _) = makeUpdate(3L, a, d, 0 msat, 0)
-    val (descDC, _) = makeUpdate(4L, d, c, 0 msat, 0)
+    val edgeBE = makeEdge(6L, b, e, 0 msat, 0)
+    val edgeCE = makeEdge(5L, c, e, 0 msat, 0)
+    val edgeAD = makeEdge(3L, a, d, 0 msat, 0)
+    val edgeDC = makeEdge(4L, d, c, 0 msat, 0)
 
     assert(graph.edgeSet().size === 6)
+    assert(graph.containsEdge(edgeBE.desc))
 
-    assert(graph.containsEdge(descBE))
-
-    val withRemovedEdge = graph.removeEdge(descBE)
+    val withRemovedEdge = graph.removeEdge(edgeBE.desc)
     assert(withRemovedEdge.edgeSet().size === 5)
 
-    val withRemovedList = graph.removeEdges(Seq(descAD, descDC))
+    val withRemovedList = graph.removeEdges(Seq(edgeAD.desc, edgeDC.desc))
     assert(withRemovedList.edgeSet().size === 4)
 
-    val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(descBE, descCE))
+    val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(edgeBE.desc, edgeCE.desc))
     assert(withoutAnyIncomingEdgeInE.containsVertex(e))
     assert(withoutAnyIncomingEdgeInE.edgesOf(e).isEmpty)
   }
 
   test("should get an edge given two vertices") {
-
     // contains an edge A --> B
-    val updates = Seq(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0)
-    )
-
-    val graph = DirectedGraph().addEdges(updates)
+    val graph = DirectedGraph(Seq(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0)
+    ))
 
     val edgesAB = graph.getEdgesBetween(a, b)
-
-    assert(edgesAB.size === 1) //there should be an edge a --> b
+    assert(edgesAB.size === 1) // there should be an edge a --> b
     assert(edgesAB.head.desc.a === a)
     assert(edgesAB.head.desc.b === b)
 
     val bIncoming = graph.getIncomingEdgesOf(b)
     assert(bIncoming.size === 1)
-    assert(bIncoming.exists(_.desc.a === a)) //there should be an edge a --> b
+    assert(bIncoming.exists(_.desc.a === a)) // there should be an edge a --> b
     assert(bIncoming.exists(_.desc.b === b))
 
     val bOutgoing = graph.edgesOf(b)
@@ -193,37 +174,33 @@ class GraphSpec extends FunSuite {
   }
 
   test("there can be multiple edges between the same vertices") {
-
     val graph = makeTestGraph()
-
     // A --> B , A --> D
     assert(graph.edgesOf(a).size == 2)
 
-    //now add a new edge a -> b but with a different channel update and a different ShortChannelId
-    val newEdgeForNewChannel = edgeFromDesc(makeUpdate(15L, a, b, 20 msat, 0))
+    // now add a new edge a -> b but with a different channel update and a different ShortChannelId
+    val newEdgeForNewChannel = makeEdge(15L, a, b, 20 msat, 0)
     val mutatedGraph = graph.addEdge(newEdgeForNewChannel)
 
     assert(mutatedGraph.edgesOf(a).size == 3)
 
-    //if the ShortChannelId is the same we replace the edge and the update, this edge have an update with a different 'feeBaseMsat'
-    val edgeForTheSameChannel = edgeFromDesc(makeUpdate(15L, a, b, 30 msat, 0))
+    // if the ShortChannelId is the same we replace the edge and the update, this edge have an update with a different 'feeBaseMsat'
+    val edgeForTheSameChannel = makeEdge(15L, a, b, 30 msat, 0)
     val mutatedGraph2 = mutatedGraph.addEdge(edgeForTheSameChannel)
 
     assert(mutatedGraph2.edgesOf(a).size == 3) // A --> B , A --> B , A --> D
     assert(mutatedGraph2.getEdgesBetween(a, b).size === 2)
-
     assert(mutatedGraph2.getEdge(edgeForTheSameChannel).get.update.feeBaseMsat === 30.msat)
   }
 
   test("remove a vertex with incoming edges and check those edges are removed too") {
     val graph = makeTestGraph()
-
     assert(graph.vertexSet().size === 5)
     assert(graph.containsVertex(e))
     assert(graph.containsEdge(descFromNodes(5, c, e)))
     assert(graph.containsEdge(descFromNodes(6, b, e)))
 
-    //E has 2 incoming edges
+    // E has 2 incoming edges
     val withoutE = graph.removeVertex(e)
 
     assert(withoutE.vertexSet().size === 4)
@@ -232,14 +209,8 @@ class GraphSpec extends FunSuite {
     assert(!withoutE.containsEdge(descFromNodes(6, b, e)))
   }
 
-  def edgeFromDesc(tuple: (ChannelDesc, ChannelUpdate)): GraphEdge = GraphEdge(tuple._1, tuple._2)
+  def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = makeEdge(shortChannelId, a, b, 0 msat, 0).desc
 
-  def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = {
-    makeUpdate(shortChannelId, a, b, 0 msat, 0)._1
-  }
-
-  def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = {
-    edgeFromDesc(makeUpdate(shortChannelId, a, b, 0 msat, 0))
-  }
+  def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
 
 }
