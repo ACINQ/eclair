@@ -488,7 +488,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
   }
 
-  test("handle feerate changes while offline (don't close on mismatch)", Tag("disable-offline-mismatch")) { f =>
+  test("handle feerate changes while offline (don't close on mismatch, update on reconnect)", Tag("disable-offline-mismatch")) { f =>
     import f._
     val sender = TestProbe()
 
@@ -509,7 +509,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectNoMsg()
     alice2bob.expectNoMsg()
 
-    // then we reconnect them
+    // then we reconnect them; Alice should send the feerate changes to Bob
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
     sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
 
