@@ -157,11 +157,6 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
-    case Event(AvailableBalanceChanged(_, _, shortChannelId, commitments), d: Data) =>
-      val channels1 = d.channels.get(shortChannelId).map(c => d.channels + (shortChannelId -> c.updateBalances(commitments))).getOrElse(d.channels)
-      val privateChannels1 = d.privateChannels.get(shortChannelId).map(c => d.privateChannels + (shortChannelId -> c.updateBalances(commitments))).getOrElse(d.privateChannels)
-      stay using d.copy(channels = channels1, privateChannels = privateChannels1)
-
     case Event('nodes, d) =>
       sender ! d.nodes.values
       stay
@@ -221,6 +216,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
 
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
+
+    case Event(e: AvailableBalanceChanged, d: Data) =>
+      stay using Validation.handleAvailableBalanceChanged(d, e)
 
     case Event(s: SendChannelQuery, d) =>
       stay using Sync.handleSendChannelQuery(d, s)
@@ -286,6 +284,7 @@ object Router {
 
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) balance_1_opt else balance_2_opt
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
     def updateBalances(commitments: Commitments): PublicChannel = if (commitments.localParams.nodeId == ann.nodeId1) {
       copy(balance_1_opt = Some(commitments.availableBalanceForSend), balance_2_opt = Some(commitments.availableBalanceForReceive))
@@ -299,6 +298,7 @@ object Router {
 
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
+    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) Some(balance_1) else Some(balance_2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
     def updateBalances(commitments: Commitments): PrivateChannel = if (commitments.localParams.nodeId == nodeId1) {
       copy(balance_1 = commitments.availableBalanceForSend, balance_2 = commitments.availableBalanceForReceive)
@@ -364,7 +364,7 @@ object Router {
                           ignoreChannels: Set[ChannelDesc] = Set.empty,
                           routeParams: Option[RouteParams] = None)
 
-  case class FinalizeRoute(hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
+  case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
   case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
     require(allowEmpty || hops.nonEmpty, "route cannot be empty")
