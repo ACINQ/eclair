@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Btc
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Btc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
@@ -380,15 +380,13 @@ object Graph {
      * @param desc   channel description
      * @param update channel info
      */
-    case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate)
+    case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi])
 
     case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
 
-      def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
+      def addEdge(d: ChannelDesc, u: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi] = None): DirectedGraph = addEdge(GraphEdge(d, u, capacity, balance_opt))
 
-      def addEdges(edges: Seq[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
-        edges.foldLeft(this)((acc, edge) => acc.addEdge(edge._1, edge._2))
-      }
+      def addEdges(edges: Seq[GraphEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
 
       /**
        * Adds an edge to the graph. If one of the two vertices is not found it will be created.
@@ -521,10 +519,8 @@ object Graph {
       // @formatter:off
       def apply(): DirectedGraph = new DirectedGraph(Map())
       def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> List.empty))
-      def apply(edge: GraphEdge): DirectedGraph = new DirectedGraph(Map()).addEdge(edge.desc, edge.update)
-      def apply(edges: Seq[GraphEdge]): DirectedGraph = {
-        DirectedGraph().addEdges(edges.map(e => (e.desc, e.update)))
-      }
+      def apply(edge: GraphEdge): DirectedGraph = new DirectedGraph(Map()).addEdge(edge)
+      def apply(edges: Seq[GraphEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
       // @formatter:on
 
       /**
@@ -546,17 +542,16 @@ object Graph {
         channels.values.foreach { channel =>
           channel.update_1_opt.foreach { u1 =>
             val desc1 = Router.getDesc(u1, channel.ann)
-            addDescToMap(desc1, u1)
+            addDescToMap(desc1, u1, channel.capacity, channel.balance_1_opt)
           }
-
           channel.update_2_opt.foreach { u2 =>
             val desc2 = Router.getDesc(u2, channel.ann)
-            addDescToMap(desc2, u2)
+            addDescToMap(desc2, u2, channel.capacity, channel.balance_2_opt)
           }
         }
 
-        def addDescToMap(desc: ChannelDesc, u: ChannelUpdate): Unit = {
-          mutableMap.put(desc.b, GraphEdge(desc, u) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
+        def addDescToMap(desc: ChannelDesc, u: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi]): Unit = {
+          mutableMap.put(desc.b, GraphEdge(desc, u, capacity, balance_opt) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
           mutableMap.get(desc.a) match {
             case None => mutableMap += desc.a -> List.empty[GraphEdge]
             case _ =>

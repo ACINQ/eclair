@@ -44,14 +44,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
   test("calculate simple route") {
-    val updates = List(
-      makeUpdate(1L, a, b, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
-      makeUpdate(2L, b, c, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
-      makeUpdate(3L, c, d, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
-      makeUpdate(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+      makeEdge(2L, b, c, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+      makeEdge(3L, c, d, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+      makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
+    ))
 
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
 
@@ -67,14 +65,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     // so our fee will always be above the base fee, and we will always check that it is below our maximum percentage
     // of the amount being paid
 
-    val updates = List(
-      makeUpdate(1L, a, b, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
-      makeUpdate(2L, b, c, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
-      makeUpdate(3L, c, d, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
-      makeUpdate(4L, d, e, 10 msat, 10, cltvDelta = CltvExpiryDelta(1))
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+      makeEdge(2L, b, c, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+      makeEdge(3L, c, d, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+      makeEdge(4L, d, e, 10 msat, 10, cltvDelta = CltvExpiryDelta(1))
+    ))
 
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 1 msat), currentBlockHeight = 400000)
 
@@ -102,16 +98,14 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     val amount = 10000 msat
     val expectedCost = 10007 msat
 
-    val updates = List(
-      makeUpdate(1L, a, b, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
-      makeUpdate(4L, a, e, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
-      makeUpdate(2L, b, c, feeBase = 1 msat, feeProportionalMillionth = 300, minHtlc = 0 msat),
-      makeUpdate(3L, c, d, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
-      makeUpdate(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
-      makeUpdate(6L, f, d, feeBase = 1 msat, feeProportionalMillionth = 100, minHtlc = 0 msat)
-    ).toMap
-
-    val graph = makeGraph(updates)
+    val graph = DirectedGraph(List(
+      makeEdge(1L, a, b, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(4L, a, e, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(2L, b, c, feeBase = 1 msat, feeProportionalMillionth = 300, minHtlc = 0 msat),
+      makeEdge(3L, c, d, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(6L, f, d, feeBase = 1 msat, feeProportionalMillionth = 100, minHtlc = 0 msat)
+    ))
 
     val Success(route) = findRoute(graph, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
 
@@ -121,8 +115,7 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     assert(totalCost === expectedCost)
 
     // now channel 5 could route the amount (10000) but not the amount + fees (10007)
-    val (desc, update) = makeUpdate(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat, maxHtlc = Some(10005 msat))
-    val graph1 = graph.addEdge(desc, update)
+    val graph1 = graph.addEdge(makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat, maxHtlc = Some(10005 msat)))
 
     val Success(route1) = findRoute(graph1, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
 
@@ -130,29 +123,25 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("calculate route considering the direct channel pays no fees") {
-    val updates = List(
-      makeUpdate(1L, a, b, 5 msat, 0), // a -> b
-      makeUpdate(2L, a, d, 15 msat, 0), // a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
-      makeUpdate(3L, b, c, 5 msat, 0), // b -> c
-      makeUpdate(4L, c, d, 5 msat, 0), // c -> d
-      makeUpdate(5L, d, e, 5 msat, 0) // d -> e
-    ).toMap
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 5 msat, 0), // a -> b
+      makeEdge(2L, a, d, 15 msat, 0), // a -> d  this goes a bit closer to the target and asks for higher fees but is a direct channel
+      makeEdge(3L, b, c, 5 msat, 0), // b -> c
+      makeEdge(4L, c, d, 5 msat, 0), // c -> d
+      makeEdge(5L, d, e, 5 msat, 0) // d -> e
+    ))
 
-    val g = makeGraph(updates)
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-
     assert(route.map(hops2Ids) === Success(2 :: 5 :: Nil))
   }
 
   test("calculate simple route (add and remove edges") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
@@ -170,14 +159,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // target
     )
 
-    val updates = List(
-      makeUpdate(1L, f, g, 0 msat, 0),
-      makeUpdate(2L, g, h, 0 msat, 0),
-      makeUpdate(3L, h, i, 0 msat, 0),
-      makeUpdate(4L, f, h, 50 msat, 0) // more expensive
-    ).toMap
-
-    val graph = makeGraph(updates)
+    val graph = DirectedGraph(List(
+      makeEdge(1L, f, g, 0 msat, 0),
+      makeEdge(2L, g, h, 0 msat, 0),
+      makeEdge(3L, h, i, 0 msat, 0),
+      makeEdge(4L, f, h, 50 msat, 0) // more expensive
+    ))
 
     val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(4 :: 3 :: Nil))
@@ -192,14 +179,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // target
     )
 
-    val updates = List(
-      makeUpdate(1L, f, g, 0 msat, 0),
-      makeUpdate(4L, f, i, 50 msat, 0), // our starting node F has a direct channel with I
-      makeUpdate(2L, g, h, 0 msat, 0),
-      makeUpdate(3L, h, i, 0 msat, 0)
-    ).toMap
-
-    val graph = makeGraph(updates)
+    val graph = DirectedGraph(List(
+      makeEdge(1L, f, g, 0 msat, 0),
+      makeEdge(4L, f, i, 50 msat, 0), // our starting node F has a direct channel with I
+      makeEdge(2L, g, h, 0 msat, 0),
+      makeEdge(3L, h, i, 0 msat, 0)
+    ))
 
     val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 2, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(4 :: Nil))
@@ -213,14 +198,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // I target
     )
 
-    val updates = List(
-      makeUpdate(1L, f, g, 1 msat, 0),
+    val graph = DirectedGraph(List(
+      makeEdge(1L, f, g, 1 msat, 0),
       // the maximum htlc allowed by this channel is only 50msat greater than what we're sending
-      makeUpdate(2L, g, h, 1 msat, 0, maxHtlc = Some(DEFAULT_AMOUNT_MSAT + 50.msat)),
-      makeUpdate(3L, h, i, 1 msat, 0)
-    ).toMap
-
-    val graph = makeGraph(updates)
+      makeEdge(2L, g, h, 1 msat, 0, maxHtlc = Some(DEFAULT_AMOUNT_MSAT + 50.msat)),
+      makeEdge(3L, h, i, 1 msat, 0)
+    ))
 
     val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) == Success(1 :: 2 :: 3 :: Nil))
@@ -234,14 +217,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // I target
     )
 
-    val updates = List(
-      makeUpdate(1L, f, g, 1 msat, 0),
+    val graph = DirectedGraph(List(
+      makeEdge(1L, f, g, 1 msat, 0),
       // this channel requires a minimum amount that is larger than what we are sending
-      makeUpdate(2L, g, h, 1 msat, 0, minHtlc = DEFAULT_AMOUNT_MSAT + 50.msat),
-      makeUpdate(3L, h, i, 1 msat, 0)
-    ).toMap
-
-    val graph = makeGraph(updates)
+      makeEdge(2L, g, h, 1 msat, 0, minHtlc = DEFAULT_AMOUNT_MSAT + 50.msat),
+      makeEdge(3L, h, i, 1 msat, 0)
+    ))
 
     val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
@@ -255,66 +236,56 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c") // I target
     )
 
-    val updates = List(
-      makeUpdate(1L, f, g, 0 msat, 0),
-      makeUpdate(2L, g, h, 5 msat, 5), // expensive  g -> h channel
-      makeUpdate(6L, g, h, 0 msat, 0), // cheap      g -> h channel
-      makeUpdate(3L, h, i, 0 msat, 0)
-    ).toMap
-
-    val graph = makeGraph(updates)
+    val graph = DirectedGraph(List(
+      makeEdge(1L, f, g, 0 msat, 0),
+      makeEdge(2L, g, h, 5 msat, 5), // expensive  g -> h channel
+      makeEdge(6L, g, h, 0 msat, 0), // cheap      g -> h channel
+      makeEdge(3L, h, i, 0 msat, 0)
+    ))
 
     val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(1 :: 6 :: 3 :: Nil))
   }
 
   test("calculate longer but cheaper route") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0),
-      makeUpdate(5L, b, e, 10 msat, 10)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0),
+      makeEdge(5L, b, e, 10 msat, 10)
+    ))
 
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
   test("no local channels") {
-    val updates = List(
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("route not found") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("route not found (source OR target node not connected)") {
-    val updates = List(
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(4L, c, d, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates).addVertex(a).addVertex(e)
+    val g = DirectedGraph(List(
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(4L, c, d, 0 msat, 0)
+    )).addVertex(a).addVertex(e)
 
     assert(findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
     assert(findRoute(g, b, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
@@ -324,63 +295,56 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     val highAmount = DEFAULT_AMOUNT_MSAT * 10
     val lowAmount = DEFAULT_AMOUNT_MSAT / 10
 
-    val updatesHi = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0, maxHtlc = Some(DEFAULT_AMOUNT_MSAT)),
-      makeUpdate(3L, c, d, 0 msat, 0)
-    ).toMap
+    val edgesHi = List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0, maxHtlc = Some(DEFAULT_AMOUNT_MSAT)),
+      makeEdge(3L, c, d, 0 msat, 0)
+    )
 
-    val updatesLo = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0, minHtlc = DEFAULT_AMOUNT_MSAT),
-      makeUpdate(3L, c, d, 0 msat, 0)
-    ).toMap
+    val edgesLo = List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0, minHtlc = DEFAULT_AMOUNT_MSAT),
+      makeEdge(3L, c, d, 0 msat, 0)
+    )
 
-    val g = makeGraph(updatesHi)
-    val g1 = makeGraph(updatesLo)
+    val g = DirectedGraph(edgesHi)
+    val g1 = DirectedGraph(edgesLo)
 
     assert(findRoute(g, a, d, highAmount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
     assert(findRoute(g1, a, d, lowAmount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
   }
 
   test("route to self") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0)
+    ))
 
     val route = findRoute(g, a, a, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Failure(CannotRouteToSelf))
   }
 
   test("route to immediate neighbor") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     val route = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(1 :: Nil))
   }
 
   test("directed graph") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    ).toMap
-
     // a->e works, e->a fails
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
@@ -401,18 +365,18 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 0, CltvExpiryDelta(1), 48 msat, 2506 msat, 146, None)
     val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, 0, 1, CltvExpiryDelta(1), 49 msat, 2507 msat, 147, None)
 
-    val updates = Map(
-      ChannelDesc(ShortChannelId(1L), a, b) -> uab,
-      ChannelDesc(ShortChannelId(1L), b, a) -> uba,
-      ChannelDesc(ShortChannelId(2L), b, c) -> ubc,
-      ChannelDesc(ShortChannelId(2L), c, b) -> ucb,
-      ChannelDesc(ShortChannelId(3L), c, d) -> ucd,
-      ChannelDesc(ShortChannelId(3L), d, c) -> udc,
-      ChannelDesc(ShortChannelId(4L), d, e) -> ude,
-      ChannelDesc(ShortChannelId(4L), e, d) -> ued
+    val edges = Seq(
+      GraphEdge(ChannelDesc(ShortChannelId(1L), a, b), uab, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(1L), b, a), uba, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(2L), b, c), ubc, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(2L), c, b), ucb, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(3L), c, d), ucd, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(3L), d, c), udc, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(4L), d, e), ude, 0 sat, None),
+      GraphEdge(ChannelDesc(ShortChannelId(4L), e, d), ued, 0 sat, None)
     )
 
-    val g = makeGraph(updates)
+    val g = DirectedGraph(edges)
 
     val hops = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).get
 
@@ -442,20 +406,18 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("blacklist routes") {
-    val updates = List(
-      makeUpdate(1L, a, b, 0 msat, 0),
-      makeUpdate(2L, b, c, 0 msat, 0),
-      makeUpdate(3L, c, d, 0 msat, 0),
-      makeUpdate(4L, d, e, 0 msat, 0)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(2L, b, c, 0 msat, 0),
+      makeEdge(3L, c, d, 0 msat, 0),
+      makeEdge(4L, d, e, 0 msat, 0)
+    ))
 
     val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
-    assert(g.containsEdge(makeUpdate(3L, c, d, 0 msat, 0)._1)) // c -> d
+    assert(g.containsEdge(ChannelDesc(ShortChannelId(3), c, d)))
     assert(g.containsVertex(c))
     assert(g.containsVertex(d))
 
@@ -465,43 +427,34 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("route to a destination that is not in the graph (with assisted routes)") {
-    val updates = List(
-      makeUpdate(1L, a, b, 10 msat, 10),
-      makeUpdate(2L, b, c, 10 msat, 10),
-      makeUpdate(3L, c, d, 10 msat, 10)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 10 msat, 10),
+      makeEdge(2L, b, c, 10 msat, 10),
+      makeEdge(3L, c, d, 10 msat, 10)
+    ))
 
     val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
 
     // now we add the missing edge to reach the destination
-    val (extraDesc, extraUpdate) = makeUpdate(4L, d, e, 5 msat, 5)
-    val extraGraphEdges = Set(GraphEdge(extraDesc, extraUpdate))
-
+    val extraGraphEdges = Set(makeEdge(4L, d, e, 5 msat, 5))
     val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
   test("verify that extra hops takes precedence over known channels") {
-    val updates = List(
-      makeUpdate(1L, a, b, 10 msat, 10),
-      makeUpdate(2L, b, c, 10 msat, 10),
-      makeUpdate(3L, c, d, 10 msat, 10),
-      makeUpdate(4L, d, e, 10 msat, 10)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 10 msat, 10),
+      makeEdge(2L, b, c, 10 msat, 10),
+      makeEdge(3L, c, d, 10 msat, 10),
+      makeEdge(4L, d, e, 10 msat, 10)
+    ))
 
     val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route1.get(1).lastUpdate.feeBaseMsat === 10.msat)
 
-    val (extraDesc, extraUpdate) = makeUpdate(2L, b, c, 5 msat, 5)
-
-    val extraGraphEdges = Set(GraphEdge(extraDesc, extraUpdate))
-
+    val extraGraphEdges = Set(makeEdge(2L, b, c, 5 msat, 5))
     val route2 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route2.get(1).lastUpdate.feeBaseMsat === 5.msat)
@@ -525,27 +478,26 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       ShortChannelId(8L) -> makeChannel(8L, i, j)
     )
 
-    val updates = List(
-      makeUpdate(1L, a, b, 10 msat, 10),
-      makeUpdate(2L, b, c, 10 msat, 10),
-      makeUpdate(2L, c, b, 10 msat, 10),
-      makeUpdate(3L, c, d, 10 msat, 10),
-      makeUpdate(4L, d, e, 10 msat, 10),
-      makeUpdate(5L, f, g, 10 msat, 10),
-      makeUpdate(6L, f, h, 10 msat, 10),
-      makeUpdate(7L, h, i, 10 msat, 10),
-      makeUpdate(8L, i, j, 10 msat, 10)
-    ).toMap
+    val edges = List(
+      makeEdge(1L, a, b, 10 msat, 10),
+      makeEdge(2L, b, c, 10 msat, 10),
+      makeEdge(2L, c, b, 10 msat, 10),
+      makeEdge(3L, c, d, 10 msat, 10),
+      makeEdge(4L, d, e, 10 msat, 10),
+      makeEdge(5L, f, g, 10 msat, 10),
+      makeEdge(6L, f, h, 10 msat, 10),
+      makeEdge(7L, h, i, 10 msat, 10),
+      makeEdge(8L, i, j, 10 msat, 10)
+    )
 
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
-      val (_, update) = updates.find { case (d, _) => d.shortChannelId == shortChannelId }.get
+      val update = edges.find(_.desc.shortChannelId == shortChannelId).get.update
       val (update_1_opt, update_2_opt) = if (Announcements.isNode1(update.channelFlags)) (Some(update), None) else (None, Some(update))
-      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt, update_2_opt)
+      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), None, update_1_opt, None, update_2_opt)
       (shortChannelId, pc)
     }
 
     val ignored = getIgnoredChannelDesc(publicChannels, ignoreNodes = Set(c, j, randomKey.publicKey))
-
     assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(2L), b, c)))
     assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(2L), c, b)))
     assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(3L), c, d)))
@@ -554,13 +506,12 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
   test("limit routes to 20 hops") {
     val nodes = (for (_ <- 0 until 22) yield randomKey.publicKey).toList
-    val updates = nodes
+    val edges = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 5 msat, 0) }
-      .toMap
+      .map { case ((na, nb), index) => makeEdge(index, na, nb, 5 msat, 0) }
 
-    val g = makeGraph(updates)
+    val g = DirectedGraph(edges)
 
     assert(findRoute(g, nodes(0), nodes(18), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(hops2Ids) === Success(0 until 18))
     assert(findRoute(g, nodes(0), nodes(19), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(hops2Ids) === Success(0 until 19))
@@ -571,15 +522,14 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   test("ignore cheaper route when it has more than 20 hops") {
     val nodes = (for (_ <- 0 until 50) yield randomKey.publicKey).toList
 
-    val updates = nodes
+    val edges = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
-      .map { case ((na, nb), index) => makeUpdate(index, na, nb, 1 msat, 0) }
-      .toMap
+      .map { case ((na, nb), index) => makeEdge(index, na, nb, 1 msat, 0) }
 
-    val updates2 = updates + makeUpdate(99, nodes(2), nodes(48), 1000 msat, 0) // expensive shorter route
+    val expensiveShortEdge = makeEdge(99, nodes(2), nodes(48), 1000 msat, 0) // expensive shorter route
 
-    val g = makeGraph(updates2)
+    val g = DirectedGraph(expensiveShortEdge :: edges)
 
     val route = findRoute(g, nodes(0), nodes(49), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(0 :: 1 :: 99 :: 48 :: Nil))
@@ -587,15 +537,14 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
   test("ignore cheaper route when it has more than the requested CLTV") {
     val f = randomKey.publicKey
-
-    val g = makeGraph(List(
-      makeUpdate(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
-      makeUpdate(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
-      makeUpdate(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
-      makeUpdate(4, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(5, e, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(6, f, d, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
-    ).toMap)
+    val g = DirectedGraph(List(
+      makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
+      makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
+      makeEdge(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
+      makeEdge(4, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(5, e, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(6, f, d, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
+    ))
 
     val route = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = CltvExpiryDelta(28)), currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(4 :: 5 :: 6 :: Nil))
@@ -603,30 +552,27 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
   test("ignore cheaper route when it grows longer than the requested size") {
     val f = randomKey.publicKey
-
-    val g = makeGraph(List(
-      makeUpdate(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(4, d, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(5, e, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(6, b, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
-    ).toMap)
+    val g = DirectedGraph(List(
+      makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(4, d, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(5, e, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(6, b, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
+    ))
 
     val route = findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3), currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(1 :: 6 :: Nil))
   }
 
   test("ignore loops") {
-    val updates = List(
-      makeUpdate(1L, a, b, 10 msat, 10),
-      makeUpdate(2L, b, c, 10 msat, 10),
-      makeUpdate(3L, c, a, 10 msat, 10),
-      makeUpdate(4L, c, d, 10 msat, 10),
-      makeUpdate(5L, d, e, 10 msat, 10)
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 10 msat, 10),
+      makeEdge(2L, b, c, 10 msat, 10),
+      makeEdge(3L, c, a, 10 msat, 10),
+      makeEdge(4L, c, d, 10 msat, 10),
+      makeEdge(5L, d, e, 10 msat, 10)
+    ))
 
     val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
@@ -634,17 +580,15 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
 
   test("ensure the route calculation terminates correctly when selecting 0-fees edges") {
     // the graph contains a possible 0-cost path that goes back on its steps ( e -> f, f -> e )
-    val updates = List(
-      makeUpdate(1L, a, b, 10 msat, 10), // a -> b
-      makeUpdate(2L, b, c, 10 msat, 10),
-      makeUpdate(4L, c, d, 10 msat, 10),
-      makeUpdate(3L, b, e, 0 msat, 0), // b -> e
-      makeUpdate(6L, e, f, 0 msat, 0), // e -> f
-      makeUpdate(6L, f, e, 0 msat, 0), // e <- f
-      makeUpdate(5L, e, d, 0 msat, 0) // e -> d
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 10 msat, 10), // a -> b
+      makeEdge(2L, b, c, 10 msat, 10),
+      makeEdge(4L, c, d, 10 msat, 10),
+      makeEdge(3L, b, e, 0 msat, 0), // b -> e
+      makeEdge(6L, e, f, 0 msat, 0), // e -> f
+      makeEdge(6L, f, e, 0 msat, 0), // e <- f
+      makeEdge(5L, e, d, 0 msat, 0) // e -> d
+    ))
 
     val route1 = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1.map(hops2Ids) === Success(1 :: 3 :: 5 :: Nil))
@@ -673,17 +617,15 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc") //f
     )
 
-    val edges = Seq(
-      makeUpdate(1L, d, a, 1 msat, 0),
-      makeUpdate(2L, d, e, 1 msat, 0),
-      makeUpdate(3L, a, e, 1 msat, 0),
-      makeUpdate(4L, e, b, 1 msat, 0),
-      makeUpdate(5L, e, f, 1 msat, 0),
-      makeUpdate(6L, b, c, 1 msat, 0),
-      makeUpdate(7L, c, f, 1 msat, 0)
-    )
-
-    val graph = DirectedGraph().addEdges(edges)
+    val graph = DirectedGraph(Seq(
+      makeEdge(1L, d, a, 1 msat, 0),
+      makeEdge(2L, d, e, 1 msat, 0),
+      makeEdge(3L, a, e, 1 msat, 0),
+      makeEdge(4L, e, b, 1 msat, 0),
+      makeEdge(5L, e, f, 1 msat, 0),
+      makeEdge(6L, b, c, 1 msat, 0),
+      makeEdge(7L, c, f, 1 msat, 0)
+    ))
 
     val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
 
@@ -704,19 +646,17 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
       PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc") //h
     )
 
-    val edges = Seq(
-      makeUpdate(10L, c, e, 2 msat, 0),
-      makeUpdate(20L, c, d, 3 msat, 0),
-      makeUpdate(30L, d, f, 4 msat, 5), // D- > F has a higher cost to distinguish it from the 2nd cheapest route
-      makeUpdate(40L, e, d, 1 msat, 0),
-      makeUpdate(50L, e, f, 2 msat, 0),
-      makeUpdate(60L, e, g, 3 msat, 0),
-      makeUpdate(70L, f, g, 2 msat, 0),
-      makeUpdate(80L, f, h, 1 msat, 0),
-      makeUpdate(90L, g, h, 2 msat, 0)
-    )
-
-    val graph = DirectedGraph().addEdges(edges)
+    val graph = DirectedGraph(Seq(
+      makeEdge(10L, c, e, 2 msat, 0),
+      makeEdge(20L, c, d, 3 msat, 0),
+      makeEdge(30L, d, f, 4 msat, 5), // D- > F has a higher cost to distinguish it from the 2nd cheapest route
+      makeEdge(40L, e, d, 1 msat, 0),
+      makeEdge(50L, e, f, 2 msat, 0),
+      makeEdge(60L, e, g, 3 msat, 0),
+      makeEdge(70L, f, g, 2 msat, 0),
+      makeEdge(80L, f, h, 1 msat, 0),
+      makeEdge(90L, g, h, 2 msat, 0)
+    ))
 
     val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 2, None, 0, noopBoundaries)
 
@@ -732,23 +672,21 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     val f = randomKey.publicKey
 
     // simple graph with only 2 possible paths from A to F
-    val edges = Seq(
-      makeUpdate(1L, a, b, 1 msat, 0),
-      makeUpdate(1L, b, a, 1 msat, 0),
-      makeUpdate(2L, b, c, 1 msat, 0),
-      makeUpdate(2L, c, b, 1 msat, 0),
-      makeUpdate(3L, c, f, 1 msat, 0),
-      makeUpdate(3L, f, c, 1 msat, 0),
-      makeUpdate(4L, c, d, 1 msat, 0),
-      makeUpdate(4L, d, c, 1 msat, 0),
-      makeUpdate(41L, d, c, 1 msat, 0), // there is more than one D -> C channel
-      makeUpdate(5L, d, e, 1 msat, 0),
-      makeUpdate(5L, e, d, 1 msat, 0),
-      makeUpdate(6L, e, f, 1 msat, 0),
-      makeUpdate(6L, f, e, 1 msat, 0)
-    )
-
-    val graph = DirectedGraph().addEdges(edges)
+    val graph = DirectedGraph(Seq(
+      makeEdge(1L, a, b, 1 msat, 0),
+      makeEdge(1L, b, a, 1 msat, 0),
+      makeEdge(2L, b, c, 1 msat, 0),
+      makeEdge(2L, c, b, 1 msat, 0),
+      makeEdge(3L, c, f, 1 msat, 0),
+      makeEdge(3L, f, c, 1 msat, 0),
+      makeEdge(4L, c, d, 1 msat, 0),
+      makeEdge(4L, d, c, 1 msat, 0),
+      makeEdge(41L, d, c, 1 msat, 0), // there is more than one D -> C channel
+      makeEdge(5L, d, e, 1 msat, 0),
+      makeEdge(5L, e, d, 1 msat, 0),
+      makeEdge(6L, e, f, 1 msat, 0),
+      makeEdge(6L, f, e, 1 msat, 0)
+    ))
 
     //we ask for 3 shortest paths but only 2 can be found
     val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 3, None, 0, noopBoundaries)
@@ -764,15 +702,15 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     // A -> B -> C -> D has total cost of 10000005
     // A -> E -> C -> D has total cost of 11080003 !!
     // A -> E -> F -> D has total cost of 10000006
-    val g = makeGraph(List(
-      makeUpdate(1L, a, b, feeBase = 1 msat, 0),
-      makeUpdate(4L, a, e, feeBase = 1 msat, 0),
-      makeUpdate(2L, b, c, feeBase = 2 msat, 0),
-      makeUpdate(3L, c, d, feeBase = 3 msat, 0),
-      makeUpdate(5L, e, f, feeBase = 3 msat, 0),
-      makeUpdate(6L, f, d, feeBase = 3 msat, 0),
-      makeUpdate(7L, e, c, feeBase = 9 msat, 0)
-    ).toMap)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, feeBase = 1 msat, 0),
+      makeEdge(4L, a, e, feeBase = 1 msat, 0),
+      makeEdge(2L, b, c, feeBase = 2 msat, 0),
+      makeEdge(3L, c, d, feeBase = 3 msat, 0),
+      makeEdge(5L, e, f, feeBase = 3 msat, 0),
+      makeEdge(6L, f, d, feeBase = 3 msat, 0),
+      makeEdge(7L, e, c, feeBase = 9 msat, 0)
+    ))
 
     (for {_ <- 0 to 10} yield findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = 400000)).map {
       case Failure(thr) => fail(thr)
@@ -791,17 +729,15 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
     // A -> B -> C -> D is 'fee optimized', lower fees route (totFees = 2, totCltv = 4000)
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
-    val updates = List(
-      makeUpdate(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(13)),
-      makeUpdate(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(12)),
-      makeUpdate(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(500)),
-      makeUpdate(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(500)),
-      makeUpdate(5L, e, f, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(6L, f, d, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
-      makeUpdate(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = Some(largeCapacity), CltvExpiryDelta(12))
-    ).toMap
-
-    val g = makeGraph(updates)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(13)),
+      makeEdge(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(12)),
+      makeEdge(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(500)),
+      makeEdge(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(500)),
+      makeEdge(5L, e, f, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(6L, f, d, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
+      makeEdge(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = Some(largeCapacity), CltvExpiryDelta(12))
+    ))
 
     val Success(routeFeeOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 0, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(hops2Nodes(routeFeeOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
@@ -826,14 +762,14 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   test("prefer going through an older channel if fees and CLTV are the same") {
     val currentBlockHeight = 554000
 
-    val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x1"), a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x4"), a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x2"), b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)), // younger channel
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight - 3000}x0x3"), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x5"), e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"${currentBlockHeight}x0x6"), f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
-    ).toMap)
+    val g = DirectedGraph(List(
+      makeEdge(ShortChannelId(s"${currentBlockHeight}x0x1").toLong, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId(s"${currentBlockHeight}x0x4").toLong, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId(s"${currentBlockHeight - 3000}x0x2").toLong, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)), // younger channel
+      makeEdge(ShortChannelId(s"${currentBlockHeight - 3000}x0x3").toLong, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId(s"${currentBlockHeight}x0x5").toLong, e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(ShortChannelId(s"${currentBlockHeight}x0x6").toLong, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
+    ))
 
     val Success(routeScoreOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
@@ -845,14 +781,14 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   }
 
   test("prefer a route with a smaller total CLTV if fees and score are the same") {
-    val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
-      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
-      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(10)), // smaller CLTV
-      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
-      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
-      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
-    ).toMap)
+    val g = DirectedGraph(List(
+      makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeEdge(4, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(10)), // smaller CLTV
+      makeEdge(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeEdge(5, e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)),
+      makeEdge(6, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
+    ))
 
     val Success(routeScoreOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
@@ -866,14 +802,14 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
   test("avoid a route that breaks off the max CLTV") {
     // A -> B -> C -> D is cheaper but has a total CLTV > 2016!
     // A -> E -> F -> D is more expensive but has a total CLTV < 2016
-    val g = makeGraph(List(
-      makeUpdateShort(ShortChannelId(s"0x0x1"), a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"0x0x4"), a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"0x0x2"), b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(1000)),
-      makeUpdateShort(ShortChannelId(s"0x0x3"), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(900)),
-      makeUpdateShort(ShortChannelId(s"0x0x5"), e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeUpdateShort(ShortChannelId(s"0x0x6"), f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
-    ).toMap)
+    val g = DirectedGraph(List(
+      makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(4, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(1000)),
+      makeEdge(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(900)),
+      makeEdge(5, e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(6, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
+    ))
 
     val Success(routeScoreOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
@@ -892,21 +828,27 @@ class RouteCalculationSpec extends FunSuite with ParallelTestExecution {
         ann = makeChannel(ShortChannelId("565643x1216x0").toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = 0 sat,
+        balance_1_opt = None,
         update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 0.toByte, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, Some(4294967295L msat))),
+        balance_2_opt = None,
         update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565643x1216x0"), 0, 1.toByte, 1.toByte, CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, Some(15000000000L msat)))
       ),
       ShortChannelId("542280x2156x0") -> PublicChannel(
         ann = makeChannel(ShortChannelId("542280x2156x0").toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = 0 sat,
+        balance_1_opt = None,
         update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 0.toByte, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, Some(16777000000L msat))),
+        balance_2_opt = None,
         update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("542280x2156x0"), 0, 1.toByte, 1.toByte, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, Some(16777000000L msat)))
       ),
       ShortChannelId("565779x2711x0") -> PublicChannel(
         ann = makeChannel(ShortChannelId("565779x2711x0").toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
         fundingTxid = ByteVector32.Zeroes,
         capacity = 0 sat,
+        balance_1_opt = None,
         update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 0.toByte, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat))),
+        balance_2_opt = None,
         update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId("565779x2711x0"), 0, 1.toByte, 3.toByte, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, Some(230000000L msat)))
       )
     )
@@ -932,22 +874,33 @@ object RouteCalculationSpec {
   val noopBoundaries = { _: RichWeight => true }
 
   val DEFAULT_AMOUNT_MSAT = 10000000 msat
+  val DEFAULT_CAPACITY = 100000 sat
 
   val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBase = 21000 msat, maxFeePct = 0.03, routeMaxCltv = CltvExpiryDelta(2016), routeMaxLength = 6, ratios = None)
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 
-  def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey) = {
+  def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey): ChannelAnnouncement = {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeIdA, nodeIdB)) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
     ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, ByteVector.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
-  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0)): (ChannelDesc, ChannelUpdate) = {
-    makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
+  def makeEdge(shortChannelId: Long,
+               nodeId1: PublicKey,
+               nodeId2: PublicKey,
+               feeBase: MilliSatoshi,
+               feeProportionalMillionth: Int,
+               minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT,
+               maxHtlc: Option[MilliSatoshi] = None,
+               cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0),
+               capacity: Satoshi = DEFAULT_CAPACITY,
+               balance_opt: Option[MilliSatoshi] = None): GraphEdge = {
+    val update = makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
+    GraphEdge(ChannelDesc(ShortChannelId(shortChannelId), nodeId1, nodeId2), update, capacity, balance_opt)
   }
 
-  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: Long = 0): (ChannelDesc, ChannelUpdate) =
-    ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(
+  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: Long = 0): ChannelUpdate =
+    ChannelUpdate(
       signature = DUMMY_SIG,
       chainHash = Block.RegtestGenesisBlock.hash,
       shortChannelId = shortChannelId,
@@ -964,13 +917,9 @@ object RouteCalculationSpec {
       htlcMaximumMsat = maxHtlc
     )
 
-  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates.toSeq)
-
   def hops2Ids(route: Seq[ChannelHop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 
-  def hops2Edges(route: Seq[ChannelHop]) = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate))
-
-  def hops2ShortChannelIds(route: Seq[ChannelHop]) = route.map(hop => hop.lastUpdate.shortChannelId.toString).toList
+  def hops2Edges(route: Seq[ChannelHop]) = route.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate, 0 sat, None))
 
   def hops2Nodes(route: Seq[ChannelHop]) = route.map(hop => (hop.nodeId, hop.nextNodeId))
 

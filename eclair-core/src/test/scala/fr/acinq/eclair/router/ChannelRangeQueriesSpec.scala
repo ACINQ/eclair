@@ -91,22 +91,22 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val a = randomKey.publicKey
     val b = randomKey.publicKey
     val ab = RouteCalculationSpec.makeChannel(123466L, a, b)
-    val (ab1, uab1) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, 0 msat, 0, timestamp = now)
-    val (ab2, uab2) = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, 0 msat, 0, timestamp = now)
+    val uab1 = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, 0 msat, 0, timestamp = now)
+    val uab2 = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, 0 msat, 0, timestamp = now)
 
     val c = randomKey.publicKey
     val d = randomKey.publicKey
     val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
-    val (cd1, ucd1) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, 0 msat, 0, timestamp = now)
-    val (_, ucd2) = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, 0 msat, 0, timestamp = now)
+    val ucd1 = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, 0 msat, 0, timestamp = now)
+    val ucd2 = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, 0 msat, 0, timestamp = now)
 
     val e = randomKey.publicKey
     val f = randomKey.publicKey
     val ef = RouteCalculationSpec.makeChannel(167514L, e, f)
 
     val channels = SortedMap(
-      ab.shortChannelId -> PublicChannel(ab, ByteVector32.Zeroes, 0 sat, Some(uab1), Some(uab2)),
-      cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, Some(ucd1), None)
+      ab.shortChannelId -> PublicChannel(ab, ByteVector32.Zeroes, 0 sat, Some(1000 msat), Some(uab1), Some(400 msat), Some(uab2)),
+      cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, None, Some(ucd1), None, None)
     )
 
     import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
