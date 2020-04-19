@@ -83,7 +83,8 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
-                      enableTrampolinePayment: Boolean) {
+                      enableTrampolinePayment: Boolean,
+                      instanceId: String) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 
@@ -132,7 +133,7 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, instanceId: String, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -292,7 +293,8 @@ object NodeParams {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
-      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
+      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
+      instanceId = instanceId
     )
   }
 }

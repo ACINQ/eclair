@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
@@ -92,8 +93,11 @@ class Setup(datadir: File,
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val instanceId = ManagementFactory.getRuntimeMXBean().getName()
 
-  val database = initDatabase(config.getConfig("db"))
+  logger.info(s"instanceid=$instanceId")
+
+  val database = initDatabase(config.getConfig("db"), instanceId)
 
   /**
    * This counter holds the current blockchain height.
@@ -120,7 +124,7 @@ class Setup(datadir: File,
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), database, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -352,14 +356,14 @@ class Setup(datadir: File,
     }
   }
 
-  private def initDatabase(dbConfig: Config): Databases = {
+  private def initDatabase(dbConfig: Config, instanceId: String): Databases = {
     db match {
       case Some(d) => d
       case None =>
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqliteJDBC(chaindir)
           case "psql" =>
-            val psql = Databases.setupPsqlDatabases(dbConfig, datadir, { ex =>
+            val psql = Databases.setupPsqlDatabases(dbConfig, instanceId, datadir, { ex =>
               logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
               sys.exit(-2)
             })

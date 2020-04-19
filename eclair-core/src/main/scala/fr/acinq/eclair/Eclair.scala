@@ -324,7 +324,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       chainHash = appKit.nodeParams.chainHash,
       blockHeight = appKit.nodeParams.currentBlockHeight.toInt,
       publicAddresses = appKit.nodeParams.publicAddresses,
-      instanceId = ManagementFactory.getRuntimeMXBean().getName())
+      instanceId = appKit.nodeParams.instanceId)
   )
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =

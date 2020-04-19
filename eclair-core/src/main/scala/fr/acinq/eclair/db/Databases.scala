@@ -84,12 +84,12 @@ object Databases extends Logging {
     }
   }
 
-  def postgresJDBC(database: String = "eclair", host: String = "localhost", port: Int = 5432,
-                   username: Option[String] = None, password: Option[String] = None,
-                   poolProperties: Map[String, Long] = Map(),
-                   instanceId: String = ManagementFactory.getRuntimeMXBean().getName(),
-                   databaseLeaseInterval: FiniteDuration = 5.minutes,
-                   lockTimeout: FiniteDuration = 5.seconds,
+  def postgresJDBC(database: String, host: String, port: Int,
+                   username: Option[String], password: Option[String],
+                   poolProperties: Map[String, Long],
+                   instanceId: String,
+                   databaseLeaseInterval: FiniteDuration,
+                   lockTimeout: FiniteDuration,
                    lockExceptionHandler: LockExceptionHandler = { _ => () },
                    lockType: LockType = LockType.NONE, datadir: File = new File(File.separator + "tmp")): Databases = {
     val url = s"jdbc:postgresql://${host}:${port}/${database}"
@@ -159,7 +159,7 @@ object Databases extends Logging {
     override def obtainExclusiveLock(): Unit = ()
   }
 
-  def setupPsqlDatabases(dbConfig: Config, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
+  def setupPsqlDatabases(dbConfig: Config, instanceId: String, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
     val database = dbConfig.getString("psql.database")
     val host = dbConfig.getString("psql.host")
     val port = dbConfig.getInt("psql.port")
@@ -188,6 +188,7 @@ object Databases extends Logging {
       database = database, host = host, port = port,
       username = username, password = password,
       poolProperties = properties,
+      instanceId = instanceId,
       databaseLeaseInterval = leaseInterval, lockTimeout = lockTimeout,
       lockExceptionHandler = lockExceptionHandler, lockType = lockType, datadir = datadir
     )
