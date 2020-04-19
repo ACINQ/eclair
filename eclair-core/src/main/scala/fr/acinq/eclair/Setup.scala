@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
@@ -41,6 +42,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.psql.PsqlUtils.LockType
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment.Auditor
@@ -91,11 +93,11 @@ class Setup(datadir: File,
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val instanceId = ManagementFactory.getRuntimeMXBean().getName()
 
-  val database = db match {
-    case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
-  }
+  logger.info(s"instanceid=$instanceId")
+
+  val database = initDatabase(config.getConfig("db"), instanceId)
 
   /**
    * This counter holds the current blockchain height.
@@ -118,10 +120,11 @@ class Setup(datadir: File,
 
   val feeEstimator = new FeeEstimator {
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
+
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), database, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -350,6 +353,38 @@ class Setup(datadir: File,
       Some(torAddress)
     } else {
       None
+    }
+  }
+
+  private def initDatabase(dbConfig: Config, instanceId: String): Databases = {
+    db match {
+      case Some(d) => d
+      case None =>
+        dbConfig.getString("driver") match {
+          case "sqlite" => Databases.sqliteJDBC(chaindir)
+          case "psql" =>
+            val psql = Databases.setupPsqlDatabases(dbConfig, instanceId, datadir, { ex =>
+              logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
+              sys.exit(-2)
+            })
+            if (LockType(dbConfig.getString("psql.lock-type")) == LockType.OWNERSHIP_LEASE) {
+              val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
+              val dbLockLeaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
+              if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)
+                throw new RuntimeException("Invalid configuration: `db.psql.ownership-lease.lease-interval` must be greater than `db.psql.ownership-lease.lease-renew-interval`")
+              system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
+                try {
+                  psql.obtainExclusiveLock()
+                } catch {
+                  case e: Throwable =>
+                    logger.error("fatal error: Cannot obtain ownership on the database.\n", e)
+                    sys.exit(-1)
+                }
+              }
+            }
+            psql
+          case driver => throw new RuntimeException(s"Unknown database driver `$driver`")
+        }
     }
   }
 }
