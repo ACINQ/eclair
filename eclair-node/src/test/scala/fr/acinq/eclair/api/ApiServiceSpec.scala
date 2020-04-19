@@ -175,7 +175,8 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMock
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       blockHeight = 9999,
-      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil
+      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
+      instanceId = "instance"
     ))
 
     Post("/getinfo") ~>
