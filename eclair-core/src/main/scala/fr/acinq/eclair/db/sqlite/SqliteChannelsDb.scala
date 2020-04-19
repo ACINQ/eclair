@@ -124,6 +124,18 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
+  def listHtlcInfos(channelId: ByteVector32): Seq[(ByteVector32, CltvExpiry, Long)] = {
+    using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry, commitment_number FROM htlc_infos WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId.toArray)
+      val rs = statement.executeQuery
+      var q: Queue[(ByteVector32, CltvExpiry, Long)] = Queue()
+      while (rs.next()) {
+        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")), rs.getLong("commitment_number"))
+      }
+      q
+    }
+  }
+
   // used by mobile apps
   override def close(): Unit = sqlite.close()
 }
