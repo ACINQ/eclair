@@ -60,14 +60,14 @@ import scala.concurrent._
 import scala.concurrent.duration._
 
 /**
-  * Setup eclair from a data directory.
-  *
-  * Created by PM on 25/01/2016.
-  *
-  * @param datadir          directory where eclair-core will write/read its data.
-  * @param overrideDefaults use this parameter to programmatically override the node configuration .
-  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
-  */
+ * Setup eclair from a data directory.
+ *
+ * Created by PM on 25/01/2016.
+ *
+ * @param datadir          directory where eclair-core will write/read its data.
+ * @param overrideDefaults use this parameter to programmatically override the node configuration .
+ * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
@@ -96,22 +96,22 @@ class Setup(datadir: File,
   val database = initDatabase(config.getConfig("db"))
 
   /**
-    * This counter holds the current blockchain height.
-    * It is mainly used to calculate htlc expiries.
-    * The value is read by all actors, hence it needs to be thread-safe.
-    */
+   * This counter holds the current blockchain height.
+   * It is mainly used to calculate htlc expiries.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
   val blockCount = new AtomicLong(0)
 
   /**
-    * This holds the current feerates, in satoshi-per-kilobytes.
-    * The value is read by all actors, hence it needs to be thread-safe.
-    */
+   * This holds the current feerates, in satoshi-per-kilobytes.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
   val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
 
   /**
-    * This holds the current feerates, in satoshi-per-kw.
-    * The value is read by all actors, hence it needs to be thread-safe.
-    */
+   * This holds the current feerates, in satoshi-per-kw.
+   * The value is read by all actors, hence it needs to be thread-safe.
+   */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
@@ -370,7 +370,7 @@ class Setup(datadir: File,
                 throw new RuntimeException("Invalid configuration: `db.psql.ownership-lease.lease-interval` must be greater than `db.psql.ownership-lease.lease-renew-interval`")
               system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
                 try {
-                  database.obtainExclusiveLock()
+                  psql.obtainExclusiveLock()
                 } catch {
                   case e: Throwable =>
                     logger.error("fatal error: Cannot obtain ownership on the database.\n", e)
@@ -379,7 +379,7 @@ class Setup(datadir: File,
               }
             }
             psql
-          case _ => throw new RuntimeException(s"Unknown database driver `${dbConfig.getString("driver")}`")
+          case driver => throw new RuntimeException(s"Unknown database driver `$driver`")
         }
     }
   }
@@ -387,11 +387,8 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
-
 case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
-
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
-
 // @formatter:on
 
 case class Kit(nodeParams: NodeParams,

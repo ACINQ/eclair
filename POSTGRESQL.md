@@ -49,7 +49,7 @@ Use `psql.lock-type` parameter to set the locking schemes.
 `none` | No locking at all. Useful for tests. DO NOT USE ON MAINNET! 
 
 ```
-eclair.db.psql.lock-type = "optimistic" // Default: "ownership-lease"
+eclair.db.psql.lock-type = "none" // Default: "ownership-lease"
 ```
 
 #### Ownership Lease Settings

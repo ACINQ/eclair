@@ -120,7 +120,7 @@ object PsqlUtils extends JdbcUtils with Logging {
   }
 
   /**
-    * Several logical databases (channels, network, peers) may be stored in the same physical sqlite database.
+    * Several logical databases (channels, network, peers) may be stored in the same physical psql database.
     * We keep track of their respective version using a dedicated table. The version entry will be created if
     * there is none but will never be updated here (use setVersion to do that).
     */
@@ -148,7 +148,7 @@ object PsqlUtils extends JdbcUtils with Logging {
       statement =>
         statement.setLong(1, dataVersion.get())
         if (statement.executeUpdate() != 1) {
-          val ex = new LockException(s"Unexpected data version `$dataVersion.get`")
+          val ex = new LockException(s"Unexpected data version `${dataVersion.get}`")
           lockExceptionHandler(ex)
           throw ex
         }

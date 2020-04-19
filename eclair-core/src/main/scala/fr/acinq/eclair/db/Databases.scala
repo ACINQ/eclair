@@ -70,6 +70,7 @@ object Databases extends Logging {
       sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
       sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
       sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
+      SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
       logger.info("successful lock on eclair.sqlite")
       sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
