@@ -488,7 +488,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
   }
 
-  test("handle feerate changes while offline (don't close on mismatch, update on reconnect)", Tag("disable-offline-mismatch")) { f =>
+  test("handle feerate changes while offline (don't close on mismatch)", Tag("disable-offline-mismatch")) { f =>
     import f._
     val sender = TestProbe()
 
@@ -504,8 +504,28 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
-    alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(highFeerate)
     sender.send(alice, CurrentFeerates(highFeerate))
+    alice2blockchain.expectNoMsg()
+    alice2bob.expectNoMsg()
+  }
+
+  test("handle feerate changes while offline (update at reconnection)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+    val networkFeeratePerKw = 2 * localFeeratePerKw
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
+
+    // Alice ignores feerate changes while offline
+    alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(networkFeerate)
+    sender.send(alice, CurrentFeerates(networkFeerate))
     alice2blockchain.expectNoMsg()
     alice2bob.expectNoMsg()
 
@@ -520,7 +540,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
 
     alice2bob.expectMsgType[FundingLocked] // since the channel's commitment hasn't been updated, we re-send funding_locked
-    alice2bob.expectMsg(UpdateFee(channelId(alice), tooHighFeeratePerKw))
+    alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
   }
 
   test("handle feerate changes while offline (fundee scenario)") { f =>
