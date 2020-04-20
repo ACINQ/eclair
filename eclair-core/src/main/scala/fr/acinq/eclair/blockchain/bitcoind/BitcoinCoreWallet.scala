@@ -28,8 +28,8 @@ import scodec.bits.ByteVector
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
-  * Created by PM on 06/07/2017.
-  */
+ * Created by PM on 06/07/2017.
+ */
 class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with Logging {
 
   import BitcoinCoreWallet._
@@ -95,7 +95,10 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(unsignedFundingTx)
       // there will probably be a change output, so we need to find which output is ours
-      outputIndex = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, amount_opt = None)
+      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript, amount_opt = None) match {
+        case Right(outputIndex) => Future.successful(outputIndex)
+        case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
+      }
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=$fee")
     } yield MakeFundingTxResponse(fundingTx, outputIndex, fee)
   }
@@ -103,34 +106,34 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
     .map(_ => true) // if bitcoind says OK, then we consider the tx successfully published
     .recoverWith { case JsonRPCError(e) =>
-    logger.warn(s"txid=${tx.txid} error=$e")
-    bitcoinClient.getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
-  }
+      logger.warn(s"txid=${tx.txid} error=$e")
+      bitcoinClient.getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
+    }
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
 
   override def doubleSpent(tx: Transaction): Future[Boolean] =
-  for {
-    exists <- bitcoinClient.getTransaction(tx.txid)
-      .map(_ => true) // we have found the transaction
-      .recover {
-      case JsonRPCError(Error(_, message)) if message.contains("index") =>
-        sys.error("Fatal error: bitcoind is indexing!!")
-        System.exit(1) // bitcoind is indexing, that's a fatal error!!
-        false // won't be reached
-      case _ => false
-    }
-    doublespent <- if (exists) {
-      // if the tx is in the blockchain, it can't have been double-spent
-      Future.successful(false)
-    } else {
-      // if the tx wasn't in the blockchain and one of it's input has been spent, it is double-spent
-      // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
-      // the overriding transaction has been confirmed at least once
-      Future.sequence(tx.txIn.map(txIn => bitcoinClient.isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
-    }
-  } yield doublespent
+    for {
+      exists <- bitcoinClient.getTransaction(tx.txid)
+        .map(_ => true) // we have found the transaction
+        .recover {
+          case JsonRPCError(Error(_, message)) if message.contains("index") =>
+            sys.error("Fatal error: bitcoind is indexing!!")
+            System.exit(1) // bitcoind is indexing, that's a fatal error!!
+            false // won't be reached
+          case _ => false
+        }
+      doublespent <- if (exists) {
+        // if the tx is in the blockchain, it can't have been double-spent
+        Future.successful(false)
+      } else {
+        // if the tx wasn't in the blockchain and one of it's input has been spent, it is double-spent
+        // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
+        // the overriding transaction has been confirmed at least once
+        Future.sequence(tx.txIn.map(txIn => bitcoinClient.isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
+      }
+    } yield doublespent
 
 }
 
