@@ -488,11 +488,15 @@ object Helpers {
       val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount).sum
       if (remoteClosingFee > lastCommitFeeSatoshi) {
         log.error(s"remote proposed a commit fee higher than the last commitment fee: remoteClosingFeeSatoshi=${remoteClosingFee.toLong} lastCommitFeeSatoshi=$lastCommitFeeSatoshi")
-        throw InvalidCloseFee(commitments.channelId, remoteClosingFee)
+        Failure(InvalidCloseFee(commitments.channelId, remoteClosingFee))
+      } else {
+        val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
+        val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+        Transactions.checkSpendable(signedClosingTx) match {
+          case Success(_) => Success(signedClosingTx.tx)
+          case _ => Failure(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+        }
       }
-      val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
-      val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
-      Transactions.checkSpendable(signedClosingTx).map(_ => signedClosingTx.tx).recover { case _ => throw InvalidCloseSignature(commitments.channelId, signedClosingTx.tx) }
     }
 
     /** Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment. */
@@ -675,7 +679,6 @@ object Helpers {
     def claimRevokedRemoteCommitTxOutputs(keyManager: KeyManager, commitments: Commitments, tx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
-      //val fundingPubKey = commitments.localParams.fundingPubKey(keyManager)
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
       // this tx has been published by remote, so we need to invert local/remote params
