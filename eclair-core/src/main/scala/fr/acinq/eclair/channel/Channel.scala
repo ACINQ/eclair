@@ -1545,8 +1545,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 ()
             }
           }
+
           // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
           setTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds, repeat = false)
+
+          // We usually handle feerate updates once per block (~10 minutes), but when our remote is a mobile wallet that
+          // only briefly connects and then disconnects, we may never have the opportunity to send our `update_fee`, so
+          // we send it (if needed) when reconnected.
+          if (d.commitments.localParams.isFunder) {
+            val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
+            val networkFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+            if (Helpers.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.updateFeeMinDiffRatio)) {
+              self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
+            }
+          }
 
           goto(NORMAL) using d.copy(commitments = commitments1) sending sendQueue
       }
