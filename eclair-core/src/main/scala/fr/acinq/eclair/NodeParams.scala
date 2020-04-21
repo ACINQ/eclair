@@ -186,7 +186,7 @@ object NodeParams {
 
     val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = ByteVector.fromValidHex(e.getString("features"))
+      val f = Features.Resolution.fromConfiguration(e)
       p -> f
     }.toMap
 
