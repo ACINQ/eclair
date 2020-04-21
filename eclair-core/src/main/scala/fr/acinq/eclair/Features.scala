@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import com.typesafe.config.Config
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -26,8 +28,8 @@ sealed trait FeatureSupport
 
 // @formatter:off
 object FeatureSupport {
-  case object Mandatory extends FeatureSupport
-  case object Optional extends FeatureSupport
+  case object Mandatory extends FeatureSupport { override def toString: String = "mandatory" }
+  case object Optional extends FeatureSupport { override def toString: String = "optional" }
 }
 // @formatter:on
 
@@ -37,6 +39,11 @@ sealed trait Feature {
   def mandatory: Int
 
   def optional: Int = mandatory + 1
+
+  def supportBit(support : FeatureSupport): Int = support match {
+    case FeatureSupport.Mandatory => mandatory
+    case FeatureSupport.Optional => optional
+  }
 
   override def toString = rfcName
 }
@@ -80,7 +87,7 @@ object Features {
   }
 
   case object Wumbo extends Feature {
-    val rfcName = "large_channel_support"
+    val rfcName = "option_support_large_channel"
     val mandatory = 18
   }
 
@@ -154,4 +161,67 @@ object Features {
    */
   def areSupported(features: ByteVector): Boolean = areSupported(features.bits)
 
+  object Resolution {
+    private val knownFeatures: Seq[Feature] = Seq(
+      OptionDataLossProtect,
+      InitialRoutingSync,
+      ChannelRangeQueries,
+      VariableLengthOnion,
+      ChannelRangeQueriesExtended,
+      PaymentSecret,
+      BasicMultiPartPayment,
+      Wumbo,
+      TrampolinePayment
+    )
+
+    def fromConfiguration(config: Config): ByteVector = fromFeatureBits(fromConfig(config))
+
+    /** reads the configuration extracting all known feature bits */
+    def fromConfig(conf: Config): Seq[Int] = {
+      knownFeatures.flatMap { feature =>
+        getFeature(conf, feature.rfcName) match {
+          case Some(support) => Some(feature.supportBit(support))
+          case _ => None
+        }
+      }
+    }
+
+    /** tries to extract the given feature name from the config, if successful returns its feature support */
+    def getFeature(config: Config, name: String): Option[FeatureSupport] = {
+      if(!config.hasPath(s"features.$name")) None
+      else {
+        config.getString(s"features.$name") match {
+          case "mandatory" => Some(Mandatory)
+          case "optional" => Some(Optional)
+          case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
+        }
+      }
+    }
+
+    /** converts an array of bit-indexes into a minimally encoded byte vector */
+    def fromFeatureBits(indexes: Seq[Int]): ByteVector = {
+      if (indexes.isEmpty) return ByteVector.empty
+      var buf = BitVector.fill(indexes.max + 1)(false).bytes.toBitVector
+      indexes.foreach { i =>
+        buf = buf.set(i)
+      }
+      buf.reverse.bytes
+    }
+
+    /** extracts the known features and their support from a byte vector */
+    def fromBytes(features: ByteVector): Seq[(Feature, FeatureSupport)] = {
+      knownFeatures.flatMap { feature =>
+        if (hasFeature(features, feature, Some(Mandatory))) Some((feature, Mandatory))
+        else if (hasFeature(features, feature, Some(Optional))) Some((feature, Optional))
+        else None
+      }
+    }
+
+    /** converts a byte vector of features into a list of human readable features */
+    def toHumanReadable(features: ByteVector): Seq[HumanReadableFeature] = {
+      fromBytes(features).map { case (feature, support) =>
+        HumanReadableFeature(feature.rfcName, support.toString)
+      }
+    }
+  }
 }

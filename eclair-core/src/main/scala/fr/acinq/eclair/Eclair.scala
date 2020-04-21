@@ -42,7 +42,9 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+case class HumanReadableFeature(name: String, support: String)
+
+case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Seq[HumanReadableFeature], chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -317,7 +319,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     GetInfoResponse(
       version = Kit.getVersionLong,
       color = appKit.nodeParams.color.toString,
-      features = appKit.nodeParams.features.toHex,
+      features = Features.Resolution.toHumanReadable(appKit.nodeParams.features),
       nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,
