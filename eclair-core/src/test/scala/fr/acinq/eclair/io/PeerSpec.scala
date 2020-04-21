@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, ServerSocket}
+import java.net.{InetAddress, InetSocketAddress, ServerSocket}
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
@@ -135,6 +135,31 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
+  }
+
+  test("handle new connection in state CONNECTED") { f =>
+    import f._
+
+    connect(remoteNodeId, switchboard, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    // this is just to extract inits
+    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
+
+    val peerConnection1 = peerConnection
+    val peerConnection2 = TestProbe()
+    val peerConnection3 = TestProbe()
+
+    val deathWatch = TestProbe()
+    deathWatch.watch(peerConnection1.ref)
+    deathWatch.watch(peerConnection2.ref)
+    deathWatch.watch(peerConnection3.ref)
+
+    peerConnection2.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
+    // peer should kill previous connection
+    deathWatch.expectTerminated(peerConnection1.ref)
+
+    peerConnection3.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
+    // peer should kill previous connection
+    deathWatch.expectTerminated(peerConnection2.ref)
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
