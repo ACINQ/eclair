@@ -278,32 +278,33 @@ object Router {
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
-  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, balance_1_opt: Option[MilliSatoshi], update_1_opt: Option[ChannelUpdate], balance_2_opt: Option[MilliSatoshi], update_2_opt: Option[ChannelUpdate]) {
+  case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) {
     update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
     update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
 
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) balance_1_opt else balance_2_opt
+    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
     def updateBalances(commitments: Commitments): PublicChannel = if (commitments.localParams.nodeId == ann.nodeId1) {
-      copy(balance_1_opt = Some(commitments.availableBalanceForSend), balance_2_opt = Some(commitments.availableBalanceForReceive))
+      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
     } else {
-      copy(balance_1_opt = Some(commitments.availableBalanceForReceive), balance_2_opt = Some(commitments.availableBalanceForSend))
+      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
     }
   }
-  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, balance_1: MilliSatoshi, update_1_opt: Option[ChannelUpdate], balance_2: MilliSatoshi, update_2_opt: Option[ChannelUpdate]) {
+  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
-    val capacity: Satoshi = (balance_1 + balance_2).truncateToSatoshi
+    val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) Some(balance_1) else Some(balance_2)
+    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) Some(meta.balance1) else Some(meta.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
     def updateBalances(commitments: Commitments): PrivateChannel = if (commitments.localParams.nodeId == nodeId1) {
-      copy(balance_1 = commitments.availableBalanceForSend, balance_2 = commitments.availableBalanceForReceive)
+      copy(meta = ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive))
     } else {
-      copy(balance_1 = commitments.availableBalanceForReceive, balance_2 = commitments.availableBalanceForSend)
+      copy(meta = ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend))
     }
   }
   // @formatter:on

@@ -519,7 +519,7 @@ object Graph {
       // @formatter:off
       def apply(): DirectedGraph = new DirectedGraph(Map())
       def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> List.empty))
-      def apply(edge: GraphEdge): DirectedGraph = new DirectedGraph(Map()).addEdge(edge)
+      def apply(edge: GraphEdge): DirectedGraph = DirectedGraph().addEdge(edge)
       def apply(edges: Seq[GraphEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
       // @formatter:on
 
@@ -542,11 +542,11 @@ object Graph {
         channels.values.foreach { channel =>
           channel.update_1_opt.foreach { u1 =>
             val desc1 = Router.getDesc(u1, channel.ann)
-            addDescToMap(desc1, u1, channel.capacity, channel.balance_1_opt)
+            addDescToMap(desc1, u1, channel.capacity, channel.meta_opt.map(_.balance1))
           }
           channel.update_2_opt.foreach { u2 =>
             val desc2 = Router.getDesc(u2, channel.ann)
-            addDescToMap(desc2, u2, channel.capacity, channel.balance_2_opt)
+            addDescToMap(desc2, u2, channel.capacity, channel.meta_opt.map(_.balance2))
           }
         }
 

@@ -228,7 +228,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     // bump random channel_updates
     def touchUpdate(shortChannelId: Int, side: Boolean) = {
-      val PublicChannel(c, _, _, _, Some(u1), _, Some(u2)) = fakeRoutingInfo.values.toList(shortChannelId)._1
+      val PublicChannel(c, _, _, Some(u1), Some(u2), _) = fakeRoutingInfo.values.toList(shortChannelId)._1
       makeNewerChannelUpdate(pub2priv)(c, if (side) u1 else u2)
     }
 
@@ -325,7 +325,7 @@ object RoutingSyncSpec {
     val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "a", Color(0, 0, 0), List(), hex"0200")
     val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "b", Color(0, 0, 0), List(), hex"00")
-    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), None, Some(channelUpdate_12), None, Some(channelUpdate_21))
+    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21), None)
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 

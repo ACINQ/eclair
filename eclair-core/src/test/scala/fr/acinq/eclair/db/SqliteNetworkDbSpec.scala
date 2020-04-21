@@ -110,7 +110,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
     val txid = ByteVector32.fromValidHex("0001" * 16)
     db.addChannel(c, txid, Satoshi(42))
-    assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None, None)))
+    assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
   }
 
   def simpleTest(sqlite: Connection) = {
@@ -145,13 +145,13 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None, None),
-      channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
+      channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
@@ -162,11 +162,11 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannel(channel_update_2)
     db.updateChannel(channel_update_3)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, Some(channel_update_1), None, Some(channel_update_2)),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, Some(channel_update_3), None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None),
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, Some(channel_update_3), None, None)))
     db.removeChannel(channel_3.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, Some(channel_update_1), None, Some(channel_update_2))))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None)))
   }
 
   test("add/remove/list channels and channel_updates") {

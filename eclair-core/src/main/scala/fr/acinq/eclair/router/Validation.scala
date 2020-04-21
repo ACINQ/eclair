@@ -121,7 +121,7 @@ object Validation {
                     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features)
                     ctx.self ! nodeAnn
                   }
-                  Some(PublicChannel(c, tx.txid, capacity, None, None, None, None))
+                  Some(PublicChannel(c, tx.txid, capacity, None, None, None))
                 }
               case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
                 if (fundingTxStatus.spendingTxConfirmed) {
@@ -433,7 +433,7 @@ object Validation {
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
             log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
-            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, 0 msat, None, 0 msat, None).updateBalances(lcu.commitments)
+            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
             val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
             handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), Left(lcu))
         }

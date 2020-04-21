@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
-import fr.acinq.eclair.router.Router.{ChannelDesc, PrivateChannel}
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelMeta, PrivateChannel}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
@@ -109,8 +109,8 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       assert(Router.getDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
       assert(Router.getDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
       assert(Router.getDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(Router.getDesc(update_ag, PrivateChannel(a, g, 1000 msat, None, 2000 msat, None)) === ChannelDesc(channelId_ag, a, g))
-      assert(Router.getDesc(update_ag, PrivateChannel(g, a, 2000 msat, None, 1000 msat, None)) === ChannelDesc(channelId_ag, a, g))
+      assert(Router.getDesc(update_ag, PrivateChannel(a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag, a, g))
+      assert(Router.getDesc(update_ag, PrivateChannel(g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag, a, g))
       assert(Router.getDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router

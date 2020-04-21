@@ -124,7 +124,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
         val capacity = rs.getLong("capacity_sat")
         val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
         val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-        m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), None, channel_update_1_opt, None, channel_update_2_opt))
+        m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
       }
       m
     }

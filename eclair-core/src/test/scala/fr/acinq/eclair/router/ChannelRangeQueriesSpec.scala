@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
@@ -105,8 +105,8 @@ class ChannelRangeQueriesSpec extends FunSuite {
     val ef = RouteCalculationSpec.makeChannel(167514L, e, f)
 
     val channels = SortedMap(
-      ab.shortChannelId -> PublicChannel(ab, ByteVector32.Zeroes, 0 sat, Some(1000 msat), Some(uab1), Some(400 msat), Some(uab2)),
-      cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, None, Some(ucd1), None, None)
+      ab.shortChannelId -> PublicChannel(ab, ByteVector32.Zeroes, 0 sat, Some(uab1), Some(uab2), Some(ChannelMeta(1000 msat, 400 msat))),
+      cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, Some(ucd1), None, None)
     )
 
     import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._

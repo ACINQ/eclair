@@ -492,8 +492,7 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, GetRoutingState)
     val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(channel_ab.balance_1_opt === None)
-    assert(channel_ab.balance_2_opt === None)
+    assert(channel_ab.meta_opt === None)
 
     // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
     val balances1 = Set[Option[MilliSatoshi]](Some(10000 msat), Some(15000 msat))
@@ -501,7 +500,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
     sender.send(router, GetRoutingState)
     val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(Set(channel_ab1.balance_1_opt, channel_ab1.balance_2_opt) === balances1)
+    assert(Set(channel_ab1.meta_opt.map(_.balance1), channel_ab1.meta_opt.map(_.balance2)) === balances1)
     // And the graph should be updated too.
     sender.send(router, 'data)
     val g1 = sender.expectMsgType[Data].graph
@@ -517,7 +516,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ab, commitments2))
     sender.send(router, GetRoutingState)
     val channel_ab2 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(Set(channel_ab2.balance_1_opt, channel_ab2.balance_2_opt) === balances2)
+    assert(Set(channel_ab2.meta_opt.map(_.balance1), channel_ab2.meta_opt.map(_.balance2)) === balances2)
     // And the graph should be updated too.
     sender.send(router, 'data)
     val g2 = sender.expectMsgType[Data].graph
