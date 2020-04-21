@@ -20,8 +20,11 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.FeatureSupport.Mandatory
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.crypto.LocalKeyManager
+import scodec.bits.ByteVector
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.jdk.CollectionConverters._
@@ -83,22 +86,41 @@ class StartupSpec extends AnyFunSuite {
       s"features.${VariableLengthOnion.rfcName}" -> "optional",
       s"features.${PaymentSecret.rfcName}" -> "optional",
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
-    ))
+    ).asJava)
 
     // basic_mpp without var_onion_optin
     val illegalButAllowedFeaturesConf = ConfigFactory.parseMap(Map(
       s"features.${PaymentSecret.rfcName}" -> "optional",
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
-    ))
+    ).asJava)
 
     // basic_mpp without payment_secret
     val illegalFeaturesConf = ConfigFactory.parseMap(Map(
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
-    ))
+    ).asJava)
 
     assert(Try(makeNodeParamsWithDefaults(legalFeaturesConf.withFallback(defaultConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(illegalButAllowedFeaturesConf.withFallback(defaultConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(illegalFeaturesConf.withFallback(defaultConf))).isFailure)
+  }
+
+  test("parse human readable override features") {
+    val perNodeConf = ConfigFactory.parseString(
+      """
+        |  override-features = [ // optional per-node features
+        |      {
+        |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        |          features {
+        |             basic_mpp = mandatory
+        |          }
+        |      }
+        |  ]
+      """.stripMargin
+    )
+
+    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
+    val perNodeFeatures = nodeParams.overrideFeatures(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+    assert(Features.hasFeature(perNodeFeatures, BasicMultiPartPayment, Some(Mandatory)))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
