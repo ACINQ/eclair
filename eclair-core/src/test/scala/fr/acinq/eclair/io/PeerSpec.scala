@@ -16,9 +16,8 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, InetSocketAddress, ServerSocket}
+import java.net.{InetAddress, ServerSocket}
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
@@ -38,7 +37,7 @@ import scala.concurrent.duration._
 
 class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
+  val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, watcher: TestProbe, relayer: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe)
 
