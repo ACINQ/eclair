@@ -155,10 +155,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     peerConnection2.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     deathWatch.expectTerminated(peerConnection1.ref)
+    awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     deathWatch.expectTerminated(peerConnection2.ref)
+    awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
