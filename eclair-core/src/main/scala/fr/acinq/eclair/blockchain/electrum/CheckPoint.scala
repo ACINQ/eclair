@@ -40,7 +40,7 @@ object CheckPoint {
     * we're on the right chain and to validate proof-of-work by checking the difficulty target
     * @return an ordered list of checkpoints, with one checkpoint every 2016 blocks
     */
-  def load(chainHash: ByteVector32): Vector[CheckPoint] = chainHash match {
+  def load(chainHash: ByteVector32): Vector[CheckPoint] = (chainHash: @unchecked) match {
     case Block.LivenetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_mainnet.json"))
     case Block.TestnetGenesisBlock.hash => load(classOf[CheckPoint].getResourceAsStream("/electrum/checkpoints_testnet.json"))
     case Block.RegtestGenesisBlock.hash => Vector.empty[CheckPoint] // no checkpoints on regtest

@@ -391,7 +391,7 @@ object ElectrumWalletSimulatedClientSpec {
     val status1 = data.history.mapValues(items => {
       val status = items.map(i => s"${i.tx_hash}:${i.height}:").mkString("")
       Crypto.sha256(ByteVector.view(status.getBytes())).toString()
-    })
+    }).toMap
     data.copy(status = status1)
   }
 

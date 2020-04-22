@@ -24,12 +24,12 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import grizzled.slf4j.Logging
+import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, _}
-import org.json4s.{DefaultFormats}
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.jdk.CollectionConverters._
 
 
 class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
@@ -41,7 +41,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
-    "eclair.auto-reconnect" -> false))
+    "eclair.auto-reconnect" -> false).asJava)
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   implicit val formats = DefaultFormats

@@ -25,17 +25,17 @@ import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 trait AuditDb extends Closeable {
 
-  def add(channelLifecycle: ChannelLifecycleEvent)
+  def add(channelLifecycle: ChannelLifecycleEvent): Unit
 
-  def add(paymentSent: PaymentSent)
+  def add(paymentSent: PaymentSent): Unit
 
-  def add(paymentReceived: PaymentReceived)
+  def add(paymentReceived: PaymentReceived): Unit
 
-  def add(paymentRelayed: PaymentRelayed)
+  def add(paymentRelayed: PaymentRelayed): Unit
 
-  def add(networkFeePaid: NetworkFeePaid)
+  def add(networkFeePaid: NetworkFeePaid): Unit
 
-  def add(channelErrorOccurred: ChannelErrorOccurred)
+  def add(channelErrorOccurred: ChannelErrorOccurred): Unit
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
