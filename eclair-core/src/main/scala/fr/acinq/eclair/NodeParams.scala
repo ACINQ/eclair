@@ -22,7 +22,7 @@ import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
@@ -145,6 +145,10 @@ object NodeParams {
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
     }
+
+    // since v0.3.5 features cannot be a byte vector (hex string)
+    val isFeatureByteVector = config.getValue("features").valueType() == ConfigValueType.STRING
+    require(!isFeatureByteVector, "configuration key 'features' cannot be a byte vector (hex string)")
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
