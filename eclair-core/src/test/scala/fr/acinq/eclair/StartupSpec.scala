@@ -67,7 +67,7 @@ class StartupSpec extends FunSuite {
     assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains("alias, too long"))
   }
 
-  test("NodeParams should fail with deprecated global-features or local-features") {
+  test("NodeParams should fail with deprecated global-features, local-features or hex features") {
     for (deprecated <- Seq("global-features", "local-features")) {
       val illegalGlobalFeaturesConf = ConfigFactory.parseString(deprecated + " = \"0200\"")
       val conf = illegalGlobalFeaturesConf.withFallback(defaultConf)
@@ -75,6 +75,11 @@ class StartupSpec extends FunSuite {
       val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
       assert(nodeParamsAttempt.isFailure && nodeParamsAttempt.failed.get.getMessage.contains(deprecated))
     }
+
+    val illegalByteVectorFeatures = ConfigFactory.parseString("features = \"0200\"")
+    val conf = illegalByteVectorFeatures.withFallback(defaultConf)
+    val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
+    assert(nodeParamsAttempt.failed.get.getMessage == "requirement failed: configuration key 'features' cannot be a byte vector (hex string)")
   }
 
   test("NodeParams should fail if features are inconsistent") {
