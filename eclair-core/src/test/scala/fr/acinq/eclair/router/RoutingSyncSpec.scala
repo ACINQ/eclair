@@ -222,17 +222,17 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(charlieId, na1))
         sender.send(bob, PeerRoutingMessage(charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size,  max = 60 seconds)
+    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size, max = 60 seconds)
     assert(BasicSyncResult(ranges = 3, queries = 11, channels = fakeRoutingInfo.size - 10, updates = 2 * (fakeRoutingInfo.size - 10), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 10) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
 
     // bump random channel_updates
     def touchUpdate(shortChannelId: Int, side: Boolean) = {
-      val PublicChannel(c, _, _, Some(u1), Some(u2)) = fakeRoutingInfo.values.toList(shortChannelId)._1
+      val PublicChannel(c, _, _, Some(u1), Some(u2), _) = fakeRoutingInfo.values.toList(shortChannelId)._1
       makeNewerChannelUpdate(pub2priv)(c, if (side) u1 else u2)
     }
 
-    val bumpedUpdates = (List(0, 3, 7).map(touchUpdate(_, true)) ++ List(1, 3, 9).map(touchUpdate(_, false))).toSet
+    val bumpedUpdates = (List(0, 3, 7).map(touchUpdate(_, side = true)) ++ List(1, 3, 9).map(touchUpdate(_, side = false))).toSet
     bumpedUpdates.foreach(c => sender.send(bob, PeerRoutingMessage(charlieId, c)))
     assert(BasicSyncResult(ranges = 3, queries = 1, channels = 0, updates = bumpedUpdates.size, nodes = if (requestNodeAnnouncements) 5 * 2 else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
@@ -276,7 +276,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
-    assert(router.stateData.sync.get(remoteNodeId).isEmpty)
+    assert(!router.stateData.sync.contains(remoteNodeId))
   }
 
   test("sync progress") {
@@ -325,7 +325,7 @@ object RoutingSyncSpec {
     val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "a", Color(0, 0, 0), List(), hex"0200")
     val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "b", Color(0, 0, 0), List(), hex"00")
-    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21))
+    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21), None)
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 
