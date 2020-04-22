@@ -27,8 +27,8 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumDisconnected,
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.{Announcements, ChannelLost, ChannelUpdatesReceived, ChannelsDiscovered, NodeLost, NodeUpdated, NodesDiscovered, SingleChannelDiscovered}
-import fr.acinq.eclair.router.Router.{NORMAL => _, _}
+import fr.acinq.eclair.router.Router.{NORMAL => _}
+import fr.acinq.eclair.router._
 import javafx.application.Platform
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox

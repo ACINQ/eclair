@@ -36,7 +36,7 @@ import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 /**
  * Created by PM on 26/02/2017.
