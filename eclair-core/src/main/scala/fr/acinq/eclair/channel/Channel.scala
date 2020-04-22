@@ -722,7 +722,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d: DATA_NORMAL) =>
+    case Event(c: Command, d: DATA_NORMAL) if c == CMD_SIGN =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -760,7 +760,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(commit: CommitSig, d: DATA_NORMAL) =>
       Commitments.receiveCommit(d.commitments, commit, keyManager) match {
-        case Success((commitments1, revocation)) =>
+        case Success((commitments1: Commitments, revocation)) =>
           log.debug("received a new sig, spec:\n{}", Commitments.specs2String(commitments1))
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
@@ -1063,7 +1063,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c@CMD_SIGN, d: DATA_SHUTDOWN) =>
+    case Event(c: Command, d: DATA_SHUTDOWN) if c == CMD_SIGN =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -1086,7 +1086,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown)) =>
       Commitments.receiveCommit(d.commitments, commit, keyManager) match {
-        case Success((commitments1, revocation)) =>
+        case Success((commitments1: Commitments, revocation)) =>
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", Commitments.specs2String(commitments1))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
@@ -1374,7 +1374,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(CLOSED)(handleExceptions {
-    case Event('shutdown, _) =>
+    case Event(Symbol("shutdown"), _) =>
       stateData match {
         case d: HasCommitments =>
           log.info(s"deleting database record for channelId=${d.channelId}")
@@ -1617,7 +1617,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   def errorStateHandler: StateFunction = {
-    case Event('nevermatches, _) => stay // we can't define a state with no event handler, so we put a dummy one here
+    case Event(Symbol("nevermatches"), _) => stay // we can't define a state with no event handler, so we put a dummy one here
   }
 
   when(ERR_INFORMATION_LEAK)(errorStateHandler)
@@ -1650,7 +1650,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "close", stateName), c)
 
-    case Event(c@CMD_FORCECLOSE, d) =>
+    case Event(c: Command, d) if c == CMD_FORCECLOSE =>
       d match {
         case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying ChannelCommandResponse.Ok
         case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
@@ -1698,7 +1698,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
-        context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
+        context.system.scheduler.scheduleOnce(10 seconds, self, Symbol("shutdown"))
       }
       if (nextState == OFFLINE) {
         // we can cancel the timer, we are not expecting anything when disconnected
@@ -2287,7 +2287,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   case class MyState(state: FSM.State[fr.acinq.eclair.channel.State, Data]) {
 
-    def storing(): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def storing(unused: Unit = ()): FSM.State[fr.acinq.eclair.channel.State, Data] = {
       state.stateData match {
         case d: HasCommitments =>
           log.debug("updating database record for channelId={}", d.channelId)

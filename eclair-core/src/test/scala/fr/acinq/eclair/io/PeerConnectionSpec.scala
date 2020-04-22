@@ -44,7 +44,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   // this map will store private keys so that we can sign new announcements at will
   val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
   val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
-  val fakeRoutingInfo = shortChannelIds.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
+  val fakeRoutingInfo = shortChannelIds.unsorted.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
   val channels = fakeRoutingInfo.map(_._1.ann).toList
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement(pub2priv)).toList
@@ -284,9 +284,9 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     transport.expectMsg(TransportHandler.ReadAck(filter))
     transport.send(peerConnection, rebroadcast)
     // peer won't send out announcements that came from itself
-    (channels.toSet - channels(5)).foreach(transport.expectMsg(_))
-    (updates.toSet - updates(6) - updates(10)).foreach(transport.expectMsg(_))
-    (nodes.toSet - nodes(4)).foreach(transport.expectMsg(_))
+    transport.expectMsgAllOf(channels diff List(channels(5)): _*)
+    transport.expectMsgAllOf(updates diff List(updates(6), updates(10)): _*)
+    transport.expectMsgAllOf(nodes diff List(nodes(4)): _*)
   }
 
   test("filter gossip message (filtered by timestamp)") { f =>
@@ -302,8 +302,8 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // peer doesn't filter channel announcements
     channels.foreach(transport.expectMsg(10 seconds, _))
     // but it will only send updates and node announcements matching the filter
-    updates.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
-    nodes.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
+    transport.expectMsgAllOf(updates.filter(u => timestamps.contains(u.timestamp)): _*)
+    transport.expectMsgAllOf(nodes.filter(u => timestamps.contains(u.timestamp)): _*)
   }
 
   test("does not filter our own gossip message") { f =>

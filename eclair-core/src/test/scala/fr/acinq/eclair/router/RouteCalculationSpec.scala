@@ -964,7 +964,7 @@ object RouteCalculationSpec {
       htlcMaximumMsat = maxHtlc
     )
 
-  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates.toSeq)
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = DirectedGraph().addEdges(updates)
 
   def hops2Ids(route: Seq[ChannelHop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 

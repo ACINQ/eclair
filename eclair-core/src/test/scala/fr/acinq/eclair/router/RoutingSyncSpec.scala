@@ -302,7 +302,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
 object RoutingSyncSpec {
 
-  lazy val shortChannelIds: immutable.SortedSet[ShortChannelId] = (for {
+  lazy val shortChannelIds: SortedSet[ShortChannelId] = (for {
     block <- 400000 to 420000
     txindex <- 0 to 5
     outputIndex <- 0 to 1
