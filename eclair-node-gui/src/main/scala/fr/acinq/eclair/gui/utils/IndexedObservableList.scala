@@ -53,8 +53,8 @@ class IndexedObservableList[K, V] {
       map2index.remove(key)
       list.remove(index)
       // now we need to decrement all higher indices by 1
-      import scala.collection.JavaConversions._
-      for (entry <- map2index.entrySet()) {
+      import scala.collection.JavaConverters._
+      for (entry <- map2index.entrySet().asScala) {
         if (entry.getValue > index) {
           map2index.put(entry.getKey, entry.getValue - 1)
         }

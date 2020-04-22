@@ -31,16 +31,17 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.scalatest.{FunSuiteLike, ParallelTestExecution}
+import org.scalatest.ParallelTestExecution
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
 import scala.collection.immutable.TreeMap
-import scala.collection.{SortedSet, immutable, mutable}
+import scala.collection.{SortedSet, mutable}
 import scala.compat.Platform
 import scala.concurrent.duration._
 
 
-class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with ParallelTestExecution {
+class RoutingSyncSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with ParallelTestExecution {
 
   import RoutingSyncSpec._
 
@@ -222,7 +223,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bob, PeerRoutingMessage(charlieId, na1))
         sender.send(bob, PeerRoutingMessage(charlieId, na2))
     }
-    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size,  max = 60 seconds)
+    awaitCond(bob.stateData.channels.size === fakeRoutingInfo.size && countUpdates(bob.stateData.channels) === 2 * fakeRoutingInfo.size, max = 60 seconds)
     assert(BasicSyncResult(ranges = 3, queries = 11, channels = fakeRoutingInfo.size - 10, updates = 2 * (fakeRoutingInfo.size - 10), nodes = if (requestNodeAnnouncements) 2 * (fakeRoutingInfo.size - 10) else 0) === sync(alice, bob, extendedQueryFlags_opt).counts)
     awaitCond(alice.stateData.channels === bob.stateData.channels, max = 60 seconds)
 
@@ -302,7 +303,7 @@ class RoutingSyncSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
 object RoutingSyncSpec {
 
-  lazy val shortChannelIds: immutable.SortedSet[ShortChannelId] = (for {
+  lazy val shortChannelIds: SortedSet[ShortChannelId] = (for {
     block <- 400000 to 420000
     txindex <- 0 to 5
     outputIndex <- 0 to 1

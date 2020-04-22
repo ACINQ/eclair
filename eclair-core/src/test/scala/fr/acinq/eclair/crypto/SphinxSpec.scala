@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{UInt64, wire}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.util.Success
@@ -28,7 +28,7 @@ import scala.util.Success
 /**
  * Created by fabrice on 10/01/17.
  */
-class SphinxSpec extends FunSuite {
+class SphinxSpec extends AnyFunSuite {
 
   import Sphinx._
   import SphinxSpec._

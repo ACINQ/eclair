@@ -17,10 +17,10 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.InvalidMac
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
-class ChaCha20Poly1305Spec extends FunSuite {
+class ChaCha20Poly1305Spec extends AnyFunSuite {
   test("Poly1305") {
     // from https://tools.ietf.org/html/rfc7539 ch 2.5.2
     val key: ByteVector = hex"85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b"

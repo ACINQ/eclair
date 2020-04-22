@@ -18,13 +18,13 @@ package fr.acinq.eclair.tor
 
 import java.net.InetSocketAddress
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 /**
   * Created by PM on 27/01/2017.
   */
 
-class Socks5ConnectionSpec extends FunSuite {
+class Socks5ConnectionSpec extends AnyFunSuite {
 
   test("get proxy address") {
     val proxyAddress = new InetSocketAddress(9050)

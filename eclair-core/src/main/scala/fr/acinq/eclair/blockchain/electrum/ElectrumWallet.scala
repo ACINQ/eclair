@@ -207,7 +207,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
   }
 
   when(RUNNING) {
-    case Event(ElectrumClient.HeaderSubscriptionResponse(_, header), data) if data.blockchain.tip == header => stay
+    case Event(ElectrumClient.HeaderSubscriptionResponse(_, header), data) if data.blockchain.tip.header == header => stay
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       log.info(s"got new tip ${header.blockId} at ${height}")
@@ -567,7 +567,7 @@ object ElectrumWallet {
   def segwitAddress(key: PublicKey, chainHash: ByteVector32): String = {
     val script = Script.pay2wpkh(key)
     val hash = Crypto.hash160(Script.write(script))
-    chainHash match {
+    (chainHash: @unchecked) match {
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
       case Block.LivenetGenesisBlock.hash => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
     }
@@ -591,7 +591,7 @@ object ElectrumWallet {
    */
   def computeScriptHashFromPublicKey(key: PublicKey): ByteVector32 = Crypto.sha256(Script.write(computePublicKeyScript(key))).reverse
 
-  def accountPath(chainHash: ByteVector32): List[Long] = chainHash match {
+  def accountPath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => hardened(49) :: hardened(1) :: hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => hardened(49) :: hardened(0) :: hardened(0) :: Nil
   }
@@ -614,7 +614,7 @@ object ElectrumWallet {
    */
   def computeXpub(master: ExtendedPrivateKey, chainHash: ByteVector32): (String, String) = {
     val xpub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, accountPath(chainHash)))
-    val prefix = chainHash match {
+    val prefix = (chainHash: @unchecked) match {
       case Block.LivenetGenesisBlock.hash => DeterministicWallet.ypub
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.upub
     }

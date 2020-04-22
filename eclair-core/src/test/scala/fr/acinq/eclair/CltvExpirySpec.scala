@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair
 
-import org.scalatest.{FunSuite, ParallelTestExecution}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.ParallelTestExecution
 
 /**
  * Created by t-bast on 21/08/2019.
  */
 
-class CltvExpirySpec extends FunSuite with ParallelTestExecution {
+class CltvExpirySpec extends AnyFunSuite with ParallelTestExecution {
 
   test("cltv expiry delta") {
     val d = CltvExpiryDelta(561)

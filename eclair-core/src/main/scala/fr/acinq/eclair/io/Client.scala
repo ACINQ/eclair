@@ -40,10 +40,10 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
   import context.system
 
   // we could connect directly here but this allows to take advantage of the automated mdc configuration on message reception
-  self ! 'connect
+  self ! Symbol("connect")
 
   def receive: Receive = {
-    case 'connect =>
+    case Symbol("connect") =>
       val (peerOrProxyAddress, proxyParams_opt) = nodeParams.socksProxy_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
         case Some((proxyParams, Some(proxyAddress))) =>
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
