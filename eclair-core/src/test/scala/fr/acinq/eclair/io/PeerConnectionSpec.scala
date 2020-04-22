@@ -44,7 +44,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   // this map will store private keys so that we can sign new announcements at will
   val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
   val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
-  val fakeRoutingInfo = shortChannelIds.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
+  val fakeRoutingInfo = shortChannelIds.unsorted.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
   val channels = fakeRoutingInfo.map(_._1.ann).toList
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement(pub2priv)).toList

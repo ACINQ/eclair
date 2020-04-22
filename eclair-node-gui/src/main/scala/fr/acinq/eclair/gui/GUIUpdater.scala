@@ -33,7 +33,7 @@ import javafx.application.Platform
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 /**
  * Created by PM on 16/08/2016.

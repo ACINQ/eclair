@@ -60,11 +60,11 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-import scala.collection.JavaConverters._
 import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 
 /**
  * Created by PM on 15/03/2017.
