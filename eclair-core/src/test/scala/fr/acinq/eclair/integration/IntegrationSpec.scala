@@ -887,16 +887,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
     // we then fulfill the htlc, which will make F redeem it on-chain
     sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
-    // we then generate one block so that the htlc success tx gets written to the blockchain
-    generateBlocks(bitcoincli, 1)
-    // C will extract the preimage from the blockchain and fulfill the payment upstream
-    paymentSender.expectMsgType[PaymentSent](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       res.filter(_ \ "address" == JString(finalAddressF)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
+    // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
+    // the mempool and fulfill the payment upstream.
+    paymentSender.expectMsgType[PaymentSent](30 seconds)
     // we then generate enough blocks so that C gets its main delayed output
     generateBlocks(bitcoincli, 145)
     // and C will have its main output
@@ -938,7 +937,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     paymentSender.expectMsgType[UUID](30 seconds)
-
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
@@ -965,14 +963,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsg(ChannelCommandResponse.Ok)
     // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
-    // we then generate one block so that the htlc success tx gets written to the blockchain
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    generateBlocks(bitcoincli, 1, Some(address))
-    // C will extract the preimage from the blockchain and fulfill the payment upstream
+    // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
+    // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     // we then generate enough blocks so that F gets its htlc-success delayed output
+    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = sender.expectMsgType[JValue]
     generateBlocks(bitcoincli, 145, Some(address))
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
