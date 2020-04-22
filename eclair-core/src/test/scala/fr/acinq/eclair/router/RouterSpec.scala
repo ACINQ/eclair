@@ -55,7 +55,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // valid channel announcement, no stashing
       val chan_ac = channelAnnouncement(ShortChannelId(420000, 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
-      val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat)
+      val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200", timestamp = Platform.currentTime.milliseconds.toSeconds + 1)
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ac))
       peerConnection.expectNoMsg(100 millis) // we don't immediately acknowledge the announcement (back pressure)
@@ -85,7 +85,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_u = randomKey
       val priv_funding_u = randomKey
       val chan_uc = channelAnnouncement(ShortChannelId(420000, 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
-      val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat)
+      val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, hex"00")
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_uc))
       peerConnection.expectNoMsg(200 millis) // we don't immediately acknowledge the announcement (back pressure)
@@ -161,7 +161,7 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // stale channel update
-      val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, chan_ab.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat, timestamp = (Platform.currentTime.milliseconds - 15.days).toSeconds)
+      val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, chan_ab.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = (Platform.currentTime.milliseconds - 15.days).toSeconds)
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ab))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ab))
       peerConnection.expectMsg(GossipDecision.Stale(update_ab))
@@ -173,7 +173,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // unknown channel
       val priv_y = randomKey
-      val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, ShortChannelId(4646464), CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat)
+      val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, ShortChannelId(4646464), CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, hex"0200")
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ay))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
@@ -191,7 +191,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_y = randomKey
       val priv_funding_y = randomKey // a-y will have an invalid script
       val chan_ay = channelAnnouncement(ShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
-      val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat)
+      val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, hex"0200")
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ay))
       watcher.expectMsg(ValidateRequest(chan_ay))
@@ -368,7 +368,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
 
-    val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, 500000000L msat, enable = false)
+    val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
     peerConnection.send(router, PeerRoutingMessage(remoteNodeId, channelUpdate_cd1))
     peerConnection.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
@@ -383,7 +383,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.map(_.nodeId).toList === a :: g :: Nil)
     assert(res.hops.last.nextNodeId === h)
 
-    val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag, CltvExpiryDelta(7), 0 msat, 10 msat, 10, 500000000 msat, enable = false)
+    val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
@@ -416,6 +416,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(state.channels.size == 5)
     assert(state.nodes.size == 8)
     assert(state.channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size == 10)
+    state.channels.foreach(c => assert(c.capacity === publicChannelCapacity))
   }
 
   test("send network statistics") { fixture =>
@@ -477,7 +478,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, GetRoutingState)
     sender.expectMsgType[RoutingState]
 
-    val recentUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 500000000L msat, timestamp = Platform.currentTime.millisecond.toSeconds)
+    val recentUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = Platform.currentTime.millisecond.toSeconds)
 
     // we want to make sure that transport receives the query
     peerConnection.send(router, PeerRoutingMessage(remoteNodeId, recentUpdate))
