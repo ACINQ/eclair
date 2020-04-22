@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
+        <artifactId>eclair_2.13</artifactId>
         <version>0.3.5-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-core_2.11</artifactId>
+    <artifactId>eclair-core_2.13</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
@@ -115,6 +115,11 @@
     </profiles>
 
     <dependencies>
+        <dependency>
+            <groupId>org.scala-lang.modules</groupId>
+            <artifactId>scala-collection-contrib_${scala.version.short}</artifactId>
+            <version>0.2.1</version>
+        </dependency>
         <!-- AKKA -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
@@ -170,7 +175,7 @@
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.11.2</version>
+            <version>1.11.7</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>

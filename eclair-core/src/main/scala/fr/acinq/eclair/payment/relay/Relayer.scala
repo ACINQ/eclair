@@ -81,7 +81,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
   private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, self, router, commandBuffer, register))
 
-  override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
+  override def receive: Receive = main(Map.empty, mutable.MultiDict.empty[PublicKey, ShortChannelId])
 
   def main(channelUpdates: ChannelUpdates, node2channels: NodeChannels): Receive = {
     case GetOutgoingChannels(enabledOnly) =>
@@ -95,11 +95,11 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments) =>
       log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
       val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> OutgoingChannel(remoteNodeId, channelUpdate, commitments))
-      context become main(channelUpdates1, node2channels.addBinding(remoteNodeId, channelUpdate.shortChannelId))
+      context become main(channelUpdates1, node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId))
 
     case LocalChannelDown(_, channelId, shortChannelId, remoteNodeId) =>
       log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
-      context become main(channelUpdates - shortChannelId, node2channels.removeBinding(remoteNodeId, shortChannelId))
+      context become main(channelUpdates - shortChannelId, node2channels.subtractOne(remoteNodeId, shortChannelId))
 
     case AvailableBalanceChanged(_, _, shortChannelId, commitments) =>
       val channelUpdates1 = channelUpdates.get(shortChannelId) match {
@@ -114,7 +114,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
           log.debug(s"shortChannelId changed for channelId=$channelId ($previousShortChannelId->$shortChannelId, probably due to chain re-org)")
           // We simply remove the old entry: we should receive a LocalChannelUpdate with the new shortChannelId shortly.
           val node2channels1 = channelUpdates.get(previousShortChannelId).map(_.nextNodeId) match {
-            case Some(remoteNodeId) => node2channels.removeBinding(remoteNodeId, previousShortChannelId)
+            case Some(remoteNodeId) => node2channels.subtractOne(remoteNodeId, previousShortChannelId)
             case None => node2channels
           }
           context become main(channelUpdates - previousShortChannelId, node2channels1)
@@ -205,7 +205,7 @@ object Relayer extends Logging {
     Props(classOf[Relayer], nodeParams, router, register, commandBuffer, paymentHandler, initialized)
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
-  type NodeChannels = mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]
+  type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
 
   // @formatter:off
   sealed trait ForwardMessage
