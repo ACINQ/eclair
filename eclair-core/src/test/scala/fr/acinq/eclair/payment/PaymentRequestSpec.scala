@@ -386,9 +386,9 @@ class PaymentRequestSpec extends FunSuite {
       Features(bin"               00010100001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
       Features(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
       Features(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       Features(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      Features(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       Features(bin"          0000110000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
       Features(bin"          0000100000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),

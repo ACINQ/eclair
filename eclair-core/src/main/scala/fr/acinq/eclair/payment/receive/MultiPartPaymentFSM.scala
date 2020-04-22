@@ -16,13 +16,18 @@
 
 package fr.acinq.eclair.payment.receive
 
+import java.util.concurrent.TimeUnit
+
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, PayToOpenRequest, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
 
 import scala.collection.immutable.Queue
+import scala.compat.Platform
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -30,13 +35,15 @@ import scala.collection.immutable.Queue
 
 /**
  * Handler for a multi-part payment (see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#basic-multi-part-payments).
- * Once all the partial payments are received, a MultiPartHtlcSucceeded message is sent to the parent.
- * After a reasonable delay, if not enough partial payments have been received, a MultiPartHtlcFailed message is sent to the parent.
+ * Once all the partial payments are received, a MultiPartPaymentSucceeded message is sent to the parent.
+ * After a reasonable delay, if not enough partial payments have been received, a MultiPartPaymentFailed message is sent to the parent.
  * This handler assumes that the parent only sends payments for the same payment hash.
  */
 class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, parent: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentFSM.State, MultiPartPaymentFSM.Data] {
 
   import MultiPartPaymentFSM._
+
+  val start = Platform.currentTime
 
   setTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry, repeat = false)
 
@@ -44,16 +51,15 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
-      log.warning(s"multi-part payment timed out (received ${d.paidAmount} expected $totalAmount)")
+      log.warning("multi-part payment timed out (received {} expected {})", d.paidAmount, totalAmount)
       goto(PAYMENT_FAILED) using PaymentFailed(wire.PaymentTimeout, d.parts)
 
     case Event(part: PaymentPart, d: WaitingForHtlc) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
       val updatedParts = d.parts :+ part
-      val totalAmount2 = part.totalAmount
-      if (totalAmount != totalAmount2) {
-        log.warning(s"multi-part payment total amount mismatch: previously $totalAmount, now $totalAmount2")
-        goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(totalAmount2, nodeParams.currentBlockHeight), updatedParts)
+      if (totalAmount != part.totalAmount) {
+        log.warning("multi-part payment total amount mismatch: previously {}, now {}", totalAmount, part.totalAmount)
+        goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(part.totalAmount, nodeParams.currentBlockHeight), updatedParts)
       } else if (d.paidAmount + part.amount >= totalAmount) {
         goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
       } else {
@@ -67,7 +73,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // intermediate nodes will be able to fulfill that htlc anyway. This is a harmless spec violation.
     case Event(part: PaymentPart, _) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
-      log.info(s"received extraneous htlc amountMsat=${part.amount}")
+      log.info("received extraneous payment part with amount={}", part.amount)
       parent ! ExtraPaymentReceived(paymentHash, part, None)
       stay
   }
@@ -77,13 +83,13 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // The LocalPaymentHandler will create a new instance of MultiPartPaymentHandler to handle a new attempt.
     case Event(part: PaymentPart, PaymentFailed(failure, _)) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
-      log.info(s"received extraneous htlc for payment hash $paymentHash")
+      log.info("received extraneous payment part for payment hash {}", paymentHash)
       parent ! ExtraPaymentReceived(paymentHash, part, Some(failure))
       stay
   }
 
   whenUnhandled {
-    case Event("ok", _) => stay
+    case Event(ChannelCommandResponse.Ok, _) => stay
   }
 
   onTransition {
@@ -97,16 +103,18 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         case PaymentSucceeded(parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           parent ! MultiPartPaymentSucceeded(paymentHash, parts)
+          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = true).record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
         case d =>
-          log.error(s"unexpected payment success data ${d.getClass.getSimpleName}")
+          log.error("unexpected payment success data {}", d.getClass.getSimpleName)
       }
     case _ -> PAYMENT_FAILED =>
       nextStateData match {
         case PaymentFailed(failure, parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           parent ! MultiPartPaymentFailed(paymentHash, failure, parts)
+          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = false).record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
         case d =>
-          log.error(s"unexpected payment failure data ${d.getClass.getSimpleName}")
+          log.error("unexpected payment failure data {}", d.getClass.getSimpleName)
       }
   }
 
@@ -125,10 +133,21 @@ object MultiPartPaymentFSM {
   case object PaymentTimeout
 
   // @formatter:off
-  /** An incoming partial payment. */
-  sealed trait PaymentPart { def paymentHash: ByteVector32; def totalAmount: MilliSatoshi; def amount: MilliSatoshi }
-  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc) extends PaymentPart { override def paymentHash = htlc.paymentHash; override def amount = htlc.amountMsat }
-  case class PayToOpenPart(totalAmount: MilliSatoshi, payToOpen: PayToOpenRequest, peer: ActorRef) extends PaymentPart { override def paymentHash = payToOpen.paymentHash; override def amount = payToOpen.amountMsat }
+  /** An incoming payment that we're currently holding until we decide to fulfill or fail it (depending on whether we receive the complete payment). */
+  sealed trait PaymentPart {
+    def paymentHash: ByteVector32
+    def amount: MilliSatoshi
+    def totalAmount: MilliSatoshi
+  }
+  /** An incoming HTLC. */
+  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc) extends PaymentPart {
+    override def paymentHash: ByteVector32 = htlc.paymentHash
+    override def amount: MilliSatoshi = htlc.amountMsat
+  }
+  case class PayToOpenPart(totalAmount: MilliSatoshi, payToOpen: PayToOpenRequest, peer: ActorRef) extends PaymentPart {
+    override def paymentHash: ByteVector32 = payToOpen.paymentHash
+    override def amount: MilliSatoshi = payToOpen.amountMsat
+  }
   /** We successfully received all parts of the payment. */
   case class MultiPartPaymentSucceeded(paymentHash: ByteVector32, parts: Queue[PaymentPart])
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.channel.ChannelVersion
-import OpenTlv.{ChannelVersionTlv, openTlvCodec}
+import fr.acinq.eclair.wire.OpenChannelTlv.ChannelVersionTlv
 import org.scalatest.FunSuite
 import scodec.{Attempt, DecodeResult}
 import scodec.bits._
@@ -31,7 +31,7 @@ class OpenTlvSpec extends FunSuite {
       (ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE) -> hex"fe47000000 00000009".bits
     )
 
-    refs.foreach { case (cv, bits) => assert(openTlvCodec.encode(TlvStream(ChannelVersionTlv(cv))) === Attempt.Successful(bits)) }
-    refs.foreach { case (cv, bits) => assert(openTlvCodec.decode(bits) === Attempt.successful(DecodeResult(TlvStream(ChannelVersionTlv(cv)), BitVector.empty))) }
+    refs.foreach { case (cv, bits) => assert(OpenChannelTlv.openTlvCodec.encode(TlvStream(ChannelVersionTlv(cv))) === Attempt.Successful(bits)) }
+    refs.foreach { case (cv, bits) => assert(OpenChannelTlv.openTlvCodec.decode(bits) === Attempt.successful(DecodeResult(TlvStream(ChannelVersionTlv(cv)), BitVector.empty))) }
   }
 }

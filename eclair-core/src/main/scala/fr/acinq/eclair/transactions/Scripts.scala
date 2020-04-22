@@ -29,26 +29,22 @@ object Scripts {
 
   def der(sig: ByteVector64): ByteVector = Crypto.compact2der(sig) :+ 1
 
-  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value))
-    Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
-  else
-    Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
+  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] =
+    if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
+      Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
+    } else {
+      Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
+    }
 
   /**
-   *
-   * @param sig1
-   * @param sig2
-   * @param pubkey1
-   * @param pubkey2
    * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
    */
-  def witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness = {
-    if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value))
+  def witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness =
+    if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
       ScriptWitness(Seq(ByteVector.empty, der(sig1), der(sig2), write(multiSig2of2(pubkey1, pubkey2))))
-    else
+    } else {
       ScriptWitness(Seq(ByteVector.empty, der(sig2), der(sig1), write(multiSig2of2(pubkey1, pubkey2))))
-
-  }
+    }
 
   /**
    * minimal encoding of a number into a script element:
@@ -82,7 +78,7 @@ object Scripts {
    *
    * @return the block height before which this tx cannot be published.
    */
-  def cltvTimeout(tx: Transaction): Long = {
+  def cltvTimeout(tx: Transaction): Long =
     if (tx.lockTime <= LockTimeThreshold) {
       // locktime is a number of blocks
       tx.lockTime
@@ -93,11 +89,8 @@ object Scripts {
       // since locktime is very well in the past (0x20FFFFFF is in 1987), it is equivalent to no locktime at all
       0
     }
-  }
 
   /**
-   *
-   * @param tx
    * @return the number of confirmations of the tx parent before which it can be published
    */
   def csvTimeout(tx: Transaction): Long = {
@@ -163,12 +156,22 @@ object Scripts {
   def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
     ScriptWitness(ByteVector.empty :: der(remoteSig) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
+  /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
+  def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
+    case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+  }
+
   /**
-   * If local publishes its commit tx where there was a local->remote htlc, then remote uses this script to
+   * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
    */
-  def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
-    ScriptWitness(der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
+  def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
+    ScriptWitness(der(localSig) :: paymentPreimage.bytes :: htlcOffered :: Nil)
+
+  /** Extract the payment preimage from from a fulfilled offered htlc. */
+  def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
+    case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+  }
 
   def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, lockTime: CltvExpiry) = {
     // @formatter:off
@@ -192,17 +195,27 @@ object Scripts {
   }
 
   /**
-   * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcReceived script from commit tx)
+   * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcOffered script from commit tx)
    */
-  def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcReceivedScript: ByteVector) =
-    ScriptWitness(ByteVector.empty :: der(remoteSig) :: der(localSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
+  def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
+    ScriptWitness(ByteVector.empty :: der(remoteSig) :: der(localSig) :: ByteVector.empty :: htlcOfferedScript :: Nil)
+
+  /** Extract the payment hash from a 2nd-stage HTLC Timeout transaction's witness script */
+  def extractPaymentHashFromHtlcTimeout: PartialFunction[ScriptWitness, ByteVector] = {
+    case ScriptWitness(Seq(ByteVector.empty, _, _, ByteVector.empty, htlcOfferedScript)) => htlcOfferedScript.slice(109, 109 + 20)
+  }
 
   /**
-   * If local publishes its commit tx where there was a remote->local htlc, then remote uses this script to
+   * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
    * claim its funds after timeout (consumes htlcReceived script from commit tx)
    */
   def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
     ScriptWitness(der(localSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
+
+  /** Extract the payment hash from a timed-out received htlc. */
+  def extractPaymentHashFromClaimHtlcTimeout: PartialFunction[ScriptWitness, ByteVector] = {
+    case ScriptWitness(Seq(_, ByteVector.empty, htlcReceivedScript)) => htlcReceivedScript.slice(69, 69 + 20)
+  }
 
   /**
    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment

@@ -22,11 +22,14 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
+import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{MilliSatoshi, _}
 import scodec.bits.ByteVector
+
+import scala.util.{Failure, Success, Try}
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -63,10 +66,13 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] =
-    (localCommit.spec.htlcs.filter(htlc => htlc.direction == OUT && blockheight >= htlc.add.cltvExpiry.toLong) ++
-      remoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong) ++
-      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.filter(htlc => htlc.direction == IN && blockheight >= htlc.add.cltvExpiry.toLong)).getOrElse(Set.empty[DirectedHtlc])).map(_.add)
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = {
+    def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong
+
+    localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
+      remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
+      remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
+  }
 
   /**
    * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
@@ -75,9 +81,9 @@ case class Commitments(channelVersion: ChannelVersion,
    * and our HTLC success in case of a force-close.
    */
   def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
-    localCommit.spec.htlcs.collect {
-      case htlc if htlc.direction == IN && blockheight >= (htlc.add.cltvExpiry - fulfillSafety).toLong => htlc.add
-    }
+    def nearlyExpired(add: UpdateAddHtlc) = blockheight >= (add.cltvExpiry - fulfillSafety).toLong
+
+    localCommit.spec.htlcs.collect(incoming).filter(nearlyExpired)
   }
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
@@ -94,13 +100,16 @@ case class Commitments(channelVersion: ChannelVersion,
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
       val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced)
+      // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
+      // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
-        (balanceNoFees - commitFees - htlcFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve - htlcFees).max(0 msat)
       }
     } else {
       // The fundee doesn't pay on-chain fees.
@@ -117,13 +126,16 @@ case class Commitments(channelVersion: ChannelVersion,
     } else {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
       val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced)
+      // we expect the funder to keep an extra reserve to be able to handle fee increase without getting the channel stuck
+      // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw)
       if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
-        (balanceNoFees - commitFees - htlcFees).max(0 msat)
+        (balanceNoFees - commitFees - funderFeeReserve - htlcFees).max(0 msat)
       }
     }
   }
@@ -157,20 +169,22 @@ object Commitments {
    * @param cmd         add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
    */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Try[(Commitments, UpdateAddHtlc)] = {
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
     val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     if (cmd.cltvExpiry < minExpiry) {
-      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+      return Failure(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
     val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     if (cmd.cltvExpiry >= maxExpiry) {
-      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+      return Failure(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
 
-    if (cmd.amount < commitments.remoteParams.htlcMinimum) {
-      return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimum, actual = cmd.amount))
+    // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)
+    val htlcMinimum = commitments.remoteParams.htlcMinimum.max(1 msat)
+    if (cmd.amount < htlcMinimum) {
+      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = cmd.amount))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -181,52 +195,59 @@ object Commitments {
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
-    val outgoingHtlcs = reduced.htlcs.filter(_.direction == IN)
+    val outgoingHtlcs = reduced.htlcs.collect(incoming)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
+    // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
+    // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
+    val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw)
+    val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees + funderFeeReserve else 0.msat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
-      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
+      return Failure(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
     } else if (missingForReceiver < 0.msat) {
       if (commitments.localParams.isFunder) {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       } else {
-        return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+        return Failure(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
       }
     }
 
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
-    val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.add.amountMsat).sum
+    val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
     if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
-      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+      return Failure(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
-      return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
+      return Failure(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
     }
 
-    Right(commitments1, add)
+    Success(commitments1, add)
   }
 
-  def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
+  def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Try[Commitments] = Try {
     if (add.id != commitments.remoteNextHtlcId) {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
 
-    if (add.amountMsat < commitments.localParams.htlcMinimum) {
-      throw HtlcValueTooSmall(commitments.channelId, minimum = commitments.localParams.htlcMinimum, actual = add.amountMsat)
+    // we used to not enforce a strictly positive minimum, hence the max(1 msat)
+    val htlcMinimum = commitments.localParams.htlcMinimum.max(1 msat)
+    if (add.amountMsat < htlcMinimum) {
+      throw HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = add.amountMsat)
     }
 
     // let's compute the current commitment *as seen by us* including this change
     val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
-    val incomingHtlcs = reduced.htlcs.filter(_.direction == IN)
+    val incomingHtlcs = reduced.htlcs.collect(incoming)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+    // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote funder that doesn't have this mitigation in place
+    // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     val missingForReceiver = reduced.toLocal - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
     if (missingForSender < 0.sat) {
@@ -240,7 +261,7 @@ object Commitments {
     }
 
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
-    val htlcValueInFlight = incomingHtlcs.toSeq.map(_.add.amountMsat).sum
+    val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
     if (commitments1.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       throw HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }
@@ -252,39 +273,47 @@ object Commitments {
     commitments1
   }
 
-  def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findHtlcById(htlcId, directionRelativeToLocal.opposite)
-    remoteSigned <- commitments.localCommit.spec.findHtlcById(htlcId, directionRelativeToLocal)
+  def getOutgoingHtlcCrossSigned(commitments: Commitments, htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findIncomingHtlcById(htlcId)
+    remoteSigned <- commitments.localCommit.spec.findOutgoingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
     localSigned.add
   }
 
-  def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
-    getHtlcCrossSigned(commitments, IN, cmd.id) match {
+  def getIncomingHtlcCrossSigned(commitments: Commitments, htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findOutgoingHtlcById(htlcId)
+    remoteSigned <- commitments.localCommit.spec.findIncomingHtlcById(htlcId)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
+  }
+
+  def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): Try[(Commitments, UpdateFulfillHtlc)] =
+    getIncomingHtlcCrossSigned(commitments, cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
-        throw UnknownHtlcId(commitments.channelId, cmd.id)
+        Failure(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
-        (commitments1, fulfill)
-      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, cmd.id)
-      case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
+        Success((commitments1, fulfill))
+      case Some(_) => Failure(InvalidHtlcPreimage(commitments.channelId, cmd.id))
+      case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
-  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] =
-    getHtlcCrossSigned(commitments, OUT, fulfill.id) match {
-      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Right((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
-      case Some(_) => throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
-      case None => throw UnknownHtlcId(commitments.channelId, fulfill.id)
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
+    getOutgoingHtlcCrossSigned(commitments, fulfill.id) match {
+      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Try((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
+      case Some(_) => Failure(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
+      case None => Failure(UnknownHtlcId(commitments.channelId, fulfill.id))
     }
 
-  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
-    getHtlcCrossSigned(commitments, IN, cmd.id) match {
+  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Try[(Commitments, UpdateFailHtlc)] =
+    getIncomingHtlcCrossSigned(commitments, cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
-        throw UnknownHtlcId(commitments.channelId, cmd.id)
+        Failure(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
         Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
@@ -295,100 +324,100 @@ object Commitments {
             }
             val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
             val commitments1 = addLocalProposal(commitments, fail)
-            (commitments1, fail)
-          case Left(_) => throw CannotExtractSharedSecret(commitments.channelId, htlc)
+            Success((commitments1, fail))
+          case Left(_) => Failure(CannotExtractSharedSecret(commitments.channelId, htlc))
         }
-      case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
+      case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
-  def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): (Commitments, UpdateFailMalformedHtlc) = {
+  def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): Try[(Commitments, UpdateFailMalformedHtlc)] = {
     // BADONION bit must be set in failure_code
     if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
-      throw InvalidFailureCode(commitments.channelId)
-    }
-    getHtlcCrossSigned(commitments, IN, cmd.id) match {
-      case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
-        // we have already sent a fail/fulfill for this htlc
-        throw UnknownHtlcId(commitments.channelId, cmd.id)
-      case Some(_) =>
-        val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
-        val commitments1 = addLocalProposal(commitments, fail)
-        (commitments1, fail)
-      case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
+      Failure(InvalidFailureCode(commitments.channelId))
+    } else {
+      getIncomingHtlcCrossSigned(commitments, cmd.id) match {
+        case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
+          // we have already sent a fail/fulfill for this htlc
+          Failure(UnknownHtlcId(commitments.channelId, cmd.id))
+        case Some(_) =>
+          val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+          val commitments1 = addLocalProposal(commitments, fail)
+          Success((commitments1, fail))
+        case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
+      }
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] =
-    getHtlcCrossSigned(commitments, OUT, fail.id) match {
-      case Some(htlc) => Right((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
-      case None => throw UnknownHtlcId(commitments.channelId, fail.id)
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
+    getOutgoingHtlcCrossSigned(commitments, fail.id) match {
+      case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
+      case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] = {
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] = {
     // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
-      throw InvalidFailureCode(commitments.channelId)
-    }
-
-    getHtlcCrossSigned(commitments, OUT, fail.id) match {
-      case Some(htlc) => Right((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
-      case None => throw UnknownHtlcId(commitments.channelId, fail.id)
+      Failure(InvalidFailureCode(commitments.channelId))
+    } else {
+      getOutgoingHtlcCrossSigned(commitments, fail.id) match {
+        case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
+        case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
+      }
     }
   }
 
-  def sendFee(commitments: Commitments, cmd: CMD_UPDATE_FEE): (Commitments, UpdateFee) = {
+  def sendFee(commitments: Commitments, cmd: CMD_UPDATE_FEE): Try[(Commitments, UpdateFee)] = {
     if (!commitments.localParams.isFunder) {
-      throw FundeeCannotSendUpdateFee(commitments.channelId)
-    }
-    // let's compute the current commitment *as seen by them* with this change taken into account
-    val fee = UpdateFee(commitments.channelId, cmd.feeratePerKw)
-    // update_fee replace each other, so we can remove previous ones
-    val commitments1 = commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-    val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
+      Failure(FundeeCannotSendUpdateFee(commitments.channelId))
+    } else {
+      // let's compute the current commitment *as seen by them* with this change taken into account
+      val fee = UpdateFee(commitments.channelId, cmd.feeratePerKw)
+      // update_fee replace each other, so we can remove previous ones
+      val commitments1 = commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+      val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
-    if (missing < 0.sat) {
-      throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
+      // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+      // we look from remote's point of view, so if local is funder remote doesn't pay the fees
+      val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+      val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
+      if (missing < 0.sat) {
+        Failure(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
+      } else {
+        Success((commitments1, fee))
+      }
     }
-
-    (commitments1, fee)
   }
 
-  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Commitments = {
+  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Try[Commitments] = {
     if (commitments.localParams.isFunder) {
-      throw FundeeCannotSendUpdateFee(commitments.channelId)
+      Failure(FundeeCannotSendUpdateFee(commitments.channelId))
+    } else if (fee.feeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw) {
+      Failure(FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw))
+    } else {
+      val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
+      if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
+        Failure(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
+      } else {
+        // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
+        // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
+        // and it would be tricky to check if the conditions are met at signing
+        // (it also means that we need to check the fee of the initial commitment tx somewhere)
+
+        // let's compute the current commitment *as seen by us* including this change
+        // update_fee replace each other, so we can remove previous ones
+        val commitments1 = commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
+        val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
+
+        // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+        val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
+        val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
+        if (missing < 0.sat) {
+          Failure(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
+        } else {
+          Success(commitments1)
+        }
+      }
     }
-
-    if (fee.feeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw) {
-      throw FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw)
-    }
-
-    val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
-    if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
-      throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
-    }
-
-    // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
-    // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
-    // and it would be tricky to check if the conditions are met at signing
-    // (it also means that we need to check the fee of the initial commitment tx somewhere)
-
-    // let's compute the current commitment *as seen by us* including this change
-    // update_fee replace each other, so we can remove previous ones
-    val commitments1 = commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-    val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
-
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced)
-    val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
-    if (missing < 0.sat) {
-      throw CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees)
-    }
-
-    commitments1
   }
 
   def localHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
@@ -403,12 +432,12 @@ object Commitments {
 
   def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
 
-  def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): (Commitments, CommitSig) = {
+  def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): Try[(Commitments, CommitSig)] = {
     import commitments._
     commitments.remoteNextCommitInfo match {
       case Right(_) if !localHasChanges(commitments) =>
-        throw CannotSignWithoutChanges(commitments.channelId)
-      case Right(remoteNextPerCommitmentPoint) =>
+        Failure(CannotSignWithoutChanges(commitments.channelId))
+      case Right(remoteNextPerCommitmentPoint) => Try {
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
@@ -419,7 +448,7 @@ object Commitments {
         val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint))
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.info(s"built remote commit number=${remoteCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), remoteCommitTx.tx)
+        log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(outgoing).map(_.id).mkString(","), spec.htlcs.collect(incoming).map(_.id).mkString(","), remoteCommitTx.tx)
 
         // don't sign if they don't get paid
         val commitSig = CommitSig(
@@ -433,12 +462,13 @@ object Commitments {
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
           remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
         (commitments1, commitSig)
+      }
       case Left(_) =>
-        throw CannotSignBeforeRevocation(commitments.channelId)
+        Failure(CannotSignBeforeRevocation(commitments.channelId))
     }
   }
 
-  def receiveCommit(commitments: Commitments, commit: CommitSig, keyManager: KeyManager)(implicit log: LoggingAdapter): (Commitments, RevokeAndAck) = {
+  def receiveCommit(commitments: Commitments, commit: CommitSig, keyManager: KeyManager)(implicit log: LoggingAdapter): Try[(Commitments, RevokeAndAck)] = Try {
     import commitments._
     // they sent us a signature for *their* view of *our* next commit tx
     // so in terms of rev.hashes and indexes we have:
@@ -465,7 +495,7 @@ object Commitments {
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
 
-    log.info(s"built local commit number=${localCommit.index + 1} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.filter(_.direction == IN).map(_.add.id).mkString(","), spec.htlcs.filter(_.direction == OUT).map(_.add.id).mkString(","), localCommitTx.tx)
+    log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(incoming).map(_.id).mkString(","), spec.htlcs.collect(outgoing).map(_.id).mkString(","), localCommitTx.tx)
 
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 
@@ -517,13 +547,13 @@ object Commitments {
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): (Commitments, Seq[Relayer.ForwardMessage]) = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Relayer.ForwardMessage])] = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.publicKey != remoteCommit.remotePerCommitmentPoint =>
-        throw InvalidRevocation(commitments.channelId)
-      case Left(WaitingForRevocation(theirNextCommit, _, _, _)) =>
+        Failure(InvalidRevocation(commitments.channelId))
+      case Left(WaitingForRevocation(theirNextCommit, _, _, _)) => Try {
         val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
@@ -531,18 +561,18 @@ object Commitments {
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
-            val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
-            Relayer.ForwardFail(fail, origin, add)
+            val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
+            Relayer.ForwardRemoteFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
-            val add = commitments.remoteCommit.spec.findHtlcById(fail.id, IN).map(_.add).get
-            Relayer.ForwardFailMalformed(fail, origin, add)
+            val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
+            Relayer.ForwardRemoteFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
         // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
-        val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id) -- theirNextCommit.spec.htlcs.filter(_.direction == IN).map(_.add.id)
+        val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.collect(incoming).map(_.id) -- theirNextCommit.spec.htlcs.collect(incoming).map(_.id)
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.copy(
@@ -554,32 +584,47 @@ object Commitments {
           originChannels = originChannels1,
           remoteChannelData = revocation.channelData)
         (commitments1, forwards)
+      }
       case Right(_) =>
-        throw UnexpectedRevocation(commitments.channelId)
+        Failure(UnexpectedRevocation(commitments.channelId))
     }
   }
 
-  def makeLocalTxs(keyManager: KeyManager, channelVersion: ChannelVersion, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeLocalTxs(keyManager: KeyManager,
+                   channelVersion: ChannelVersion,
+                   commitTxNumber: Long,
+                   localParams: LocalParams,
+                   remoteParams: RemoteParams,
+                   commitmentInput: InputInfo,
+                   localPerCommitmentPoint: PublicKey,
+                   spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val remotePaymentPubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, keyManager.paymentPoint(channelKeyPath).publicKey, remoteParams.paymentBasepoint, localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
-    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
+    val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, keyManager.paymentPoint(channelKeyPath).publicKey, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feeratePerKw, outputs)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeRemoteTxs(keyManager: KeyManager, channelVersion: ChannelVersion, commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: PublicKey, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+  def makeRemoteTxs(keyManager: KeyManager,
+                    channelVersion: ChannelVersion,
+                    commitTxNumber: Long, localParams: LocalParams,
+                    remoteParams: RemoteParams, commitmentInput: InputInfo,
+                    remotePerCommitmentPoint: PublicKey,
+                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
     val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(channelKeyPath).publicKey, !localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
-    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
+    val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, spec)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, keyManager.paymentPoint(channelKeyPath).publicKey, !localParams.isFunder, outputs)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.feeratePerKw, outputs)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 

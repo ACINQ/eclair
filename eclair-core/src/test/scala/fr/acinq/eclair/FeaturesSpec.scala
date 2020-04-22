@@ -99,6 +99,8 @@ class FeaturesSpec extends FunSuite {
     assert(areSupported(ByteVector.fromLong(1L << PaymentSecret.optional)))
     assert(areSupported(ByteVector.fromLong(1L << BasicMultiPartPayment.mandatory)))
     assert(areSupported(ByteVector.fromLong(1L << BasicMultiPartPayment.optional)))
+    assert(areSupported(ByteVector.fromLong(1L << Wumbo.mandatory)))
+    assert(areSupported(ByteVector.fromLong(1L << Wumbo.optional)))
 
     val testCases = Map(
       bin"            00000000000000001011" -> true,
@@ -108,11 +110,12 @@ class FeaturesSpec extends FunSuite {
       bin"            00011000001000000000" -> true,
       bin"            00101000000000000000" -> true,
       bin"            00000000010001000000" -> true,
-      // unknown optional feature bits
+      bin"            01000000000000000000" -> true,
       bin"            10000000000000000000" -> true,
+      // unknown optional feature bits
       bin"        001000000000000000000000" -> true,
+      bin"        100000000000000000000000" -> true,
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      bin"        000001000000000000000000" -> false,
       bin"        000100000000000000000000" -> false,
       bin"        010000000000000000000000" -> false,
       bin"    0001000000000000000000000000" -> false,

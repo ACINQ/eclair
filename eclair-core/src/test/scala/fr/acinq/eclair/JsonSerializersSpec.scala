@@ -50,11 +50,6 @@ class JsonSerializersSpec extends FunSuite with Logging {
     assert(write(ChannelVersion.STANDARD) ===  """"00000000000000000000000000000001"""")
   }
 
-  test("Direction serialization") {
-    assert(write(IN) ===  """{"$type":"fr.acinq.eclair.transactions.IN"}""")
-    assert(write(OUT) ===  """{"$type":"fr.acinq.eclair.transactions.OUT"}""")
-  }
-
   test("serialize LocalParams") {
     val localParams = LocalParams(
       nodeId = randomKey.publicKey,
@@ -93,7 +88,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
   }
 
   test("serialize CommitmentSpec") {
-    val spec = CommitmentSpec(Set(DirectedHtlc(IN, UpdateAddHtlc(randomBytes32, 421, MilliSatoshi(1245), randomBytes32, CltvExpiry(1000), OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32)))), feeratePerKw = 1233, toLocal = MilliSatoshi(100), toRemote = MilliSatoshi(200))
+    val spec = CommitmentSpec(Set(IncomingHtlc(UpdateAddHtlc(randomBytes32, 421, MilliSatoshi(1245), randomBytes32, CltvExpiry(1000), OnionRoutingPacket(0, randomKey.publicKey.value, hex"0101", randomBytes32)))), feeratePerKw = 1233, toLocal = MilliSatoshi(100), toRemote = MilliSatoshi(200))
     logger.info(write(spec))
   }
 

@@ -29,9 +29,11 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
+import fr.acinq.eclair.channel.ChannelCommandResponse.ChannelOpened
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
+import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
@@ -44,9 +46,11 @@ import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChann
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTrampolinePaymentRequest}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTrampolinePaymentRequest}
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, PublicChannel, RouteParams}
+import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
+import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams}
+import fr.acinq.eclair.router.Router.{NORMAL => _, State => _, _}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -150,10 +154,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     import collection.JavaConversions._
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.features" -> "028a8a", "eclair.channel-flags" -> 0)).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15)).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.features" -> "0a8a8a", "eclair.max-funding-satoshis" -> 500000000, "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15)).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084)).withFallback(commonConfig))
-    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085)).withFallback(commonConfig))
+    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.features" -> "0a8a8a", "eclair.max-funding-satoshis" -> 500000000)).withFallback(commonConfig))
     instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086)).withFallback(commonConfig))
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.features" -> "028a8a", "eclair.trampoline-payments-enable" -> true)).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088)).withFallback(commonConfig))
@@ -180,7 +184,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       fundingTxFeeratePerKw_opt = None,
       channelFlags = None,
       timeout_opt = None))
-    assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
+    sender.expectMsgType[ChannelCommandResponse.ChannelOpened](10 seconds)
   }
 
   test("connect nodes") {
@@ -259,6 +263,86 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // - A is not announced (no node_announcement)
     awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)), 10, 12, 26)
     awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)), 10, 12, 24)
+  }
+
+  test("open a wumbo channel and wait for longer than the default min_depth") {
+    // we open a 5BTC channel and check that we scale `min_depth` up to 13 confirmations
+    val funder = nodes("C")
+    val fundee = nodes("F1")
+    val sender = TestProbe()
+    sender.send(funder.switchboard, Peer.OpenChannel(
+      remoteNodeId = fundee.nodeParams.nodeId,
+      fundingSatoshis = 5.btc,
+      pushMsat = 0.msat,
+      fundingTxFeeratePerKw_opt = None,
+      channelFlags = None,
+      timeout_opt = None))
+    val tempChannelId = sender.expectMsgType[ChannelOpened](10 seconds).channelId
+
+    // mine the funding tx
+    generateBlocks(bitcoincli, 2)
+
+    // get the channelId
+    sender.send(fundee.register, 'channels)
+    val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
+    sender.send(fundeeChannel, CMD_GETSTATEDATA)
+    val channelId = sender.expectMsgType[HasCommitments].channelId
+
+    awaitCond({
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED
+    })
+
+    generateBlocks(bitcoincli, 6)
+
+    // after 8 blocks the fundee is still waiting for more confirmations
+    sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+    assert(sender.expectMsgType[State] == WAIT_FOR_FUNDING_CONFIRMED)
+
+    // after 8 blocks the funder is still waiting for funding_locked from the fundee
+    sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+    assert(sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED)
+
+    // simulate a disconnection
+    sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
+    assert(sender.expectMsgType[String] == "disconnecting")
+
+    awaitCond({
+      sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+      val fundeeState = sender.expectMsgType[State]
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      val funderState = sender.expectMsgType[State]
+      fundeeState == OFFLINE && funderState == OFFLINE
+    })
+
+    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
+    awaitCond({
+      // reconnection
+      sender.send(fundee.switchboard, Peer.Connect(
+        nodeId = funder.nodeParams.nodeId,
+        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
+      ))
+      sender.expectMsgAnyOf(10 seconds, "connected", "already connected", "reconnection in progress")
+
+      sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+      val fundeeState = sender.expectMsgType[State](max = 30 seconds)
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      val funderState = sender.expectMsgType[State](max = 30 seconds)
+      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
+    }, max = 30 seconds, interval = 10 seconds)
+
+    // 5 extra blocks make it 13, just the amount of confirmations needed
+    generateBlocks(bitcoincli, 5)
+
+    awaitCond({
+      sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
+      val fundeeState = sender.expectMsgType[State]
+      sender.send(funder.register, Forward(channelId, CMD_GETSTATE))
+      val funderState = sender.expectMsgType[State]
+      fundeeState == NORMAL && funderState == NORMAL
+    })
+
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 10, 13, 28)
   }
 
   test("send an HTLC A->D") {
@@ -796,7 +880,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
     // we then have C unilateral close the channel (which will make F redeem the htlc onchain)
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond({
       sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
@@ -827,7 +911,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2)
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 10, 12, 26)
   }
 
   def getBlockCount: Long = {
@@ -879,7 +963,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
     // then we have F unilateral close the channel
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we then generate one block so that the htlc success tx gets written to the blockchain
@@ -908,7 +992,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 22)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 9, 11, 24)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -966,7 +1050,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 20)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 8, 10, 22)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
@@ -999,7 +1083,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // then we ask F to unilaterally close the channel
     sender.send(nodes("F4").register, Forward(htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg("ok")
+    sender.expectMsg(ChannelCommandResponse.Ok)
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = sender.expectMsgType[JValue]
@@ -1028,7 +1112,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 6, 8, 18)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 7, 9, 20)
   }
 
   test("punish a node that has published a revoked commit tx") {
@@ -1151,7 +1235,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     // this will remove the channel
-    awaitAnnouncements(nodes.filterKeys(_ == "A"), 5, 7, 16)
+    awaitAnnouncements(nodes.filterKeys(_ == "A"), 6, 8, 18)
   }
 
   test("generate and validate lots of channels") {
@@ -1175,10 +1259,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
-    announcements.foreach(ann => nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann))
+    announcements.foreach { ann =>
+      nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann)
+      sender.expectMsg(TransportHandler.ReadAck(ann))
+      sender.expectMsg(GossipDecision.Accepted(ann))
+    }
     awaitCond({
       sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 7 // 7 remaining channels because  D->F{1-5} have disappeared
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 8 // 8 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
 
