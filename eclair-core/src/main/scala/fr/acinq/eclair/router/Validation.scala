@@ -159,7 +159,7 @@ object Validation {
                     awaiting = awaiting1)
                   // we only reprocess updates and nodes if validation succeeded
                   val d2 = reprocessUpdates.foldLeft(d1) {
-                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, Right(u), wasStashed = true)
+                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, origins)), wasStashed = true)
                   }
                   val d3 = reprocessNodes.foldLeft(d2) {
                     case (d, (n, origins)) => Validation.handleNodeAnnouncement(d, nodeParams.db.network, origins, n, wasStashed = true)
@@ -257,19 +257,19 @@ object Validation {
     }
   }
 
-  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], update: Either[LocalChannelUpdate, ChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val u: ChannelUpdate = update.fold(lcu => lcu.channelUpdate, rcu => rcu)
-    val remoteOrigins = origins flatMap {
-      case r: RemoteGossip if wasStashed =>
-        Some(r.peerConnection)
-      case RemoteGossip(peerConnection, _) =>
-        peerConnection ! TransportHandler.ReadAck(u)
-        log.debug("received channel update for shortChannelId={}", u.shortChannelId)
-        Some(peerConnection)
-      case LocalGossip =>
-        log.debug("received channel update from {}", ctx.sender)
-        None
+    val (u, origins, remoteOrigins) = update match {
+      case Left(lcu) => (lcu.channelUpdate, Set[GossipOrigin](LocalGossip), Nil)
+      case Right(rcu) =>
+        val remote = rcu.origins.collect {
+          case RemoteGossip(peerConnection, _) if wasStashed => peerConnection
+          case RemoteGossip(peerConnection, _) =>
+            peerConnection ! TransportHandler.ReadAck(rcu.channelUpdate)
+            log.debug("received channel update for shortChannelId={}", rcu.channelUpdate.shortChannelId)
+            peerConnection
+        }.toSeq
+        (rcu.channelUpdate, rcu.origins, remote)
     }
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
@@ -413,29 +413,29 @@ object Validation {
     d.channels.get(lcu.shortChannelId) match {
       case Some(_) =>
         // channel has already been announced and router knows about it, we can process the channel_update
-        handleChannelUpdate(d, db, routerConf, Set(LocalGossip), Left(lcu))
+        handleChannelUpdate(d, db, routerConf, Left(lcu))
       case None =>
         lcu.channelAnnouncement_opt match {
           case Some(c) if d.awaiting.contains(c) =>
             // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), Left(lcu))
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(c)
             val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
-            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), Left(lcu))
+            handleChannelUpdate(d1, db, routerConf, Left(lcu))
           case None if d.privateChannels.contains(lcu.shortChannelId) =>
             // channel isn't announced but we already know about it, we can process the channel_update
-            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), Left(lcu))
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case None =>
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
             log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
             val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
             val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
-            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), Left(lcu))
+            handleChannelUpdate(d1, db, routerConf, Left(lcu))
         }
     }
   }

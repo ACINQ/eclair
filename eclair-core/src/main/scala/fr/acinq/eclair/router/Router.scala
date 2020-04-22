@@ -206,10 +206,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(sender, remoteNodeId)), n)
 
     case Event(u: ChannelUpdate, d: Data) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), Right(u))
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
     case Event(PeerRoutingMessage(remoteNodeId, u: ChannelUpdate), d) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(sender, remoteNodeId)), Right(u))
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(sender, remoteNodeId)))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) =>
       stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
@@ -412,6 +412,7 @@ object Router {
     case class RelatedChannelPruned(ann: ChannelUpdate) extends Rejected
   }
 
+  case class RemoteChannelUpdate(channelUpdate: ChannelUpdate, origins: Set[GossipOrigin])
   case class Stash(updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   // @formatter:on
