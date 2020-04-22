@@ -17,14 +17,14 @@
 package fr.acinq.eclair
 
 import fr.acinq.eclair.Features._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 /**
  * Created by PM on 27/01/2017.
  */
 
-class FeaturesSpec extends FunSuite {
+class FeaturesSpec extends AnyFunSuite {
 
   test("'initial_routing_sync' feature") {
     assert(hasFeature(hex"08", InitialRoutingSync, Some(FeatureSupport.Optional)))

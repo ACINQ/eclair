@@ -26,12 +26,12 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends FunSuite {
+class SqliteNetworkDbSpec extends AnyFunSuite {
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 

@@ -31,12 +31,13 @@ import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import fr.acinq.eclair.{LongToBtcAmount, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JValue}
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
 import scala.concurrent.duration._
 
-class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
+class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
@@ -124,11 +125,12 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
 
   /**
    * Create a chain of unspent txs
-   * @param tx tx that sends funds to a p2wpkh of priv
+   *
+   * @param tx   tx that sends funds to a p2wpkh of priv
    * @param priv private key that tx sends funds to
    * @return a (tx1, tx2) tuple where tx2 spends tx1 which spends tx
    */
-  def createUnspentTxChain(tx: Transaction, priv: PrivateKey) : (Transaction, Transaction) = {
+  def createUnspentTxChain(tx: Transaction, priv: PrivateKey): (Transaction, Transaction) = {
     // tx sends funds to our key
     val pub = priv.publicKey
     val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))

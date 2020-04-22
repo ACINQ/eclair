@@ -157,24 +157,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
-    case Event('nodes, d) =>
+    case Event(Symbol("nodes"), d) =>
       sender ! d.nodes.values
       stay
 
-    case Event('channels, d) =>
+    case Event(Symbol("channels"), d) =>
       sender ! d.channels.values.map(_.ann)
       stay
 
-    case Event('channelsMap, d) =>
+    case Event(Symbol("channelsMap"), d) =>
       sender ! d.channels
       stay
 
-    case Event('updates, d) =>
+    case Event(Symbol("updates"), d) =>
       val updates: Iterable[ChannelUpdate] = d.channels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt) ++ d.privateChannels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt)
       sender ! updates
       stay
 
-    case Event('data, d) =>
+    case Event(Symbol("data"), d) =>
       sender ! d
       stay
 

@@ -17,12 +17,12 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.eclair.crypto.Noise._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import org.spongycastle.crypto.ec.CustomNamedCurves
 import scodec.bits._
 
 
-class NoiseSpec extends FunSuite {
+class NoiseSpec extends AnyFunSuite {
 
   import Noise._
   import NoiseSpec._

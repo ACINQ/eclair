@@ -31,7 +31,7 @@ import fr.acinq.eclair.transactions.Scripts
 import org.json4s.JsonAST.JDecimal
 import scodec.bits.ByteVector
 
-import scala.collection.{Set, SortedMap}
+import scala.collection.immutable.SortedMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -88,7 +88,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       }
       client.rpcClient.invoke("getbalance").collect {
         // We track our balance in mBTC because a rounding issue in BTC would be too impactful.
-        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue() * 1000)
+        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue * 1000)
       }
       // TODO: beware of the herd effect
       KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
@@ -195,7 +195,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
       context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
 
-    case 'watches => sender ! watches
+    case Symbol("watches") => sender ! watches
 
   }
 
