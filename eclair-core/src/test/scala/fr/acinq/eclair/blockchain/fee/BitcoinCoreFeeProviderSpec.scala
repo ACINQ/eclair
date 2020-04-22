@@ -28,15 +28,15 @@ import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuiteLike
 
-import scala.collection.JavaConversions._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.CollectionConverters._
 import scala.util.Random
 
 
-class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with BitcoindService with FunSuiteLike with BeforeAndAfterAll with Logging {
+class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
@@ -45,7 +45,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.router-broadcast-interval" -> "2 second",
-    "eclair.auto-reconnect" -> false))
+    "eclair.auto-reconnect" -> false).asJava)
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
@@ -81,6 +81,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
   }
 
   test("get fee rates") {
+    import scala.concurrent.ExecutionContext.Implicits.global
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
@@ -121,7 +122,7 @@ class BitcoinCoreFeeProviderSpec extends TestKit(ActorSystem("test")) with Bitco
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
           val feerate = satoshi2btc(Satoshi(fees(blocks))).toBigDecimal
-          Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))
+          Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))(ec)
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
       }
     }

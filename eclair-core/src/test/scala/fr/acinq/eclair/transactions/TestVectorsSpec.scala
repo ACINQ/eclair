@@ -24,12 +24,12 @@ import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, 
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants}
 import grizzled.slf4j.Logging
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.io.Source
 
-class TestVectorsSpec extends FunSuite with Logging {
+class TestVectorsSpec extends AnyFunSuite with Logging {
 
   val results = collection.mutable.HashMap.empty[String, Map[String, String]]
   val current = collection.mutable.HashMap.empty[String, String]

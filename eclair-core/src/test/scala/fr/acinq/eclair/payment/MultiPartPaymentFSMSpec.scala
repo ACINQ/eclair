@@ -24,7 +24,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, randomBytes32, wire}
-import org.scalatest.FunSuiteLike
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
@@ -34,7 +34,7 @@ import scala.concurrent.duration._
  * Created by t-bast on 18/07/2019.
  */
 
-class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
 
   import MultiPartPaymentFSMSpec._
 
