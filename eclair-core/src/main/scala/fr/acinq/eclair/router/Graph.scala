@@ -386,7 +386,7 @@ object Graph {
 
       def addEdge(d: ChannelDesc, u: ChannelUpdate): DirectedGraph = addEdge(GraphEdge(d, u))
 
-      def addEdges(edges: Seq[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
+      def addEdges(edges: Iterable[(ChannelDesc, ChannelUpdate)]): DirectedGraph = {
         edges.foldLeft(this)((acc, edge) => acc.addEdge(edge._1, edge._2))
       }
 
@@ -423,7 +423,7 @@ object Graph {
         }
       }
 
-      def removeEdges(descList: Seq[ChannelDesc]): DirectedGraph = {
+      def removeEdges(descList: Iterable[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)((acc, edge) => acc.removeEdge(edge))
       }
 

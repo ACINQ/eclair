@@ -18,10 +18,10 @@ package fr.acinq.eclair.db
 
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import org.sqlite.SQLiteException
 
-class SqliteUtilsSpec extends FunSuite {
+class SqliteUtilsSpec extends AnyFunSuite {
 
   test("using with auto-commit disabled") {
     val conn = TestConstants.sqliteInMemory()
