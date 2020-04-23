@@ -24,14 +24,14 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes32}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{BitVector, HexStringSyntax}
 
 /**
   * Created by t-bast on 20/06/2019.
   */
 
-class CommonCodecsSpec extends FunSuite {
+class CommonCodecsSpec extends AnyFunSuite {
 
   test("encode/decode with uint64 codec") {
     val expected = Map(

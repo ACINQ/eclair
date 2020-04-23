@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
 
-class SmoothFeeProviderSpec extends FunSuite {
+class SmoothFeeProviderSpec extends AnyFunSuite {
   test("smooth fee rates") {
     val rates = Array(
       FeeratesPerKB(100, 200, 300, 400, 500, 600, 650),

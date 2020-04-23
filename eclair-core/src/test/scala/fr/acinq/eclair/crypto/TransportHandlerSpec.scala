@@ -24,7 +24,8 @@ import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
 import fr.acinq.eclair.wire.CommonCodecs
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.Codec
 import scodec.bits._
 import scodec.codecs._
@@ -33,7 +34,7 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 
-class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll {
+class TransportHandlerSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with BeforeAndAfterAll {
 
   import TransportHandlerSpec._
 

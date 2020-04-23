@@ -30,13 +30,13 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
-import org.scalatest.FunSuiteLike
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
-class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
 
   import ElectrumWalletSimulatedClientSpec._
 
@@ -391,7 +391,7 @@ object ElectrumWalletSimulatedClientSpec {
     val status1 = data.history.mapValues(items => {
       val status = items.map(i => s"${i.tx_hash}:${i.height}:").mkString("")
       Crypto.sha256(ByteVector.view(status.getBytes())).toString()
-    })
+    }).toMap
     data.copy(status = status1)
   }
 

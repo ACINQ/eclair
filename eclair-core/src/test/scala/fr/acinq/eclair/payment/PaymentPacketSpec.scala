@@ -32,7 +32,8 @@ import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, RelayLeg
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes32, randomKey}
-import org.scalatest.{BeforeAndAfterAll, FunSuite}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -40,7 +41,7 @@ import scodec.bits.{ByteVector, HexStringSyntax}
  * Created by PM on 31/05/2016.
  */
 
-class PaymentPacketSpec extends FunSuite with BeforeAndAfterAll {
+class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   import PaymentPacketSpec._
 

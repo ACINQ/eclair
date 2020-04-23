@@ -24,14 +24,14 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 /**
  * Created by PM on 31/05/2016.
  */
 
-class LightningMessageCodecsSpec extends FunSuite {
+class LightningMessageCodecsSpec extends AnyFunSuite {
 
   def bin(len: Int, fill: Byte) = ByteVector.fill(len)(fill)
 
