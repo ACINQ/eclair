@@ -261,16 +261,6 @@ object Validation {
     }
   }
 
-  private def applyChannelUpdate(pc: PublicChannel, update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
-    case Left(lcu) => pc.updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
-    case Right(rcu) => pc.updateChannelUpdateSameSideAs(rcu.channelUpdate)
-  }
-
-  private def applyChannelUpdate(pc: PrivateChannel, update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PrivateChannel = update match {
-    case Left(lcu) => pc.updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
-    case Right(rcu) => pc.updateChannelUpdateSameSideAs(rcu.channelUpdate)
-  }
-
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val (u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
@@ -293,7 +283,7 @@ object Validation {
         sendDecision(origins, GossipDecision.Accepted(u))
         val origins1 = d.rebroadcast.updates(u) ++ origins
         // NB: we update the channels because the balances may have changed even if the channel_update is the same.
-        val pc1 = applyChannelUpdate(pc, update)
+        val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
       } else if (StaleChannels.isStale(u)) {
@@ -315,7 +305,7 @@ object Validation {
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // update the graph
-        val pc1 = applyChannelUpdate(pc, update)
+        val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
           d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
@@ -328,7 +318,7 @@ object Validation {
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // we also need to update the graph
-        val pc1 = applyChannelUpdate(pc, update)
+        val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
@@ -364,7 +354,7 @@ object Validation {
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
-        val pc1 = applyChannelUpdate(pc, update)
+        val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
           d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
@@ -376,7 +366,7 @@ object Validation {
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
-        val pc1 = applyChannelUpdate(pc, update)
+        val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       }

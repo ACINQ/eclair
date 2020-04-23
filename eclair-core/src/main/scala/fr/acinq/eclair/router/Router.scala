@@ -292,6 +292,10 @@ object Router {
     } else {
       copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
     }
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
+      case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
+      case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
+    }
   }
   case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
@@ -305,6 +309,10 @@ object Router {
       copy(meta = ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive))
     } else {
       copy(meta = ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend))
+    }
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PrivateChannel = update match {
+      case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
+      case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
   // @formatter:on
