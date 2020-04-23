@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.FunSuite
@@ -36,19 +36,19 @@ class NetworkStatsSpec extends FunSuite {
   test("network data missing") {
     assert(NetworkStats.computeStats(Nil) === None)
     assert(NetworkStats.computeStats(Seq(
-      PublicChannel(fakeChannelAnnouncement(randomKey.publicKey, randomKey.publicKey), randomBytes32, 10 sat, None, None),
-      PublicChannel(fakeChannelAnnouncement(randomKey.publicKey, randomKey.publicKey), randomBytes32, 15 sat, None, None)
+      PublicChannel(fakeChannelAnnouncement(randomKey.publicKey, randomKey.publicKey), randomBytes32, 10 sat, None, None, None),
+      PublicChannel(fakeChannelAnnouncement(randomKey.publicKey, randomKey.publicKey), randomBytes32, 15 sat, None, None, Some(ChannelMeta(10000 msat, 3000 msat)))
     )) === None)
   }
 
   test("small network") {
     val nodes = Seq.fill(6)(randomKey.publicKey)
     val channels = Seq(
-      PublicChannel(fakeChannelAnnouncement(nodes(0), nodes(1)), randomBytes32, 10 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(10), 10 msat, 10)), Some(fakeChannelUpdate2(CltvExpiryDelta(15), 15 msat, 15))),
-      PublicChannel(fakeChannelAnnouncement(nodes(1), nodes(2)), randomBytes32, 20 sat, None, Some(fakeChannelUpdate2(CltvExpiryDelta(25), 25 msat, 25))),
-      PublicChannel(fakeChannelAnnouncement(nodes(2), nodes(3)), randomBytes32, 30 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(30), 30 msat, 30)), Some(fakeChannelUpdate2(CltvExpiryDelta(35), 35 msat, 35))),
-      PublicChannel(fakeChannelAnnouncement(nodes(3), nodes(4)), randomBytes32, 40 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(40), 40 msat, 40)), None),
-      PublicChannel(fakeChannelAnnouncement(nodes(4), nodes(5)), randomBytes32, 50 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(50), 50 msat, 50)), Some(fakeChannelUpdate2(CltvExpiryDelta(55), 55 msat, 55)))
+      PublicChannel(fakeChannelAnnouncement(nodes(0), nodes(1)), randomBytes32, 10 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(10), 10 msat, 10)), Some(fakeChannelUpdate2(CltvExpiryDelta(15), 15 msat, 15)), None),
+      PublicChannel(fakeChannelAnnouncement(nodes(1), nodes(2)), randomBytes32, 20 sat, None, Some(fakeChannelUpdate2(CltvExpiryDelta(25), 25 msat, 25)), None),
+      PublicChannel(fakeChannelAnnouncement(nodes(2), nodes(3)), randomBytes32, 30 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(30), 30 msat, 30)), Some(fakeChannelUpdate2(CltvExpiryDelta(35), 35 msat, 35)), Some(ChannelMeta(18000 msat, 12000 msat))),
+      PublicChannel(fakeChannelAnnouncement(nodes(3), nodes(4)), randomBytes32, 40 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(40), 40 msat, 40)), None, None),
+      PublicChannel(fakeChannelAnnouncement(nodes(4), nodes(5)), randomBytes32, 50 sat, Some(fakeChannelUpdate1(CltvExpiryDelta(50), 50 msat, 50)), Some(fakeChannelUpdate2(CltvExpiryDelta(55), 55 msat, 55)), None)
     )
     val Some(stats) = NetworkStats.computeStats(channels)
     assert(stats.channels === 5)
@@ -67,7 +67,8 @@ class NetworkStatsSpec extends FunSuite {
       randomBytes32,
       Satoshi(1000 + rand.nextInt(10000)),
       Some(fakeChannelUpdate1(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000))),
-      Some(fakeChannelUpdate2(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000)))
+      Some(fakeChannelUpdate2(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000))),
+      None
     ))
     val Some(stats) = NetworkStats.computeStats(channels)
     assert(stats.channels === 500)
