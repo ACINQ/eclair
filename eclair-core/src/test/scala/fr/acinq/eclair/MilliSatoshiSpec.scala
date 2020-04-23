@@ -17,13 +17,13 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Satoshi
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 /**
  * Created by t-bast on 22/08/2019.
  */
 
-class MilliSatoshiSpec extends FunSuite {
+class MilliSatoshiSpec extends AnyFunSuite {
 
   test("millisatoshi numeric operations") {
     // add

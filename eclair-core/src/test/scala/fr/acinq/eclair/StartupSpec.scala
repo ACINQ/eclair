@@ -21,12 +21,12 @@ import java.util.concurrent.atomic.AtomicLong
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.crypto.LocalKeyManager
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-import scala.collection.JavaConversions._
+import scala.jdk.CollectionConverters._
 import scala.util.Try
 
-class StartupSpec extends FunSuite {
+class StartupSpec extends AnyFunSuite {
 
   val defaultConf = ConfigFactory.parseResources("reference.conf").getConfig("eclair")
 
@@ -40,7 +40,7 @@ class StartupSpec extends FunSuite {
 
   test("check configuration") {
     assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair"))).isSuccess)
-    assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair").withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42))))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair").withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42).asJava)))).isFailure)
   }
 
   test("NodeParams should fail if the alias is illegal (over 32 bytes)") {

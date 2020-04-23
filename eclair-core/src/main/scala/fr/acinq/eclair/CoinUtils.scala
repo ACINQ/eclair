@@ -144,11 +144,11 @@ object CoinUtils extends Logging {
     }
     // note: we can't use the fr.acinq.bitcoin._ conversion methods because they truncate the sub-satoshi part
     getUnitFromString(unit) match {
-      case MSatUnit => MilliSatoshi((amountDecimal * MSatUnit.factorToMsat).longValue())
-      case SatUnit => MilliSatoshi((amountDecimal * SatUnit.factorToMsat).longValue())
-      case BitUnit => MilliSatoshi((amountDecimal * BitUnit.factorToMsat).longValue())
-      case MBtcUnit => MilliSatoshi((amountDecimal * MBtcUnit.factorToMsat).longValue())
-      case BtcUnit => MilliSatoshi((amountDecimal * BtcUnit.factorToMsat).longValue())
+      case MSatUnit => MilliSatoshi((amountDecimal * MSatUnit.factorToMsat).longValue)
+      case SatUnit => MilliSatoshi((amountDecimal * SatUnit.factorToMsat).longValue)
+      case BitUnit => MilliSatoshi((amountDecimal * BitUnit.factorToMsat).longValue)
+      case MBtcUnit => MilliSatoshi((amountDecimal * MBtcUnit.factorToMsat).longValue)
+      case BtcUnit => MilliSatoshi((amountDecimal * BtcUnit.factorToMsat).longValue)
       case _ => throw new IllegalArgumentException("unhandled unit")
     }
   }

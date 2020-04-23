@@ -26,13 +26,14 @@ import akka.util.ByteString
 import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import org.scalatest._
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Promise}
 
 class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
-  with FunSuiteLike
+  with AnyFunSuiteLike
   with ImplicitSender
   with BeforeAndAfterEach
   with BeforeAndAfterAll {

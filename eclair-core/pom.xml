@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
+        <artifactId>eclair_2.13</artifactId>
         <version>0.3.5-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-core_2.11</artifactId>
+    <artifactId>eclair-core_2.13</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
@@ -115,6 +115,11 @@
     </profiles>
 
     <dependencies>
+        <dependency>
+            <groupId>org.scala-lang.modules</groupId>
+            <artifactId>scala-collection-contrib_${scala.version.short}</artifactId>
+            <version>0.2.1</version>
+        </dependency>
         <!-- AKKA -->
         <dependency>
             <groupId>com.typesafe.akka</groupId>
@@ -136,7 +141,7 @@
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.6.0</version>
+            <version>3.6.7</version>
         </dependency>
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
@@ -170,7 +175,7 @@
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.11.2</version>
+            <version>1.11.7</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
@@ -181,7 +186,7 @@
         <dependency>
             <groupId>org.clapper</groupId>
             <artifactId>grizzled-slf4j_${scala.version.short}</artifactId>
-            <version>1.3.1</version>
+            <version>1.3.4</version>
         </dependency>
         <!-- OTHER -->
         <dependency>
@@ -220,19 +225,19 @@
         <dependency>
             <groupId>com.softwaremill.quicklens</groupId>
             <artifactId>quicklens_${scala.version.short}</artifactId>
-            <version>1.4.11</version>
+            <version>1.5.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-scalatest_${scala.version.short}</artifactId>
-            <version>0.9.8</version>
+            <version>0.9.9</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.whisk</groupId>
             <artifactId>docker-testkit-impl-spotify_${scala.version.short}</artifactId>
-            <version>0.9.8</version>
+            <version>0.9.9</version>
             <scope>test</scope>
         </dependency>
 	<!-- neeeded for our docker tests, see  https://github.com/spotify/dockerfile-maven/issues/90 -->
@@ -256,8 +261,8 @@
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-scala-scalatest_2.11</artifactId>
-            <version>1.4.1</version>
+            <artifactId>mockito-scala-scalatest_${scala.version.short}</artifactId>
+            <version>1.5.9</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

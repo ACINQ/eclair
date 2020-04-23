@@ -28,13 +28,13 @@ import javafx.scene.paint.Color
 case object QRCodeUtils {
 
   def createQRCode(data: String, width: Int = 250, height: Int = 250, margin: Int = 5): WritableImage = {
-    import scala.collection.JavaConversions._
+    import scala.jdk.CollectionConverters._
     val hintMap = collection.mutable.Map[EncodeHintType, Object]()
     hintMap.put(EncodeHintType.CHARACTER_SET, "UTF-8")
     hintMap.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.L)
     hintMap.put(EncodeHintType.MARGIN, margin.toString)
     val qrWriter = new QRCodeWriter
-    val byteMatrix = qrWriter.encode(data, BarcodeFormat.QR_CODE, width, height, hintMap)
+    val byteMatrix = qrWriter.encode(data, BarcodeFormat.QR_CODE, width, height, hintMap.asJava)
     val writableImage = new WritableImage(width, height)
     val pixelWriter = writableImage.getPixelWriter
     for (i <- 0 until byteMatrix.getWidth) {
