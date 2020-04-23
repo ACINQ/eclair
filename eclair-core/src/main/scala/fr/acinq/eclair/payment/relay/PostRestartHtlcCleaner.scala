@@ -353,6 +353,7 @@ object PostRestartHtlcCleaner {
         case Origin.Relayed(channelId, htlcId, _, _) => isPendingUpstream(channelId, htlcId)
         case Origin.TrampolineRelayed(htlcs, _) => htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId) }
       }
+      .toMap
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")

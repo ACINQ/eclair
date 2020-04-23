@@ -27,7 +27,7 @@ import fr.acinq.eclair.{ShortChannelId, secureRandom}
 import scodec.bits.ByteVector
 
 object LocalKeyManager {
-  def channelKeyBasePath(chainHash: ByteVector32) = chainHash match {
+  def channelKeyBasePath(chainHash: ByteVector32) = (chainHash: @unchecked) match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
@@ -36,7 +36,7 @@ object LocalKeyManager {
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
-  def nodeKeyBasePath(chainHash: ByteVector32) = chainHash match {
+  def nodeKeyBasePath(chainHash: ByteVector32) = (chainHash: @unchecked) match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }

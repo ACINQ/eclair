@@ -28,7 +28,7 @@ import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshi, randomBytes32, _}
 import grizzled.slf4j.Logging
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.io.Source
@@ -38,7 +38,7 @@ import scala.util.{Failure, Random, Success, Try}
  * Created by PM on 16/12/2016.
  */
 
-class TransactionsSpec extends FunSuite with Logging {
+class TransactionsSpec extends AnyFunSuite with Logging {
   val localFundingPriv = PrivateKey(randomBytes32)
   val remoteFundingPriv = PrivateKey(randomBytes32)
   val localRevocationPriv = PrivateKey(randomBytes32)
