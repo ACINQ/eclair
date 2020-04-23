@@ -33,8 +33,6 @@ import javafx.application.Platform
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
 
-import scala.jdk.CollectionConverters._
-
 /**
  * Created by PM on 16/08/2016.
  */
@@ -214,15 +212,15 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.recipientAmount}, fees=${p.feesPaid}")
       val message = CoinUtils.formatAmountInUnit(p.amountWithFees, FxApp.getUnit, withUnit = true)
       mainController.handlers.notification("Payment Sent", message, NOTIFICATION_SUCCESS)
-      runInGuiThread(() => mainController.paymentSentList.asScala.prepend(PaymentSentRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentSentList.add(PaymentSentRecord(p, LocalDateTime.now())))
 
     case p: PaymentReceived =>
       log.debug(s"payment received with h=${p.paymentHash}, amount=${p.amount}")
-      runInGuiThread(() => mainController.paymentReceivedList.asScala.prepend(PaymentReceivedRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentReceivedList.add(PaymentReceivedRecord(p, LocalDateTime.now())))
 
     case p: PaymentRelayed =>
       log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amountIn}, feesEarned=${p.amountOut}")
-      runInGuiThread(() => mainController.paymentRelayedList.asScala.prepend(PaymentRelayedRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentRelayedList.add(PaymentRelayedRecord(p, LocalDateTime.now())))
 
     case ZMQConnected =>
       log.debug("ZMQ connection UP")
