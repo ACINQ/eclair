@@ -21,16 +21,17 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, Bech32, ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import fr.acinq.eclair.{LongToBtcAmount, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JString, JValue}
+import org.json4s.JsonAST.JValue
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 import scodec.bits._
 
@@ -60,21 +61,14 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
-    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = probe.expectMsgType[JValue]
-
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
-    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
-
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
-    val JString(hex) = probe.expectMsgType[JValue]
-    val tx = Transaction.read(hex)
+    val (address, _) = getNewAddress(bitcoincli)
+    val tx = sendToAddress(bitcoincli, address, 1.0)
 
     val listener = TestProbe()
     probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
     generateBlocks(bitcoincli, 5)
     val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
-    assert(confirmed.tx.txid.toHex === txid)
+    assert(confirmed.tx.txid === tx.txid)
     system.stop(watcher)
   }
 
@@ -84,19 +78,8 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
-    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = probe.expectMsgType[JValue]
-
-    probe.send(bitcoincli, BitcoinReq("dumpprivkey", address))
-    val JString(wif) = probe.expectMsgType[JValue]
-    val (priv, true) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
-
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
-    val JString(txid) = probe.expectMsgType[JValue](30 seconds)
-
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
-    val JString(hex) = probe.expectMsgType[JValue]
-    val tx = Transaction.read(hex)
+    val (address, priv) = getNewAddress(bitcoincli)
+    val tx = sendToAddress(bitcoincli, address, 1.0)
 
     // find the output for the address we generated and create a tx that spends it
     val pos = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
@@ -122,63 +105,21 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     system.stop(watcher)
   }
 
-  /**
-   * Create a chain of unspent txs
-   * @param tx tx that sends funds to a p2wpkh of priv
-   * @param priv private key that tx sends funds to
-   * @return a (tx1, tx2) tuple where tx2 spends tx1 which spends tx
-   */
-  def createUnspentTxChain(tx: Transaction, priv: PrivateKey) : (Transaction, Transaction) = {
-    // tx sends funds to our key
-    val pub = priv.publicKey
-    val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))
-
-    val fee = 10000 sat
-    val tx1 = {
-      val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx, outputIndex), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx.txOut(outputIndex).amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
-      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx.txOut(outputIndex).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      val tmp1 = tmp.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
-      Transaction.correctlySpends(tmp1, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      tmp1
-    }
-    // tx1 spends tx
-
-    val tx2 = {
-      val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx1, 0), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx1.txOut(0).amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
-      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      val tmp1 = tmp.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
-      Transaction.correctlySpends(tmp1, tx1 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      tmp1
-    }
-    // and tx2 spends tx1
-    (tx1, tx2)
-  }
-
   test("watch for mempool transactions (txs in mempool before we set the watch)") {
     val probe = TestProbe()
     val blockCount = new AtomicLong()
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     probe.send(electrumClient, ElectrumClient.AddStatusListener(probe.ref))
     probe.expectMsgType[ElectrumClient.ElectrumReady]
-
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
-    val priv = PrivateKey(ByteVector32.fromValidHex("01" * 32))
-    val pub = priv.publicKey
-    val address = Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160)
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
-    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
-    val JString(hex) = probe.expectMsgType[JValue]
-    val tx = Transaction.read(hex)
-
+    val (address, priv) = getNewAddress(bitcoincli)
+    val tx = sendToAddress(bitcoincli, address, 1.0)
     val (tx1, tx2) = createUnspentTxChain(tx, priv)
-
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
     probe.expectMsgType[JValue]
-
 
     // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
     awaitCond({
@@ -203,21 +144,13 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     probe.expectMsgType[ElectrumClient.ElectrumReady]
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
-    val priv = PrivateKey(ByteVector32.fromValidHex("01" * 32))
-    val pub = priv.publicKey
-    val address = Bech32.encodeWitnessAddress("bcrt", 0, pub.hash160)
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, 1.0))
-    val JString(txid) = probe.expectMsgType[JValue](3000 seconds)
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
-    val JString(hex) = probe.expectMsgType[JValue]
-    val tx = Transaction.read(hex)
-
+    val (address, priv) = getNewAddress(bitcoincli)
+    val tx = sendToAddress(bitcoincli, address, 1.0)
     val (tx1, tx2) = createUnspentTxChain(tx, priv)
 
     // here we set the watch * before * we publish our transactions
     val listener = TestProbe()
     probe.send(watcher, WatchConfirmed(listener.ref, tx2.txid, tx2.txOut(0).publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
-
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
@@ -245,7 +178,6 @@ class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike
     val mainnetAddress = ElectrumServerAddress(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(mainnetAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
-    //Thread.sleep(10000)
     val probe = TestProbe()
 
     {
