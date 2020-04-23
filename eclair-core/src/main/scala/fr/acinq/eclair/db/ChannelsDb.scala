@@ -24,13 +24,13 @@ import fr.acinq.eclair.channel.HasCommitments
 
 trait ChannelsDb extends Closeable {
 
-  def addOrUpdateChannel(state: HasCommitments)
+  def addOrUpdateChannel(state: HasCommitments): Unit
 
-  def removeChannel(channelId: ByteVector32)
+  def removeChannel(channelId: ByteVector32): Unit
 
   def listLocalChannels(): Seq[HasCommitments]
 
-  def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
+  def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]
 

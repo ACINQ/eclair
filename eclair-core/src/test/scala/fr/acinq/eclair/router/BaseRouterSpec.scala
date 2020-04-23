@@ -103,7 +103,8 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       // let's set up the router
       val peerConnection = TestProbe()
       val watcher = TestProbe()
-      val nodeParams = Alice.nodeParams
+      import com.softwaremill.quicklens._
+      val nodeParams = Alice.nodeParams.modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
       val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
       peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ab))

@@ -55,7 +55,7 @@ object BitgoFeeProvider {
     val blockTargets = json \ "feeByBlockTarget"
     blockTargets.foldField(Seq.empty[BlockTarget]) {
       // BitGo returns estimates in Satoshi/KB, which is what we want
-      case (list, (strBlockTarget, JInt(feePerKB))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKB.longValue())
+      case (list, (strBlockTarget, JInt(feePerKB))) => list :+ BlockTarget(strBlockTarget.toInt, feePerKB.longValue)
     }
   }
 

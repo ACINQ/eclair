@@ -36,7 +36,8 @@ import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
 import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient, _}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, randomBytes32, randomKey}
-import org.scalatest.{Outcome, Tag, fixture}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
 import scala.concurrent.duration._
@@ -45,7 +46,7 @@ import scala.concurrent.duration._
  * Created by t-bast on 25/07/2019.
  */
 
-class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike {
+class PaymentInitiatorSpec extends TestKit(ActorSystem("test")) with FixtureAnyFunSuiteLike {
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
