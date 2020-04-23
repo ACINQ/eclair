@@ -760,7 +760,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(commit: CommitSig, d: DATA_NORMAL) =>
       Commitments.receiveCommit(d.commitments, commit, keyManager) match {
-        case Success((commitments1: Commitments, revocation)) =>
+        case Success((commitments1, revocation)) =>
           log.debug("received a new sig, spec:\n{}", Commitments.specs2String(commitments1))
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
@@ -1086,7 +1086,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown)) =>
       Commitments.receiveCommit(d.commitments, commit, keyManager) match {
-        case Success((commitments1: Commitments, revocation)) =>
+        case Success((commitments1, revocation)) =>
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", Commitments.specs2String(commitments1))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
