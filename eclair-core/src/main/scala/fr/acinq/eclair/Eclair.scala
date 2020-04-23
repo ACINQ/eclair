@@ -190,9 +190,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
     case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
     case Some(pk) => (appKit.router ? 'channelsMap).mapTo[Map[ShortChannelId, PublicChannel]].map { channels =>
       channels.values.flatMap {
-        case PublicChannel(ann, _, _, Some(u1), _) if ann.nodeId1 == pk && u1.isNode1 => List(u1)
-        case PublicChannel(ann, _, _, _, Some(u2)) if ann.nodeId2 == pk && !u2.isNode1 => List(u2)
-        case PublicChannel(_, _, _, _, _) => List.empty
+        case PublicChannel(ann, _, _, Some(u1), _, _) if ann.nodeId1 == pk && u1.isNode1 => List(u1)
+        case PublicChannel(ann, _, _, _, Some(u2), _) if ann.nodeId2 == pk && !u2.isNode1 => List(u2)
+        case _: PublicChannel => List.empty
       }
     }
   }
