@@ -32,10 +32,11 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError}
-import fr.acinq.eclair.router.Router.{ChannelHop, GetNetworkStats, GetNetworkStatsResponse, RouteParams, TickComputeNetworkStats}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
-import org.scalatest.{Outcome, Tag, fixture}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -45,7 +46,7 @@ import scala.util.Random
  * Created by t-bast on 18/07/2019.
  */
 
-class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike {
+class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with FixtureAnyFunSuiteLike {
 
   import MultiPartPaymentLifecycleSpec._
 
@@ -166,7 +167,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     import f._
     val payment = SendMultiPartPayment(randomBytes32, b, 1000 * 1000 msat, expiry, 1)
     // Network statistics should be ignored when sending to peer (otherwise we should have split into multiple payments).
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(100), d => Satoshi(d.toLong))), localChannels(0))
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(100), d => Satoshi(d.toLong))), localChannels(0))
     childPayFsm.expectMsg(SendPayment(b, Onion.createMultiPartPayload(payment.totalAmount, payment.totalAmount, expiry, payment.paymentSecret), 1, routePrefix = Seq(ChannelHop(nodeParams.nodeId, b, channelUpdate_ab_1))))
     childPayFsm.expectNoMsg(50 millis)
   }
@@ -178,7 +179,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     val testChannels = localChannels()
     val balanceToTarget = testChannels.channels.filter(_.nextNodeId == d).map(_.commitments.availableBalanceForSend).sum
     assert(balanceToTarget < (1000 * 1000).msat) // the commit tx fee prevents us from completely emptying our channel
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(500), d => Satoshi(d.toLong))), testChannels)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(500), d => Satoshi(d.toLong))), testChannels)
     waitUntilAmountSent(f, payment.totalAmount)
     val payments = payFsm.stateData.asInstanceOf[PaymentProgress].pending.values
     assert(payments.size > 1)
@@ -190,7 +191,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("send to remote node without splitting") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 300 * 1000 msat, expiry, 1)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1500), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1500), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
     payFsm.stateData.asInstanceOf[PaymentProgress].pending.foreach {
       case (id, payment) => childPayFsm.send(payFsm, PaymentSent(paymentId, paymentHash, paymentPreimage, finalAmount, e, Seq(PartialPayment(id, payment.finalPayload.amount, 5 msat, randomBytes32, None))))
@@ -206,7 +207,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 3200 * 1000 msat, expiry, 3)
     // A network capacity of 1000 sat should split the payment in at least 3 parts.
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), localChannels())
 
     val payments = Iterator.iterate(0 msat)(sent => {
       val child = childPayFsm.expectMsgType[SendPayment]
@@ -218,7 +219,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
       assert(child.routePrefix.length === 1 && child.routePrefix.head.nodeId === nodeParams.nodeId)
       assert(sent + child.finalPayload.amount <= payment.totalAmount)
       sent + child.finalPayload.amount
-    }).toSeq.takeWhile(sent => sent != payment.totalAmount)
+    }).takeWhile(sent => sent != payment.totalAmount).toSeq
     assert(payments.length > 2)
     assert(payments.length < 10)
     childPayFsm.expectNoMsg(50 millis)
@@ -248,7 +249,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     // A network capacity of 1500 sat should split the payment in at least 2 parts.
     // We have a single big channel inside which we'll send multiple payments.
     val localChannel = OutgoingChannels(Seq(OutgoingChannel(b, channelUpdate_ab_1, makeCommitments(5000 * 1000 msat, feeRatePerKw))))
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1500), d => Satoshi(d.toLong))), localChannel)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1500), d => Satoshi(d.toLong))), localChannel)
     waitUntilAmountSent(f, payment.totalAmount)
 
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
@@ -271,7 +272,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     import f._
     val trampolineTlv = OnionTlv.TrampolineOnion(OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(400)(0), randomBytes32))
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 3, additionalTlvs = Seq(trampolineTlv))
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
 
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
@@ -284,7 +285,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     import f._
     val routeParams = RouteParams(randomize = false, 100 msat, 0.05, 20, CltvExpiryDelta(144), None)
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 3, routeParams = Some(routeParams))
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, 3000 * 1000 msat)
 
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
@@ -304,7 +305,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
       OutgoingChannel(b, channelUpdate_ab_1.copy(shortChannelId = ShortChannelId(42)), makeCommitments(0 msat, 10)),
       OutgoingChannel(e, channelUpdate_ab_1.copy(shortChannelId = ShortChannelId(43)), makeCommitments(0 msat, 10)
       )))
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), testChannels1)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), testChannels1)
     waitUntilAmountSent(f, payment.totalAmount)
     payFsm.stateData.asInstanceOf[PaymentProgress].pending.foreach {
       case (id, p) => childPayFsm.send(payFsm, PaymentSent(paymentId, paymentHash, paymentPreimage, payment.totalAmount, e, Seq(PartialPayment(id, p.finalPayload.amount, 5 msat, randomBytes32, None))))
@@ -320,7 +321,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 3)
     val testChannels = localChannels()
     // A network capacity of 1000 sat should split the payment in at least 3 parts.
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), testChannels)
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), testChannels)
     waitUntilAmountSent(f, payment.totalAmount)
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
     assert(pending.size > 2)
@@ -351,7 +352,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("cannot send (not enough capacity on local channels)") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 3)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), OutgoingChannels(Seq(
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), OutgoingChannels(Seq(
       OutgoingChannel(b, channelUpdate_ab_1, makeCommitments(1000 * 1000 msat, 10)),
       OutgoingChannel(c, channelUpdate_ac_2, makeCommitments(1000 * 1000 msat, 10)),
       OutgoingChannel(d, channelUpdate_ad_1, makeCommitments(1000 * 1000 msat, 10))))
@@ -366,7 +367,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("cannot send (fee rate too high)") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 2500 * 1000 msat, expiry, 3)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), OutgoingChannels(Seq(
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), OutgoingChannels(Seq(
       OutgoingChannel(b, channelUpdate_ab_1, makeCommitments(1500 * 1000 msat, 1000)),
       OutgoingChannel(c, channelUpdate_ac_2, makeCommitments(1500 * 1000 msat, 1000)),
       OutgoingChannel(d, channelUpdate_ad_1, makeCommitments(1500 * 1000 msat, 1000))))
@@ -381,7 +382,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("payment timeout") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 5)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
     val (childId1, _) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
 
@@ -394,7 +395,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("failure received from final recipient") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 5)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
     val (childId1, _) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
 
@@ -407,7 +408,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("fail after too many attempts") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 3000 * 1000 msat, expiry, 2)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1000), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
     val (childId1, childPayment1) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
 
@@ -437,7 +438,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("receive partial failure after success (recipient spec violation)") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 4000 * 1000 msat, expiry, 2)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(1500), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(1500), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
 
@@ -461,7 +462,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
   test("receive partial success after abort (recipient spec violation)") { f =>
     import f._
     val payment = SendMultiPartPayment(randomBytes32, e, 5000 * 1000 msat, expiry, 1)
-    initPayment(f, payment, emptyStats.copy(capacity = Stats(Seq(2000), d => Satoshi(d.toLong))), localChannels())
+    initPayment(f, payment, emptyStats.copy(capacity = Stats.generate(Seq(2000), d => Satoshi(d.toLong))), localChannels())
     waitUntilAmountSent(f, payment.totalAmount)
     val pending = payFsm.stateData.asInstanceOf[PaymentProgress].pending
 
@@ -492,7 +493,7 @@ class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with fi
     for (_ <- 1 to 100) {
       // We have a total of 6500 satoshis across all channels. We try to send lower amounts to take fees into account.
       val toSend = ((1 + Random.nextInt(3500)) * 1000).msat
-      val networkStats = emptyStats.copy(capacity = Stats(Seq(400 + Random.nextInt(1600)), d => Satoshi(d.toLong)))
+      val networkStats = emptyStats.copy(capacity = Stats.generate(Seq(400 + Random.nextInt(1600)), d => Satoshi(d.toLong)))
       val routeParams = RouteParams(randomize = true, Random.nextInt(1000).msat, Random.nextInt(10).toDouble / 100, 20, CltvExpiryDelta(144), None)
       val request = SendMultiPartPayment(randomBytes32, e, toSend, CltvExpiry(561), 1, Nil, Some(routeParams))
       val fuzzParams = s"(sending $toSend with network capacity ${networkStats.capacity.percentile75.toMilliSatoshi}, fee base ${routeParams.maxFeeBase} and fee percentage ${routeParams.maxFeePct})"
@@ -551,7 +552,7 @@ object MultiPartPaymentLifecycleSpec {
   val hop_ab_2 = ChannelHop(a, b, channelUpdate_ab_2)
   val hop_ac_1 = ChannelHop(a, c, channelUpdate_ac_1)
 
-  val emptyStats = NetworkStats(0, 0, Stats(Seq(0), d => Satoshi(d.toLong)), Stats(Seq(0), d => CltvExpiryDelta(d.toInt)), Stats(Seq(0), d => MilliSatoshi(d.toLong)), Stats(Seq(0), d => d.toLong))
+  val emptyStats = NetworkStats(0, 0, Stats.generate(Seq(0), d => Satoshi(d.toLong)), Stats.generate(Seq(0), d => CltvExpiryDelta(d.toInt)), Stats.generate(Seq(0), d => MilliSatoshi(d.toLong)), Stats.generate(Seq(0), d => d.toLong))
 
   // We are only interested in availableBalanceForSend so we can put dummy values for the rest.
   def makeCommitments(canSend: MilliSatoshi, feeRatePerKw: Long, announceChannel: Boolean = true): Commitments =

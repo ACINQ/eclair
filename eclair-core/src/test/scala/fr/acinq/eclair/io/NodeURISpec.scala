@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.io
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 
-class NodeURISpec extends FunSuite {
+class NodeURISpec extends AnyFunSuite {
 
   val PUBKEY = "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134"
   val SHORT_PUB_KEY = "03933884aaf1d6b108397e5efe5c86bcf2d8ca"

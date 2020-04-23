@@ -22,10 +22,10 @@ import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
-class GraphSpec extends FunSuite {
+class GraphSpec extends AnyFunSuite {
 
   val (a, b, c, d, e, f, g) = (
     PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a

@@ -23,9 +23,9 @@ import fr.acinq.eclair.wire.NodeAddress
 
 trait PeersDb extends Closeable {
 
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress)
+  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress): Unit
 
-  def removePeer(nodeId: PublicKey)
+  def removePeer(nodeId: PublicKey): Unit
 
   def getPeer(nodeId: PublicKey): Option[NodeAddress]
 

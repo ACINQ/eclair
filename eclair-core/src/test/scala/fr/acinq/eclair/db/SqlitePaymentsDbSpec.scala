@@ -27,12 +27,12 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class SqlitePaymentsDbSpec extends FunSuite {
+class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   import SqlitePaymentsDbSpec._
 

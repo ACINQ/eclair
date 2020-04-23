@@ -30,7 +30,7 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, randomKey}
 import org.json4s
 import org.json4s.JsonAST.{JString, JValue}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -40,7 +40,7 @@ import scala.concurrent.{Await, ExecutionContext}
  * Created by PM on 31/05/2016.
  */
 
-class AnnouncementsBatchValidationSpec extends FunSuite {
+class AnnouncementsBatchValidationSpec extends AnyFunSuite {
 
   import AnnouncementsBatchValidationSpec._
 

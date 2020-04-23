@@ -20,9 +20,9 @@ import fr.acinq.bitcoin.OutPoint
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed, WatchSpent, WatchSpentBasic}
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.randomBytes32
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class ZmqWatcherSpec extends FunSuite {
+class ZmqWatcherSpec extends AnyFunSuite {
 
   test("add/remove watches from/to utxo map") {
     import ZmqWatcher._
