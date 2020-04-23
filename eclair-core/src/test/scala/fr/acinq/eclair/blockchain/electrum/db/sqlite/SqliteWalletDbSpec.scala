@@ -23,14 +23,14 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.version
 import fr.acinq.eclair.wire.ChannelCodecs.txCodec
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.Codec
 import scodec.bits.BitVector
 import scodec.codecs.{constant, listOfN, provide, uint16}
 
 import scala.util.Random
 
-class SqliteWalletDbSpec extends FunSuite {
+class SqliteWalletDbSpec extends AnyFunSuite {
   val random = new Random()
 
   def makeChildHeader(header: BlockHeader): BlockHeader = header.copy(hashPreviousBlock = header.hash, nonce = random.nextLong() & 0xffffffffL)

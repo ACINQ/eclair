@@ -227,8 +227,8 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
   override def unhandled(message: Any): Unit = {
     message match {
       case Terminated(deadActor) =>
-        addressSubscriptions = addressSubscriptions.mapValues(subscribers => subscribers - deadActor)
-        scriptHashSubscriptions = scriptHashSubscriptions.mapValues(subscribers => subscribers - deadActor)
+        addressSubscriptions = addressSubscriptions.mapValues(subscribers => subscribers - deadActor).toMap
+        scriptHashSubscriptions = scriptHashSubscriptions.mapValues(subscribers => subscribers - deadActor).toMap
         statusListeners -= deadActor
         headerSubscriptions -= deadActor
 
@@ -512,8 +512,8 @@ object ElectrumClient {
           case _ => ""
         }
         val code = other \ " code" match {
-          case JInt(value) => value.intValue()
-          case JLong(value) => value.intValue()
+          case JInt(value) => value.intValue
+          case JLong(value) => value.intValue
           case _ => 0
         }
         Some(Error(code, message))
@@ -528,13 +528,13 @@ object ElectrumClient {
   }
 
   def longField(jvalue: JValue, field: String): Long = (jvalue \ field: @unchecked) match {
-    case JLong(value) => value.longValue()
-    case JInt(value) => value.longValue()
+    case JLong(value) => value.longValue
+    case JInt(value) => value.longValue
   }
 
   def intField(jvalue: JValue, field: String): Int = (jvalue \ field: @unchecked) match {
-    case JLong(value) => value.intValue()
-    case JInt(value) => value.intValue()
+    case JLong(value) => value.intValue
+    case JInt(value) => value.intValue
   }
 
   def parseBlockHeader(json: JValue): (Int, BlockHeader) = {

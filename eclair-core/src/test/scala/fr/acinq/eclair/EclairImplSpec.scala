@@ -38,14 +38,15 @@ import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, 
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{Outcome, ParallelTestExecution, fixture}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Success
 
-class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with IdiomaticMockito with ParallelTestExecution {
+class EclairImplSpec extends TestKit(ActorSystem("test")) with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
 
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
