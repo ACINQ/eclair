@@ -722,7 +722,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c: Command, d: DATA_NORMAL) if c == CMD_SIGN =>
+    case Event(c: CMD_SIGN.type, d: DATA_NORMAL) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -1063,7 +1063,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(c: Command, d: DATA_SHUTDOWN) if c == CMD_SIGN =>
+    case Event(c: CMD_SIGN.type, d: DATA_SHUTDOWN) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
@@ -1650,7 +1650,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "close", stateName), c)
 
-    case Event(c: Command, d) if c == CMD_FORCECLOSE =>
+    case Event(c: CMD_FORCECLOSE.type, d) =>
       d match {
         case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying ChannelCommandResponse.Ok
         case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
