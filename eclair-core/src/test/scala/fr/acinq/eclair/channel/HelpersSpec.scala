@@ -30,7 +30,7 @@ import scala.concurrent.duration._
 
 class HelpersSpec extends FunSuite {
 
-  test("compute the funding tx min depth according to funding amount") {
+  ignore("compute the funding tx min depth according to funding amount") {
     assert(Helpers.minDepthForFunding(nodeParams, Btc(1)) == 4)
     assert(Helpers.minDepthForFunding(nodeParams.copy(minDepthBlocks = 6), Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
     assert(Helpers.minDepthForFunding(nodeParams, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
