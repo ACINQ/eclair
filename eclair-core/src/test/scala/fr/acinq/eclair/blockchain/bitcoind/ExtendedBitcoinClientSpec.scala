@@ -29,8 +29,8 @@ import org.json4s.JsonAST.{JString, _}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.jdk.CollectionConverters._
 
 
 class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
