@@ -71,8 +71,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       reconnectionTask forward p
       stay
 
-    case Event(PeerConnection.ConnectionReady(remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
-      val peerConnection = sender
+    case Event(PeerConnection.ConnectionReady(peerConnection, remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
       log.debug("got authenticated connection to address {}:{}", address.getHostString, address.getPort)
 
@@ -371,7 +370,7 @@ object Peer {
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
-  case class PeerRoutingMessage(remoteNodeId: PublicKey, message: RoutingMessage)
+  case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
 
   // @formatter:on
 
