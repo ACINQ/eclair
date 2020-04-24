@@ -257,12 +257,13 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         stay
 
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
-        val thisOrigin = RemoteGossip(self, d.remoteNodeId)
+
+        val thisRemote = RemoteGossip(self, d.remoteNodeId)
         /**
          * Send and count in a single iteration
          */
         def sendAndCount(msgs: Map[_ <: RoutingMessage, Set[GossipOrigin]]): Int = msgs.foldLeft(0) {
-          case (count, (_, origins)) if origins.contains(thisOrigin) =>
+          case (count, (_, origins)) if origins.contains(thisRemote) =>
             // the announcement came from this peer, we don't send it back
             count
           case (count, (msg, origins)) if !timestampInRange(d.nodeParams, msg, origins, d.gossipTimestampFilter) =>
@@ -306,7 +307,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             d.transport ! TransportHandler.ReadAck(msg)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-            router ! Peer.PeerRoutingMessage(RemoteGossip(self, d.remoteNodeId), msg)
+            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
         }
         stay
 
