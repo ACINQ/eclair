@@ -17,13 +17,13 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Transaction
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 /**
   * Created by PM on 27/01/2017.
   */
 
-class WatcherSpec extends FunSuite {
+class WatcherSpec extends AnyFunSuite {
 
   test("extract pay2wpkh pubkey script") {
     val commitTx = Transaction.read("020000000001010ba75314a116c1e585d1454d079598c5f00edc8a21ebd9e4f3b64e5c318ff2a30100000000e832a680012e850100000000001600147d2a3fc37dba8e946e0238d7eeb6fb602be658200400473044022010d4f249861bb9828ddfd2cda91dc10b8f8ffd0f15c8a4a85a2d373d52f5e0ff02205356242878121676e3e823ceb3dc075d18fed015053badc8f8d754b8959a9178014730440220521002cf241311facf541b689e7229977bfceffa0e4ded785b4e6197af80bfa202204a168d1f7ee59c73ae09c3e0a854b20262b9969fe4ed69b15796dca3ea286582014752210365375134360808be0b4756ba8a2995488310ac4c69571f2b600aaba3ec6cc2d32103a0d9c18794f16dfe01d6d6716bcd1e97ecff2f39451ec48e1899af40f20a18bc52aec3dd9520")

@@ -48,7 +48,7 @@ object StaleChannels {
       ctx.system.eventStream.publish(ChannelLost(shortChannelId))
     }
 
-    val staleChannelsToRemove = new mutable.MutableList[ChannelDesc]
+    val staleChannelsToRemove = new mutable.ArrayBuffer[ChannelDesc]
     staleChannels.foreach(ca => {
       staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId1, ca.ann.nodeId2)
       staleChannelsToRemove += ChannelDesc(ca.ann.shortChannelId, ca.ann.nodeId2, ca.ann.nodeId1)

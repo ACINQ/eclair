@@ -37,7 +37,7 @@ import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, rando
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
 
@@ -50,7 +50,7 @@ import scala.util.Random
  * Created by PM on 31/05/2016.
  */
 
-class ChannelCodecsSpec extends FunSuite {
+class ChannelCodecsSpec extends AnyFunSuite {
 
   import ChannelCodecsSpec._
 

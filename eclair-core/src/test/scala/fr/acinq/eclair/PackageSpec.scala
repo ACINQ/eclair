@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Satoshi, Script}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.util.Try
@@ -27,7 +27,7 @@ import scala.util.Try
  * Created by PM on 27/01/2017.
  */
 
-class PackageSpec extends FunSuite {
+class PackageSpec extends AnyFunSuite {
 
   test("compute long channel id") {
     val data = ((hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 0, hex"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF") ::

@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32, randomBytes64, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Random
 
@@ -29,7 +29,7 @@ import scala.util.Random
  * Created by t-bast on 30/08/2019.
  */
 
-class NetworkStatsSpec extends FunSuite {
+class NetworkStatsSpec extends AnyFunSuite {
 
   import NetworkStatsSpec._
 

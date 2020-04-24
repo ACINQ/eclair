@@ -31,14 +31,14 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
-import org.scalatest.{ParallelTestExecution, fixture}
+import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
 
 import scala.concurrent.duration._
 
 /**
  * Created by PM on 23/08/2016.
  */
-trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with ParallelTestExecution {
+trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with ParallelTestExecution {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                           bob: TestFSMRef[State, Data, Channel],
@@ -245,7 +245,9 @@ trait StateTestsHelperMethods extends TestKitBase with fixture.TestSuite with Pa
     s ! WatchEventSpent(BITCOIN_FUNDING_SPENT, rCommitTx)
     awaitCond(s.stateName == CLOSING)
     val closingData = s.stateData.asInstanceOf[DATA_CLOSING]
+
     def getRemoteCommitPublished(d: DATA_CLOSING): Option[RemoteCommitPublished] = d.remoteCommitPublished.orElse(d.nextRemoteCommitPublished).orElse(d.futureRemoteCommitPublished)
+
     assert(getRemoteCommitPublished(closingData).isDefined)
     assert(closingData.localCommitPublished.isEmpty)
     val remoteCommitPublished = getRemoteCommitPublished(closingData).get

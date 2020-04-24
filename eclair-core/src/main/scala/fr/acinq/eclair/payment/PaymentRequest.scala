@@ -478,7 +478,7 @@ object PaymentRequest {
   }
 
   // char -> 5 bits value
-  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian))
+  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)).toMap
 
   // TODO: could be optimized by preallocating the resulting buffer
   def string2Bits(data: String): BitVector = data.map(charToint5).foldLeft(BitVector.empty)(_ ++ _)

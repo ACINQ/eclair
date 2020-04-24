@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -33,7 +33,7 @@ import scala.compat.Platform
 import scala.util.Random
 
 
-class ChannelRangeQueriesSpec extends FunSuite {
+class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("ask for update test") {
     // they don't provide anything => we always ask for the update

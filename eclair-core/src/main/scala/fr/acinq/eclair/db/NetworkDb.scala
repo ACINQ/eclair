@@ -28,29 +28,29 @@ import scala.collection.immutable.SortedMap
 
 trait NetworkDb extends Closeable {
 
-  def addNode(n: NodeAnnouncement)
+  def addNode(n: NodeAnnouncement): Unit
 
-  def updateNode(n: NodeAnnouncement)
+  def updateNode(n: NodeAnnouncement): Unit
 
   def getNode(nodeId: PublicKey): Option[NodeAnnouncement]
 
-  def removeNode(nodeId: PublicKey)
+  def removeNode(nodeId: PublicKey): Unit
 
   def listNodes(): Seq[NodeAnnouncement]
 
-  def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi)
+  def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit
 
-  def updateChannel(u: ChannelUpdate)
+  def updateChannel(u: ChannelUpdate): Unit
 
-  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Set(shortChannelId))
+  def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Set(shortChannelId)): Unit
 
-  def removeChannels(shortChannelIds: Iterable[ShortChannelId])
+  def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit
 
   def listChannels(): SortedMap[ShortChannelId, PublicChannel]
 
   def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit
 
-  def removeFromPruned(shortChannelId: ShortChannelId)
+  def removeFromPruned(shortChannelId: ShortChannelId): Unit
 
   def isPruned(shortChannelId: ShortChannelId): Boolean
 

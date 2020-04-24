@@ -161,17 +161,17 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
-    peers <- (appKit.switchboard ? 'peers).mapTo[Iterable[ActorRef]]
+    peers <- (appKit.switchboard ? Symbol("peers")).mapTo[Iterable[ActorRef]]
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
   } yield peerinfos
 
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = toRemoteNode_opt match {
     case Some(pk) => for {
-      channelIds <- (appKit.register ? 'channelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
+      channelIds <- (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
       channels <- Future.sequence(channelIds.map(channelId => sendToChannel(Left(channelId), CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
     case None => for {
-      channelIds <- (appKit.register ? 'channels).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
+      channelIds <- (appKit.register ? Symbol("channels")).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
       channels <- Future.sequence(channelIds.map(channelId => sendToChannel(Left(channelId), CMD_GETINFO).mapTo[RES_GETINFO]))
     } yield channels
   }
@@ -180,15 +180,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
     sendToChannel(channelIdentifier, CMD_GETINFO).mapTo[RES_GETINFO]
   }
 
-  override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? 'nodes).mapTo[Iterable[NodeAnnouncement]]
+  override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? Symbol("nodes")).mapTo[Iterable[NodeAnnouncement]]
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
-    (appKit.router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
+    (appKit.router ? Symbol("channels")).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
   }
 
   override def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = nodeId_opt match {
-    case None => (appKit.router ? 'updates).mapTo[Iterable[ChannelUpdate]]
-    case Some(pk) => (appKit.router ? 'channelsMap).mapTo[Map[ShortChannelId, PublicChannel]].map { channels =>
+    case None => (appKit.router ? Symbol("updates")).mapTo[Iterable[ChannelUpdate]]
+    case Some(pk) => (appKit.router ? Symbol("channelsMap")).mapTo[Map[ShortChannelId, PublicChannel]].map { channels =>
       channels.values.flatMap {
         case PublicChannel(ann, _, _, Some(u1), _, _) if ann.nodeId1 == pk && u1.isNode1 => List(u1)
         case PublicChannel(ann, _, _, _, Some(u2), _) if ann.nodeId2 == pk && !u2.isNode1 => List(u2)
