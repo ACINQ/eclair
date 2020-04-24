@@ -32,7 +32,7 @@ class StartupSpec extends FunSuite {
 
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
-    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
     val feeEstimator = new TestConstants.TestFeeEstimator
     val db = TestConstants.inMemoryDb()
     NodeParams.makeNodeParams(conf, keyManager, None, db, blockCount, feeEstimator)

@@ -23,7 +23,6 @@ import akka.actor.{ActorRef, ActorSystem, Terminated}
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
@@ -36,7 +35,10 @@ import scodec.bits.ByteVector
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
-class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+trait ElectrumWalletSimulatedClientSpecBase extends FunSuiteLike {
+  self: TestKit =>
+
+  def walletType: ElectrumWallet.WalletType
 
   import ElectrumWalletSimulatedClientSpec._
 
@@ -47,7 +49,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
   val seed = MnemonicCode.toSeed(mnemonics, "")
 
   val listener = TestProbe()
-  system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
+  this.system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
 
   val genesis = Block.RegtestGenesisBlock.header
   // initial headers that we will sync when we connect to our mock server
@@ -71,8 +73,9 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     }
   })
 
-  val walletParameters = WalletParameters(Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat)
+  val walletParameters = WalletParameters(walletType, Block.RegtestGenesisBlock.hash, new SqliteWalletDb(DriverManager.getConnection("jdbc:sqlite::memory:")), minimumFee = 5000 sat)
   val wallet = TestFSMRef(new ElectrumWallet(seed, client.ref, walletParameters))
+  def keyStore = wallet.stateData.keyStore
 
   // wallet sends a receive address notification as soon as it is created
   listener.expectMsgType[NewWalletReceiveAddress]
@@ -97,11 +100,10 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectMsgType[NewWalletReceiveAddress]
     listener.send(wallet, GetXpub)
     val GetXpubResponse(xpub, path) = listener.expectMsgType[GetXpubResponse]
-    assert(xpub == "upub5DffbMENbUsLcJbhufWvy1jourQfXfC6SoYyxhy2gPKeTSGzYHB3wKTnKH2LYCDemSzZwqzNcHNjnQZJCDn7Jy2LvvQeysQ6hrcK5ogp11B")
-    assert(path == "m/49'/1'/0'")
+    assert((xpub, path) == keyStore.computeXPub)
   }
 
-  test("tell wallet is ready when a new block comes in, even if nothing else has changed") {
+  test(s"tell wallet is ready when a new block comes in, even if nothing else has changed ($walletType)") {
     val last = wallet.stateData.blockchain.tip
     assert(last.header == headers.last)
     val header = makeHeader(last.header)
@@ -109,10 +111,10 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     assert(listener.expectMsgType[WalletReady].timestamp == header.time)
     val NewWalletReceiveAddress(address) = listener.expectMsgType[NewWalletReceiveAddress]
-    assert(address == "2NDjBqJugL3gCtjWTToDgaWWogq9nYuYw31")
+    assert(address == keyStore.computeAddress(keyStore.accountKey(0)))
   }
 
-  test("tell wallet is ready when it is reconnected, even if nothing has changed") {
+  test(s"tell wallet is ready when it is reconnected, even if nothing has changed ($walletType)") {
     // disconnect wallet
     sender.send(wallet, ElectrumClient.ElectrumDisconnected)
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
@@ -129,7 +131,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectMsgType[NewWalletReceiveAddress]
   }
 
-  test("don't send the same ready message more then once") {
+  test(s"don't send the same ready message more then once ($walletType)") {
     // listener should be notified
     val last = wallet.stateData.blockchain.tip
     assert(last.header == headers.last)
@@ -143,7 +145,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     listener.expectNoMsg(500 milliseconds)
   }
 
-  test("disconnect if server sends a bad header") {
+  test(s"disconnect if server sends a bad header ($walletType)") {
     val last = wallet.stateData.blockchain.bestchain.last
     val bad = makeHeader(last.header, 42L).copy(bits = Long.MaxValue)
 
@@ -167,17 +169,16 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     reconnect
   }
 
-
-  test("disconnect if server sends an invalid transaction") {
+  test(s"disconnect if server sends an invalid transaction ($walletType)") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
     }
     val key = wallet.stateData.accountKeys(0)
-    val scriptHash = computeScriptHashFromPublicKey(key.publicKey)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(wallet.stateData.keyStore.computePublicKeyScript(key.publicKey))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, wallet.stateData.keyStore.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
     // wallet will generate a new address and the corresponding subscription
@@ -213,12 +214,12 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     assert(ready.unconfirmedBalance === 0.sat)
   }
 
-  test("clear status when we have pending history requests") {
+  test(s"clear status when we have pending history requests ($walletType)") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
     }
     // tell wallet that there is something for our first account key
-    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(wallet.stateData.accountKeys(0).publicKey)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(wallet.stateData.keyStore.computePublicKeyScript(wallet.stateData.accountKeys(0).publicKey))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, "010101")
     client.expectMsg(GetScriptHashHistory(scriptHash))
     assert(wallet.stateData.status(scriptHash) == "010101")
@@ -231,16 +232,16 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     reconnect
   }
 
-  test("handle pending transaction requests") {
+  test(s"handle pending transaction requests ($walletType)") {
     while (client.msgAvailable) {
       client.receiveOne(100 milliseconds)
     }
     val key = wallet.stateData.accountKeys(1)
-    val scriptHash = computeScriptHashFromPublicKey(key.publicKey)
+    val scriptHash = ElectrumWallet.computeScriptHashFromScriptPubKey(wallet.stateData.keyStore.computePublicKeyScript(key.publicKey))
     wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(2)).toHex)
     client.expectMsg(GetScriptHashHistory(scriptHash))
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, wallet.stateData.keyStore.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
 
     // wallet will generate a new address and the corresponding subscription
@@ -254,24 +255,20 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     assert(wallet.stateData.pendingTransactionRequests == Set(tx.txid))
   }
 
-  test("handle disconnect/reconnect events") {
+  test(s"handle disconnect/reconnect events ($walletType)") {
     val data = {
       val master = DeterministicWallet.generate(seed)
-      val accountMaster = ElectrumWallet.accountKey(master, walletParameters.chainHash)
-      val changeMaster = ElectrumWallet.changeKey(master, walletParameters.chainHash)
-      val firstAccountKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
-      val firstChangeKeys = (0 until walletParameters.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-      val data1 = Data(walletParameters, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), firstAccountKeys, firstChangeKeys)
+      val data1 = Data.createNew(master, Blockchain.fromGenesisBlock(Block.RegtestGenesisBlock.hash, Block.RegtestGenesisBlock.header), walletParameters)
 
       val amount1 = 1000000 sat
       val amount2 = 1500000 sat
 
       // transactions that send funds to our wallet
       val wallettxs = Seq(
-        addOutputs(emptyTx, amount1, data1.accountKeys(0).publicKey),
-        addOutputs(emptyTx, amount2, data1.accountKeys(1).publicKey),
-        addOutputs(emptyTx, amount2, data1.accountKeys(2).publicKey),
-        addOutputs(emptyTx, amount2, data1.accountKeys(3).publicKey)
+        addOutputs(keyStore, emptyTx, amount1, data1.accountKeys(0).publicKey),
+        addOutputs(keyStore, emptyTx, amount2, data1.accountKeys(1).publicKey),
+        addOutputs(keyStore, emptyTx, amount2, data1.accountKeys(2).publicKey),
+        addOutputs(keyStore, emptyTx, amount2, data1.accountKeys(3).publicKey)
       )
       val data2 = wallettxs.foldLeft(data1)(addTransaction)
 
@@ -279,18 +276,18 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       val tx1 = {
         val tx = Transaction(version = 2,
           txIn = TxIn(OutPoint(wallettxs(0), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-          txOut = walletOutput(wallettxs(0).txOut(0).amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(50000 sat, data2.changeKeys(0).publicKey) :: Nil,
+          txOut = walletOutput(keyStore, wallettxs(0).txOut(0).amount - 50000.sat, data2.accountKeys(2).publicKey) :: walletOutput(keyStore, 50000 sat, data2.changeKeys(0).publicKey) :: Nil,
           lockTime = 0)
-        data2.signTransaction(tx)
+        keyStore.signTx(tx, data2)
       }
 
       // a tx that spend from our wallet to a random address, plus change to our wallet
       val tx2 = {
         val tx = Transaction(version = 2,
           txIn = TxIn(OutPoint(wallettxs(1), 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-          txOut = TxOut(wallettxs(1).txOut(0).amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(50000 sat, data2.changeKeys(1).publicKey) :: Nil,
+          txOut = TxOut(wallettxs(1).txOut(0).amount - 50000.sat, Script.pay2wpkh(fr.acinq.eclair.randomKey.publicKey)) :: walletOutput(keyStore, 50000 sat, data2.changeKeys(1).publicKey) :: Nil,
           lockTime = 0)
-        data2.signTransaction(tx)
+        keyStore.signTx(tx, data2)
       }
       val data3 = Seq(tx1, tx2).foldLeft(data2)(addTransaction)
       data3
@@ -353,6 +350,26 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
       wallet.stateData.transactions.keySet == expected
     }
   }
+
+  test(s"clear wallet cache ($walletType)") {
+    while (client.msgAvailable) {
+      client.receiveOne(100 milliseconds)
+    }
+
+    awaitAssert(wallet.stateData.history.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.heights.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.pendingTransactions.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.proofs.nonEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.status.nonEmpty, 5 seconds)
+
+    wallet ! ClearWalletCache
+
+    awaitAssert(wallet.stateData.history.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.heights.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.pendingTransactions.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.proofs.isEmpty, 5 seconds)
+    awaitAssert(wallet.stateData.status.isEmpty, 5 seconds)
+  }
 }
 
 object ElectrumWalletSimulatedClientSpec {
@@ -375,9 +392,9 @@ object ElectrumWalletSimulatedClientSpec {
 
   val emptyTx = Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0)
 
-  def walletOutput(amount: Satoshi, key: PublicKey) = TxOut(amount, ElectrumWallet.computePublicKeyScript(key))
+  def walletOutput(keyStore: KeyStore, amount: Satoshi, key: PublicKey) = TxOut(amount, keyStore.computePublicKeyScript(key))
 
-  def addOutputs(tx: Transaction, amount: Satoshi, keys: PublicKey*): Transaction = keys.foldLeft(tx) { case (t, k) => t.copy(txOut = t.txOut :+ walletOutput(amount, k)) }
+  def addOutputs(keyStore: KeyStore, tx: Transaction, amount: Satoshi, keys: PublicKey*): Transaction = keys.foldLeft(tx) { case (t, k) => t.copy(txOut = t.txOut :+ walletOutput(keyStore, amount, k)) }
 
   def addToHistory(history: Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]], scriptHash: ByteVector32, item: TransactionHistoryItem): Map[ByteVector32, List[ElectrumClient.TransactionHistoryItem]] = {
     history.get(scriptHash) match {
@@ -404,10 +421,19 @@ object ElectrumWalletSimulatedClientSpec {
         }
         val data1 = data.copy(history = history1, transactions = data.transactions + (tx.txid -> tx))
         val history2 = tx.txIn.filter(i => data1.isMine(i)).foldLeft(data1.history) { case (a, b) =>
-          addToHistory(a, ElectrumWallet.computeScriptHashFromPublicKey(extractPubKeySpentFrom(b).get), TransactionHistoryItem(100000, tx.txid))
+          data.keyStore.computePublicKeyScript(data.keyStore.extractPubKey(b).get)
+          addToHistory(a, ElectrumWallet.computeScriptHashFromScriptPubKey(data.keyStore.computePublicKeyScript(data.keyStore.extractPubKey(b).get)), TransactionHistoryItem(100000, tx.txid))
         }
         val data2 = data1.copy(history = history2)
         updateStatus(data2)
     }
   }
+}
+
+class ElectrumWalletSimulatedClientBIP49Spec extends TestKit(ActorSystem("mySystem")) with ElectrumWalletSimulatedClientSpecBase {
+  override def walletType = ElectrumWallet.P2SH_SEGWIT
+}
+
+class ElectrumWalletSimulatedClientBIP84Spec extends TestKit(ActorSystem("mySystem")) with ElectrumWalletSimulatedClientSpecBase {
+  override def walletType = ElectrumWallet.BECH32
 }

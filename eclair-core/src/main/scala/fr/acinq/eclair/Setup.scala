@@ -35,6 +35,7 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
+import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{BECH32, P2SH_SEGWIT, WalletType}
 import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
@@ -70,7 +71,8 @@ import scala.concurrent.duration._
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
-            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+            db: Option[Databases] = None,
+            electrumWalletType: Option[WalletType] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
@@ -90,7 +92,8 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val isElectrumBech32 = config.getString("watcher-type").contains("electrum") && config.hasPath("electrum-wallet-type") && config.getString("electrum-wallet-type").contains("bech32")
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain), isElectrumBech32)
 
   val database = db match {
     case Some(d) => d
@@ -266,12 +269,17 @@ class Setup(datadir: File,
         case Electrum(electrumClient) =>
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
-          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
+          val walletType = electrumWalletType.getOrElse(config.getString("electrum-wallet-type") match {
+            case "p2sh-segwit" => P2SH_SEGWIT
+            case "bech32" => BECH32
+            case wrongType => throw new IllegalArgumentException(s"Wrong type=$wrongType for electrum-wallet-type")
+          })
+          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(walletType, nodeParams.chainHash, walletDb)), "electrum-wallet")
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
-      _ = wallet.getFinalAddress.map {
-        case address => logger.info(s"initial wallet address=$address")
+      _ = wallet.getFinalAddress.map { address =>
+        logger.info(s"initial wallet address=$address")
       }
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 

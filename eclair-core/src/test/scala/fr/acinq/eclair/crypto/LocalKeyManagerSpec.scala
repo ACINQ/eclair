@@ -17,6 +17,7 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.crypto.LocalKeyManager._
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
 import fr.acinq.eclair.TestConstants
@@ -30,14 +31,14 @@ class LocalKeyManagerSpec extends FunSuite {
     // if this test breaks it means that we will generate a different node id  from
     // the same seed, which could be a problem during an upgrade
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
     assert(keyManager.nodeId == PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
   }
 
   test("generate the same secrets from the same seed") {
     // data was generated with eclair 0.3 
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
     assert(keyManager.nodeId == PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
     val keyPath = KeyPath("m/1'/2'/3'/4'")
     assert(keyManager.commitmentSecret(keyPath, 0L).value == ByteVector32.fromValidHex("fa7a8c2fc62642f7a9a19ea0bfad14d39a430f3c9899c185dcecc61c8077891e"))
@@ -52,8 +53,8 @@ class LocalKeyManagerSpec extends FunSuite {
 
   test("generate different node ids from the same seed on different chains") {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val keyManager1 = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
-    val keyManager2 = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+    val keyManager1 = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
+    val keyManager2 = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash, isElectrumBech32 = false)
     assert(keyManager1.nodeId != keyManager2.nodeId)
     val keyPath = KeyPath(1L :: Nil)
     assert(keyManager1.fundingPublicKey(keyPath) != keyManager2.fundingPublicKey(keyPath))
@@ -76,7 +77,7 @@ class LocalKeyManagerSpec extends FunSuite {
 
   test("test vectors (testnet, funder)") {
     val seed = ByteVector.fromValidHex("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
     val fundingKeyPath = makefundingKeyPath(hex"be4fa97c62b9f88437a3be577b31eb48f2165c7bc252194a15ff92d995778cfb", isFunder = true)
     val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -93,7 +94,7 @@ class LocalKeyManagerSpec extends FunSuite {
 
   test("test vectors (testnet, fundee)") {
     val seed = ByteVector.fromValidHex("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
-    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash, isElectrumBech32 = false)
     val fundingKeyPath = makefundingKeyPath(hex"06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488", isFunder = false)
     val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -110,7 +111,7 @@ class LocalKeyManagerSpec extends FunSuite {
 
   test("test vectors (mainnet, funder)") {
     val seed = ByteVector.fromValidHex("d8d5431487c2b19ee6486aad6c3bdfb99d10b727bade7fa848e2ab7901c15bff01")
-    val keyManager = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash, isElectrumBech32 = false)
     val fundingKeyPath = makefundingKeyPath(hex"ec1c41cd6be2b6e4ef46c1107f6c51fbb2066d7e1f7720bde4715af233ae1322", isFunder = true)
     val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -127,7 +128,7 @@ class LocalKeyManagerSpec extends FunSuite {
 
   test("test vectors (mainnet, fundee)") {
     val seed = ByteVector.fromValidHex("4b809dd593b36131c454d60c2f7bdfd49d12ec455e5b657c47a9ca0f5dfc5eef01")
-    val keyManager = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+    val keyManager = new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash, isElectrumBech32 = false)
     val fundingKeyPath = makefundingKeyPath(hex"2b4f045be5303d53f9d3a84a1e70c12251168dc29f300cf9cece0ec85cd8182b", isFunder = false)
     val fundingPub = keyManager.fundingPublicKey(fundingKeyPath)
 
@@ -140,5 +141,15 @@ class LocalKeyManagerSpec extends FunSuite {
     assert(keyManager.delayedPaymentPoint(channelKeyPath).publicKey == PrivateKey(hex"6bc30b0852fbc653451662a1ff6ad530f311d58b5e5661b541eb57dba8206937").publicKey)
     assert(keyManager.htlcPoint(channelKeyPath).publicKey == PrivateKey(hex"b1be27b5232e3bc5d6a261949b4ee68d96fa61f481998d36342e2ad99444cf8a").publicKey)
     assert(keyManager.commitmentSecret(channelKeyPath, 0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("eeb3bad6808e8bb5f1774581ccf64aa265fef38eca80a1463d6310bb801b3ba7"), 0xFFFFFFFFFFFFL))
+  }
+
+  test("electrum in bech32 mode have a different nodeKey") {
+    val chainHash = Block.LivenetGenesisBlock.hash
+    val seed = ByteVector.fromValidHex("4b809dd593b36131c454d60c2f7bdfd49d12ec455e5b657c47a9ca0f5dfc5eef01")
+    val keyManager = new LocalKeyManager(seed, chainHash, isElectrumBech32 = false)
+    val keyManagerBech32 = new LocalKeyManager(seed, chainHash, isElectrumBech32 = true)
+
+    assert(keyManager.nodeId != keyManagerBech32.nodeId)
+    assert(nodeKeyBasePath(chainHash, isElectrumBech32 = false) != nodeKeyBasePath(chainHash, isElectrumBech32 = true))
   }
 }

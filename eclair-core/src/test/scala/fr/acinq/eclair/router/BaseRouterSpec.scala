@@ -51,7 +51,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val htlcMaximum = 500000000 msat
 
   val seed = ByteVector32(ByteVector.fill(32)(2))
-  val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+  val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash, isElectrumBech32 = false)
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (testKeyManager.nodeKey.privateKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (a, b, c, d, e, f, g, h) = (testKeyManager.nodeId, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)

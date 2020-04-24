@@ -38,4 +38,6 @@ trait WalletDb extends HeaderDb {
   def persist(data: PersistentData): Unit
 
   def readPersistentData(): Option[PersistentData]
+
+  def clearCache(data: PersistentData)
 }
