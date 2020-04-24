@@ -386,7 +386,7 @@ object Graph {
 
       def addEdge(d: ChannelDesc, u: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi] = None): DirectedGraph = addEdge(GraphEdge(d, u, capacity, balance_opt))
 
-      def addEdges(edges: Seq[GraphEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
+      def addEdges(edges: Iterable[GraphEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
 
       /**
        * Adds an edge to the graph. If one of the two vertices is not found it will be created.
@@ -421,7 +421,7 @@ object Graph {
         }
       }
 
-      def removeEdges(descList: Seq[ChannelDesc]): DirectedGraph = {
+      def removeEdges(descList: Iterable[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)((acc, edge) => acc.removeEdge(edge))
       }
 

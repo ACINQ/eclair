@@ -269,7 +269,7 @@ object Transactions {
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, InHtlc(htlc)))
     }
 
-    outputs.sortWith(CommitmentOutputLink.sort)
+    outputs.sortWith(CommitmentOutputLink.sort).toSeq
   }
 
   def makeCommitTx(commitTxInput: InputInfo,

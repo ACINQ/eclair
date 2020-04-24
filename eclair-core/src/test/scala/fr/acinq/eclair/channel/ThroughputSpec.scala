@@ -29,12 +29,12 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ThroughputSpec extends FunSuite {
+class ThroughputSpec extends AnyFunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem("test")
     val pipe = system.actorOf(Props[Pipe], "pipe")

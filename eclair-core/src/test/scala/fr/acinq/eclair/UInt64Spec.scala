@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 
-class UInt64Spec extends FunSuite {
+class UInt64Spec extends AnyFunSuite {
 
   test("handle values from 0 to 2^64-1") {
     val a = UInt64(hex"0xffffffffffffffff")

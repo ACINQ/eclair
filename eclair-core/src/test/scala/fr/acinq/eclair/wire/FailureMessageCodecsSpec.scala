@@ -20,14 +20,14 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.FailureMessageCodecs._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomBytes64}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 /**
  * Created by PM on 31/05/2016.
  */
 
-class FailureMessageCodecsSpec extends FunSuite {
+class FailureMessageCodecsSpec extends AnyFunSuite {
   val channelUpdate = ChannelUpdate(
     signature = randomBytes64,
     chainHash = Block.RegtestGenesisBlock.hash,
