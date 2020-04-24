@@ -117,9 +117,10 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(route) = findRoute(graph, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    val totalCost = Graph.pathWeight(hops2Edges(route), amount, isPartial = false, 0, None).cost
+    val weightedPath = Graph.pathWeight(a, hops2Edges(route), amount, 0, None)
     assert(hops2Ids(route) === 4 :: 5 :: 6 :: Nil)
-    assert(totalCost === expectedCost)
+    assert(weightedPath.length === 3)
+    assert(weightedPath.cost === expectedCost)
 
     // update channel 5 so that it can route the final amount (10000) but not the amount + fees (10002)
     val graph1 = graph.addEdge(makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat, maxHtlc = Some(10001 msat)))
@@ -169,15 +170,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     )
 
     val graph = DirectedGraph(List(
-      makeEdge(1L, f, g, 0 msat, 0),
-      makeEdge(2L, g, h, 0 msat, 0),
-      makeEdge(3L, h, i, 0 msat, 0),
-      makeEdge(4L, f, h, 50 msat, 0) // more expensive
+      makeEdge(1L, f, g, 1 msat, 0),
+      makeEdge(2L, g, h, 1 msat, 0),
+      makeEdge(3L, h, i, 1 msat, 0),
+      makeEdge(4L, f, h, 50 msat, 0) // more expensive but fee will be ignored since f is the payer
     ))
 
     val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route.map(hops2Ids) === Success(4 :: 3 :: Nil))
-
   }
 
   test("calculate the shortest path (select direct channel)") {
@@ -764,15 +764,15 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     (for {_ <- 0 to 10} yield findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = 400000)).map {
       case Failure(thr) => fail(thr)
       case Success(someRoute) =>
-
-        val routeCost = Graph.pathWeight(hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, isPartial = false, 0, None).cost - DEFAULT_AMOUNT_MSAT
-
-        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7msat of fees)
-        assert(routeCost === 5.msat || routeCost === 6.msat)
+        val weightedPath = Graph.pathWeight(a, hops2Edges(someRoute), DEFAULT_AMOUNT_MSAT, 0, None)
+        val totalFees = weightedPath.cost - DEFAULT_AMOUNT_MSAT
+        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7 msat of fees)
+        assert(totalFees === 5.msat || totalFees === 6.msat)
+        assert(weightedPath.length === 3)
     }
   }
 
-  test("Use weight ratios to when computing the edge weight") {
+  test("use weight ratios when computing the edge weight") {
     val defaultCapacity = 15000 sat
     val largeCapacity = 8000000 sat
 
