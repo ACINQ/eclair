@@ -1,6 +1,7 @@
 package fr.acinq.eclair.db
 
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.util.Date
 
 import com.typesafe.config.ConfigFactory
@@ -19,7 +20,7 @@ object SqliteToPgsql extends App {
   val dbConfig = config.getConfig("db")
 
   val sqlite = Databases.sqliteJDBC(chaindir)
-  val psql = Databases.setupPsqlDatabases(dbConfig, datadir, { _ => () })
+  val psql = Databases.setupPsqlDatabases(dbConfig, ManagementFactory.getRuntimeMXBean().getName(), datadir, { _ => () })
 
   println(s"Transferring data from ${chaindir} to ${dbConfig.getString("psql.database")} at ${dbConfig.getString("psql.host")}")
 
@@ -82,8 +83,13 @@ object SqliteToPgsql extends App {
 
   println("payments ... ")
 
-  sqlite.payments.asInstanceOf[SqlitePaymentsDb].listIncomingPayments().foreach { incomingPayment =>
-    psql.payments.asInstanceOf[PsqlPaymentsDb].addIncomingPayment(incomingPayment)
+  sqlite.payments.listIncomingPayments(0, Long.MaxValue).foreach { incomingPayment =>
+    psql.payments.addIncomingPayment(incomingPayment.paymentRequest, incomingPayment.paymentPreimage, incomingPayment.paymentType)
+    incomingPayment.status match {
+      case IncomingPaymentStatus.Received(amount, receivedAt) =>
+        psql.payments.receiveIncomingPayment(incomingPayment.paymentRequest.paymentHash, amount, receivedAt)
+      case _ => ()
+    }
   }
 
   sqlite.payments.asInstanceOf[SqlitePaymentsDb].listOutgoingPayments().foreach { outgoingPayment =>

@@ -278,23 +278,6 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
       }
     }
 
-  def addIncomingPayment(payment: (ByteVector32,ByteVector32,String,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])): Unit = {
-    val (paymentHash,paymentPreimage,paymentType,paymentRequest,received,createdAt,expireAt,receivedAt) = payment
-    withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, received_msat, received_at, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setString(1, paymentHash.toHex)
-        statement.setString(2, paymentPreimage.toHex)
-        statement.setString(3, paymentType)
-        statement.setString(4, PaymentRequest.write(paymentRequest))
-        received.fold(statement.setNull(5, java.sql.Types.BIGINT))(x => statement.setLong(5, x.toLong))
-        receivedAt.fold(statement.setNull(6, java.sql.Types.BIGINT))(x => statement.setLong(6, x))
-        statement.setLong(7, createdAt)
-        statement.setLong(8, expireAt)
-        statement.executeUpdate()
-      }
-    }
-  }
-
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
     withLock { psql =>
       using(psql.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>

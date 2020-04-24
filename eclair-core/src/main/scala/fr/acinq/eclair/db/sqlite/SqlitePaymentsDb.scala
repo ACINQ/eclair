@@ -431,41 +431,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  def listIncomingPayments(): Seq[(ByteVector32,ByteVector32,String,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])] = {
-    using(sqlite.prepareStatement("SELECT * FROM received_payments ORDER BY created_at")) { statement =>
-      val rs = statement.executeQuery()
-      var q: Queue[(ByteVector32,ByteVector32,String,PaymentRequest,Option[MilliSatoshi],Long,Long,Option[Long])] = Queue()
-      while (rs.next()) {
-        val paymentHash: ByteVector32 = rs.getByteVector32("payment_hash")
-        val paymentPreimage: ByteVector32 = rs.getByteVector32("payment_preimage")
-        val paymentType: String = rs.getString("payment_type")
-        val paymentRequest: PaymentRequest = PaymentRequest.read(rs.getString("payment_request"))
-        val received: Option[MilliSatoshi] = rs.getLongNullable("received_msat").map(MilliSatoshi(_))
-        val createdAt: Long = rs.getLong("created_at")
-        val expireAt: Long = rs.getLong("expire_at")
-        val receivedAt: Option[Long] = rs.getLongNullable("received_at")
-        q = q :+ (paymentHash,paymentPreimage,paymentType,paymentRequest,received,createdAt,expireAt,receivedAt)
-      }
-      q
-    }
-  }
-
   def listOutgoingPayments(): Seq[(UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector],String,MilliSatoshi)] = {
-    // id TEXT NOT NULL PRIMARY KEY,
-    // parent_id TEXT NOT NULL,
-    // external_id TEXT,
-    // payment_hash BLOB NOT NULL,
-    // payment_preimage BLOB,
-    // payment_type TEXT NOT NULL,
-    // amount_msat INTEGER NOT NULL,
-    // fees_msat INTEGER,
-    // recipient_amount_msat INTEGER NOT NULL,
-    // recipient_node_id BLOB NOT NULL,
-    // payment_request TEXT,
-    // payment_route BLOB,
-    // failures BLOB,
-    // created_at INTEGER NOT NULL,
-    // completed_at INTEGER
     using(sqlite.prepareStatement("SELECT * FROM sent_payments ORDER BY created_at")) { statement =>
       val rs = statement.executeQuery()
       var q: Queue[(UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector],String,MilliSatoshi)] = Queue()
