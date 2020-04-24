@@ -33,6 +33,8 @@ object PsqlUtils extends JdbcUtils with Logging {
 
   val OwnershipTable = "lease"
 
+  val lockTimeout = FiniteDuration(5, "s")
+
   object LockType extends Enumeration {
     type LockType = Value
 
@@ -71,14 +73,14 @@ object PsqlUtils extends JdbcUtils with Logging {
       inTransaction(f)
   }
 
-  case class OwnershipLeaseLock(instanceId: String, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
+  case class OwnershipLeaseLock(instanceId: String, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
     override def obtainExclusiveLock(implicit ds: DataSource): Unit =
-      obtainDatabaseOwnership(instanceId, leaseDuration, lockTimeout)
+      obtainDatabaseOwnership(instanceId, leaseDuration)
 
     override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
       inTransaction { connection =>
         val res = f(connection)
-        checkDatabaseOwnership(connection, instanceId, lockTimeout, lockExceptionHandler)
+        checkDatabaseOwnership(connection, instanceId, lockExceptionHandler)
         res
       }
     }
@@ -177,14 +179,14 @@ object PsqlUtils extends JdbcUtils with Logging {
     }
   }
 
-  private def obtainDatabaseOwnership(instanceId: String, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
+  private def obtainDatabaseOwnership(instanceId: String, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
     logger.debug(s"Trying to acquire database ownership (attempt #$attempt) instance ID=${instanceId}")
 
     if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database ownership")
 
     try {
       inTransaction { implicit connection =>
-        acquireExclusiveTableLock(lockTimeout)
+        acquireExclusiveTableLock()
         getCurrentLease match {
           case Some(lease) =>
             if (lease.instanceId == instanceId || lease.expired)
@@ -202,7 +204,7 @@ object PsqlUtils extends JdbcUtils with Logging {
           connection =>
             logger.warn(s"Table $OwnershipTable does not exist, trying to recreate it...")
             initializeOwnershipTable(connection)
-            obtainDatabaseOwnership(instanceId, leaseDuration, lockTimeout, attempt + 1)
+            obtainDatabaseOwnership(instanceId, leaseDuration, attempt + 1)
         }
     }
   }
@@ -215,7 +217,7 @@ object PsqlUtils extends JdbcUtils with Logging {
     }
   }
 
-  private def acquireExclusiveTableLock(lockTimeout: FiniteDuration)(implicit connection: Connection): Unit = {
+  private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
     using(connection.createStatement()) {
       statement =>
         statement.executeUpdate(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
@@ -223,7 +225,7 @@ object PsqlUtils extends JdbcUtils with Logging {
     }
   }
 
-  private def checkDatabaseOwnership(connection: Connection, instanceId: String, lockTimeout: FiniteDuration, lockExceptionHandler: LockExceptionHandler): Unit = {
+  private def checkDatabaseOwnership(connection: Connection, instanceId: String, lockExceptionHandler: LockExceptionHandler): Unit = {
     Try {
       getCurrentLease(connection) match {
         case Some(lease) =>

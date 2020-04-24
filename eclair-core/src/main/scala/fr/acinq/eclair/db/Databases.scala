@@ -89,7 +89,6 @@ object Databases extends Logging {
                    poolProperties: Map[String, Long],
                    instanceId: String,
                    databaseLeaseInterval: FiniteDuration,
-                   lockTimeout: FiniteDuration,
                    lockExceptionHandler: LockExceptionHandler = { _ => () },
                    lockType: LockType = LockType.NONE, datadir: File = new File(File.separator + "tmp")): Databases = {
     val url = s"jdbc:postgresql://${host}:${port}/${database}"
@@ -99,7 +98,7 @@ object Databases extends Logging {
     implicit val lock: DatabaseLock = lockType match {
       case LockType.NONE => NoLock
       case LockType.OPTIMISTIC => OptimisticLock(new AtomicLong(0L), lockExceptionHandler)
-      case LockType.OWNERSHIP_LEASE => OwnershipLeaseLock(instanceId, databaseLeaseInterval, lockTimeout, lockExceptionHandler)
+      case LockType.OWNERSHIP_LEASE => OwnershipLeaseLock(instanceId, databaseLeaseInterval, lockExceptionHandler)
       case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
     }
 
@@ -182,14 +181,13 @@ object Databases extends Logging {
     }
     val lockType = LockType(dbConfig.getString("psql.lock-type"))
     val leaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
-    val lockTimeout = dbConfig.getDuration("psql.ownership-lease.lock-timeout").toSeconds.seconds
 
     Databases.postgresJDBC(
       database = database, host = host, port = port,
       username = username, password = password,
       poolProperties = properties,
       instanceId = instanceId,
-      databaseLeaseInterval = leaseInterval, lockTimeout = lockTimeout,
+      databaseLeaseInterval = leaseInterval,
       lockExceptionHandler = lockExceptionHandler, lockType = lockType, datadir = datadir
     )
   }
