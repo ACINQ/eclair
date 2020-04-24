@@ -149,8 +149,9 @@ object Graph {
             }
 
             val candidatePath = WeightedPath(totalPath, pathWeight(totalPath, amount, isPartial = false, currentBlockHeight, wr))
-
-            if (boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
+            val totalCost = candidatePath.weight.cost
+            val localBalanceOk = totalPath.headOption.forall(e => totalCost <= e.capacity && e.balance_opt.forall(totalCost <= _))
+            if (localBalanceOk && boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
               candidates.enqueue(candidatePath)
             }
 
@@ -241,8 +242,10 @@ object Graph {
           val newMinimumKnownWeight = edgeWeight(edge, currentWeight, initialWeight.length == 0 && neighbor == sourceNode, currentBlockHeight, wr)
 
           // test for ignored edges
-          if (edge.update.htlcMaximumMsat.forall(newMinimumKnownWeight.cost <= _) &&
-            newMinimumKnownWeight.cost >= edge.update.htlcMinimumMsat &&
+          if (edge.update.htlcMaximumMsat.forall(currentWeight.cost <= _) &&
+            currentWeight.cost <= edge.capacity &&
+            edge.balance_opt.forall(currentWeight.cost <= _) &&
+            currentWeight.cost >= edge.update.htlcMinimumMsat &&
             boundaries(newMinimumKnownWeight) && // check if this neighbor edge would break off the 'boundaries'
             !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)
           ) {
@@ -302,7 +305,7 @@ object Graph {
       val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
       // Every edge is weighted by channel capacity, larger channels add less weight
-      val edgeMaxCapacity = edge.update.htlcMaximumMsat.getOrElse(CAPACITY_CHANNEL_LOW)
+      val edgeMaxCapacity = edge.capacity.toMilliSatoshi
       val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
 
       // Every edge is weighted by its cltv-delta value, normalized
