@@ -74,7 +74,7 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
 
-    case 'peers => sender ! context.children
+    case Symbol("peers") => sender ! context.children
 
   }
 

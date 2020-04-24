@@ -40,7 +40,8 @@ import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.router.{NetworkStats, Stats}
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.concurrent.Future
@@ -49,7 +50,7 @@ import scala.io.Source
 import scala.reflect.ClassTag
 import scala.util.Try
 
-class ApiServiceSpec extends FunSuite with ScalatestRouteTest with IdiomaticMockito with Matchers {
+class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticMockito with Matchers {
 
   implicit val formats = JsonSupport.formats
   implicit val serialization = JsonSupport.serialization

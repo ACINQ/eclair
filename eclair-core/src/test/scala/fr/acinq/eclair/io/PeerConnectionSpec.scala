@@ -282,9 +282,9 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     transport.expectMsg(TransportHandler.ReadAck(filter))
     transport.send(peerConnection, rebroadcast)
     // peer won't send out announcements that came from itself
-    (channels.toSet - channels(5)).foreach(transport.expectMsg(_))
-    (updates.toSet - updates(6) - updates(10)).foreach(transport.expectMsg(_))
-    (nodes.toSet - nodes(4)).foreach(transport.expectMsg(_))
+    transport.expectMsgAllOf(channels diff List(channels(5)): _*)
+    transport.expectMsgAllOf(updates diff List(updates(6), updates(10)): _*)
+    transport.expectMsgAllOf(nodes diff List(nodes(4)): _*)
   }
 
   test("filter gossip message (filtered by timestamp)") { f =>
@@ -300,8 +300,8 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // peer doesn't filter channel announcements
     channels.foreach(transport.expectMsg(10 seconds, _))
     // but it will only send updates and node announcements matching the filter
-    updates.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
-    nodes.filter(u => timestamps.contains(u.timestamp)).foreach(transport.expectMsg(_))
+    transport.expectMsgAllOf(updates.filter(u => timestamps.contains(u.timestamp)): _*)
+    transport.expectMsgAllOf(nodes.filter(u => timestamps.contains(u.timestamp)): _*)
   }
 
   test("does not filter our own gossip message") { f =>

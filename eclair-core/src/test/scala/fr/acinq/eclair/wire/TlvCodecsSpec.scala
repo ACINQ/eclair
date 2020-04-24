@@ -21,7 +21,7 @@ import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.wire.CommonCodecs.{publicKey, shortchannelid, uint64, varint}
 import fr.acinq.eclair.wire.TlvCodecs._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.Codec
 import scodec.bits.HexStringSyntax
 import scodec.codecs._
@@ -30,7 +30,7 @@ import scodec.codecs._
  * Created by t-bast on 20/06/2019.
  */
 
-class TlvCodecsSpec extends FunSuite {
+class TlvCodecsSpec extends AnyFunSuite {
 
   import TlvCodecsSpec._
 

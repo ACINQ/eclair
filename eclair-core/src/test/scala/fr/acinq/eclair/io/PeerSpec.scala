@@ -18,7 +18,6 @@ package fr.acinq.eclair.io
 
 import java.net.{InetAddress, ServerSocket}
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
@@ -38,7 +37,7 @@ import scala.concurrent.duration._
 
 class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
+  val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, watcher: TestProbe, relayer: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe)
 
@@ -135,6 +134,33 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
+  }
+
+  test("handle new connection in state CONNECTED") { f =>
+    import f._
+
+    connect(remoteNodeId, switchboard, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    // this is just to extract inits
+    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
+
+    val peerConnection1 = peerConnection
+    val peerConnection2 = TestProbe()
+    val peerConnection3 = TestProbe()
+
+    val deathWatch = TestProbe()
+    deathWatch.watch(peerConnection1.ref)
+    deathWatch.watch(peerConnection2.ref)
+    deathWatch.watch(peerConnection3.ref)
+
+    peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
+    // peer should kill previous connection
+    deathWatch.expectTerminated(peerConnection1.ref)
+    awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
+
+    peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
+    // peer should kill previous connection
+    deathWatch.expectTerminated(peerConnection2.ref)
+    awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>

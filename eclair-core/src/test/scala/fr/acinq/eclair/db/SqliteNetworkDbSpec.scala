@@ -24,12 +24,12 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends FunSuite {
+class SqliteNetworkDbSpec extends AnyFunSuite {
 
   import TestConstants.forAllDbs
 
@@ -115,7 +115,7 @@ class SqliteNetworkDbSpec extends FunSuite {
       val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
       db.addChannel(c, txid, Satoshi(42))
-      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None)))
+      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
     }
   }
 
@@ -151,13 +151,13 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None),
-      channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
+      channel_2.shortChannelId -> PublicChannel(channel_2, txid_2, capacity, None, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, None, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, None, None, None)))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
@@ -168,11 +168,11 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannel(channel_update_2)
     db.updateChannel(channel_update_3)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2)),
-      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, Some(channel_update_3), None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None),
+      channel_3.shortChannelId -> PublicChannel(channel_3, txid_3, capacity, Some(channel_update_3), None, None)))
     db.removeChannel(channel_3.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2))))
+      channel_1.shortChannelId -> PublicChannel(channel_1, txid_1, capacity, Some(channel_update_1), Some(channel_update_2), None)))
   }
 
   test("add/remove/list channels and channel_updates") {
@@ -187,16 +187,16 @@ class SqliteNetworkDbSpec extends FunSuite {
       using(dbs.connection.createStatement(), inTransaction = true) { statement =>
         statement.execute("CREATE TABLE IF NOT EXISTS test (txid VARCHAR NOT NULL)")
       }
-      // column type is STRING
+      // column type is VARCHAR
       val rs = dbs.connection.getMetaData.getColumns(null, null, "test", null)
       assert(rs.next())
       assert(rs.getString("TYPE_NAME").toLowerCase == "varchar")
 
 
       // insert and read back random values
-      val txids = for (i <- 0 until 1000) yield randomBytes32
+      val txids = for (_ <- 0 until 1000) yield randomBytes32
       txids.foreach { txid =>
-        using(dbs.connection.prepareStatement("INSERT INTO test VALUES (?) ON CONFLICT DO NOTHING")) { statement =>
+        using(dbs.connection.prepareStatement("INSERT INTO test VALUES (?)")) { statement =>
           statement.setString(1, txid.toHex)
           statement.executeUpdate()
         }
@@ -204,7 +204,7 @@ class SqliteNetworkDbSpec extends FunSuite {
 
       val check = using(dbs.connection.createStatement()) { statement =>
         val rs = statement.executeQuery("SELECT txid FROM test")
-        var q = new mutable.Queue[ByteVector32]()
+        val q = new mutable.Queue[ByteVector32]()
         while (rs.next()) {
           val txId = ByteVector32.fromValidHex(rs.getString("txid"))
           q.enqueue(txId)

@@ -29,13 +29,14 @@ import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.ChannelCodecs
-import org.scalatest.{FunSuite, Tag}
+import org.scalatest.Tag
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 
-class SqliteAuditDbSpec extends FunSuite {
+class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>

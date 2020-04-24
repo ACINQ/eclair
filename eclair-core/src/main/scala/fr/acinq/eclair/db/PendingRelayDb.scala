@@ -35,9 +35,9 @@ import fr.acinq.eclair.channel.{Command, HasHtlcId}
  */
 trait PendingRelayDb extends Closeable {
 
-  def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId)
+  def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit
 
-  def removePendingRelay(channelId: ByteVector32, htlcId: Long)
+  def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit
 
   def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId]
 

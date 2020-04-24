@@ -22,13 +22,14 @@ import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
 import grizzled.slf4j.Logging
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
+class ElectrumClientSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with Logging with BeforeAndAfterAll {
 
   import ElectrumClient._
 

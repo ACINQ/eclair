@@ -80,7 +80,7 @@ object Boot extends App with Logging {
         override val password = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
       }.route
-      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).onFailure {
+      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
         case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
       }
     } else {

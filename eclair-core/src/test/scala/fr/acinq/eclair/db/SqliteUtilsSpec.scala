@@ -20,16 +20,9 @@ import java.sql.SQLException
 
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.scalatest.funsuite.AnyFunSuite
 
-class SqliteUtilsSpec extends FunSuite with BeforeAndAfter {
-
-  after {
-    val sqlite = TestConstants.sqliteInMemory()
-    using(sqlite.createStatement()) { statement =>
-      statement.executeUpdate("DROP TABLE IF EXISTS utils_test")
-    }
-  }
+class SqliteUtilsSpec extends AnyFunSuite {
 
   test("using with auto-commit disabled") {
     val conn = TestConstants.sqliteInMemory()

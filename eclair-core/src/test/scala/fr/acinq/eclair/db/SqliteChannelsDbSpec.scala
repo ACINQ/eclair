@@ -25,10 +25,10 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.ChannelCodecsSpec
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
-class SqliteChannelsDbSpec extends FunSuite {
+class SqliteChannelsDbSpec extends AnyFunSuite {
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>

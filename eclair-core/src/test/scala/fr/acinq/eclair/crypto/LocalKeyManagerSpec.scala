@@ -21,11 +21,11 @@ import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 
-class LocalKeyManagerSpec extends FunSuite {
+class LocalKeyManagerSpec extends AnyFunSuite {
   test("generate the same node id from the same seed") {
     // if this test breaks it means that we will generate a different node id  from
     // the same seed, which could be a problem during an upgrade
