@@ -139,8 +139,8 @@
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-scala-scalatest_2.11</artifactId>
-            <version>1.4.1</version>
+            <artifactId>mockito-scala-scalatest_${scala.version.short}</artifactId>
+            <version>1.5.9</version>
             <scope>test</scope>
         </dependency>
         <!-- agents -->

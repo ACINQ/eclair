@@ -35,8 +35,8 @@ import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
-import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
+import scala.collection.JavaConverters._
 
 /**
  * Created by PM on 26/02/2017.
@@ -184,13 +184,13 @@ object NodeParams {
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 
-    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").map { e =>
+    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = ByteVector.fromValidHex(e.getString("features"))
       p -> f
     }.toMap
 
-    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
 
     val socksProxy_opt = if (config.getBoolean("socks5.enabled")) {
       Some(Socks5ProxyParams(
@@ -206,6 +206,7 @@ object NodeParams {
     }
 
     val addresses = config.getStringList("server.public-ips")
+      .asScala
       .toList
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
 

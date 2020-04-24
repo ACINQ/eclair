@@ -31,7 +31,10 @@ import scala.collection.JavaConverters._
 case class Stats[T](median: T, percentile5: T, percentile10: T, percentile25: T, percentile75: T, percentile90: T, percentile95: T)
 
 object Stats {
-  def apply[T](values: Iterable[Long], fromDouble: Double => T): Stats[T] = {
+  /**
+   * NB: can't name this method apply because of https://github.com/json4s/json4s/issues/507
+   */
+  def generate[T](values: Iterable[Long], fromDouble: Double => T): Stats[T] = {
     require(values.nonEmpty, "can't compute stats on empty values")
     val stats = percentiles().indexes(5, 10, 25, 50, 75, 90, 95).compute(values.map(java.lang.Long.valueOf).asJavaCollection)
     Stats(fromDouble(stats.get(50)), fromDouble(stats.get(5)), fromDouble(stats.get(10)), fromDouble(stats.get(25)), fromDouble(stats.get(75)), fromDouble(stats.get(90)), fromDouble(stats.get(95)))
@@ -50,10 +53,10 @@ object NetworkStats {
     if (publicChannels.isEmpty || publicChannels.flatMap(pc => getChannelUpdateField(pc, _ => true)).isEmpty) {
       None
     } else {
-      val capacityStats = Stats(publicChannels.map(_.capacity.toLong), d => Satoshi(d.toLong))
-      val cltvStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.cltvExpiryDelta.toInt.toLong)), d => CltvExpiryDelta(d.toInt))
-      val feeBaseStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeBaseMsat.toLong)), d => MilliSatoshi(d.toLong))
-      val feeProportionalStats = Stats(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeProportionalMillionths)), d => d.toLong)
+      val capacityStats = Stats.generate(publicChannels.map(_.capacity.toLong), d => Satoshi(d.toLong))
+      val cltvStats = Stats.generate(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.cltvExpiryDelta.toInt.toLong)), d => CltvExpiryDelta(d.toInt))
+      val feeBaseStats = Stats.generate(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeBaseMsat.toLong)), d => MilliSatoshi(d.toLong))
+      val feeProportionalStats = Stats.generate(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeProportionalMillionths)), d => d.toLong)
       val nodes = publicChannels.flatMap(pc => pc.ann.nodeId1 :: pc.ann.nodeId2 :: Nil).toSet.size
       Some(NetworkStats(publicChannels.size, nodes, capacityStats, cltvStats, feeBaseStats, feeProportionalStats))
     }

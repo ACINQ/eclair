@@ -22,11 +22,11 @@ import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{CltvExpiry, TestConstants}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import org.sqlite.SQLiteException
 import scodec.bits.ByteVector
 
-class SqliteChannelsDbSpec extends FunSuite {
+class SqliteChannelsDbSpec extends AnyFunSuite {
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()

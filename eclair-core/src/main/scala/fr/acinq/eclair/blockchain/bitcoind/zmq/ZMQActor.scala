@@ -29,8 +29,8 @@ import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.Try
 
 /**
-  * Created by PM on 04/04/2017.
-  */
+ * Created by PM on 04/04/2017.
+ */
 class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import ZMQActor._
@@ -65,17 +65,17 @@ class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends
     case None => ()
   }
 
-  self ! 'checkEvent
-  self ! 'checkMsg
+  self ! Symbol("checkEvent")
+  self ! Symbol("checkMsg")
 
   override def receive: Receive = {
-    case 'checkEvent =>
+    case Symbol("checkEvent") =>
       checkEvent
-      context.system.scheduler.scheduleOnce(1 second, self ,'checkEvent)
+      context.system.scheduler.scheduleOnce(1 second, self, Symbol("checkEvent"))
 
-    case 'checkMsg =>
+    case Symbol("checkMsg") =>
       checkMsg
-      context.system.scheduler.scheduleOnce(1 second, self, 'checkMsg)
+      context.system.scheduler.scheduleOnce(1 second, self, Symbol("checkMsg"))
 
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>

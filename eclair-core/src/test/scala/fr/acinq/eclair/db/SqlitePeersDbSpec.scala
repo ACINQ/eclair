@@ -22,10 +22,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 
-class SqlitePeersDbSpec extends FunSuite {
+class SqlitePeersDbSpec extends AnyFunSuite {
 
   def inmem = DriverManager.getConnection("jdbc:sqlite::memory:")
 
