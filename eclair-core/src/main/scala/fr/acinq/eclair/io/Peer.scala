@@ -30,6 +30,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
+import fr.acinq.eclair.router.Router.RemoteGossip
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.bits.ByteVector
@@ -370,7 +371,7 @@ object Peer {
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
-  case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: LightningMessage)
+  case class PeerRoutingMessage(origin: RemoteGossip, message: RoutingMessage)
 
   // @formatter:on
 

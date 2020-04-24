@@ -47,7 +47,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTr
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams, NORMAL => _, State => _}
+import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams, NORMAL => _, State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
@@ -1258,7 +1258,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
     announcements.foreach { ann =>
-      nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann)
+      nodes("A").router ! PeerRoutingMessage(RemoteGossip(sender.ref, remoteNodeId), ann)
       sender.expectMsg(TransportHandler.ReadAck(ann))
       sender.expectMsg(GossipDecision.Accepted(ann))
     }

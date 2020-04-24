@@ -185,13 +185,13 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using RouteCalculation.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
-    case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
+    case Event(PeerRoutingMessage(_, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(routingMessage)
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
-      stay using Validation.handleChannelAnnouncement(d, nodeParams.db.network, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
+    case Event(PeerRoutingMessage(origin, c: ChannelAnnouncement), d) =>
+      stay using Validation.handleChannelAnnouncement(d, nodeParams.db.network, watcher, origin, c)
 
     case Event(r: ValidateResult, d) =>
       stay using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
@@ -202,14 +202,14 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(n: NodeAnnouncement, d: Data) =>
       stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
-      stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
+    case Event(PeerRoutingMessage(origin, n: NodeAnnouncement), d: Data) =>
+      stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(origin), n)
 
     case Event(u: ChannelUpdate, d: Data) =>
       stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
+    case Event(PeerRoutingMessage(origin, u: ChannelUpdate), d) =>
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(origin))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) =>
       stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
@@ -223,19 +223,19 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(s: SendChannelQuery, d) =>
       stay using Sync.handleSendChannelQuery(d, s)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
-      Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+    case Event(PeerRoutingMessage(origin, q: QueryChannelRange), d) =>
+      Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, origin, q)
       stay
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
-      stay using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
+    case Event(PeerRoutingMessage(origin, r: ReplyChannelRange), d) =>
+      stay using Sync.handleReplyChannelRange(d, nodeParams.routerConf, origin, r)
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
-      Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
+    case Event(PeerRoutingMessage(origin, q: QueryShortChannelIds), d) =>
+      Sync.handleQueryShortChannelIds(d.nodes, d.channels, origin, q)
       stay
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
-      stay using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
+    case Event(PeerRoutingMessage(origin, r: ReplyShortChannelIdsEnd), d) =>
+      stay using Sync.handleReplyShortChannelIdsEnd(d, origin, r)
 
   }
 
@@ -245,7 +245,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     val category_opt = LogCategory(currentMessage)
     currentMessage match {
       case s: SendChannelQuery => Logs.mdc(category_opt, remoteNodeId_opt = Some(s.remoteNodeId))
-      case prm: PeerRoutingMessage => Logs.mdc(category_opt, remoteNodeId_opt = Some(prm.remoteNodeId))
+      case prm: PeerRoutingMessage => Logs.mdc(category_opt, remoteNodeId_opt = Some(prm.origin.nodeId))
       case lcu: LocalChannelUpdate => Logs.mdc(category_opt, remoteNodeId_opt = Some(lcu.remoteNodeId))
       case _ => Logs.mdc(category_opt)
     }

@@ -335,7 +335,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, ann))
+      router.expectMsg(Peer.PeerRoutingMessage(RemoteGossip(peerConnection, remoteNodeId), ann))
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
@@ -351,7 +351,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     router.expectNoMsg(1 second)
     // other routing messages go through
     transport.send(peerConnection, query)
-    router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, query))
+    router.expectMsg(Peer.PeerRoutingMessage(RemoteGossip(peerConnection, remoteNodeId), query))
 
     // after a while the ban is lifted
     probe.send(peerConnection, PeerConnection.ResumeAnnouncements)
@@ -359,7 +359,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // and announcements are processed again
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, ann))
+      router.expectMsg(Peer.PeerRoutingMessage(RemoteGossip(peerConnection, remoteNodeId), ann))
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
