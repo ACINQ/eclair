@@ -73,9 +73,8 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    switchboard.expectMsg(PeerConnection.Authenticated(remoteNodeId))
-    assert(switchboard.sender() == peerConnection)
-    peer.send(peerConnection, PeerConnection.InitializeConnection)
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[wire.Init]
     assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
@@ -86,8 +85,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     } else {
       router.expectNoMsg(1 second)
     }
-    peer.expectMsg(PeerConnection.ConnectionReady(remoteNodeId, address, outgoing = true, localInit, remoteInit))
-    assert(peer.sender() == peerConnection)
+    peer.expectMsg(PeerConnection.ConnectionReady(peerConnection, remoteNodeId, address, outgoing = true, localInit, remoteInit))
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
   }
 
@@ -119,7 +117,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.watch(peerConnection)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection)
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
   }
 
@@ -129,7 +127,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    peer.send(peerConnection, PeerConnection.InitializeConnection)
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
@@ -143,7 +141,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    peer.send(peerConnection, PeerConnection.InitializeConnection)
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
@@ -169,7 +167,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val peerConnection = TestFSMRef(new PeerConnection(nodeParams, switchboard.ref, router.ref))
       probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
       transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-      peer.send(peerConnection, PeerConnection.InitializeConnection)
+      probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
       transport.expectMsgType[TransportHandler.Listener]
       val init = transport.expectMsgType[wire.Init]
       assert(init.features === sentFeatures.bytes)
@@ -182,7 +180,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    peer.send(peerConnection, PeerConnection.InitializeConnection)
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peerConnection, wire.Init(Bob.nodeParams.features, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
@@ -337,7 +335,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      router.expectMsg(Peer.PeerRoutingMessage(remoteNodeId, ann))
+      router.expectMsg(Peer.PeerRoutingMessage(RemoteGossip(peerConnection, remoteNodeId), ann))
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 
@@ -353,7 +351,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     router.expectNoMsg(1 second)
     // other routing messages go through
     transport.send(peerConnection, query)
-    router.expectMsg(Peer.PeerRoutingMessage(remoteNodeId, query))
+    router.expectMsg(Peer.PeerRoutingMessage(RemoteGossip(peerConnection, remoteNodeId), query))
 
     // after a while the ban is lifted
     probe.send(peerConnection, PeerConnection.ResumeAnnouncements)
@@ -361,7 +359,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // and announcements are processed again
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      router.expectMsg(Peer.PeerRoutingMessage(remoteNodeId, ann))
+      router.expectMsg(Peer.PeerRoutingMessage(RemoteGossip(peerConnection, remoteNodeId), ann))
     }
     transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
 

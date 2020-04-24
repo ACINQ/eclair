@@ -52,14 +52,14 @@ object Sync {
     // have to worry about sending a new query_channel_range when another query is still in progress
     val query = QueryChannelRange(s.chainHash, firstBlockNum = 0L, numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toList))
     log.info("sending query_channel_range={}", query)
-    ctx.sender ! query
+    s.to ! query
 
     // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
     // the first_timestamp field to the current date/time and timestamp_range to the maximum value
     // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
     // that (i.e. the whole routing table)
     val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = Platform.currentTime.milliseconds.toSeconds, timestampRange = Int.MaxValue)
-    ctx.sender ! filter
+    s.to ! filter
 
     // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
     // will start a new complete sync process

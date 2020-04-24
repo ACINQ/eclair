@@ -30,6 +30,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
+import fr.acinq.eclair.router.Router.RemoteGossip
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.bits.ByteVector
@@ -71,8 +72,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       reconnectionTask forward p
       stay
 
-    case Event(PeerConnection.ConnectionReady(remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
-      val peerConnection = sender
+    case Event(PeerConnection.ConnectionReady(peerConnection, remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
       require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
       log.debug("got authenticated connection to address {}:{}", address.getHostString, address.getPort)
 
@@ -371,7 +371,7 @@ object Peer {
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
-  case class PeerRoutingMessage(remoteNodeId: PublicKey, message: RoutingMessage)
+  case class PeerRoutingMessage(origin: RemoteGossip, message: RoutingMessage)
 
   // @formatter:on
 
