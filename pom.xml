@@ -27,6 +27,7 @@
         <module>eclair-core</module>
         <module>eclair-node</module>
         <module>eclair-node-gui</module>
+        <module>sqlite2psql</module>
     </modules>
 
     <description>A scala implementation of the Lightning Network</description>

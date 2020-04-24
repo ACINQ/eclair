@@ -101,7 +101,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
+  override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
     using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
@@ -111,7 +111,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
+  override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
@@ -119,6 +119,18 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
       while (rs.next()) {
         q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
+      }
+      q
+    }
+  }
+
+  def listHtlcInfos(channelId: ByteVector32): Seq[(ByteVector32, CltvExpiry, Long)] = {
+    using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry, commitment_number FROM htlc_infos WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId.toArray)
+      val rs = statement.executeQuery
+      var q: Queue[(ByteVector32, CltvExpiry, Long)] = Queue()
+      while (rs.next()) {
+        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")), rs.getLong("commitment_number"))
       }
       q
     }
