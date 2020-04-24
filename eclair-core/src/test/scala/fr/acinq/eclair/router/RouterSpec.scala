@@ -57,7 +57,7 @@ class RouterSpec extends BaseRouterSpec {
       val chan_ac = channelAnnouncement(ShortChannelId(420000, 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
       val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200", timestamp = Platform.currentTime.milliseconds.toSeconds + 1)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ac))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac)
       peerConnection.expectNoMsg(100 millis) // we don't immediately acknowledge the announcement (back pressure)
       watcher.expectMsg(ValidateRequest(chan_ac))
       watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
@@ -65,10 +65,10 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(GossipDecision.Accepted(chan_ac))
       assert(peerConnection.sender() == router)
       watcher.expectMsgType[WatchSpentBasic]
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ac))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ac)
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ac))
       peerConnection.expectMsg(GossipDecision.Accepted(update_ac))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, node_c))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c)
       peerConnection.expectMsg(TransportHandler.ReadAck(node_c))
       peerConnection.expectMsg(GossipDecision.Accepted(node_c))
       eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_ac, 1000000 sat, None, None) :: Nil))
@@ -87,12 +87,12 @@ class RouterSpec extends BaseRouterSpec {
       val chan_uc = channelAnnouncement(ShortChannelId(420000, 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, hex"00")
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_uc))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_uc)
       peerConnection.expectNoMsg(200 millis) // we don't immediately acknowledge the announcement (back pressure)
       watcher.expectMsg(ValidateRequest(chan_uc))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_uc))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_uc)
       peerConnection.expectMsg(TransportHandler.ReadAck(update_uc))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, node_u))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_u)
       peerConnection.expectMsg(TransportHandler.ReadAck(node_u))
       watcher.send(router, ValidateResult(chan_uc, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(2000000 sat, write(pay2wsh(Scripts.multiSig2of2(priv_funding_u.publicKey, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_uc))
@@ -112,13 +112,13 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // duplicates
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, node_a))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_a)
       peerConnection.expectMsg(TransportHandler.ReadAck(node_a))
       peerConnection.expectMsg(GossipDecision.Duplicate(node_a))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ab))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab)
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ab))
       peerConnection.expectMsg(GossipDecision.Duplicate(chan_ab))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ab))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab)
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ab))
       peerConnection.expectMsg(GossipDecision.Duplicate(update_ab))
       peerConnection.expectNoMsg(100 millis)
@@ -131,13 +131,13 @@ class RouterSpec extends BaseRouterSpec {
       val invalid_node_a = node_a.copy(timestamp = node_a.timestamp + 10)
       val invalid_chan_a = channelAnnouncement(ShortChannelId(420000, 101, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey.publicKey)
       val invalid_update_ab = update_ab.copy(cltvExpiryDelta = CltvExpiryDelta(21), timestamp = update_ab.timestamp + 1)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, invalid_node_a))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalid_node_a)
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_node_a))
       peerConnection.expectMsg(GossipDecision.InvalidSignature(invalid_node_a))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, invalid_chan_a))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalid_chan_a)
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_chan_a))
       peerConnection.expectMsg(GossipDecision.InvalidSignature(invalid_chan_a))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, invalid_update_ab))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalid_update_ab)
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_update_ab))
       peerConnection.expectMsg(GossipDecision.InvalidSignature(invalid_update_ab))
       peerConnection.expectNoMsg(100 millis)
@@ -151,7 +151,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_v = randomKey
       val chan_vc = channelAnnouncement(ShortChannelId(420000, 102, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
       nodeParams.db.network.addToPruned(chan_vc.shortChannelId :: Nil)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_vc))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_vc)
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_vc))
       peerConnection.expectMsg(GossipDecision.ChannelPruned(chan_vc))
       peerConnection.expectNoMsg(100 millis)
@@ -162,7 +162,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // stale channel update
       val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, chan_ab.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = (Platform.currentTime.milliseconds - 15.days).toSeconds)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ab))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ab))
       peerConnection.expectMsg(GossipDecision.Stale(update_ab))
       peerConnection.expectNoMsg(100 millis)
@@ -175,10 +175,10 @@ class RouterSpec extends BaseRouterSpec {
       val priv_y = randomKey
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, ShortChannelId(4646464), CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, hex"0200")
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ay))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay)
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
       peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, node_y))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_y)
       peerConnection.expectMsg(TransportHandler.ReadAck(node_y))
       peerConnection.expectMsg(GossipDecision.NoKnownChannel(node_y))
       peerConnection.expectNoMsg(100 millis)
@@ -193,11 +193,11 @@ class RouterSpec extends BaseRouterSpec {
       val chan_ay = channelAnnouncement(ShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, hex"0200")
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ay))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ay)
       watcher.expectMsg(ValidateRequest(chan_ay))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, update_ay))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay)
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, node_y))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_y)
       peerConnection.expectMsg(TransportHandler.ReadAck(node_y))
       watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ay))
@@ -213,7 +213,7 @@ class RouterSpec extends BaseRouterSpec {
       // validation failure
       val priv_x = randomKey
       val chan_ax = channelAnnouncement(ShortChannelId(42001), priv_a, priv_x, priv_funding_a, randomKey)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_ax))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ax)
       watcher.expectMsg(ValidateRequest(chan_ax))
       watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException("funding tx not found"))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ax))
@@ -228,7 +228,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_z = randomKey
       val priv_funding_z = randomKey
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_az))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az)
       watcher.expectMsg(ValidateRequest(chan_az))
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = false))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
@@ -243,7 +243,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_z = randomKey
       val priv_funding_z = randomKey
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
-      peerConnection.send(router, PeerRoutingMessage(remoteNodeId, chan_az))
+      router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az)
       watcher.expectMsg(ValidateRequest(chan_az))
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
@@ -288,7 +288,7 @@ class RouterSpec extends BaseRouterSpec {
     val channelId_ac = ShortChannelId(420000, 105, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
     val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, buggy_chan_ac))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, buggy_chan_ac))
     peerConnection.expectMsg(TransportHandler.ReadAck(buggy_chan_ac))
     peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_chan_ac))
   }
@@ -297,7 +297,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val peerConnection = TestProbe()
     val buggy_ann_b = node_b.copy(signature = node_c.signature, timestamp = node_b.timestamp + 1)
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, buggy_ann_b))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, buggy_ann_b))
     peerConnection.expectMsg(TransportHandler.ReadAck(buggy_ann_b))
     peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_ann_b))
   }
@@ -306,7 +306,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val peerConnection = TestProbe()
     val buggy_channelUpdate_ab = update_ab.copy(signature = node_b.signature, timestamp = update_ab.timestamp + 1)
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, buggy_channelUpdate_ab))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, buggy_channelUpdate_ab))
     peerConnection.expectMsg(TransportHandler.ReadAck(buggy_channelUpdate_ab))
     peerConnection.expectMsg(GossipDecision.InvalidSignature(buggy_channelUpdate_ab))
   }
@@ -369,7 +369,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.hops.last.nextNodeId === d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, channelUpdate_cd1))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd1))
     peerConnection.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     sender.expectMsg(Failure(RouteNotFound))
@@ -465,9 +465,9 @@ class RouterSpec extends BaseRouterSpec {
     val staleUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 5 msat, timestamp = oldTimestamp)
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, announcement))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, announcement))
     watcher.expectMsgType[ValidateRequest]
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, staleUpdate))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, staleUpdate))
     watcher.send(router, ValidateResult(announcement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     peerConnection.expectMsg(GossipDecision.Accepted(announcement))
     peerConnection.expectMsg(GossipDecision.Stale(staleUpdate))
@@ -481,7 +481,7 @@ class RouterSpec extends BaseRouterSpec {
     val recentUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = Platform.currentTime.millisecond.toSeconds)
 
     // we want to make sure that transport receives the query
-    peerConnection.send(router, PeerRoutingMessage(remoteNodeId, recentUpdate))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, recentUpdate))
     peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(recentUpdate))
     val query = peerConnection.expectMsgType[QueryShortChannelIds]
     assert(query.shortChannelIds.array == List(channelId))

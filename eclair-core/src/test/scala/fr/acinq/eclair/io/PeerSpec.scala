@@ -70,7 +70,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // let's simulate a connection
     switchboard.send(peer, Peer.Init(channels))
     val localInit = wire.Init(peer.underlyingActor.nodeParams.features)
-    peerConnection.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
@@ -152,12 +152,12 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     deathWatch.watch(peerConnection2.ref)
     deathWatch.watch(peerConnection3.ref)
 
-    peerConnection2.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
+    peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     deathWatch.expectTerminated(peerConnection1.ref)
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
 
-    peerConnection3.send(peer, PeerConnection.ConnectionReady(remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
+    peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     deathWatch.expectTerminated(peerConnection2.ref)
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
