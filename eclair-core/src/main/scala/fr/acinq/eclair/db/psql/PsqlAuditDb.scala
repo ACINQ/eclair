@@ -196,7 +196,7 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
     inTransaction { psql =>
-      using(psql.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+      using(psql.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
