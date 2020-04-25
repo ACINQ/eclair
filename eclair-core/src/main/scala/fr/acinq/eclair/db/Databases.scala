@@ -97,7 +97,6 @@ object Databases extends Logging {
 
     implicit val lock: DatabaseLock = lockType match {
       case LockType.NONE => NoLock
-      case LockType.OPTIMISTIC => OptimisticLock(new AtomicLong(0L), lockExceptionHandler)
       case LockType.OWNERSHIP_LEASE => OwnershipLeaseLock(instanceId, databaseLeaseInterval, lockExceptionHandler)
       case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
     }

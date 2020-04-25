@@ -38,12 +38,11 @@ object PsqlUtils extends JdbcUtils with Logging {
   object LockType extends Enumeration {
     type LockType = Value
 
-    val NONE, OWNERSHIP_LEASE, OPTIMISTIC = Value
+    val NONE, OWNERSHIP_LEASE = Value
 
     def apply(s: String): LockType = s match {
       case "none" => NONE
       case "ownership-lease" => OWNERSHIP_LEASE
-      case "optimistic" => OPTIMISTIC
       case _ => throw new RuntimeException(s"Unknown psql lock type: `$s`")
     }
   }
@@ -83,19 +82,6 @@ object PsqlUtils extends JdbcUtils with Logging {
         checkDatabaseOwnership(connection, instanceId, lockExceptionHandler)
         res
       }
-    }
-  }
-
-  case class OptimisticLock(dataVersion: AtomicLong, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
-    override def obtainExclusiveLock(implicit ds: DataSource): Unit =
-      synchronized(inTransaction(c => dataVersion.set(getDataVersion(c))))
-
-    override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
-      synchronized { inTransaction { connection =>
-        val res = f(connection)
-        incrementDataVersion(connection, dataVersion, lockExceptionHandler)
-        res
-      }}
     }
   }
 
@@ -143,40 +129,6 @@ object PsqlUtils extends JdbcUtils with Logging {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
     // overwrite the existing version
     statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
-  }
-
-  private def incrementDataVersion(connection: Connection, dataVersion: AtomicLong, lockExceptionHandler: LockExceptionHandler): Long = {
-    using(connection.prepareStatement(s"UPDATE $DataVersionTable SET data_version = data_version + 1 WHERE data_version = ?")) {
-      statement =>
-        statement.setLong(1, dataVersion.get())
-        if (statement.executeUpdate() != 1) {
-          val ex = new LockException(s"Unexpected data version `${dataVersion.get}`")
-          lockExceptionHandler(ex)
-          throw ex
-        }
-        dataVersion.incrementAndGet()
-    }
-  }
-
-  private def getDataVersion(implicit connection: Connection): Long = {
-    initializeDataVersionTable(connection)
-    using(connection.prepareStatement(s"SELECT data_version FROM $DataVersionTable WHERE id = 1")) {
-      statement =>
-        val rs = statement.executeQuery()
-        if (rs.next())
-          rs.getLong("data_version")
-        else
-          throw new LockException("Cannot read data version")
-    }
-  }
-
-  private def initializeDataVersionTable(implicit connection: Connection): Unit = {
-    using(connection.createStatement()) {
-      statement =>
-        // allow only one row in the data version lease table
-        statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $DataVersionTable (id INTEGER PRIMARY KEY default(1), data_version BIGINT UNIQUE, CONSTRAINT one_row CHECK (id = 1))")
-        statement.executeUpdate(s"INSERT INTO ${DataVersionTable} (data_version) VALUES (0) ON CONFLICT DO NOTHING")
-    }
   }
 
   private def obtainDatabaseOwnership(instanceId: String, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
