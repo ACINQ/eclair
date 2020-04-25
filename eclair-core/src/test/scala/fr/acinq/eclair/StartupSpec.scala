@@ -35,7 +35,7 @@ class StartupSpec extends AnyFunSuite {
     val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
     val feeEstimator = new TestConstants.TestFeeEstimator
     val db = TestConstants.inMemoryDb()
-    NodeParams.makeNodeParams(conf, keyManager, None, db, blockCount, feeEstimator)
+    NodeParams.makeNodeParams(conf, "this instance", keyManager, None, db, blockCount, feeEstimator)
   }
 
   test("check configuration") {

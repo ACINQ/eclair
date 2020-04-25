@@ -17,11 +17,20 @@
 package fr.acinq.eclair.db
 
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.sql.{Connection, DriverManager}
+import java.util.concurrent.atomic.AtomicLong
+import java.nio.file._
 
+import com.typesafe.config.Config
+import fr.acinq.eclair.db.psql.PsqlUtils.LockType.LockType
+import fr.acinq.eclair.db.psql.PsqlUtils._
+import fr.acinq.eclair.db.psql._
 import fr.acinq.eclair.db.sqlite._
 import grizzled.slf4j.Logging
-import org.sqlite.SQLiteException
+import javax.sql.DataSource
+
+import scala.concurrent.duration._
 
 trait Databases {
 
@@ -37,10 +46,14 @@ trait Databases {
 
   val pendingRelay: PendingRelayDb
 
-  def backup(file: File): Unit
+  def obtainExclusiveLock(): Unit
 }
 
 object Databases extends Logging {
+
+  trait CanBackup {
+    def backup(file: File): Unit
+  }
 
   /**
     * Given a parent folder it creates or loads all the databases from a JDBC connection
@@ -59,7 +72,7 @@ object Databases extends Logging {
       sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
       SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
       logger.info("successful lock on eclair.sqlite")
-      databaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+      sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
       case t: Throwable => {
         logger.error("could not create connection to sqlite databases: ", t)
@@ -69,23 +82,123 @@ object Databases extends Logging {
         throw t
       }
     }
-
   }
 
-  def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
+  def postgresJDBC(database: String, host: String, port: Int,
+                   username: Option[String], password: Option[String],
+                   poolProperties: Map[String, Long],
+                   instanceId: String,
+                   databaseLeaseInterval: FiniteDuration,
+                   lockExceptionHandler: LockExceptionHandler = { _ => () },
+                   lockType: LockType = LockType.NONE, datadir: File = new File(File.separator + "tmp")): Databases = {
+    val url = s"jdbc:postgresql://${host}:${port}/${database}"
+
+    checkIfDatabaseUrlIsUnchanged(url, datadir)
+
+    implicit val lock: DatabaseLock = lockType match {
+      case LockType.NONE => NoLock
+      case LockType.OPTIMISTIC => OptimisticLock(new AtomicLong(0L), lockExceptionHandler)
+      case LockType.OWNERSHIP_LEASE => OwnershipLeaseLock(instanceId, databaseLeaseInterval, lockExceptionHandler)
+      case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
+    }
+
+    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+
+    val config = new HikariConfig()
+    config.setJdbcUrl(url)
+    username.foreach(config.setUsername)
+    password.foreach(config.setPassword)
+    poolProperties.get("max-size").foreach(x => config.setMaximumPoolSize(x.toInt))
+    poolProperties.get("connection-timeout").foreach(config.setConnectionTimeout)
+    poolProperties.get("idle-timeout").foreach(config.setIdleTimeout)
+    poolProperties.get("max-life-time").foreach(config.setMaxLifetime)
+
+    implicit val ds: DataSource = new HikariDataSource(config)
+
+    val databases: Databases = new Databases {
+      override val network = new PsqlNetworkDb
+      override val audit = new PsqlAuditDb
+      override val channels = new PsqlChannelsDb
+      override val peers = new PsqlPeersDb
+      override val payments = new PsqlPaymentsDb
+      override val pendingRelay = new PsqlPendingRelayDb
+      override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock
+    }
+    databases.obtainExclusiveLock()
+    databases
+  }
+
+  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases with CanBackup {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
     override val peers = new SqlitePeersDb(eclairJdbc)
     override val payments = new SqlitePaymentsDb(eclairJdbc)
     override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
+    override def backup(backupFile: File): Unit = {
+      val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
 
-    override def backup(file: File): Unit = {
       SqliteUtils.using(eclairJdbc.createStatement()) {
-        statement => {
-          statement.executeUpdate(s"backup to ${file.getAbsolutePath}")
+        statement =>  {
+          statement.executeUpdate(s"backup to ${tmpFile.getAbsolutePath}")
         }
       }
+
+      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
+      // as the temporary file
+      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    }
+    override def obtainExclusiveLock(): Unit = ()
+  }
+
+  def setupPsqlDatabases(dbConfig: Config, instanceId: String, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
+    val database = dbConfig.getString("psql.database")
+    val host = dbConfig.getString("psql.host")
+    val port = dbConfig.getInt("psql.port")
+    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isEmpty)
+      None
+    else
+      Some(dbConfig.getString("psql.username"))
+    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isEmpty)
+      None
+    else
+      Some(dbConfig.getString("psql.password"))
+    val properties = {
+      val poolConfig = dbConfig.getConfig("psql.pool")
+      Map.empty
+        .updated("max-size", poolConfig.getInt("max-size").toLong)
+        .updated("connection-timeout", poolConfig.getDuration("connection-timeout").toMillis)
+        .updated("idle-timeout", poolConfig.getDuration("idle-timeout").toMillis)
+        .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
+
+    }
+    val lockType = LockType(dbConfig.getString("psql.lock-type"))
+    val leaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
+
+    Databases.postgresJDBC(
+      database = database, host = host, port = port,
+      username = username, password = password,
+      poolProperties = properties,
+      instanceId = instanceId,
+      databaseLeaseInterval = leaseInterval,
+      lockExceptionHandler = lockExceptionHandler, lockType = lockType, datadir = datadir
+    )
+  }
+
+  private def checkIfDatabaseUrlIsUnchanged(url: String, datadir: File ): Unit = {
+    val urlFile = new File(datadir, "last_jdbcurl")
+
+    def readString(path: Path): String = Files.readAllLines(path).get(0)
+
+    def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))
+
+    if (urlFile.exists()) {
+      val oldUrl = readString(urlFile.toPath)
+      if (oldUrl != url)
+        throw new RuntimeException(s"The database URL has changed since the last start. It was `$oldUrl`, now it's `$url`")
+    } else {
+      writeString(urlFile.toPath, url)
     }
   }
+
 }
