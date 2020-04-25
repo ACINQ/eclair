@@ -42,6 +42,7 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases.CanBackup
 import fr.acinq.eclair.db.psql.PsqlUtils.LockType
 import fr.acinq.eclair.db.{BackupHandler, Databases}
 import fr.acinq.eclair.io.{Server, Switchboard}
@@ -278,12 +279,15 @@ class Setup(datadir: File,
       }
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
-      backupHandler = system.actorOf(SimpleSupervisor.props(
-        BackupHandler.props(
-          nodeParams.db,
-          new File(chaindir, "eclair.sqlite.bak"),
-          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-        ), "backuphandler", SupervisorStrategy.Resume))
+      backupHandler = nodeParams.db match {
+        case canBackup: CanBackup => system.actorOf(SimpleSupervisor.props(
+          BackupHandler.props(
+            canBackup,
+            new File(chaindir, "eclair.sqlite.bak"),
+            if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None),
+          "backuphandler", SupervisorStrategy.Resume))
+        case _ => system.deadLetters
+      }
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))

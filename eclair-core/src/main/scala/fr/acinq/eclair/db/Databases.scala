@@ -46,14 +46,14 @@ trait Databases {
 
   val pendingRelay: PendingRelayDb
 
-  def backup(file: File): Unit
-
-  val isBackupSupported: Boolean
-
   def obtainExclusiveLock(): Unit
 }
 
 object Databases extends Logging {
+
+  trait CanBackup {
+    def backup(file: File): Unit
+  }
 
   /**
     * Given a parent folder it creates or loads all the databases from a JDBC connection
@@ -122,18 +122,13 @@ object Databases extends Logging {
       override val peers = new PsqlPeersDb
       override val payments = new PsqlPaymentsDb
       override val pendingRelay = new PsqlPendingRelayDb
-
-      override def backup(file: File): Unit = throw new RuntimeException("psql driver does not support channels backup")
-
-      override val isBackupSupported: Boolean = false
-
       override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock
     }
     databases.obtainExclusiveLock()
     databases
   }
 
-  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases {
+  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases with CanBackup {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
@@ -153,8 +148,6 @@ object Databases extends Logging {
       // as the temporary file
       Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
-    override val isBackupSupported: Boolean = true
-
     override def obtainExclusiveLock(): Unit = ()
   }
 
