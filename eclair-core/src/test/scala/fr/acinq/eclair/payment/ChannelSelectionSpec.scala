@@ -90,9 +90,13 @@ class ChannelSelectionSpec extends AnyFunSuite {
       ShortChannelId(44444) -> OutgoingChannel(b, channelUpdate, makeCommitments(ByteVector32.Zeroes, 1000000 msat))
     )
 
-    val node2channels = new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]
-    node2channels.put(a, mutable.Set(ShortChannelId(12345), ShortChannelId(11111), ShortChannelId(22222), ShortChannelId(33333)))
-    node2channels.put(b, mutable.Set(ShortChannelId(44444)))
+    val node2channels = mutable.MultiDict.empty[PublicKey, ShortChannelId]
+    node2channels.addAll(
+      (a, ShortChannelId(12345)) ::
+        (a, ShortChannelId(11111)) ::
+        (a, ShortChannelId(22222)) ::
+        (a, ShortChannelId(33333)) ::
+        (b, ShortChannelId(44444)) :: Nil)
 
     // select the channel to the same node, with the lowest balance but still high enough to handle the payment
     assert(selectPreferredChannel(relayPayload, channelUpdates, node2channels, Seq.empty) === Some(ShortChannelId(22222)))
