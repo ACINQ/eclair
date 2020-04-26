@@ -150,7 +150,7 @@ object ChannelRelayer {
       case Some(nextNodeId) =>
         log.debug(s"next hop for htlc #{} is nodeId={}", add.id, nextNodeId)
         // then we retrieve all known channels to this node
-        val allChannels = node2channels.getOrElse(nextNodeId, Set.empty[ShortChannelId])
+        val allChannels = node2channels.get(nextNodeId)
         // we then filter out channels that we have already tried
         val candidateChannels = allChannels -- alreadyTried
         // and we filter keep the ones that are compatible with this payment (mainly fees, expiry delta)
