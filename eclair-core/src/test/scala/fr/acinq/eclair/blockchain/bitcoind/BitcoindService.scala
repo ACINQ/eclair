@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import java.io.File
-import java.nio.file.{Files, StandardCopyOption}
+import java.nio.file.Files
 import java.util.UUID
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -28,7 +28,7 @@ import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JArray, JDecimal, JInt, JString, JValue}
+import org.json4s.JsonAST._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -38,7 +38,7 @@ trait BitcoindService extends Logging {
   self: TestKitBase =>
 
   implicit val system: ActorSystem
-  implicit val sttpBackend  = OkHttpFutureBackend()
+  implicit val sttpBackend = OkHttpFutureBackend()
 
   val bitcoindPort: Int = TestUtils.availablePort
 
@@ -47,6 +47,8 @@ trait BitcoindService extends Logging {
   val bitcoindZmqBlockPort: Int = TestUtils.availablePort
 
   val bitcoindZmqTxPort: Int = TestUtils.availablePort
+
+  import BitcoindService._
 
   import scala.sys.process._
 
@@ -60,17 +62,15 @@ trait BitcoindService extends Logging {
   var bitcoinrpcclient: BitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
 
-  case class BitcoinReq(method: String, params: Any*)
-
   def startBitcoind(): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
       val conf = Source.fromInputStream(is).mkString
-          .replace("28333", bitcoindPort.toString)
-          .replace("28332", bitcoindRpcPort.toString)
-          .replace("28334", bitcoindZmqBlockPort.toString)
-          .replace("28335", bitcoindZmqTxPort.toString)
+        .replace("28333", bitcoindPort.toString)
+        .replace("28332", bitcoindRpcPort.toString)
+        .replace("28334", bitcoindZmqBlockPort.toString)
+        .replace("28335", bitcoindZmqTxPort.toString)
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
@@ -128,5 +128,11 @@ trait BitcoindService extends Logging {
     val JArray(blocks) = sender.expectMsgType[JValue](timeout)
     assert(blocks.size == blockCount)
   }
+
+}
+
+object BitcoindService {
+
+  case class BitcoinReq(method: String, params: Any*)
 
 }
