@@ -152,13 +152,17 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
-    val fundingTxes = for (i <- 0 to 3) yield {
+    val fundingTxes = for (_ <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
-      wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 249).pipeTo(sender.ref)
-      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Transaction too large for fee policy"))
+      wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 249).pipeTo(sender.ref) // create a tx with an invalid feerate (too little)
+      val belowFeeFundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
+      wallet.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
+      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met, 152 < 153 (code 66)"))
+      wallet.rollback(belowFeeFundingTx) // rollback the locked outputs
+
+      // now fund a tx with correct feerate
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 250).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
-      fundingTx
+      sender.expectMsgType[MakeFundingTxResponse].fundingTx
     }
 
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
