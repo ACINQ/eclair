@@ -22,16 +22,16 @@ import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
-import org.json4s.JsonAST.{JString, _}
+import org.json4s.JsonAST._
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.jdk.CollectionConverters._
-
 
 class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
@@ -107,7 +107,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with Bitcoi
       signedTx
     }
     bitcoinClient.invoke("sendrawtransaction", spendingTx).pipeTo(sender.ref)
-    val JString(spendingTxid) = sender.expectMsgType[JValue]
+    sender.expectMsgType[JValue]
 
     // and publish the tx a fourth time to test idempotence
     client.publishTransaction(tx).pipeTo(sender.ref)
