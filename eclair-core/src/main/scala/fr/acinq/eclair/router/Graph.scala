@@ -23,6 +23,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 
+import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
@@ -95,10 +96,10 @@ object Graph {
                         wr: Option[WeightRatios],
                         currentBlockHeight: Long,
                         boundaries: RichWeight => Boolean): Seq[WeightedPath] = {
-    // find the shortest path, k = 0
+    // find the shortest path (k = 0)
     val targetWeight = RichWeight(amount, 0, CltvExpiryDelta(0), 0)
     dijkstraShortestPath(graph, sourceNode, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr) match {
-      case Nil => Seq.empty // if we can't even find a single path, avoid returning a list with an empty path
+      case Nil => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case shortestPath =>
         var allSpurPathsFound = false
         val shortestPaths = new mutable.ArrayDeque[WeightedPath]
@@ -109,35 +110,32 @@ object Graph {
         for (k <- 1 until pathsToFind) {
           if (!allSpurPathsFound) {
             val prevShortestPath = shortestPaths(k - 1).path
-            // for every edge in the path
+            // for every edge in the path, we will try to find a different path after that edge
             for (i <- prevShortestPath.indices) {
               // select the spur node as the i-th element of the previous shortest path
-              val spurEdge = prevShortestPath(i)
+              val spurNode = prevShortestPath(i).desc.a
               // select the sub-path from the source to the spur node
-              val rootPathEdges = if (i == 0) prevShortestPath.head :: Nil else prevShortestPath.take(i)
-              val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr)
-              // links to be removed that are part of the previous shortest path and which share the same root path
-              val edgesToIgnore = shortestPaths.flatMap { weightedPath =>
-                if ((i == 0 && (weightedPath.path.head :: Nil) == rootPathEdges) || weightedPath.path.take(i) == rootPathEdges) {
-                  weightedPath.path(i).desc :: Nil
-                } else {
-                  Nil
-                }
-              }
-              // remove any link that can lead back to the previous vertex to avoid going back from where we arrived (previous iteration)
-              val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a)).toSeq.flatten.map(_.desc)
-              // find the "spur" path, a sub-path going from the spur edge to the target avoiding previously found sub-paths
-              val spurPath = dijkstraShortestPath(graph, sourceNode, spurEdge.desc.a, targetNode, ignoredEdges ++ edgesToIgnore.toSet ++ returningEdges.toSet, ignoredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
+              val rootPathEdges = prevShortestPath.take(i)
+              // we ignore all the paths that we have already fully explored in previous iterations
+              // if for example the spur node is B, and we already found shortest paths starting with A-B-C and A-B-D,
+              // we want to ignore the B-C and B-D edges
+              //          +-- C -- [...]
+              //          |
+              // A -- B --+-- D -- [...]
+              //          |
+              //          +-- E -- [...]
+              val alreadyExploredEdges = shortestPaths.collect { case p if p.path.take(i) == rootPathEdges => p.path(i).desc }.toSet
+              // we also want to ignore any link that can lead back to the previous node (we only want to go forward)
+              val returningEdges = rootPathEdges.lastOption.map(last => graph.getEdgesBetween(last.desc.b, last.desc.a).map(_.desc).toSet).getOrElse(Set.empty)
+              // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
+              val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, targetNode, ignoredEdges ++ alreadyExploredEdges ++ returningEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr)
               if (spurPath.nonEmpty) {
-                // candidate k-shortest path is made of the rootPath and the new spurPath
-                val totalPath = rootPathEdges.head.desc.a == spurPath.head.desc.a match {
-                  case true => rootPathEdges.tail ++ spurPath // if the heads are the same node, drop it from the rootPath
-                  case false => rootPathEdges ++ spurPath
-                }
-                val candidatePath = WeightedPath(totalPath, pathWeight(sourceNode, totalPath, amount, currentBlockHeight, wr))
-                val totalCost = candidatePath.weight.cost
-                val localBalanceOk = totalPath.headOption.forall(e => totalCost <= e.capacity && e.balance_opt.forall(totalCost <= _))
-                if (localBalanceOk && boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath)) {
+                // candidate k-shortest path is made of the root path and the new spur path, but the cost of the spur
+                // path is likely higher than previous shortest paths, so we need to validate that the root path can
+                // relay the increased amount.
+                val completePath = rootPathEdges ++ spurPath
+                val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr))
+                if (boundaries(candidatePath.weight) && !shortestPaths.contains(candidatePath) && !candidates.exists(_ == candidatePath) && validatePath(completePath, amount)) {
                   candidates.enqueue(candidatePath)
                 }
               }
@@ -186,7 +184,7 @@ object Graph {
                                    currentBlockHeight: Long,
                                    wr: Option[WeightRatios]): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
-    val sourceNotInGraph = !g.containsVertex(sourceNode)
+    val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
     if (sourceNotInGraph || targetNotInGraph) {
       Seq.empty
@@ -313,6 +311,20 @@ object Graph {
 
   private def edgeHasZeroFee(edge: GraphEdge): Boolean = {
     edge.update.feeBaseMsat.toLong == 0 && edge.update.feeProportionalMillionths == 0
+  }
+
+  /** Validate that all edges along the path can relay the amount with fees. */
+  def validatePath(path: Seq[GraphEdge], amount: MilliSatoshi): Boolean = validateReversePath(path.reverse, amount)
+
+  @tailrec
+  private def validateReversePath(path: Seq[GraphEdge], amount: MilliSatoshi): Boolean = path.headOption match {
+    case None => true
+    case Some(edge) =>
+      val canRelayAmount = amount <= edge.capacity &&
+        edge.balance_opt.forall(amount <= _) &&
+        edge.update.htlcMaximumMsat.forall(amount <= _) &&
+        edge.update.htlcMinimumMsat <= amount
+      if (canRelayAmount) validateReversePath(path.tail, addEdgeFees(edge, amount)) else false
   }
 
   /**

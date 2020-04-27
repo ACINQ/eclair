@@ -497,6 +497,21 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
+  test("route from a source that is not in the graph (with assisted routes)") {
+    val g = DirectedGraph(List(
+      makeEdge(2L, b, c, 10 msat, 10),
+      makeEdge(3L, c, d, 10 msat, 10)
+    ))
+
+    val route = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
+
+    // now we add the missing starting edge
+    val extraGraphEdges = Set(makeEdge(1L, a, b, 5 msat, 5))
+    val route1 = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: Nil))
+  }
+
   test("verify that extra hops takes precedence over known channels") {
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 10 msat, 10),
@@ -668,22 +683,30 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc")
     )
 
-    val graph = DirectedGraph(Seq(
-      makeEdge(1L, d, a, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
-      makeEdge(2L, d, e, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
-      makeEdge(3L, a, e, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
-      makeEdge(4L, e, b, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
-      makeEdge(5L, e, f, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
-      makeEdge(6L, b, c, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
-      makeEdge(7L, c, f, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2))
+    val g1 = DirectedGraph(Seq(
+      makeEdge(1L, d, a, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 4.msat)),
+      makeEdge(2L, d, e, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 3.msat)),
+      makeEdge(3L, a, e, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 3.msat)),
+      makeEdge(4L, e, b, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 2.msat)),
+      makeEdge(5L, e, f, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT)),
+      makeEdge(6L, b, c, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 1.msat)),
+      makeEdge(7L, c, f, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT))
     ))
 
-    val fourShortestPaths = Graph.yenKshortestPaths(graph, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
+    val fourShortestPaths = Graph.yenKshortestPaths(g1, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
     assert(hops2Ids(fourShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
     assert(hops2Ids(fourShortestPaths(2).path.map(graphEdgeToHop)) === 2 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
     assert(hops2Ids(fourShortestPaths(3).path.map(graphEdgeToHop)) === 1 :: 3 :: 4 :: 6 :: 7 :: Nil) // D -> A -> E -> B -> C -> F
+
+    // Update balance D -> A to evict the last path (balance too low)
+    val g2 = g1.addEdge(makeEdge(1L, d, a, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 3.msat)))
+    val threeShortestPaths = Graph.yenKshortestPaths(g2, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, None, 0, noopBoundaries)
+    assert(threeShortestPaths.size === 3)
+    assert(hops2Ids(threeShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
+    assert(hops2Ids(threeShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
+    assert(hops2Ids(threeShortestPaths(2).path.map(graphEdgeToHop)) === 2 :: 4 :: 6 :: 7 :: Nil) // D -> E -> B -> C -> F
   }
 
   test("find the k shortest path (wikipedia example)") {
@@ -909,6 +932,26 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val Success(route) = findRoute(g, thisNode, targetNode, amount, 1, Set.empty, Set.empty, Set.empty, params, currentBlockHeight = 567634) // simulate mainnet block for heuristic
     assert(route.size == 2)
     assert(route.last.nextNodeId == targetNode)
+  }
+
+  test("validate path fees") {
+    val ab = makeEdge(1L, a, b, feeBase = 100 msat, 10000, minHtlc = 150 msat, maxHtlc = Some(300 msat), capacity = 1 sat, balance_opt = Some(260 msat))
+    val bc = makeEdge(10L, b, c, feeBase = 5 msat, 10000, minHtlc = 100 msat, maxHtlc = Some(400 msat), capacity = 1 sat)
+    val cd = makeEdge(20L, c, d, feeBase = 5 msat, 10000, minHtlc = 50 msat, maxHtlc = Some(500 msat), capacity = 1 sat)
+
+    assert(Graph.validatePath(Nil, 200 msat)) // ok
+    assert(Graph.validatePath(Seq(ab), 260 msat)) // ok
+    assert(!Graph.validatePath(Seq(ab), 10000 msat)) // above max-htlc
+    assert(Graph.validatePath(Seq(ab, bc), 250 msat)) // ok
+    assert(!Graph.validatePath(Seq(ab, bc), 255 msat)) // above balance (AB)
+    assert(Graph.validatePath(Seq(ab, bc, cd), 200 msat)) // ok
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 25 msat)) // below min-htlc (CD)
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 60 msat)) // below min-htlc (BC)
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 110 msat)) // below min-htlc (AB)
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 550 msat)) // above max-htlc (CD)
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 450 msat)) // above max-htlc (BC)
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 350 msat)) // above max-htlc (AB)
+    assert(!Graph.validatePath(Seq(ab, bc, cd), 250 msat)) // above balance (AB)
   }
 
 }
