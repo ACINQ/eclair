@@ -20,11 +20,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.acinq.eclair</groupId>
-        <artifactId>eclair_2.11</artifactId>
+        <artifactId>eclair_2.13</artifactId>
         <version>0.3.5-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-node_2.11</artifactId>
+    <artifactId>eclair-node_2.13</artifactId>
     <packaging>jar</packaging>
 
     <name>eclair-node</name>
@@ -112,7 +112,7 @@
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.19.0</version>
+            <version>1.32.0</version>
         </dependency>
         <!-- metrics -->
         <dependency>
@@ -135,6 +135,12 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-http-testkit_${scala.version.short}</artifactId>
             <version>${akka.http.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream-testkit_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

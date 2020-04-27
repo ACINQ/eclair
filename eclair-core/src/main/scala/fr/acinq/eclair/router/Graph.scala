@@ -95,7 +95,7 @@ object Graph {
     var allSpurPathsFound = false
 
     // stores the shortest paths
-    val shortestPaths = new mutable.MutableList[WeightedPath]
+    val shortestPaths = new mutable.ArrayDeque[WeightedPath]
     // stores the candidates for k(K +1) shortest paths, sorted by path cost
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
@@ -167,7 +167,7 @@ object Graph {
       }
     }
 
-    shortestPaths
+    shortestPaths.toSeq
   }
 
   /**
@@ -284,7 +284,7 @@ object Graph {
           current = prev.get(current.desc.b)
         }
 
-        edgePath
+        edgePath.toSeq
     }
   }
 
@@ -534,9 +534,7 @@ object Graph {
        */
       def makeGraph(channels: SortedMap[ShortChannelId, PublicChannel]): DirectedGraph = {
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
-        val mutableMap = new {} with mutable.HashMap[PublicKey, List[GraphEdge]] {
-          override def initialSize: Int = channels.size + 1
-        }
+        val mutableMap = new mutable.HashMap[PublicKey, List[GraphEdge]](initialCapacity = channels.size + 1, mutable.HashMap.defaultLoadFactor)
 
         // add all the vertices and edges in one go
         channels.values.foreach { channel =>
