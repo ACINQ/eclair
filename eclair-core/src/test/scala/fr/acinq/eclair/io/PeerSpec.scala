@@ -62,7 +62,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, switchboard.ref, router.ref, watcher.ref, relayer.ref, paymentHandler.ref, wallet))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, switchboard.ref, router.ref, watcher.ref, relayer.ref, wallet))
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, watcher, relayer, peer, peerConnection)))
   }
 
