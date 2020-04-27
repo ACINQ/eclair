@@ -24,10 +24,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
-import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.crypto.{LocalKeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelMeta, PrivateChannel}
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelMeta, GossipDecision, PrivateChannel}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
@@ -54,12 +54,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (testKeyManager.nodeKey.privateKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
-  val (a, b, c, d, e, f, g, h) = (testKeyManager.nodeId, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
+  val (a, b, c, d, e, f, g, h) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
 
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f, priv_funding_g, priv_funding_h) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f, funding_g, funding_h) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey, priv_funding_g.publicKey, priv_funding_h.publicKey)
 
-  val node_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, hex"0200")
+  // in the tests we are 'a', we don't define a node_a, it will be generated automatically when the router validates the first channel
   val node_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, hex"")
   val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200")
   val node_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, hex"00")
@@ -118,6 +118,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       // let's set up the router
       val sender = TestProbe()
       val peerConnection = TestProbe()
+      peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
       val watcher = TestProbe()
       import com.softwaremill.quicklens._
       val nodeParams = Alice.nodeParams
@@ -131,7 +132,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ef))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_gh))
       // then nodes
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_a))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_b))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_d))
@@ -170,13 +170,37 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
-
+      // all messages are acked
+      peerConnection.expectMsgAllOf(
+        GossipDecision.Accepted(chan_ab),
+        GossipDecision.Accepted(chan_bc),
+        GossipDecision.Accepted(chan_cd),
+        GossipDecision.Accepted(chan_ef),
+        GossipDecision.Accepted(chan_gh),
+        GossipDecision.Accepted(update_ab),
+        GossipDecision.Accepted(update_ba),
+        GossipDecision.Accepted(update_bc),
+        GossipDecision.Accepted(update_cb),
+        GossipDecision.Accepted(update_cd),
+        GossipDecision.Accepted(update_dc),
+        GossipDecision.Accepted(update_ef),
+        GossipDecision.Accepted(update_fe),
+        GossipDecision.Accepted(update_gh),
+        GossipDecision.Accepted(update_hg),
+        GossipDecision.Accepted(node_b),
+        GossipDecision.Accepted(node_c),
+        GossipDecision.Accepted(node_d),
+        GossipDecision.Accepted(node_e),
+        GossipDecision.Accepted(node_f),
+        GossipDecision.Accepted(node_g),
+        GossipDecision.Accepted(node_h))
+      peerConnection.expectNoMsg()
       awaitCond({
-        sender.send(router, 'nodes)
+        sender.send(router, Symbol("nodes"))
         val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
-        sender.send(router, 'channels)
+        sender.send(router, Symbol("channels"))
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-        sender.send(router, 'updates)
+        sender.send(router, Symbol("updates"))
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
         nodes.size === 8 && channels.size === 5 && updates.size === 11
       }, max = 10 seconds, interval = 1 second)
