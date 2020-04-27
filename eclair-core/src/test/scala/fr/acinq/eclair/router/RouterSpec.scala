@@ -342,6 +342,11 @@ class RouterSpec extends BaseRouterSpec {
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
+
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    val res1 = sender.expectMsgType[RouteResponse]
+    assert(res1.hops.map(_.nodeId).toList === a :: g :: Nil)
+    assert(res1.hops.last.nextNodeId === h)
   }
 
   test("route found (with extra routing info)") { fixture =>
@@ -387,6 +392,27 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
+  }
+
+  test("route not found (balance too low)") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+
+    // Via private channels.
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.expectMsgType[RouteResponse]
+    sender.send(router, RouteRequest(a, h, 50000000 msat))
+    sender.expectMsg(Failure(RouteNotFound))
+
+    // Via public channels.
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.expectMsgType[RouteResponse]
+    val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
+    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
+    sender.send(router, RouteRequest(a, d, 12000000 msat))
+    sender.expectMsg(Failure(RouteNotFound))
+    sender.send(router, RouteRequest(a, d, 5000000 msat))
+    sender.expectMsgType[RouteResponse]
   }
 
   test("temporary channel exclusion") { fixture =>
