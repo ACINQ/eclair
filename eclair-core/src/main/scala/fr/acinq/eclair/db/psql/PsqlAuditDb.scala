@@ -44,32 +44,7 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   inTransaction { psql =>
     using(psql.createStatement()) { statement =>
 
-      def migration34(statement: Statement): Int = {
-        statement.executeUpdate("DROP index sent_timestamp_idx")
-        statement.executeUpdate("ALTER TABLE sent RENAME TO _sent_old")
-        statement.executeUpdate("CREATE TABLE sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
-        // Old rows will be missing a recipient node id, so we use an easy-to-spot default value.
-        val defaultRecipientNodeId = PrivateKey(ByteVector32.One).publicKey
-        statement.executeUpdate(s"INSERT INTO sent (amount_msat, fees_msat, recipient_amount_msat, payment_id, parent_payment_id, payment_hash, payment_preimage, recipient_node_id, to_channel_id, timestamp) SELECT amount_msat, fees_msat, amount_msat, id, id, payment_hash, payment_preimage, '${defaultRecipientNodeId.toString}', to_channel_id, timestamp FROM _sent_old")
-        statement.executeUpdate("DROP table _sent_old")
-
-        statement.executeUpdate("DROP INDEX relayed_timestamp_idx")
-        statement.executeUpdate("ALTER TABLE relayed RENAME TO _relayed_old")
-        statement.executeUpdate("CREATE TABLE relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
-        statement.executeUpdate("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) SELECT payment_hash, amount_in_msat, from_channel_id, 'IN', 'channel', timestamp FROM _relayed_old")
-        statement.executeUpdate("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) SELECT payment_hash, amount_out_msat, to_channel_id, 'OUT', 'channel', timestamp FROM _relayed_old")
-        statement.executeUpdate("DROP table _relayed_old")
-
-        statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
-        statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
-        statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_payment_hash_idx ON relayed(payment_hash)")
-      }
-
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-        case 3 =>
-          logger.warn(s"migrating db $DB_NAME, found version=3 current=$CURRENT_VERSION")
-          migration34(statement)
-          setVersion(statement, DB_NAME, CURRENT_VERSION)
         case CURRENT_VERSION =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
