@@ -55,9 +55,11 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
+    system.actorOf(ClientSpawner.props(aliceParams, TestProbe().ref, TestProbe().ref))
+
     val monitor = TestProbe()
     val reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask] =
-      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId, TestProbe().ref, TestProbe().ref) {
+      TestFSMRef(new ReconnectionTask(aliceParams, remoteNodeId) {
         onTransition {
           case state -> nextState => monitor.ref ! TransitionWithData(state, nextState, stateData, nextStateData)
         }
