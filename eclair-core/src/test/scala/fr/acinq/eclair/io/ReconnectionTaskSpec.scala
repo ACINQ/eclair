@@ -34,7 +34,7 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   val fakeIPAddress = NodeAddress.fromParts("localhost", 42000).get
   val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
-  
+
   val PeerNothingData = Peer.Nothing
   val PeerDisconnectedData = Peer.DisconnectedData(channels)
   val PeerConnectedData = Peer.ConnectedData(fakeIPAddress.socketAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) })
