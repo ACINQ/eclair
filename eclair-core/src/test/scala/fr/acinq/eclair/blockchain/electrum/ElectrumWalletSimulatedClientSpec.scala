@@ -151,7 +151,41 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     listener.expectNoMsg(500 milliseconds)
   }
-  
+
+  test("ignore 2nd header notification if we receive it twice") {
+    val f = fixture
+    import f._
+
+    // fake an incoming tx
+    val key = wallet.stateData.accountKeys(0)
+    val scriptHash = computeScriptHashFromPublicKey(key.publicKey)
+    wallet ! ScriptHashSubscriptionResponse(scriptHash, ByteVector32(ByteVector.fill(32)(1)).toHex)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(100000 sat, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    wallet ! GetScriptHashHistoryResponse(scriptHash, TransactionHistoryItem(2, tx.txid) :: Nil)
+    listener.expectMsgType[TransactionConfidenceChanged]
+    wallet ! GetTransactionResponse(tx, None)
+    val TransactionReceived(_, _, Satoshi(100000), _, _, _) = listener.expectMsgType[TransactionReceived]
+    // we think we have some unconfirmed funds
+    val WalletReady(Satoshi(100000), _, _, _) = listener.expectMsgType[WalletReady]
+    listener.expectMsgType[NewWalletReceiveAddress]
+
+    // send a new block
+    val last = wallet.stateData.blockchain.tip
+    val header = makeHeader(last.header)
+    headers = headers :+ header
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+
+    // wallet sees the new block and notifies listener that tx confidence level has changed
+    listener.expectMsgType[TransactionConfidenceChanged]
+    assert(listener.expectMsgType[WalletReady].timestamp == header.time)
+    listener.expectMsgType[NewWalletReceiveAddress]
+
+    // resend same block
+    sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
+    // this is wrong: we should not receive any notifications
+    listener.expectMsgType[TransactionConfidenceChanged]
+  }
+
   test("disconnect if server sends a bad header") {
     val f = fixture
     import f._
