@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -56,7 +56,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
       setReconnectTimer(d.nextReconnectionDelay)
       goto(WAITING) using WaitingData(nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
 
-    case Event(FSM.Transition(_, Peer.DISCONNECTED, Peer.CONNECTED), d) =>
+    case Event(Peer.Transition(_, _: Peer.ConnectedData), d) =>
       log.info("peer is connected")
       goto(IDLE) using IdleData(d)
   }
@@ -73,22 +73,18 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
           goto(IDLE) using IdleData(d)
       }
 
-    case Event(FSM.Transition(_, Peer.DISCONNECTED, Peer.CONNECTED), d) =>
+    case Event(Peer.Transition(_, _: Peer.ConnectedData), d) =>
       log.info("peer is connected")
       cancelTimer(RECONNECT_TIMER)
       goto(IDLE) using IdleData(d)
   }
 
   when(IDLE) {
-    case Event(FSM.Transition(_, Peer.INSTANTIATING | Peer.CONNECTED, Peer.DISCONNECTED), d: IdleData) =>
-      if (nodeParams.autoReconnect) {
-        val (initialDelay, firstNextReconnectionDelay) = d.previousData match {
-          case Nothing =>
-            // The random initialDelay adds a minimum delay, which is important for a first connection to a new peer which advertises
-            // a public address. Right after the peer and this reconnection actor will be created, there will be a race between
-            // this automated connection task that uses data from network db, and the Peer.Connect command that may use the same
-            // address or a different one. This delay will cause the automated connection task to lose the race and prevent
-            // unnecessary parallel connections
+    case Event(Peer.Transition(previousPeerData, nextPeerData: Peer.DisconnectedData), d: IdleData) =>
+      if (nodeParams.autoReconnect && nextPeerData.channels.nonEmpty) { // we only reconnect if there are existing channels
+        val (initialDelay, firstNextReconnectionDelay) = (previousPeerData, d.previousData) match {
+          case (Peer.Nothing, _) =>
+            // When restarting, we add some randomization before the first reconnection attempt to avoid herd effect
             val initialDelay = randomizeDelay(nodeParams.initialRandomReconnectDelay)
             // When restarting, we will ~immediately reconnect, but then:
             // - we don't want all the subsequent reconnection attempts to be synchronized (herd effect)
@@ -97,7 +93,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
             // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
             val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
             (initialDelay, firstNextReconnectionDelay)
-          case cd: ConnectingData if System.currentTimeMillis.milliseconds - d.since < 30.seconds =>
+          case (_, cd: ConnectingData) if System.currentTimeMillis.milliseconds - d.since < 30.seconds =>
             log.info("peer is disconnected (shortly after connection was established)")
             // If our latest successful connection attempt was less than 30 seconds ago, we pick up the exponential
             // back-off retry delay where we left it. The goal is to address cases where the reconnection is successful,
@@ -120,15 +116,13 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
         stay
       }
 
-    case Event(FSM.Transition(_, Peer.DISCONNECTED, Peer.CONNECTED), _) =>
+    case Event(Peer.Transition(_, _: Peer.ConnectedData), _) =>
       log.info("peer is connected")
       stay
   }
 
   whenUnhandled {
     case Event(TickReconnect, _) => stay
-
-    case Event(FSM.Transition(_, Peer.INSTANTIATING, Peer.INSTANTIATING), _) => stay // instantiation transition
 
     case Event(Peer.Connect(_, hostAndPort_opt), _) =>
       // manual connection requests happen completely independently of the automated reconnection process;

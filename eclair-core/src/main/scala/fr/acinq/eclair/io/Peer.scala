@@ -48,11 +48,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   import Peer._
 
-  val reconnectionTask: ActorRef = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId, switchboard, router), "reconnection-task")
-  // we register the reconnection task to our transitions ourselves; if we let the child actor register itself, there is
-  // a race condition and it may miss the first transition
-  listeners.add(reconnectionTask)
-
   startWith(INSTANTIATING, Nothing)
 
   when(INSTANTIATING) {
@@ -239,6 +234,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
     case Event(_: Channel.OutgoingMessage, _) => stay // we got disconnected or reconnected and this message was for the previous connection
   }
 
+  private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId, switchboard, router), "reconnection-task")
+
+  onTransition {
+    case _ -> DISCONNECTED => reconnectionTask ! Peer.Transition(stateData, nextStateData)
+  }
+
   onTransition {
     case _ -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
@@ -371,6 +372,8 @@ object Peer {
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+
+  case class Transition(previousData: Peer.Data, nextData: Peer.Data)
 
   // @formatter:on
 
