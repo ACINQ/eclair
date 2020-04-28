@@ -18,10 +18,10 @@ package fr.acinq.eclair.io
 
 import java.net.{InetAddress, ServerSocket}
 
-import akka.actor.FSM
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass, _}
@@ -32,7 +32,12 @@ import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
+  val fakeIPAddress = NodeAddress.fromParts("localhost", 42000).get
+  val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
+  
+  val PeerNothingData = Peer.Nothing
+  val PeerDisconnectedData = Peer.DisconnectedData(channels)
+  val PeerConnectedData = Peer.ConnectedData(fakeIPAddress.socketAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) })
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
 
@@ -65,15 +70,23 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
-    monitor.expectNoMsg()
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
+    monitor.expectNoMessage()
+  }
+
+  test("stay idle at startup if there are no channels", Tag("auto_reconnect"), Tag("with_node_announcements")) { f =>
+    import f._
+
+    val peer = TestProbe()
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty)))
+    monitor.expectNoMessage()
   }
 
   test("only try to connect once at startup if auto-reconnect is enabled but there are no known address", Tag("auto_reconnect")) { f =>
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
     monitor.expectNoMsg()
@@ -83,7 +96,7 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, connectingData: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
     assert(connectingData.to === fakeIPAddress.socketAddress)
@@ -96,12 +109,12 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
 
     val probe = TestProbe()
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeAddress.fromParts("localhost", 42).get)
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.INSTANTIATING, Peer.DISCONNECTED))
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress)
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.DISCONNECTED, Peer.CONNECTED))
+    peer.send(reconnectionTask, Peer.Transition(PeerDisconnectedData, PeerConnectedData))
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // NB: we change the data to make it appear like we have been connected for a long time
@@ -109,13 +122,13 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // disconnection
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.CONNECTED, Peer.DISCONNECTED))
+    peer.send(reconnectionTask, Peer.Transition(PeerConnectedData, PeerDisconnectedData))
 
     // auto reconnect
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData0: WaitingData) = monitor.expectMsgType[TransitionWithData]
     assert(waitingData0.nextReconnectionDelay >= (200 milliseconds))
     assert(waitingData0.nextReconnectionDelay <= (10 seconds))
-    probe.send(reconnectionTask, ReconnectionTask.TickReconnect) // we send it manually in order to not have to actually wait (duplicates don' matter since we look at transitions sequentially)
+    probe.send(reconnectionTask, ReconnectionTask.TickReconnect) // we send it manually in order to not have to actually wait (duplicates don't matter since we look at transitions sequentially)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData1: WaitingData) = monitor.expectMsgType[TransitionWithData]
@@ -130,11 +143,11 @@ class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
     // connection finally succeeds
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.DISCONNECTED, Peer.CONNECTED))
+    peer.send(reconnectionTask, Peer.Transition(PeerDisconnectedData, PeerConnectedData))
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // we are disconnected one more time
-    peer.send(reconnectionTask, FSM.Transition(peer.ref, Peer.CONNECTED, Peer.DISCONNECTED))
+    peer.send(reconnectionTask, Peer.Transition(PeerConnectedData, PeerDisconnectedData))
 
     // the auto reconnect kicks off again, but this time we pick up the reconnect delay where we left it
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData3: WaitingData) = monitor.expectMsgType[TransitionWithData]
