@@ -44,7 +44,7 @@ import scodec.bits.ByteVector
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -234,7 +234,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
     case Event(_: Channel.OutgoingMessage, _) => stay // we got disconnected or reconnected and this message was for the previous connection
   }
 
-  private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId, switchboard, router), "reconnection-task")
+  private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
 
   onTransition {
     case _ -> DISCONNECTED => reconnectionTask ! Peer.Transition(stateData, nextStateData)
@@ -330,7 +330,7 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, switchboard: ActorRef, router, watcher, relayer, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet))
 
   // @formatter:off
 

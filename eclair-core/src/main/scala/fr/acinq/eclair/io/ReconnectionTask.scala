@@ -43,7 +43,7 @@ import scala.util.Random
  * - concurrent incoming/outgoing connections and risk of reconnection loops
  * - etc.
  */
-class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[ReconnectionTask.State, ReconnectionTask.Data] {
+class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends FSMDiagnosticActorLogging[ReconnectionTask.State, ReconnectionTask.Data] {
 
   import ReconnectionTask._
 
@@ -65,7 +65,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
       getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
         case Some(address) =>
-          connect(address, origin_opt = Some(self))
+          connect(address, origin = self)
           goto(CONNECTING) using ConnectingData(address, d.nextReconnectionDelay)
         case None =>
           // we don't have an address for that peer, nothing to do
@@ -130,7 +130,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
-        case Some(address) => connect(address, Some(sender))
+        case Some(address) => connect(address, origin = sender)
         case None => sender ! "no address found"
       }
       stay
@@ -138,9 +138,9 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
 
   private def setReconnectTimer(delay: FiniteDuration): Unit = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
 
-  private def connect(address: InetSocketAddress, origin_opt: Option[ActorRef]): Unit = {
+  private def connect(address: InetSocketAddress, origin: ActorRef): Unit = {
     log.info(s"connecting to $address")
-    context.actorOf(Client.props(nodeParams, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
+    context.system.eventStream.publish(ClientSpawner.ConnectionRequest(address, remoteNodeId, origin))
     Metrics.ReconnectionsAttempts.withoutTags().increment()
   }
 
@@ -152,7 +152,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
 
 object ReconnectionTask {
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef): Props = Props(new ReconnectionTask(nodeParams, remoteNodeId, switchboard, router))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey): Props = Props(new ReconnectionTask(nodeParams, remoteNodeId))
 
   val RECONNECT_TIMER = "reconnect"
 
