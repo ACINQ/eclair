@@ -207,7 +207,7 @@ class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.
   }
 
   when(RUNNING) {
-    case Event(ElectrumClient.HeaderSubscriptionResponse(_, header), data) if data.blockchain.tip == header => stay
+    case Event(ElectrumClient.HeaderSubscriptionResponse(_, header), data) if data.blockchain.tip.header == header => stay
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(height, header), data) =>
       log.info(s"got new tip ${header.blockId} at ${height}")

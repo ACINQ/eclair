@@ -180,10 +180,9 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     assert(listener.expectMsgType[WalletReady].timestamp == header.time)
     listener.expectMsgType[NewWalletReceiveAddress]
 
-    // resend same block
+    // resend same block, nothing should happen
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
-    // this is wrong: we should not receive any notifications
-    listener.expectMsgType[TransactionConfidenceChanged]
+    listener.expectNoMsg(1 second)
   }
 
   test("disconnect if server sends a bad header") {
