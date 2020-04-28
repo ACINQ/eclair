@@ -108,7 +108,6 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     val last = wallet.stateData.blockchain.tip
     assert(last.header == headers.last)
     val header = makeHeader(last.header)
-    //headers = headers :+ header
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(last.height + 1, header))
     assert(listener.expectMsgType[WalletReady].timestamp == header.time)
     val NewWalletReceiveAddress(address) = listener.expectMsgType[NewWalletReceiveAddress]
