@@ -66,8 +66,8 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
       getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
         case Some(address) =>
-          val connection = connect(address, origin_opt = Some(self))
-          goto(CONNECTING) using ConnectingData(connection, address, d.nextReconnectionDelay)
+          connect(address, origin_opt = Some(self))
+          goto(CONNECTING) using ConnectingData(address, d.nextReconnectionDelay)
         case None =>
           // we don't have an address for that peer, nothing to do
           goto(IDLE) using IdleData(d)
@@ -139,11 +139,10 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
 
   private def setReconnectTimer(delay: FiniteDuration): Unit = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
 
-  private def connect(address: InetSocketAddress, origin_opt: Option[ActorRef]): ActorRef = {
+  private def connect(address: InetSocketAddress, origin_opt: Option[ActorRef]): Unit = {
     log.info(s"connecting to $address")
-    val connection = context.actorOf(Client.props(nodeParams, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
+    context.actorOf(Client.props(nodeParams, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
     Metrics.ReconnectionsAttempts.withoutTags().increment()
-    connection
   }
 
   override def mdc(currentMessage: Any): MDC = {
@@ -172,7 +171,7 @@ object ReconnectionTask {
   sealed trait Data
   case object Nothing extends Data
   case class IdleData(previousData: Data, since: FiniteDuration = Platform.currentTime.milliseconds) extends Data
-  case class ConnectingData(connection: ActorRef, to: InetSocketAddress, nextReconnectionDelay: FiniteDuration) extends Data
+  case class ConnectingData(to: InetSocketAddress, nextReconnectionDelay: FiniteDuration) extends Data
   case class WaitingData(nextReconnectionDelay: FiniteDuration) extends Data
   // @formatter:on
 
