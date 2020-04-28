@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, Props, Terminated}
+import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -51,7 +51,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
   startWith(IDLE, IdleData(Nothing))
 
   when(CONNECTING) {
-    case Event(Terminated(actor), d: ConnectingData) if actor == d.connection =>
+    case Event(Status.Failure(_: Client.ConnectionFailed), d: ConnectingData) =>
       log.info(s"connection failed, next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds")
       setReconnectTimer(d.nextReconnectionDelay)
       goto(WAITING) using WaitingData(nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
@@ -66,7 +66,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
       getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
         case Some(address) =>
-          val connection = connect(address, origin_opt = None)
+          val connection = connect(address, origin_opt = Some(self))
           goto(CONNECTING) using ConnectingData(connection, address, d.nextReconnectionDelay)
         case None =>
           // we don't have an address for that peer, nothing to do
@@ -126,8 +126,6 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
   }
 
   whenUnhandled {
-    case Event(_: Terminated, _) => stay
-
     case Event(TickReconnect, _) => stay
 
     case Event(FSM.Transition(_, Peer.INSTANTIATING, Peer.INSTANTIATING), _) => stay // instantiation transition
@@ -150,7 +148,6 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
   private def connect(address: InetSocketAddress, origin_opt: Option[ActorRef]): ActorRef = {
     log.info(s"connecting to $address")
     val connection = context.actorOf(Client.props(nodeParams, switchboard, router, address, remoteNodeId, origin_opt = origin_opt))
-    context.watch(connection)
     Metrics.ReconnectionsAttempts.withoutTags().increment()
     connection
   }
