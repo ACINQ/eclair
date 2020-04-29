@@ -16,14 +16,13 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorSystem
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, randomBytes32, wire}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, wire}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -34,7 +33,7 @@ import scala.concurrent.duration._
  * Created by t-bast on 18/07/2019.
  */
 
-class MultiPartPaymentFSMSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
+class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   import MultiPartPaymentFSMSpec._
 

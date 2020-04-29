@@ -19,12 +19,12 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit.{TestKit, TestProbe}
+import akka.actor.{ActorRef, Props}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
+import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import grizzled.slf4j.Logging
-import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -32,7 +32,7 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 
-class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with Logging with BeforeAndAfterAll {
+class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike with Logging {
   var pool: ActorRef = _
   val probe = TestProbe()
   // this is tx #2690 of block #500000
@@ -48,10 +48,6 @@ class ElectrumClientPoolSpec extends TestKit(ActorSystem("test")) with AnyFunSui
   implicit val timeout = 20 seconds
 
   import concurrent.ExecutionContext.Implicits.global
-
-  override protected def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
-  }
 
   test("pick a random, unused server address") {
     val usedAddresses = Random.shuffle(serverAddresses.toSeq).take(serverAddresses.size / 2).map(_.adress).toSet

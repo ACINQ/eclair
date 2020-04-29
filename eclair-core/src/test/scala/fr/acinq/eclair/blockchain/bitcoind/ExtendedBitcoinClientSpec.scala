@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import akka.actor.ActorSystem
 import akka.actor.Status.Failure
 import akka.pattern.pipe
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import grizzled.slf4j.Logging
@@ -33,7 +33,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.jdk.CollectionConverters._
 
-class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",

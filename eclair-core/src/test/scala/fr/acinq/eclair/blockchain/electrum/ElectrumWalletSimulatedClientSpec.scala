@@ -19,24 +19,24 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 import java.sql.DriverManager
 
-import akka.actor.{ActorRef, ActorSystem, Terminated}
+import akka.actor.{ActorRef, Terminated}
 import akka.testkit
-import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
+import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
+import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
-class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
+class ElectrumWalletSimulatedClientSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   import ElectrumWalletSimulatedClientSpec._
 
