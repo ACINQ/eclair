@@ -24,13 +24,14 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, _}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, _}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
-class ReconnectionTaskSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   val fakeIPAddress = NodeAddress.fromParts("localhost", 42000).get
   val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
