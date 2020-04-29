@@ -39,14 +39,11 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, watcher: TestProbe, relayer: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: TestProbe, relayer: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe)
 
   override protected def withFixture(test: OneArgTest): Outcome = {
-    val switchboard = TestProbe()
-    val router = TestProbe()
     val watcher = TestProbe()
     val relayer = TestProbe()
-    val paymentHandler = TestProbe()
     val wallet: EclairWallet = new TestWallet()
     val remoteNodeId = Bob.nodeParams.nodeId
     val peerConnection = TestProbe()
@@ -62,12 +59,13 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, switchboard.ref, router.ref, watcher.ref, relayer.ref, wallet))
-    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, watcher, relayer, peer, peerConnection)))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, watcher.ref, relayer.ref, wallet))
+    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, watcher, relayer, peer, peerConnection)))
   }
 
-  def connect(remoteNodeId: PublicKey, switchboard: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features)): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features)): Unit = {
     // let's simulate a connection
+    val switchboard = TestProbe()
     switchboard.send(peer, Peer.Init(channels))
     val localInit = wire.Init(peer.underlyingActor.nodeParams.features)
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
@@ -79,7 +77,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, switchboard, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
     probe.send(peer, Peer.GetPeerInfo)
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
@@ -117,7 +115,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, switchboard, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.Connect(remoteNodeId, None))
     probe.expectMsg("already connected")
@@ -127,7 +125,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, switchboard, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.GetPeerInfo)
     assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
@@ -139,7 +137,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("handle new connection in state CONNECTED") { f =>
     import f._
 
-    connect(remoteNodeId, switchboard, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
     // this is just to extract inits
     val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
 
@@ -169,7 +167,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, switchboard, peer, peerConnection)
+    connect(remoteNodeId, peer, peerConnection)
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
@@ -183,7 +181,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, switchboard, peer, peerConnection) // Bob doesn't support wumbo, Alice does
+    connect(remoteNodeId, peer, peerConnection) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
@@ -197,7 +195,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, switchboard, peer, peerConnection, remoteInit = wire.Init(hex"80000")) // Bob supports wumbo
+    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(hex"80000")) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
@@ -210,7 +208,7 @@ class PeerSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, switchboard, peer, peerConnection)
+    connect(remoteNodeId, peer, peerConnection)
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, None, None))
