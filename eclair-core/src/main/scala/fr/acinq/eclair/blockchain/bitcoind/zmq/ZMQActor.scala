@@ -101,6 +101,9 @@ class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends
     }
   }
 
+  override def postStop(): Unit = {
+    ctx.close()
+  }
 }
 
 object ZMQActor {
