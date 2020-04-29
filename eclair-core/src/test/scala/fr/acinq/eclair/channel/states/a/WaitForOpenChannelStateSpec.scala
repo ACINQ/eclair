@@ -21,9 +21,9 @@ import fr.acinq.bitcoin.{Block, Btc, ByteVector32}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire.{ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
+import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -33,7 +33,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 

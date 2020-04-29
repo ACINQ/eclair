@@ -30,8 +30,9 @@ import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelMeta, GossipDecision, PrivateChannel}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
+import fr.acinq.eclair.{TestKitBaseClass, randomKey, _}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
@@ -42,7 +43,7 @@ import scala.concurrent.duration._
  * Created by PM on 29/08/2016.
  */
 
-abstract class BaseRouterSpec extends TestkitBaseClass {
+abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   case class FixtureParam(nodeParams: NodeParams, router: ActorRef, watcher: TestProbe)
 

@@ -18,8 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
-import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Suite}
 
 import scala.concurrent.Await
 
@@ -27,7 +26,7 @@ import scala.concurrent.Await
  * This base class kills all actor between each tests.
  * Created by PM on 06/09/2016.
  */
-abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with FixtureAnyFunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
+abstract class TestKitBaseClass extends TestKit(ActorSystem("test")) with Suite with BeforeAndAfterEach with BeforeAndAfterAll {
 
   override def afterEach() {
     system.actorSelection(system / "*") ! PoisonPill
@@ -40,5 +39,4 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with Fixtur
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }
-
 }

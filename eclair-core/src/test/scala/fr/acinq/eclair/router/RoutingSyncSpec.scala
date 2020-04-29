@@ -41,7 +41,7 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 
 
-class RoutingSyncSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with ParallelTestExecution {
+class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with ParallelTestExecution {
 
   import RoutingSyncSpec._
 
