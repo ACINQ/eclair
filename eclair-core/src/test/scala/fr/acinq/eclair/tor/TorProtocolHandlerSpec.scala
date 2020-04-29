@@ -19,12 +19,12 @@ package fr.acinq.eclair.tor
 import java.net.InetSocketAddress
 import java.nio.file.{Files, Paths}
 
-import akka.actor.ActorSystem
+import akka.actor.ActorNotFound
 import akka.io.Tcp.Connected
-import akka.testkit.{ImplicitSender, TestActorRef, TestKit}
+import akka.testkit.{ImplicitSender, TestActorRef}
 import akka.util.ByteString
-import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
+import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
 import org.scalatest._
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
@@ -32,11 +32,9 @@ import scodec.bits._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Promise}
 
-class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
+class TorProtocolHandlerSpec extends TestKitBaseClass
   with AnyFunSuiteLike
-  with ImplicitSender
-  with BeforeAndAfterEach
-  with BeforeAndAfterAll {
+  with ImplicitSender {
 
   import TorProtocolHandler._
 
@@ -47,9 +45,9 @@ class TorProtocolHandlerSpec extends TestKit(ActorSystem("test"))
   val CookieFilePath = Paths.get(TestUtils.BUILD_DIRECTORY, "testtorcookie.dat")
   val AuthCookie = hex"AA8593C52DF9713CC5FF6A1D0A045B3FADCAE57745B1348A62A6F5F88D940485"
 
-  override protected def beforeEach(): Unit = {
-    super.afterEach()
+  override def withFixture(test: NoArgTest) = {
     PkFilePath.toFile.delete()
+    super.withFixture(test) // Invoke the test function
   }
 
   ignore("connect to real tor daemon") {
