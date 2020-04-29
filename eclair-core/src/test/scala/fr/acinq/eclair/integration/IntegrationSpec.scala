@@ -139,7 +139,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
       close()
     }
     implicit val system = ActorSystem(s"system-$name")
-    val setup = new Setup(datadir)
+    val setup = new Setup(datadir, disableBackup = true)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }
