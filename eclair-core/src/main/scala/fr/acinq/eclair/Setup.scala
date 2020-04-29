@@ -66,6 +66,7 @@ import scala.concurrent.duration._
  * @param datadir          directory where eclair-core will write/read its data.
  * @param overrideDefaults use this parameter to programmatically override the node configuration .
  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ * @param db               optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             overrideDefaults: Config = ConfigFactory.empty(),
@@ -117,8 +118,10 @@ class Setup(datadir: File,
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
+    // @formatter:off
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
+    // @formatter:on
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, keyManager, initTor(), database, blockCount, feeEstimator)
@@ -153,7 +156,7 @@ class Setup(datadir: File,
         blocks = (json \ "blocks").extract[Long]
         headers = (json \ "headers").extract[Long]
         chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
-        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[Int])
+        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
         unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
           values
             .filter(value => (value \ "spendable").extract[Boolean])
@@ -270,17 +273,20 @@ class Setup(datadir: File,
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
-      _ = wallet.getFinalAddress.map {
-        case address => logger.info(s"initial wallet address=$address")
-      }
+      _ = wallet.getFinalAddress.map(address => logger.info(s"initial wallet address=$address"))
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
-      backupHandler = system.actorOf(SimpleSupervisor.props(
-        BackupHandler.props(
-          nodeParams.db,
-          new File(chaindir, "eclair.sqlite.bak"),
-          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-        ), "backuphandler", SupervisorStrategy.Resume))
+      backupHandler = if (config.getBoolean("disable-db-backup")) {
+        logger.warn("database backup is disabled")
+        system.deadLetters
+      } else {
+        system.actorOf(SimpleSupervisor.props(
+          BackupHandler.props(
+            nodeParams.db,
+            new File(chaindir, "eclair.sqlite.bak"),
+            if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+          ), "backuphandler", SupervisorStrategy.Resume))
+      }
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
