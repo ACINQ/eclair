@@ -95,6 +95,9 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
   test("successfully connect to peer at user request and reconnect automatically", Tag("auto_reconnect")) { f =>
     import f._
 
+    // this actor listens to connection requests and creates connections
+    system.actorOf(ClientSpawner.props(nodeParams, TestProbe().ref, TestProbe().ref))
+
     // we create a dummy tcp server and update bob's announcement to point to it
     val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
     val mockAddress = HostAndPort.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort)
