@@ -91,6 +91,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
+    "eclair.disable-db-backup" -> true,
     "eclair.server.public-ips.1" -> "127.0.0.1",
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
