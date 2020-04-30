@@ -19,6 +19,7 @@ package fr.acinq.eclair.io
 import java.net.{InetAddress, ServerSocket, Socket}
 import java.util.concurrent.Executors
 
+import akka.actor.FSM
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
@@ -57,7 +58,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
-    if (test.tags.contains("with_node_announcements")) {
+    if (test.tags.contains("with_node_announcement")) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
@@ -196,6 +197,31 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     // peer should kill previous connection
     deathWatch.expectTerminated(peerConnection2.ref)
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
+  }
+
+  test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
+    import f._
+
+    // monitor state changes of child reconnection task
+    val monitor = TestProbe()
+    val reconnectionTask = peer.underlyingActor.context.child("reconnection-task").get
+    monitor.send(reconnectionTask, FSM.SubscribeTransitionCallBack(monitor.ref))
+    monitor.expectMsg(FSM.CurrentState(reconnectionTask, ReconnectionTask.IDLE))
+
+    val probe = TestProbe()
+    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
+
+    // the reconnection task will wait a little...
+    monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.IDLE, ReconnectionTask.WAITING))
+    // then it will trigger a reconnection request (which will be left unhandled because there is no listener)
+    monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING))
+
+    // we simulate a success
+    val dummyInit = wire.Init(peer.underlyingActor.nodeParams.features)
+    probe.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, dummyInit, dummyInit))
+
+    // we make sure that the reconnection task has done a full circle
+    monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE))
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
