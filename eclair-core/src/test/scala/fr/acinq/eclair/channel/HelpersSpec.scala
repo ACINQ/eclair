@@ -42,9 +42,9 @@ class HelpersSpec extends AnyFunSuite {
     import org.scalatest.matchers.should.Matchers._
     implicit val log: akka.event.DiagnosticLoggingAdapter = NoLoggingDiagnostics
     Helpers.nextChannelUpdateRefresh(1544400000).toSeconds should equal(0)
-    Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
-    Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)
-    Helpers.nextChannelUpdateRefresh(Platform.currentTime.milliseconds.toSeconds).toSeconds should equal(10 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh((System.currentTimeMillis.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh((System.currentTimeMillis.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh(System.currentTimeMillis.milliseconds.toSeconds).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
   test("tell closing type") {

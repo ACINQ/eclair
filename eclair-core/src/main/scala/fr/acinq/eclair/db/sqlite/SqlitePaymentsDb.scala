@@ -337,7 +337,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      statement.setLong(3, Platform.currentTime)
+      statement.setLong(3, System.currentTimeMillis)
       val rs = statement.executeQuery()
       var q: Queue[IncomingPayment] = Queue()
       while (rs.next()) {
@@ -350,7 +350,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      statement.setLong(3, Platform.currentTime)
+      statement.setLong(3, System.currentTimeMillis)
       val rs = statement.executeQuery()
       var q: Queue[IncomingPayment] = Queue()
       while (rs.next()) {

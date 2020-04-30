@@ -168,7 +168,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    alice ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), Platform.currentTime.milliseconds.toSeconds)
+    alice ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), System.currentTimeMillis.milliseconds.toSeconds)
     alice2bob.expectNoMsg(200 millis)
     alice2blockchain.expectNoMsg(200 millis)
     assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -186,7 +186,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     alice2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    alice ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds)
+    alice ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds)
     alice2bob.expectNoMsg(200 millis)
     alice2blockchain.expectMsg(PublishAsap(fundingTx)) // we republish the funding tx
     assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -204,7 +204,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    bob ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), Platform.currentTime.milliseconds.toSeconds)
+    bob ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), System.currentTimeMillis.milliseconds.toSeconds)
     bob2alice.expectNoMsg(200 millis)
     bob2blockchain.expectNoMsg(200 millis)
     assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -222,7 +222,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    bob ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds)
+    bob ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds)
     bob2alice.expectNoMsg(200 millis)
     bob2blockchain.expectNoMsg(200 millis)
     assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -240,8 +240,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSince = Platform.currentTime.milliseconds.toSeconds - 15.days.toSeconds))
-    bob ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds)
+    bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSince = System.currentTimeMillis.milliseconds.toSeconds - 15.days.toSeconds))
+    bob ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMsg(200 millis)
     assert(bob.stateName == CLOSED)
@@ -259,7 +259,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    bob ! GetTxWithMetaResponse(fundingTx.txid, None, Platform.currentTime.milliseconds.toSeconds - 3.hours.toSeconds)
+    bob ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds - 3.hours.toSeconds)
     bob2alice.expectNoMsg(200 millis)
     bob2blockchain.expectNoMsg(200 millis)
     assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
