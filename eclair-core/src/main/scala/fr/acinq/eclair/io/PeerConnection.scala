@@ -228,7 +228,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         d.expectedPong_opt match {
           case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
             // we use the pong size to correlate between pings and pongs
-            val latency = Platform.currentTime - timestamp
+            val latency = System.currentTimeMillis - timestamp
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
           // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
@@ -483,7 +483,7 @@ object PeerConnection {
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
   case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
-  case class ExpectedPong(ping: Ping, timestamp: Long = Platform.currentTime)
+  case class ExpectedPong(ping: Ping, timestamp: Long = System.currentTimeMillis)
   case class PingTimeout(ping: Ping)
 
   sealed trait State

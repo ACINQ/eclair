@@ -526,7 +526,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a multi-part payment B->D") {
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     val amount = 1000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill"))
@@ -552,8 +552,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
 
-    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
-    val sent = nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime)
+    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, System.currentTimeMillis).nonEmpty)
+    val sent = nodes("B").nodeParams.db.audit.listSent(start, System.currentTimeMillis)
     assert(sent.length === 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
 
@@ -647,7 +647,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a trampoline payment B->F3 with retry (via trampoline G)") {
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     val amount = 4000000000L.msat
     sender.send(nodes("F3").paymentHandler, ReceivePayment(Some(amount), "like trampoline much?"))
@@ -673,10 +673,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
 
@@ -689,7 +689,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), "trampoline-MPP is so #reckless"))
@@ -712,10 +712,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 300000.msat, relayed)
 
@@ -726,15 +726,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }
     assert(outgoingSuccess.map(_.amount).sum === amount + 300000.msat, outgoingSuccess)
 
-    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
-    val sent = nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime)
+    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, System.currentTimeMillis).nonEmpty)
+    val sent = nodes("D").nodeParams.db.audit.listSent(start, System.currentTimeMillis)
     assert(sent.length === 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
   }
 
   test("send a trampoline payment F3->A (via trampoline C, non-trampoline recipient)") {
     // The A -> B channel is not announced.
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
     val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
@@ -760,10 +760,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
 

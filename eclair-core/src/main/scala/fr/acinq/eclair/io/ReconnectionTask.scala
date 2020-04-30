@@ -97,7 +97,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey, switchbo
             // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
             val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
             (initialDelay, firstNextReconnectionDelay)
-          case cd: ConnectingData if Platform.currentTime.milliseconds - d.since < 30.seconds =>
+          case cd: ConnectingData if System.currentTimeMillis.milliseconds - d.since < 30.seconds =>
             log.info("peer is disconnected (shortly after connection was established)")
             // If our latest successful connection attempt was less than 30 seconds ago, we pick up the exponential
             // back-off retry delay where we left it. The goal is to address cases where the reconnection is successful,
@@ -180,7 +180,7 @@ object ReconnectionTask {
   // @formatter:off
   sealed trait Data
   case object Nothing extends Data
-  case class IdleData(previousData: Data, since: FiniteDuration = Platform.currentTime.milliseconds) extends Data
+  case class IdleData(previousData: Data, since: FiniteDuration = System.currentTimeMillis.milliseconds) extends Data
   case class ConnectingData(connection: ActorRef, to: InetSocketAddress, nextReconnectionDelay: FiniteDuration) extends Data
   case class WaitingData(nextReconnectionDelay: FiniteDuration) extends Data
   // @formatter:on
