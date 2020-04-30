@@ -137,14 +137,12 @@ class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def add(e: NetworkFeePaid): Unit = add(e, e.tx.txid)
-
-  def add(e: NetworkFeePaid, txId: ByteVector32): Unit =
+  override def add(e: NetworkFeePaid): Unit =
     inTransaction { psql =>
       using(psql.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, e.channelId.toHex)
         statement.setString(2, e.remoteNodeId.value.toHex)
-        statement.setString(3, txId.toHex)
+        statement.setString(3, e.tx.txid.toHex)
         statement.setLong(4, e.fee.toLong)
         statement.setString(5, e.txType)
         statement.setLong(6, Platform.currentTime)

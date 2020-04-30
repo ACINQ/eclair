@@ -88,30 +88,6 @@ class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Paymen
     }
   }
 
-  def addOutgoingPayment(sent: ((UUID, UUID,Option[String],ByteVector32,MilliSatoshi,PublicKey,Long,Option[PaymentRequest],Option[Long],Option[ByteVector32],Option[MilliSatoshi],Option[BitVector],Option[BitVector],String,MilliSatoshi))): Unit = {
-    val (id, parentId,externalId,paymentHash,amount,recipient_node_id,createdAt,paymentRequest,completedAt,paymentPreimage, fees, route, failures, paymentType, recipientAmountMsat) = sent
-    withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, recipient_node_id, created_at, payment_request,completed_at, payment_preimage,fees_msat,payment_route,failures,payment_type,recipient_amount_msat) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setString(1, id.toString)
-        statement.setString(2, parentId.toString)
-        statement.setString(3, externalId.orNull)
-        statement.setString(4, paymentHash.toHex)
-        statement.setLong(5, amount.toLong)
-        statement.setString(6, recipient_node_id.value.toHex)
-        statement.setLong(7, createdAt)
-        statement.setString(8, paymentRequest.map(PaymentRequest.write).orNull)
-        completedAt.fold(statement.setNull(9, java.sql.Types.BIGINT))(statement.setLong(9, _))
-        statement.setString(10, paymentPreimage.map(_.toHex).orNull)
-        fees.fold(statement.setNull(11, java.sql.Types.BIGINT))(x => statement.setLong(11, x.toLong))
-        statement.setBytes(12, route.map(_.toByteArray).orNull)
-        statement.setBytes(13, failures.map(_.toByteArray).orNull)
-        statement.setString(14, paymentType)
-        statement.setLong(15, recipientAmountMsat.toLong)
-        statement.executeUpdate()
-      }
-    }
-  }
-
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit =
     withLock { psql =>
       using(psql.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
