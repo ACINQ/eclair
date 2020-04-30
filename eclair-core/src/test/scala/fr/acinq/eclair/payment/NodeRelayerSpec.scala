@@ -33,8 +33,9 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, TestkitBaseClass, nodeFee, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, nodeFee, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
 import scala.collection.immutable.Queue
@@ -45,7 +46,7 @@ import scala.util.Random
  * Created by t-bast on 10/10/2019.
  */
 
-class NodeRelayerSpec extends TestkitBaseClass {
+class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   import NodeRelayerSpec._
 

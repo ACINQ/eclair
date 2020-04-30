@@ -23,8 +23,9 @@ import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -34,7 +35,7 @@ import scala.concurrent.{Future, Promise}
   * Created by PM on 05/07/2016.
   */
 
-class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 

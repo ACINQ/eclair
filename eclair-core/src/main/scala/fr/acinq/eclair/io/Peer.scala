@@ -44,14 +44,9 @@ import scodec.bits.ByteVector
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
-
-  val reconnectionTask: ActorRef = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId, switchboard, router), "reconnection-task")
-  // we register the reconnection task to our transitions ourselves; if we let the child actor register itself, there is
-  // a race condition and it may miss the first transition
-  listeners.add(reconnectionTask)
 
   startWith(INSTANTIATING, Nothing)
 
@@ -239,6 +234,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
     case Event(_: Channel.OutgoingMessage, _) => stay // we got disconnected or reconnected and this message was for the previous connection
   }
 
+  private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
+
+  onTransition {
+    case _ -> (DISCONNECTED | CONNECTED) => reconnectionTask ! Peer.Transition(stateData, nextStateData)
+  }
+
   onTransition {
     case _ -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
@@ -329,7 +330,7 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, switchboard: ActorRef, router, watcher, relayer, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet))
 
   // @formatter:off
 
@@ -371,6 +372,8 @@ object Peer {
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+
+  case class Transition(previousData: Peer.Data, nextData: Peer.Data)
 
   // @formatter:on
 
