@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.Props
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.WatcherSpec._
@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
-import fr.acinq.eclair.{LongToBtcAmount, randomBytes32}
+import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.scalatest.BeforeAndAfterAll
@@ -38,7 +38,7 @@ import scodec.bits._
 
 import scala.concurrent.duration._
 
-class ElectrumWatcherSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
+class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {
 
   override def beforeAll(): Unit = {
     logger.info("starting bitcoind")
