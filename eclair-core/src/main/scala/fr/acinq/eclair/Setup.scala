@@ -17,9 +17,9 @@
 package fr.acinq.eclair
 
 import java.io.File
-import java.lang.management.ManagementFactory
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
@@ -94,7 +94,7 @@ class Setup(datadir: File,
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  val instanceId = ManagementFactory.getRuntimeMXBean().getName()
+  val instanceId = UUID.randomUUID().toString
 
   logger.info(s"instanceid=$instanceId")
 
