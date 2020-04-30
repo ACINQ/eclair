@@ -84,7 +84,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     implicit val system = ActorSystem("test")
     implicit val ec = system.dispatcher
     implicit val sttp = OkHttpFutureBackend()
-    implicit val timeout = Timeout(1 second)
+    implicit val timeout = Timeout(30 second)
     val bitgo = new BitgoFeeProvider(Block.LivenetGenesisBlock.hash, 1 millisecond)
     val e = intercept[Exception] {
       Await.result(bitgo.getFeerates, timeout.duration)
