@@ -114,34 +114,34 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.peerConnection ! PoisonPill
         stay
 
-    case Event(err: wire.Error, d: ConnectedData) =>
-      // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
-      d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
-        case Some(channel) => channel forward err
-        case None => () // let's not create a ping-pong of error messages here
-      }
-      stay
+      case Event(err: wire.Error, d: ConnectedData) =>
+        // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
+        d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
+          case Some(channel) => channel forward err
+          case None => () // let's not create a ping-pong of error messages here
+        }
+        stay
 
-    case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
-        sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
-        stay
-      } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(d.remoteInit.features, Wumbo)) {
-        sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
-        stay
-      } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
-        sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
-        stay
-      } else {
-        val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
-        c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
-        val temporaryChannelId = randomBytes32
-        val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-        val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-        log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
-        stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
-      }
+      case Event(c: Peer.OpenChannel, d: ConnectedData) =>
+        if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
+          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
+          stay
+        } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(d.remoteInit.features, Wumbo)) {
+          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
+          stay
+        } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
+          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
+          stay
+        } else {
+          val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
+          c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
+          val temporaryChannelId = randomBytes32
+          val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+          val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+          log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
+          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), ChannelVersion.STANDARD)
+          stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+        }
 
       case Event(msg: wire.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
@@ -157,12 +157,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
             stay
         }
 
-    case Event(msg: wire.HasChannelId, d: ConnectedData) =>
-      d.channels.get(FinalChannelId(msg.channelId)) match {
-        case Some(channel) => channel forward msg
-        case None => replyUnknownChannel(d.peerConnection, msg.channelId)
-      }
-      stay
+      case Event(msg: wire.HasChannelId, d: ConnectedData) =>
+        d.channels.get(FinalChannelId(msg.channelId)) match {
+          case Some(channel) => channel forward msg
+          case None => replyUnknownChannel(d.peerConnection, msg.channelId)
+        }
+        stay
 
       case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {

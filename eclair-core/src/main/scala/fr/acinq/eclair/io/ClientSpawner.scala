@@ -40,4 +40,5 @@ object ClientSpawner {
   case class ConnectionRequest(address: InetSocketAddress,
                                remoteNodeId: PublicKey,
                                origin: ActorRef)
+
 }
