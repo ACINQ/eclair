@@ -237,7 +237,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
 
   onTransition {
-    case _ -> DISCONNECTED => reconnectionTask ! Peer.Transition(stateData, nextStateData)
+    case _ -> (DISCONNECTED | CONNECTED) => reconnectionTask ! Peer.Transition(stateData, nextStateData)
   }
 
   onTransition {
