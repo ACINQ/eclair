@@ -46,7 +46,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Success
 
-class EclairImplSpec extends TestKit(ActorSystem("test")) with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
+class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
 
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)

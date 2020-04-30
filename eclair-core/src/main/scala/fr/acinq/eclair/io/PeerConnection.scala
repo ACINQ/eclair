@@ -32,7 +32,6 @@ import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -259,6 +258,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
         val thisRemote = RemoteGossip(self, d.remoteNodeId)
+
         /**
          * Send and count in a single iteration
          */

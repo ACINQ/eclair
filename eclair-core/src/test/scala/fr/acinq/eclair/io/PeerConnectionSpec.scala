@@ -29,13 +29,14 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router.{GossipDecision, GossipOrigin, LocalGossip, Rebroadcast, RemoteGossip, SendChannelQuery}
 import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
