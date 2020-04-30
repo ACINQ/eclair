@@ -66,3 +66,16 @@ eclair.db.psql.ownership-lease {
 }
 ```
 
+### Safeguard to prevent accidental loss of funds due to database misconfiguration
+
+Using Eclair with an outdated version of the database or a database created with another seed might lead to loss of funds.
+
+Every time Eclair starts, it checks if the Postgres database connection settings were changed since the last start. 
+If in fact the settings were changed, Eclair stops immediately to prevent potentially dangerous 
+but accidental configuration changes to come into effect.
+
+Eclair stores the latest database settings in the `${data-dir}/jdbc_url` file, and compares its contents with the database settings from the config file. 
+
+The node operator can force Eclair to accept new database 
+connection settings by removing the `jdbc_url` file. 
+    
