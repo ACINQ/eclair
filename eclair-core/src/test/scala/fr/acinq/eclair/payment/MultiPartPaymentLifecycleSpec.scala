@@ -46,7 +46,7 @@ import scala.util.Random
  * Created by t-bast on 18/07/2019.
  */
 
-class MultiPartPaymentLifecycleSpec extends TestKit(ActorSystem("test")) with FixtureAnyFunSuiteLike {
+class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   import MultiPartPaymentLifecycleSpec._
 

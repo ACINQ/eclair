@@ -53,7 +53,7 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
@@ -71,7 +71,7 @@ import scala.jdk.CollectionConverters._
  * Created by PM on 15/03/2017.
  */
 
-class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
 
@@ -117,7 +117,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     nodes.foreach {
       case (name, setup) =>
         logger.info(s"stopping node $name")
-        setup.system.terminate()
+        TestKit.shutdownActorSystem(setup.system)
     }
   }
 

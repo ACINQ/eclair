@@ -32,9 +32,9 @@ import fr.acinq.eclair.{Logs, NodeParams}
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 27/10/2015.
-  *
-  */
+ * Created by PM on 27/10/2015.
+ *
+ */
 class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
 
   import context.system
