@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, ServerSocket}
+import java.net.{InetAddress, ServerSocket, Socket}
+import java.util.concurrent.Executors
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -35,6 +36,7 @@ import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, _}
 
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 
 class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
@@ -92,7 +94,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.expectMsg(s"no address found")
   }
 
-  test("successfully connect to peer at user request and reconnect automatically", Tag("auto_reconnect")) { f =>
+  test("successfully connect to peer at user request") { f =>
     import f._
 
     // this actor listens to connection requests and creates connections
@@ -108,9 +110,40 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress)))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    within(30 seconds) {
-      mockServer.accept()
-    }
+    val res = TestProbe()
+    Future {
+      val socket = mockServer.accept()
+      res.ref ! socket
+    }(ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(1)))
+    res.expectMsgType[Socket](10 seconds)
+
+    mockServer.close()
+  }
+
+  test("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
+    import f._
+
+    // this actor listens to connection requests and creates connections
+    system.actorOf(ClientSpawner.props(nodeParams, TestProbe().ref, TestProbe().ref))
+
+    // we create a dummy tcp server and update bob's announcement to point to it
+    val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
+    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+
+    // we put the server address in the node db
+    val ann = NodeAnnouncement(randomBytes64, ByteVector.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    nodeParams.db.network.addNode(ann)
+
+    val probe = TestProbe()
+    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
+
+    // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
+    val res = TestProbe()
+    Future {
+      val socket = mockServer.accept()
+      res.ref ! socket
+    }(ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(1)))
+    res.expectMsgType[Socket](10 seconds)
 
     mockServer.close()
   }
