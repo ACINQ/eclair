@@ -56,7 +56,7 @@ class RouterSpec extends BaseRouterSpec {
       // valid channel announcement, no stashing
       val chan_ac = channelAnnouncement(ShortChannelId(420000, 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
       val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200", timestamp = Platform.currentTime.milliseconds.toSeconds + 1)
+      val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200", timestamp = System.currentTimeMillis.milliseconds.toSeconds + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
       peerConnection.expectNoMsg(100 millis) // we don't immediately acknowledge the announcement (back pressure)
       watcher.expectMsg(ValidateRequest(chan_ac))
@@ -161,7 +161,7 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // stale channel update
-      val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, chan_ab.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = (Platform.currentTime.milliseconds - 15.days).toSeconds)
+      val update_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, chan_ab.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = (System.currentTimeMillis.milliseconds - 15.days).toSeconds)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ab))
       peerConnection.expectMsg(GossipDecision.Stale(update_ab))
@@ -461,7 +461,7 @@ class RouterSpec extends BaseRouterSpec {
     val blockHeight = 400000 - 2020
     val channelId = ShortChannelId(blockHeight, 5, 0)
     val announcement = channelAnnouncement(channelId, priv_a, priv_c, priv_funding_a, priv_funding_c)
-    val oldTimestamp = (Platform.currentTime.milliseconds - 14.days - 1.day).toSeconds
+    val oldTimestamp = (System.currentTimeMillis.milliseconds - 14.days - 1.day).toSeconds
     val staleUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, 5 msat, timestamp = oldTimestamp)
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
@@ -478,7 +478,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, GetRoutingState)
     sender.expectMsgType[RoutingState]
 
-    val recentUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = Platform.currentTime.millisecond.toSeconds)
+    val recentUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum, timestamp = System.currentTimeMillis.millisecond.toSeconds)
 
     // we want to make sure that transport receives the query
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, recentUpdate))

@@ -52,7 +52,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   val id = cfg.id
   val paymentHash = cfg.paymentHash
   val paymentsDb = nodeParams.db.payments
-  val start = Platform.currentTime
+  val start = System.currentTimeMillis
 
   private val span = Kamon.runWithContextEntry(MultiPartPaymentLifecycle.parentPaymentIdKey, cfg.parentId) {
     val spanBuilder = if (Kamon.currentSpan().isEmpty) {
@@ -80,7 +80,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       val send = SendPayment(c.hops.last, c.finalPayload, maxAttempts = 1)
       router ! FinalizeRoute(c.finalPayload.amount, c.hops, c.assistedRoutes)
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, send, failures = Nil)
 
@@ -99,7 +99,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams, ignoreNodes = ignoredNodes)
       }
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, Platform.currentTime, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
@@ -284,7 +284,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
       .withTag(Tags.Success, value = true)
-      .record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
+      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
   }
 
   def onFailure(sender: ActorRef, result: PaymentFailed): Unit = {
@@ -295,7 +295,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
       .withTag(Tags.Success, value = false)
-      .record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
+      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
   }
 
   override def mdc(currentMessage: Any): MDC = {

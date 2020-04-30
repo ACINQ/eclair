@@ -89,8 +89,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val features: Features = tags.collectFirst { case f: Features => f }.getOrElse(Features(BitVector.empty))
 
   def isExpired: Boolean = expiry match {
-    case Some(expiryTime) => timestamp + expiryTime <= Platform.currentTime.milliseconds.toSeconds
-    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+    case Some(expiryTime) => timestamp + expiryTime <= System.currentTimeMillis.milliseconds.toSeconds
+    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= System.currentTimeMillis.milliseconds.toSeconds
   }
 
   /**
@@ -550,8 +550,8 @@ object PaymentRequest {
     }
     val timestamp = bolt11Data.timestamp
     expiry_opt match {
-      case Some(expiry) => timestamp + expiry.toLong <= Platform.currentTime.milliseconds.toSeconds
-      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+      case Some(expiry) => timestamp + expiry.toLong <= System.currentTimeMillis.milliseconds.toSeconds
+      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= System.currentTimeMillis.milliseconds.toSeconds
     }
   }
 
