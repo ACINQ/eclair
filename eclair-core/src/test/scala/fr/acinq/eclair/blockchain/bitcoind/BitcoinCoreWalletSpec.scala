@@ -158,7 +158,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 200).pipeTo(sender.ref) // create a tx with an invalid feerate (too little)
       val belowFeeFundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
       wallet.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
-      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met, 122 < 153 (code 66)"))
+      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met"))
       wallet.rollback(belowFeeFundingTx).pipeTo(sender.ref) // rollback the locked outputs
       assert(sender.expectMsgType[Boolean])
 
