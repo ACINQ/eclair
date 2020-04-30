@@ -23,6 +23,7 @@ import java.util.UUID
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.channel.ChannelPersisted
+import fr.acinq.eclair.db.Databases.CanBackup
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{TestConstants, TestUtils, randomBytes32}
@@ -40,7 +41,7 @@ class BackupHandlerSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLik
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
 
-    val handler = system.actorOf(BackupHandler.props(db, dest, None))
+    val handler = system.actorOf(BackupHandler.props(db.asInstanceOf[CanBackup], dest, None))
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[BackupEvent])
 
