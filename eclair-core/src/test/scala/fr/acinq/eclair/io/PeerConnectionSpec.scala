@@ -29,13 +29,14 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router.{GossipDecision, GossipOrigin, LocalGossip, Rebroadcast, RemoteGossip, SendChannelQuery}
 import fr.acinq.eclair.router.{RoutingSyncSpec, _}
 import fr.acinq.eclair.wire._
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
@@ -44,7 +45,7 @@ class PeerConnectionSpec extends TestkitBaseClass with StateTestsHelperMethods {
   // this map will store private keys so that we can sign new announcements at will
   val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
   val shortChannelIds = RoutingSyncSpec.shortChannelIds.take(100)
-  val fakeRoutingInfo = shortChannelIds.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
+  val fakeRoutingInfo = shortChannelIds.unsorted.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
   val channels = fakeRoutingInfo.map(_._1.ann).toList
   val updates = (fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)).toList
   val nodes = (fakeRoutingInfo.map(_._1.ann.nodeId1) ++ fakeRoutingInfo.map(_._1.ann.nodeId2)).map(RoutingSyncSpec.makeFakeNodeAnnouncement(pub2priv)).toList

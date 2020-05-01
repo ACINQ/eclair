@@ -60,7 +60,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   val id = cfg.id
   val paymentHash = cfg.paymentHash
-  val start = Platform.currentTime
+  val start = System.currentTimeMillis
 
   private val span = Kamon.spanBuilder("multi-part-payment")
     .tag(Tags.ParentId, cfg.parentId.toString)
@@ -255,7 +255,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
       .withTag(Tags.Success, value = event.isRight)
-      .record(Platform.currentTime - start, TimeUnit.MILLISECONDS)
+      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
     span.finish()
     stop(FSM.Normal)
   }

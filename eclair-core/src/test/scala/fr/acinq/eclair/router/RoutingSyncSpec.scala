@@ -41,7 +41,7 @@ import scala.compat.Platform
 import scala.concurrent.duration._
 
 
-class RoutingSyncSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with ParallelTestExecution {
+class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with ParallelTestExecution {
 
   import RoutingSyncSpec._
 
@@ -313,7 +313,7 @@ object RoutingSyncSpec {
   val unused: PrivateKey = randomKey
 
   def makeFakeRoutingInfo(pub2priv: mutable.Map[PublicKey, PrivateKey])(shortChannelId: ShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
-    val timestamp = Platform.currentTime / 1000
+    val timestamp = System.currentTimeMillis / 1000
     val (priv1, priv2) = {
       val (priv_a, priv_b) = (randomKey, randomKey)
       if (Announcements.isNode1(priv_a.publicKey, priv_b.publicKey)) (priv_a, priv_b) else (priv_b, priv_a)

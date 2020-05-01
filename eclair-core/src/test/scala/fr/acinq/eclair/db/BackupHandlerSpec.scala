@@ -26,10 +26,10 @@ import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.CanBackup
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecsSpec
-import fr.acinq.eclair.{TestConstants, TestUtils, randomBytes32}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-class BackupHandlerSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
+class BackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("process backups") {
     val db = TestConstants.inMemoryDb()

@@ -35,6 +35,7 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
 import scala.collection.immutable.Nil
@@ -45,7 +46,7 @@ import scala.util.Random
  * Created by PM on 05/07/2016.
  */
 
-class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
+class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods with Logging {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 

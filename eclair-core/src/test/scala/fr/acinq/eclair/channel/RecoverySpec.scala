@@ -10,12 +10,13 @@ import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, InputInfo}
 import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, _}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, _}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
 
-class RecoverySpec extends TestkitBaseClass with StateTestsHelperMethods {
+class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
