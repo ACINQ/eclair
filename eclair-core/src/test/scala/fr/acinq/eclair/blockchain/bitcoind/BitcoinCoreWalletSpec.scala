@@ -145,8 +145,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundingTx.txIn.size > 2)
       assert(getLocks(sender) == fundingTx.txIn.map(_.outPoint).toSet)
       wallet.rollback(fundingTx).pipeTo(sender.ref)
-      val check = sender.expectMsgType[Boolean]
-      assert(check)
+      assert(sender.expectMsgType[Boolean])
     }
     {
       // test #2: some outpoints are locked, some are unlocked
