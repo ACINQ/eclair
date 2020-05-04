@@ -152,6 +152,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       // test #2: some outpoints are locked, some are unlocked
       wallet.makeFundingTx(pubkeyScript, Btc(250), 1000).pipeTo(sender.ref)
       val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+      assert(fundingTx.txIn.size > 2)
       assert(getLocks(sender) == fundingTx.txIn.map(_.outPoint).toSet)
 
       // unlock the first 2 outpoints
