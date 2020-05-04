@@ -66,15 +66,21 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
     // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually lock and the rest would not be processed
-    val futures = outPoints.toList.map(outPoint => Utxo(outPoint.txid, outPoint.index)).map(utxo => {
-      val f = rpcClient.invoke("lockunspent", true, List(utxo))
-      f.recover { case t: Throwable =>
-        logger.warn(s"Cannot unlock utxo=$utxo", t)
-        false
-      }
-      f
-    })
-    val future = Future.sequence(futures).map(_ collect { case JBool(result) => result })
+    val futures = outPoints
+      .map(outPoint => Utxo(outPoint.txid, outPoint.index))
+      .map(utxo => rpcClient
+        .invoke("lockunspent", true, List(utxo))
+        .mapTo[JBool]
+        .transformWith {
+          case Success(JBool(result)) => Future.successful(result)
+          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
+            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
+          case Failure(t) =>
+            logger.warn(s"Cannot unlock utxo=$utxo", t)
+            Future.successful(false)
+        })
+    val future = Future.sequence(futures)
+    // return true if all outpoints were unlocked false otherwise
     future.map(_.forall(b => b))
   }
 
