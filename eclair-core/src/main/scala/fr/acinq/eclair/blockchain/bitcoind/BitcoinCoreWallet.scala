@@ -133,7 +133,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       logger.warn(s"txid=${tx.txid} error=$e")
       bitcoinClient.getTransaction(tx.txid).transformWith {
         case Success(_) => Future.successful(true) // tx is in the mempool, we consider that it was published
-        case Failure(_) => rollback(tx).transform { case _ => Success(false) } // we use transform here as unlocking utxos that are not locked will fail
+        case Failure(_) => rollback(tx).transform { case _ => Success(false) } // we use transform here because we want to return false in all cases even if rollback fails
       }
   }
 
