@@ -156,9 +156,8 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       // unlock the first 2 outpoints
       val tx1 = fundingTx.copy(txIn = fundingTx.txIn.take(2))
       wallet.rollback(tx1).pipeTo(sender.ref)
-      val check = sender.expectMsgType[Boolean]
+      assert(sender.expectMsgType[Boolean])
       assert(getLocks(sender) == fundingTx.txIn.drop(2).map(_.outPoint).toSet)
-      assert(check)
 
       // and try to unlock all outpoints: it should work too
       wallet.rollback(fundingTx).pipeTo(sender.ref)
