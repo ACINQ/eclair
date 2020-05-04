@@ -121,7 +121,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     // and all locked inputs should now be unlocked
     awaitCond({
       val locks = getLocks()
-      locks intersect expectedLocks isEmpty
+      locks isEmpty
     }, max = 10 seconds, interval = 1 second)
   }
 
