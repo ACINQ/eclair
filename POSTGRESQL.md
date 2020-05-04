@@ -66,6 +66,37 @@ eclair.db.psql.ownership-lease {
 }
 ```
 
+### Backups and replication
+
+The PostgreSQL driver doesn't support Eclair's built-in online backups. Instead, you should use the tools provided
+by PostgreSQL.
+
+#### Backup/Restore
+
+For nodes with infrequent channel updates its easier to use `pg_dump` to perform the task. 
+
+It's important to stop the node to prevent any channel updates while backup/restore operation is in progress. It makes
+sense to backup the database after each channel update, to prevent restoring an outdated channel's state and consequently 
+losing the funds associated with that channel.
+
+For more information about backup refer to the official PostgreSQL documentation: https://www.postgresql.org/docs/current/backup.html
+
+#### Replication
+
+For busier nodes it's not practical to use `pg_dump`. Fortunately, PostgreSQL provides built-in database replication which makes the backup/restore process more seamless.
+
+To set up database replication you need to create a main database, that accepts all changes from the node, and a replica database. 
+Once replication is configured, the main database will automatically send all the changes to the replica. 
+In case of failure of the main database, the node can be simply reconfigured to use the replica instead of the main database.
+
+PostgreSQL supports [different types of replication](https://www.postgresql.org/docs/current/different-replication-solutions.html). 
+The most suitable type for an Eclair node is [synchronous streaming replication](https://www.postgresql.org/docs/current/warm-standby.html#SYNCHRONOUS-REPLICATION), 
+because it provides a very important feature, that helps to keep the replicated channel's state up to date:  
+
+> When requesting synchronous replication, each commit of a write transaction will wait until confirmation is received that the commit has been written to the write-ahead log on disk of both the primary and standby server.  
+
+Follow the official PostgreSQL high availability documentation for the instructions to set up synchronous streaming replication: https://www.postgresql.org/docs/current/high-availability.html  
+
 ### Safeguard to prevent accidental loss of funds due to database misconfiguration
 
 Using Eclair with an outdated version of the database or a database created with another seed might lead to loss of funds.
