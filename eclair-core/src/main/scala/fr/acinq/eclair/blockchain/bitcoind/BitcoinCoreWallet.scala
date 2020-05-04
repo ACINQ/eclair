@@ -26,6 +26,7 @@ import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
 /**
  * Created by PM on 06/07/2017.
@@ -63,7 +64,30 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = bitcoinClient.publishTransaction(tx)
 
-  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = rpcClient.invoke("lockunspent", true, outPoints.toList.map(outPoint => Utxo(outPoint.txid, outPoint.index))) collect { case JBool(result) => result }
+  /**
+   *
+   * @param outPoints outpoints to unlock
+   * @return true if all outpoints were successfully unlocked, false otherwise
+   */
+  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
+    // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually lock and the rest would not be processed
+    val futures = outPoints
+      .map(outPoint => Utxo(outPoint.txid, outPoint.index))
+      .map(utxo => rpcClient
+        .invoke("lockunspent", true, List(utxo))
+        .mapTo[JBool]
+        .transformWith {
+          case Success(JBool(result)) => Future.successful(result)
+          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
+            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
+          case Failure(t) =>
+            logger.warn(s"Cannot unlock utxo=$utxo", t)
+            Future.successful(false)
+        })
+    val future = Future.sequence(futures)
+    // return true if all outpoints were unlocked false otherwise
+    future.map(_.forall(b => b))
+  }
 
   override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue) }
 
@@ -103,13 +127,15 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     } yield MakeFundingTxResponse(fundingTx, outputIndex, fee)
   }
 
-  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
-    .map(_ => true) // if bitcoind says OK, then we consider the tx successfully published
-    .recoverWith { case JsonRPCError(e) =>
+  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx).transformWith {
+    case Success(_) => Future.successful(true)
+    case Failure(e) =>
       logger.warn(s"txid=${tx.txid} error=$e")
-      bitcoinClient.getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
-    }
-    .recover { case _ => true } // in all other cases we consider that the tx has been published
+      bitcoinClient.getTransaction(tx.txid).transformWith {
+        case Success(_) => Future.successful(true) // tx is in the mempool, we consider that it was published
+        case Failure(_) => rollback(tx).transform { case _ => Success(false) } // we use transform here because we want to return false in all cases even if rollback fails
+      }
+  }
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
 
