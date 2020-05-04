@@ -142,6 +142,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       // create a huge tx so we make sure it has > 1 inputs
       wallet.makeFundingTx(pubkeyScript, Btc(250), 1000).pipeTo(sender.ref)
       val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+      assert(fundingTx.txIn.size > 2)
       assert(getLocks(sender) == fundingTx.txIn.map(_.outPoint).toSet)
       wallet.rollback(fundingTx).pipeTo(sender.ref)
       val check = sender.expectMsgType[Boolean]
