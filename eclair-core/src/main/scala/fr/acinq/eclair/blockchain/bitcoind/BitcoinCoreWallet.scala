@@ -64,6 +64,11 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = bitcoinClient.publishTransaction(tx)
 
+  /**
+   *
+   * @param outPoints outpoints to unlock
+   * @return true if all outpoints were successfully unlocked, false otherwise
+   */
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
     // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually lock and the rest would not be processed
     val futures = outPoints
