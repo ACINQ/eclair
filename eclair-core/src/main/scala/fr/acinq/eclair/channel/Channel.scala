@@ -915,8 +915,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             import d.commitments.{localParams, remoteParams}
             val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
             val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteParams.nodeId, fundingPubKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
-            // we use GOTO instead of stay because we want to fire transitions
-            goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn)) storing()
+            if (!Announcements.checkSigs(channelAnn)) {
+              handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
+            } else {
+              // we use GOTO instead of stay because we want to fire transitions
+              goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn)) storing()
+            }
           case Some(_) =>
             // they have sent their announcement sigs, but we already have a valid channel announcement
             // this can happen if our announcement_signatures was lost during a disconnection
