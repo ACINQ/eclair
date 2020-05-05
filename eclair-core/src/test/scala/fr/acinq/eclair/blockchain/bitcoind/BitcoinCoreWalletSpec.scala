@@ -163,6 +163,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       // and try to unlock all outpoints: it should work too
       wallet.rollback(fundingTx).pipeTo(sender.ref)
       assert(sender.expectMsgType[Boolean])
+      assert(getLocks(sender) isEmpty)
     }
   }
 
