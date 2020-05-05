@@ -121,6 +121,10 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   }
 
   whenUnhandled {
+    case Event("connected", _) => stay
+
+    case Event(Status.Failure(_: Client.ConnectionFailed), _) => stay
+
     case Event(TickReconnect, _) => stay
 
     case Event(Peer.Connect(_, hostAndPort_opt), _) =>
