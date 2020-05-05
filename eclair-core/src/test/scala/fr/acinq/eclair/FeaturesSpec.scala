@@ -39,11 +39,12 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
-    val features = hex"010a"
+    val features = Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(OptionDataLossProtect, Optional), ActivatedFeature(VariableLengthOnion, Mandatory)))
+    assert(features.toByteVector == hex"010a")
     assert(areSupported(features))
-    assert(hasFeature(features, OptionDataLossProtect))
-    assert(hasFeature(features, InitialRoutingSync, None))
-    assert(hasFeature(features, VariableLengthOnion))
+    assert(features.hasFeature(OptionDataLossProtect))
+    assert(features.hasFeature(InitialRoutingSync, None))
+    assert(features.hasFeature(VariableLengthOnion))
   }
 
   test("'variable_length_onion' feature") {
@@ -88,21 +89,21 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("features compatibility") {
-    assert(areSupported(ByteVector.fromLong(1L << InitialRoutingSync.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << OptionDataLossProtect.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << OptionDataLossProtect.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueries.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueries.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << VariableLengthOnion.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << VariableLengthOnion.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueriesExtended.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << ChannelRangeQueriesExtended.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << PaymentSecret.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << PaymentSecret.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << BasicMultiPartPayment.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << BasicMultiPartPayment.optional)))
-    assert(areSupported(ByteVector.fromLong(1L << Wumbo.mandatory)))
-    assert(areSupported(ByteVector.fromLong(1L << Wumbo.optional)))
+    assert(isSupported(InitialRoutingSync, Optional))
+    assert(isSupported(OptionDataLossProtect, Mandatory))
+    assert(isSupported(OptionDataLossProtect, Optional))
+    assert(isSupported(ChannelRangeQueries, Mandatory))
+    assert(isSupported(ChannelRangeQueries, Optional))
+    assert(isSupported(ChannelRangeQueriesExtended, Mandatory))
+    assert(isSupported(ChannelRangeQueriesExtended, Optional))
+    assert(isSupported(VariableLengthOnion, Mandatory))
+    assert(isSupported(VariableLengthOnion, Optional))
+    assert(isSupported(PaymentSecret, Mandatory))
+    assert(isSupported(PaymentSecret, Optional))
+    assert(isSupported(BasicMultiPartPayment, Mandatory))
+    assert(isSupported(BasicMultiPartPayment, Optional))
+    assert(isSupported(Wumbo, Mandatory))
+    assert(isSupported(Wumbo, Optional))
 
     val testCases = Map(
       bin"            00000000000000001011" -> true,
@@ -126,30 +127,11 @@ class FeaturesSpec extends AnyFunSuite {
       bin"01000000000000000000000000000000" -> false
     )
     for ((testCase, expected) <- testCases) {
-      assert(areSupported(testCase) === expected, testCase)
+      assert(areSupported(Features(testCase)) === expected, testCase.toBin)
     }
   }
 
   test("parse features from configuration") {
-    import Features.Resolution._
-    assert(fromFeatureBits(Seq(OptionDataLossProtect.mandatory)) === hex"01")
-    assert(fromFeatureBits(Seq(OptionDataLossProtect.optional)) === hex"02")
-    assert(fromFeatureBits(Seq(VariableLengthOnion.mandatory)) === hex"0100")
-    assert(fromFeatureBits(Seq(VariableLengthOnion.optional)) === hex"0200")
-    assert(fromFeatureBits(Seq(Wumbo.mandatory, TrampolinePayment.optional)) === hex"8000000040000")
-    assert(fromFeatureBits(Seq(
-      OptionDataLossProtect.optional,
-      InitialRoutingSync.optional,
-      VariableLengthOnion.mandatory)) === hex"010a")
-
-    assert(fromFeatureBits(Seq(
-      InitialRoutingSync.optional,
-      OptionDataLossProtect.optional,
-      ChannelRangeQueries.optional,
-      ChannelRangeQueriesExtended.optional,
-      VariableLengthOnion.optional
-    )) === hex"0a8a")
-
     val commonConf = ConfigFactory.parseString(
       """
         |features {
@@ -163,7 +145,7 @@ class FeaturesSpec extends AnyFunSuite {
         |}
       """.stripMargin)
 
-    assert(fromConfiguration(commonConf) === hex"028a8a")
+    assert(fromConfiguration(commonConf).toByteVector === hex"028a8a")
 
     val conf = ConfigFactory.parseString(
       """
@@ -178,12 +160,12 @@ class FeaturesSpec extends AnyFunSuite {
       """.stripMargin
     )
 
-    val features = fromFeatureBits(fromConfig(conf))
-    assert(hasFeature(features, InitialRoutingSync, Some(Optional)))
-    assert(hasFeature(features, OptionDataLossProtect, Some(Optional)))
-    assert(hasFeature(features, ChannelRangeQueries, Some(Optional)))
-    assert(hasFeature(features, ChannelRangeQueriesExtended, Some(Mandatory)))
-    assert(hasFeature(features, VariableLengthOnion, Some(Optional)))
+    val features = fromConfiguration(conf)
+    assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
+    assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
+    assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
+    assert(features.hasFeature(ChannelRangeQueriesExtended, Some(Mandatory)))
+    assert(features.hasFeature(VariableLengthOnion, Some(Optional)))
 
     val confWithUnknownFeatures = ConfigFactory.parseString(
       """
@@ -194,7 +176,7 @@ class FeaturesSpec extends AnyFunSuite {
         |}
       """.stripMargin)
 
-    assert(fromFeatureBits(fromConfig(confWithUnknownFeatures)) === hex"4080")
+    assert(fromConfiguration(confWithUnknownFeatures).toByteVector === hex"4080")
 
     val confWithUnknownSupport = ConfigFactory.parseString(
       """
@@ -205,7 +187,7 @@ class FeaturesSpec extends AnyFunSuite {
         |}
       """.stripMargin)
 
-    assertThrows[RuntimeException](fromFeatureBits(fromConfig(confWithUnknownSupport)))
+    assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
   }
 
 }

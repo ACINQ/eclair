@@ -20,12 +20,14 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -82,10 +84,10 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteNetworkDb(sqlite)
 
-    val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, hex"")
-    val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, hex"0200")
-    val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, hex"0200")
-    val node_4 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil, hex"00")
+    val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+    val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(Set(ActivatedFeature(VariableLengthOnion, Optional))))
+    val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(Set(ActivatedFeature(VariableLengthOnion, Optional))))
+    val node_4 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil, Features.empty)
 
     assert(db.listNodes().toSet === Set.empty)
     db.addNode(node_1)

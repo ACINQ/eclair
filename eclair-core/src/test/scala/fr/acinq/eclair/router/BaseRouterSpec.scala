@@ -61,13 +61,13 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f, funding_g, funding_h) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey, priv_funding_g.publicKey, priv_funding_h.publicKey)
 
   // in the tests we are 'a', we don't define a node_a, it will be generated automatically when the router validates the first channel
-  val node_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, hex"")
-  val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200")
-  val node_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, hex"00")
-  val node_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, hex"00")
-  val node_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, hex"00")
-  val node_g = makeNodeAnnouncement(priv_g, "node-G", Color(30, 10, -50), Nil, hex"00")
-  val node_h = makeNodeAnnouncement(priv_h, "node-H", Color(30, 10, -50), Nil, hex"00")
+  val node_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, Features.empty)
+  val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features)
+  val node_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil, Features.empty)
+  val node_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil, Features.empty)
+  val node_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil, Features.empty)
+  val node_g = makeNodeAnnouncement(priv_g, "node-G", Color(30, 10, -50), Nil, Features.empty)
+  val node_h = makeNodeAnnouncement(priv_h, "node-H", Color(30, 10, -50), Nil, Features.empty)
 
   val channelId_ab = ShortChannelId(420000, 1, 0)
   val channelId_bc = ShortChannelId(420000, 2, 0)

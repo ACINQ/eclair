@@ -79,7 +79,7 @@ class StartupSpec extends AnyFunSuite {
     val illegalByteVectorFeatures = ConfigFactory.parseString("features = \"0200\"")
     val conf = illegalByteVectorFeatures.withFallback(defaultConf)
     val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
-    assert(nodeParamsAttempt.failed.get.getMessage == "requirement failed: configuration key 'features' cannot be a byte vector (hex string)")
+    assert(nodeParamsAttempt.failed.get.getMessage == "requirement failed: configuration key 'features' have moved from bytevector to human readable (ex: 'feature-name' = optional/mandatory)")
   }
 
   test("NodeParams should fail if features are inconsistent") {
@@ -125,7 +125,7 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
     val perNodeFeatures = nodeParams.overrideFeatures(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    assert(Features.hasFeature(perNodeFeatures, BasicMultiPartPayment, Some(Mandatory)))
+    assert(perNodeFeatures.hasFeature(BasicMultiPartPayment, Some(Mandatory)))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
