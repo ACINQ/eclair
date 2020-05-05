@@ -32,7 +32,7 @@ For more information please visit the [API documentation website](https://acinq.
 
 ## Documentation
 
-Please visit our [docs](https://github.com/ACINQ/eclair/tree/master/docs) and [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
+Please visit our [docs](./docs) and [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
 node, connect to other nodes, open channels, send and receive payments and more advanced scenario.
 
 You will find detailed guides and frequently asked questions there.
