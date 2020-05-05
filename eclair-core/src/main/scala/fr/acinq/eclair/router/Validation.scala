@@ -100,13 +100,13 @@ object Validation {
                 None
               case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
                 val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
-                val (fundingOutputScript, ok) = Kamon.runWithSpan(Kamon.spanBuilder("checked-pubkeyscript").start(), finishSpan = true) {
+                val (fundingOutputScript, fundingOutputIsInvalid) = Kamon.runWithSpan(Kamon.spanBuilder("checked-pubkeyscript").start(), finishSpan = true) {
                   // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
                   val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
-                  val ok = tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript
-                  (fundingOutputScript, ok)
+                  val fundingOutputIsInvalid = tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript
+                  (fundingOutputScript, fundingOutputIsInvalid)
                 }
-                if (ok) {
+                if (fundingOutputIsInvalid) {
                   log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
                   remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c))))
                   None
