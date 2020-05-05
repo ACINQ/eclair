@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.{KamonExt, wire}
+import fr.acinq.eclair.{Features, KamonExt, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -29,14 +29,14 @@ import scodec.{Attempt, Codec}
 object LightningMessageCodecs {
 
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
-  val combinedFeaturesCodec: Codec[ByteVector] = (
+  val combinedFeaturesCodec: Codec[Features] = (
     ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[ByteVector](
+      ("localFeatures" | varsizebinarydata)).as[(ByteVector, ByteVector)].xmap[Features](
     { case (gf, lf) =>
       val length = gf.length.max(lf.length)
-      gf.padLeft(length) | lf.padLeft(length)
+      Features(gf.padLeft(length) | lf.padLeft(length))
     },
-    { features => (ByteVector.empty, features) })
+    { features => (ByteVector.empty, features.toByteVector) })
 
   val initCodec: Codec[Init] = (("features" | combinedFeaturesCodec) :: ("tlvStream" | InitTlvCodecs.initTlvCodec)).as[Init]
 

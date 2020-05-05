@@ -227,9 +227,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
-    val features = Seq(JField("features", JArray(Features.Resolution.toHumanReadable(p.features.toByteVector).map(hrf =>
-      JObject(JField("name", JString(hrf.name)), JField("support", JString(hrf.support.toString)))).toList
-    )))
+    val features = JField("features", JsonSupport.featuresToJson(Features(p.features.bitmask)))
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
@@ -241,9 +239,15 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
       expiry ++
       minFinalCltvExpiry ++
-      amount ++
+      amount :+
       features
     JObject(fieldList)
+}))
+
+class FeaturesSerializer extends CustomSerializer[Features](_ => ( {
+  null
+}, {
+  case features: Features => JsonSupport.featuresToJson(features)
 }))
 
 class JavaUUIDSerializer extends CustomSerializer[UUID](_ => ( {
@@ -321,8 +325,20 @@ object JsonSupport extends Json4sSupport {
     new DirectedHtlcSerializer +
     new PaymentRequestSerializer +
     new JavaUUIDSerializer +
+    new FeaturesSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
 
+  def featuresToJson(features: Features) = JObject(
+    JField("activated", JArray(features.activated.map { a =>
+      JObject(
+        JField("name", JString(a.feature.rfcName)),
+        JField("support", JString(a.support.toString))
+      )}.toList)),
+    JField("inactive", JArray(features.inactive.map { i =>
+      JObject(
+        JField("featureBit", JInt(i.bitIndex))
+      )}.toList))
+  )
 }

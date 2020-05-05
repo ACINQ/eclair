@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
@@ -54,11 +55,11 @@ object IncomingPacket {
 
   case class DecodedOnionPacket[T <: Onion.PacketType](payload: T, next: OnionRoutingPacket)
 
-  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
+  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey, features: Features)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
     packetType.peel(privateKey, add.paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !Features.hasFeature(features, Features.VariableLengthOnion) => Left(InvalidRealm)
+          case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !features.hasFeature(VariableLengthOnion) => Left(InvalidRealm)
           case Attempt.Successful(DecodeResult(perHopPayload: T, remainder)) =>
             if (remainder.nonEmpty) {
               log.warning(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
@@ -84,7 +85,7 @@ object IncomingPacket {
    * @param features   this node's supported features
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
-  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
+  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey, features: Features)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
     decryptOnion(add, privateKey, features)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
