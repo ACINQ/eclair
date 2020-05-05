@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
@@ -105,7 +106,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
           // We use a long enough mask to account for future features.
           // TODO: remove that once eclair-mobile is patched.
-          val tweakedFeatures = BitVector.bits(nodeParams.features.bits.reverse.toIndexedSeq.zipWithIndex.map {
+          val tweakedFeatures = BitVector.bits(nodeParams.features.toByteVector.bits.reverse.toIndexedSeq.zipWithIndex.map {
             // we disable those bits if they are set...
             case (true, 14) => false
             case (true, 15) => false
@@ -114,9 +115,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             // ... and leave the others untouched
             case (value, _) => value
           }).reverse.bytes.dropWhile(_ == 0)
-          tweakedFeatures
+          Features(tweakedFeatures)
       }
-      log.info(s"using features=${Features.Resolution.fromBytes(localFeatures)}")
+      log.info(s"using features=$localFeatures")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit
       setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
@@ -129,7 +130,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         cancelTimer(INIT_TIMER)
         d.transport ! TransportHandler.ReadAck(remoteInit)
 
-        log.info(s"peer is using features=${Features.Resolution.fromBytes(remoteInit.features)}, networks=${remoteInit.networks.mkString(",")}")
+        log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
 
         if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
@@ -147,9 +148,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
           d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
 
-          def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
+          def localHasFeature(f: Feature): Boolean = d.localInit.features.hasFeature(f)
 
-          def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
+          def remoteHasFeature(f: Feature): Boolean = remoteInit.features.hasFeature(f)
 
           val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
           val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)

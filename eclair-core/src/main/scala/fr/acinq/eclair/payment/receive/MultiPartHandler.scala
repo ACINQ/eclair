@@ -20,6 +20,8 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret, TrampolinePayment, VariableLengthOnion, Wumbo}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -27,7 +29,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
@@ -62,10 +64,10 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
           val f1 = Seq(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
-          val allowMultiPart = Features.hasFeature(nodeParams.features, Features.BasicMultiPartPayment)
+          val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
           val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
           val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
-          Some(PaymentRequest.Features(f1 ++ f2 ++ f3: _*))
+          Some(PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*))
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)

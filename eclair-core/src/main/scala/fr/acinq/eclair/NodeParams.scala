@@ -46,8 +46,8 @@ case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
-                      features: ByteVector,
-                      overrideFeatures: Map[PublicKey, ByteVector],
+                      features: Features,
+                      overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
@@ -148,7 +148,7 @@ object NodeParams {
 
     // since v0.3.5 features cannot be a byte vector (hex string)
     val isFeatureByteVector = config.getValue("features").valueType() == ConfigValueType.STRING
-    require(!isFeatureByteVector, "configuration key 'features' cannot be a byte vector (hex string)")
+    require(!isFeatureByteVector, "configuration key 'features' have moved from bytevector to human readable (ex: 'feature-name' = optional/mandatory)")
 
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
@@ -183,13 +183,13 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = Features.Resolution.fromConfiguration(config)
+    val features = Features.fromConfiguration(config)
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 
-    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").asScala.map { e =>
+    val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.Resolution.fromConfiguration(e)
+      val f = Features.fromConfiguration(e)
       p -> f
     }.toMap
 

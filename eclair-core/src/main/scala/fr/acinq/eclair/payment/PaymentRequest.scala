@@ -18,9 +18,10 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentSecret => PaymentSecretF, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, InactiveFeature, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -86,7 +87,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case cltvExpiry: PaymentRequest.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta
   }
 
-  lazy val features: Features = tags.collectFirst { case f: Features => f }.getOrElse(Features(BitVector.empty))
+  lazy val features: PaymentRequestFeatures = tags.collectFirst { case f: PaymentRequestFeatures => f }.getOrElse(PaymentRequestFeatures(BitVector.empty))
 
   def isExpired: Boolean = expiry match {
     case Some(expiryTime) => timestamp + expiryTime <= System.currentTimeMillis.milliseconds.toSeconds
@@ -129,7 +130,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[Features] = Some(Features(VariableLengthOnion.optional, PaymentSecretF.optional))): PaymentRequest = {
+            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecretF.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
@@ -331,11 +332,11 @@ object PaymentRequest {
   /**
    * Features supported or required for receiving this payment.
    */
-  case class Features(bitmask: BitVector) extends TaggedField {
+  case class PaymentRequestFeatures(bitmask: BitVector) extends TaggedField {
     lazy val supported: Boolean = areSupported(bitmask)
     lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment)
     lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF)
-    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(FeatureSupport.Mandatory))
+    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(Mandatory))
     lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment)
 
     override def toString: String = s"Features(${bitmask.toBin})"
@@ -348,8 +349,8 @@ object PaymentRequest {
     }
   }
 
-  object Features {
-    def apply(features: Int*): Features = Features(long2bits(features.foldLeft(0L) {
+  object PaymentRequestFeatures {
+    def apply(features: Int*): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
       case (current, feature) => current + (1L << feature)
     }))
   }
@@ -395,7 +396,7 @@ object PaymentRequest {
       .typecase(2, dataCodec(bits).as[UnknownTag2])
       .typecase(3, dataCodec(listOfN(extraHopsLengthCodec, extraHopCodec)).as[RoutingInfo])
       .typecase(4, dataCodec(bits).as[UnknownTag4])
-      .typecase(5, dataCodec(bits).as[Features])
+      .typecase(5, dataCodec(bits).as[PaymentRequestFeatures])
       .typecase(6, dataCodec(bits).as[Expiry])
       .typecase(7, dataCodec(bits).as[UnknownTag7])
       .typecase(8, dataCodec(bits).as[UnknownTag8])
