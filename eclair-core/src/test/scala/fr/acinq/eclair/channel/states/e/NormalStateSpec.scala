@@ -1102,6 +1102,43 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(forward.htlc === htlc)
   }
 
+  test("recv RevokeAndAck (one htlc sent, static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    val sender = TestProbe()
+
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
+
+    def aliceToRemoteScript() = {
+      val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toRemote
+      val Some(toRemoteOut) = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.amount == toRemoteAmount.truncateToSatoshi)
+      toRemoteOut.publicKeyScript
+    }
+
+    val initialToRemoteScript = aliceToRemoteScript()
+
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+
+    sender.send(alice, CMD_SIGN)
+    sender.expectMsg(ChannelCommandResponse.Ok)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+
+    awaitCond(alice.stateName == NORMAL)
+    // using option_static_remotekey alice's view of bob toRemote script stays the same across commitments
+    assert(initialToRemoteScript == aliceToRemoteScript())
+  }
+
   test("recv RevocationTimeout") { f =>
     import f._
     val sender = TestProbe()
@@ -1119,8 +1156,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     peer.expectMsg(Peer.Disconnect(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId))
   }
 
-  test("recv CMD_FULFILL_HTLC") { f =>
+  private def testReceiveCmdFulfillHtlc(f: FixtureParam): Unit = {
     import f._
+
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -1134,6 +1172,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
   }
+
+  test("recv CMD_FULFILL_HTLC") { testReceiveCmdFulfillHtlc _ }
+
+  test("recv CMD_FULFILL_HTLC (static_remotekey)", Tag("static_remotekey")) { testReceiveCmdFulfillHtlc _ }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
     import f._
@@ -1169,7 +1211,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
-  test("recv UpdateFulfillHtlc") { f =>
+  private def testUpdateFulfillHtlc(f: FixtureParam) = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1188,6 +1230,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(forward.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }
+
+  test("recv UpdateFulfillHtlc") { testUpdateFulfillHtlc _ }
+
+  test("recv UpdateFulfillHtlc (static_remotekey)", Tag("(static_remotekey)")) { testUpdateFulfillHtlc _ }
 
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
     import f._
@@ -1244,7 +1290,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
 
-  test("recv CMD_FAIL_HTLC") { f =>
+  private def testCmdFailHtlc(f: FixtureParam) = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1258,7 +1304,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+
   }
+
+  test("recv CMD_FAIL_HTLC") { testCmdFailHtlc _ }
+
+  test("recv CMD_FAIL_HTLC (static_remotekey)", Tag("static_remotekey")) { testCmdFailHtlc _ }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
     import f._
@@ -1327,7 +1378,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
   }
 
-  test("recv UpdateFailHtlc") { f =>
+  private def testUpdateFailHtlc(f: FixtureParam) = {
     import f._
     val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1344,6 +1395,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // alice won't forward the fail before it is cross-signed
     relayerA.expectNoMsg()
   }
+
+  test("recv UpdateFailHtlc") { testUpdateFailHtlc _ }
+  test("recv UpdateFailHtlc (static_remotekey)", Tag("static_remotekey")) { testUpdateFailHtlc _ }
 
   test("recv UpdateFailMalformedHtlc") { f =>
     import f._

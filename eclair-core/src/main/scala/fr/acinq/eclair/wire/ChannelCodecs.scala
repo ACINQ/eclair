@@ -60,7 +60,7 @@ object ChannelCodecs extends Logging {
     // field and don't support additional features which is why all bits are set to 0.
   )
 
-  val localParamsCodec: Codec[LocalParams] = (
+  def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
@@ -71,6 +71,7 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
+      ("localPaymentBasepoint" | optional(provide(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
@@ -213,21 +214,22 @@ object ChannelCodecs extends Logging {
   )
 
   val commitmentsCodec: Codec[Commitments] = (
-    ("channelVersion" | channelVersionCodec) ::
-      ("localParams" | localParamsCodec) ::
-      ("remoteParams" | remoteParamsCodec) ::
-      ("channelFlags" | byte) ::
-      ("localCommit" | localCommitCodec) ::
-      ("remoteCommit" | remoteCommitCodec) ::
-      ("localChanges" | localChangesCodec) ::
-      ("remoteChanges" | remoteChangesCodec) ::
-      ("localNextHtlcId" | uint64overflow) ::
-      ("remoteNextHtlcId" | uint64overflow) ::
-      ("originChannels" | originsMapCodec) ::
-      ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
-      ("commitInput" | inputInfoCodec) ::
-      ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | bytes32)).as[Commitments]
+    ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
+      ("localParams" | localParamsCodec(channelVersion)) ::
+        ("remoteParams" | remoteParamsCodec) ::
+        ("channelFlags" | byte) ::
+        ("localCommit" | localCommitCodec) ::
+        ("remoteCommit" | remoteCommitCodec) ::
+        ("localChanges" | localChangesCodec) ::
+        ("remoteChanges" | remoteChangesCodec) ::
+        ("localNextHtlcId" | uint64overflow) ::
+        ("remoteNextHtlcId" | uint64overflow) ::
+        ("originChannels" | originsMapCodec) ::
+        ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
+        ("commitInput" | inputInfoCodec) ::
+        ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
+        ("channelId" | bytes32)
+    }).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
     ("unsignedTx" | txCodec) ::

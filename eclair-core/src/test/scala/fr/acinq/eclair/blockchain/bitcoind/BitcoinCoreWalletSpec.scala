@@ -20,7 +20,8 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Crypto, MilliBtc, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
@@ -212,7 +213,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
 
     // create a transaction that spends UTXOs that don't exist
-    wallet.getFinalAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     val unknownTxids = Seq(
       ByteVector32.fromValidHex("01" * 32),
@@ -247,7 +248,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[Satoshi] > 0.sat)
 
-    wallet.getFinalAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -312,7 +313,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[Satoshi] > 0.sat)
 
-    wallet.getFinalAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress.pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -384,6 +385,25 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     // this time tx1 has been double spent
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(true)
+  }
+
+  test("getReceivePubkey should return the raw pubkey for the receive address") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+    val sender = TestProbe()
+
+    wallet.getReceiveAddress.pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+
+    wallet.getReceivePubkey(receiveAddress = Some(address)).pipeTo(sender.ref)
+    val receiveKey = sender.expectMsgType[PublicKey]
+
+    assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash) === Script.pay2wpkh(receiveKey))
   }
 
 }
