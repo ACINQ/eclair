@@ -44,7 +44,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode init message") {
-    case class TestCase(encoded: ByteVector, features: ByteVector, networks: List[ByteVector32], valid: Boolean, reEncoded: Option[ByteVector] = None)
+    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[ByteVector32], valid: Boolean, reEncoded: Option[ByteVector] = None)
     val chainHash1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val chainHash2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val testCases = Seq(
@@ -67,7 +67,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for (testCase <- testCases) {
       if (testCase.valid) {
         val init = initCodec.decode(testCase.encoded.bits).require.value
-        assert(init.features === testCase.features)
+        assert(init.features.toByteVector === testCase.rawFeatures)
         assert(init.networks === testCase.networks)
         val encoded = initCodec.encode(init).require
         assert(encoded.bytes === testCase.reEncoded.getOrElse(testCase.encoded))
