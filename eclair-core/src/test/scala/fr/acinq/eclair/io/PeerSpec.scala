@@ -287,7 +287,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, switchboard, peer, peerConnection, remoteInit = wire.Init(hex"2200")) // Bob supports option_static_remotekey
+    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(hex"2200")) // Bob supports option_static_remotekey
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>
