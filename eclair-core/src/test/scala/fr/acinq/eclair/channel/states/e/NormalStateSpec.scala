@@ -39,7 +39,8 @@ import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass, randomBytes32, _}
+import fr.acinq.eclair._
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
@@ -49,7 +50,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
@@ -689,7 +690,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // and broadcast it
     assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate === bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
   }
-
 
   test("recv CMD_SIGN (after CMD_UPDATE_FEE)") { f =>
     import f._
@@ -2397,7 +2397,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.forward(alice)
     awaitCond({
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
-      normal.shortChannelId == annSigsA.shortChannelId && normal.buried && normal.channelAnnouncement == Some(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
+      normal.shortChannelId == annSigsA.shortChannelId && normal.buried && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
     })
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === Some(channelAnn))
   }
@@ -2420,6 +2420,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     bob2alice.send(alice, annSigsA)
     // alice re-sends her sigs
     alice2bob.expectMsg(annSigsA)
+  }
+
+  test("recv AnnouncementSignatures (invalid)", Tag("channels_public")) { f =>
+    import f._
+    val channelId = alice.stateData.asInstanceOf[DATA_NORMAL].channelId
+    val sender = TestProbe()
+    sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null))
+    val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
+    // actual test starts here - Bob sends an invalid signature
+    val annSigsB_invalid = annSigsB.copy(bitcoinSignature = annSigsB.nodeSignature, nodeSignature = annSigsB.bitcoinSignature)
+    bob2alice.forward(alice, annSigsB_invalid)
+    alice2bob.expectMsg(Error(channelId, InvalidAnnouncementSignatures(channelId, annSigsB_invalid).getMessage))
+    alice2bob.forward(bob)
+    alice2bob.expectNoMsg(200 millis)
+    awaitCond(alice.stateName == CLOSING)
   }
 
   test("recv BroadcastChannelUpdate", Tag("channels_public")) { f =>

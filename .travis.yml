@@ -4,7 +4,7 @@ services:
 dist: trusty
 language: scala
 scala:
- - 2.13.2
+ - 2.13.1
 env:
  - export LD_LIBRARY_PATH=/usr/local/lib
 before_install:
@@ -13,6 +13,7 @@ before_install:
  - export M2_HOME=$PWD/apache-maven-3.6.3
  - export PATH=$M2_HOME/bin:$PATH
 script:
+ - echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
  - mvn scoverage:report
 cache:
  directories:

@@ -212,7 +212,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     postMigrationDb.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300))
 
     assert(postMigrationDb.listOutgoingPayments(1, 2000) === Seq(ps1, ps2, ps3, ps4, ps5, ps6))
-    assert(postMigrationDb.listIncomingPayments(1, Platform.currentTime) === Seq(pr1, pr2, pr3))
+    assert(postMigrationDb.listIncomingPayments(1, System.currentTimeMillis) === Seq(pr1, pr2, pr3))
     assert(postMigrationDb.listExpiredIncomingPayments(1, 2000) === Seq(pr2))
   }
 
@@ -328,8 +328,8 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
     val paidInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32, alicePriv, "invoice #5")
     val paidInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32, bobPriv, "invoice #6", expirySeconds = Some(60))
-    val receivedAt1 = Platform.currentTime + 1
-    val receivedAt2 = Platform.currentTime + 2
+    val receivedAt1 = System.currentTimeMillis + 1
+    val receivedAt2 = System.currentTimeMillis + 2
     val payment1 = IncomingPayment(paidInvoice1, randomBytes32, PaymentType.Standard, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt2))
     val payment2 = IncomingPayment(paidInvoice2, randomBytes32, PaymentType.Standard, paidInvoice2.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(1111 msat, receivedAt2))
 
@@ -344,7 +344,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     assert(db.getIncomingPayment(expiredInvoice2.paymentHash) === Some(expiredPayment2))
     assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1.copy(status = IncomingPaymentStatus.Pending)))
 
-    val now = Platform.currentTime
+    val now = System.currentTimeMillis
     assert(db.listIncomingPayments(0, now) === Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
     assert(db.listExpiredIncomingPayments(0, now) === Seq(expiredPayment1, expiredPayment2))
     assert(db.listReceivedIncomingPayments(0, now) === Nil)
@@ -369,7 +369,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     val s1 = OutgoingPayment(UUID.randomUUID(), parentId, None, paymentHash1, PaymentType.Standard, 123 msat, 600 msat, dave, 100, Some(i1), OutgoingPaymentStatus.Pending)
     val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some("1"), paymentHash1, PaymentType.SwapOut, 456 msat, 600 msat, dave, 200, None, OutgoingPaymentStatus.Pending)
 
-    assert(db.listOutgoingPayments(0, Platform.currentTime).isEmpty)
+    assert(db.listOutgoingPayments(0, System.currentTimeMillis).isEmpty)
     db.addOutgoingPayment(s1)
     db.addOutgoingPayment(s2)
 

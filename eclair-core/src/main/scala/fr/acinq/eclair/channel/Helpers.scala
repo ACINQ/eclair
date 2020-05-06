@@ -182,7 +182,7 @@ object Helpers {
    * @return the delay until the next update
    */
   def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
-    val age = Platform.currentTime.milliseconds - currentUpdateTimestamp.seconds
+    val age = System.currentTimeMillis.milliseconds - currentUpdateTimestamp.seconds
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
     Logs.withMdc(log)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
       log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)

@@ -18,9 +18,10 @@ package fr.acinq.eclair.crypto
 
 import java.nio.charset.Charset
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
+import akka.testkit.{TestActorRef, TestFSMRef, TestProbe}
+import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
 import fr.acinq.eclair.wire.CommonCodecs
@@ -34,7 +35,7 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 
-class TransportHandlerSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike with BeforeAndAfterAll {
+class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with BeforeAndAfterAll {
 
   import TransportHandlerSpec._
 

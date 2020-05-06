@@ -16,18 +16,18 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import akka.actor.ActorSystem
 import akka.actor.Status.Failure
 import akka.pattern.pipe
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, MilliBtc, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Crypto, MilliBtc, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.FundTransactionResponse
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{LongToBtcAmount, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, _}
@@ -41,7 +41,7 @@ import scala.jdk.CollectionConverters._
 import scala.util.{Random, Try}
 
 
-class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
@@ -67,6 +67,105 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
 
   test("wait bitcoind ready") {
     waitForBitcoindReady()
+  }
+
+  def getLocks(sender: TestProbe = TestProbe()) : Set[OutPoint] = {
+    implicit val formats = DefaultFormats
+    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
+    val JArray(locks) = sender.expectMsgType[JValue]
+    val txids = locks.map { item =>
+      val JString(txid) = item \ "txid"
+      val JInt(vout) = item \ "vout"
+      OutPoint(ByteVector32.fromValidHex(txid).reverse, vout.toInt)
+    }
+    txids.toSet
+  }
+
+  test("unlock transaction inputs if publishing fails") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+    val sender = TestProbe()
+    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+
+    // create a huge tx so we make sure it has > 1 inputs
+    wallet.makeFundingTx(pubkeyScript, Btc(250), 1000).pipeTo(sender.ref)
+    val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+
+    // spend the first 2 inputs
+    val tx1 = fundingTx.copy(
+      txIn = fundingTx.txIn.take(2),
+      txOut = fundingTx.txOut.updated(outputIndex, fundingTx.txOut(outputIndex).copy(amount = Btc(50)))
+    )
+    wallet.signTransaction(tx1).pipeTo(sender.ref)
+    val SignTransactionResponse(tx2, true) = sender.expectMsgType[SignTransactionResponse]
+
+    wallet.commit(tx2).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Boolean])
+
+    // fundingTx inputs are still locked except for the first 2 that were just spent
+    val expectedLocks = fundingTx.txIn.drop(2).map(_.outPoint).toSet
+    awaitCond({
+      val locks = getLocks(sender)
+      expectedLocks -- locks isEmpty
+    }, max = 10 seconds, interval = 1 second)
+
+    // publishing fundingTx will fail as its first 2 inputs are already spent by tx above in the mempool
+    wallet.commit(fundingTx).pipeTo(sender.ref)
+    val result = sender.expectMsgType[Boolean]
+    assert(!result)
+
+    // and all locked inputs should now be unlocked
+    awaitCond({
+      val locks = getLocks(sender)
+      locks isEmpty
+    }, max = 10 seconds, interval = 1 second)
+  }
+
+  test("unlock outpoints correcly") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+
+    val sender = TestProbe()
+    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+
+    {
+      // test #1: unlock outpoints that are actually locked
+      // create a huge tx so we make sure it has > 1 inputs
+      wallet.makeFundingTx(pubkeyScript, Btc(250), 1000).pipeTo(sender.ref)
+      val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+      assert(fundingTx.txIn.size > 2)
+      assert(getLocks(sender) == fundingTx.txIn.map(_.outPoint).toSet)
+      wallet.rollback(fundingTx).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Boolean])
+    }
+    {
+      // test #2: some outpoints are locked, some are unlocked
+      wallet.makeFundingTx(pubkeyScript, Btc(250), 1000).pipeTo(sender.ref)
+      val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+      assert(fundingTx.txIn.size > 2)
+      assert(getLocks(sender) == fundingTx.txIn.map(_.outPoint).toSet)
+
+      // unlock the first 2 outpoints
+      val tx1 = fundingTx.copy(txIn = fundingTx.txIn.take(2))
+      wallet.rollback(tx1).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Boolean])
+      assert(getLocks(sender) == fundingTx.txIn.drop(2).map(_.outPoint).toSet)
+
+      // and try to unlock all outpoints: it should work too
+      wallet.rollback(fundingTx).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Boolean])
+      assert(getLocks(sender) isEmpty)
+    }
   }
 
   test("absence of rounding") {
@@ -153,13 +252,18 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with BitcoindSe
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
-    val fundingTxes = for (i <- 0 to 3) yield {
+    val fundingTxes = for (_ <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
-      wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 249).pipeTo(sender.ref)
-      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("Transaction too large for fee policy"))
+      wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 200).pipeTo(sender.ref) // create a tx with an invalid feerate (too little)
+      val belowFeeFundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
+      wallet.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
+      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met"))
+      wallet.rollback(belowFeeFundingTx).pipeTo(sender.ref) // rollback the locked outputs
+      assert(sender.expectMsgType[Boolean])
+
+      // now fund a tx with correct feerate
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 250).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
-      fundingTx
+      sender.expectMsgType[MakeFundingTxResponse].fundingTx
     }
 
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))

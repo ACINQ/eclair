@@ -28,14 +28,15 @@ import fr.acinq.eclair.payment.relay.Origin.Local
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{TestkitBaseClass, _}
+import fr.acinq.eclair.{TestKitBaseClass, _}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success}
 
-class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 

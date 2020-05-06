@@ -26,6 +26,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
@@ -52,7 +53,7 @@ import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, JValue}
@@ -70,7 +71,7 @@ import scala.jdk.CollectionConverters._
  * Created by PM on 15/03/2017.
  */
 
-class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
 
@@ -90,6 +91,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
+    "eclair.enable-db-backup" -> false,
     "eclair.server.public-ips.1" -> "127.0.0.1",
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
@@ -115,7 +117,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     nodes.foreach {
       case (name, setup) =>
         logger.info(s"stopping node $name")
-        setup.system.terminate()
+        TestKit.shutdownActorSystem(setup.system)
     }
   }
 
@@ -526,7 +528,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a multi-part payment B->D") {
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     val amount = 1000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), "split the restaurant bill"))
@@ -552,8 +554,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
 
-    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
-    val sent = nodes("B").nodeParams.db.audit.listSent(start, Platform.currentTime)
+    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, System.currentTimeMillis).nonEmpty)
+    val sent = nodes("B").nodeParams.db.audit.listSent(start, System.currentTimeMillis)
     assert(sent.length === 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
 
@@ -647,7 +649,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a trampoline payment B->F3 with retry (via trampoline G)") {
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     val amount = 4000000000L.msat
     sender.send(nodes("F3").paymentHandler, ReceivePayment(Some(amount), "like trampoline much?"))
@@ -673,10 +675,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
 
@@ -689,7 +691,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), "trampoline-MPP is so #reckless"))
@@ -712,10 +714,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 300000.msat, relayed)
 
@@ -726,15 +728,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }
     assert(outgoingSuccess.map(_.amount).sum === amount + 300000.msat, outgoingSuccess)
 
-    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime).nonEmpty)
-    val sent = nodes("D").nodeParams.db.audit.listSent(start, Platform.currentTime)
+    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, System.currentTimeMillis).nonEmpty)
+    val sent = nodes("D").nodeParams.db.audit.listSent(start, System.currentTimeMillis)
     assert(sent.length === 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
   }
 
   test("send a trampoline payment F3->A (via trampoline C, non-trampoline recipient)") {
     // The A -> B channel is not announced.
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     val sender = TestProbe()
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
     val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
@@ -760,10 +762,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, Platform.currentTime).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
 
@@ -952,16 +954,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     }, max = 20 seconds, interval = 1 second)
     // we then fulfill the htlc, which will make F redeem it on-chain
     sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
-    // we then generate one block so that the htlc success tx gets written to the blockchain
-    generateBlocks(bitcoincli, 1)
-    // C will extract the preimage from the blockchain and fulfill the payment upstream
-    paymentSender.expectMsgType[PaymentSent](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       res.filter(_ \ "address" == JString(finalAddressF)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
+    // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
+    // the mempool and fulfill the payment upstream.
+    paymentSender.expectMsgType[PaymentSent](30 seconds)
     // we then generate enough blocks so that C gets its main delayed output
     generateBlocks(bitcoincli, 145)
     // and C will have its main output
@@ -1003,7 +1004,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     paymentSender.expectMsgType[UUID](30 seconds)
-
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
@@ -1030,14 +1030,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with BitcoindService 
     sender.expectMsg(ChannelCommandResponse.Ok)
     // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
     sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
-    // we then generate one block so that the htlc success tx gets written to the blockchain
-    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = sender.expectMsgType[JValue]
-    generateBlocks(bitcoincli, 1, Some(address))
-    // C will extract the preimage from the blockchain and fulfill the payment upstream
+    // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
+    // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     // we then generate enough blocks so that F gets its htlc-success delayed output
+    sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = sender.expectMsgType[JValue]
     generateBlocks(bitcoincli, 145, Some(address))
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
