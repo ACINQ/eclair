@@ -21,6 +21,8 @@ import java.util.UUID
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, ScriptFlags, Transaction}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -82,8 +84,8 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = if(tags.contains("static_remotekey")) {
-      (Alice.channelParams.copy(features = hex"2000", localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))),
-       Bob.channelParams.copy(features = hex"2000", localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))))
+      (Alice.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))),
+       Bob.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))))
     } else {
       (Alice.channelParams, Bob.channelParams)
     }

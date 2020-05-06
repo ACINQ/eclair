@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -89,8 +89,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       switchboard ! Authenticated(self, remoteNodeId)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
-    case Event(AuthTimeout, _) =>
+    case Event(AuthTimeout, d: AuthenticatingData) =>
       log.warning(s"authentication timed out after ${nodeParams.authTimeout}")
+      d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
   }
 
@@ -100,23 +101,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
-        case None =>
-          // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
-          // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
-          // We use a long enough mask to account for future features.
-          // TODO: remove that once eclair-mobile is patched.
-          val tweakedFeatures = BitVector.bits(nodeParams.features.bits.reverse.toIndexedSeq.zipWithIndex.map {
-            // we disable those bits if they are set...
-            case (true, 14) => false
-            case (true, 15) => false
-            case (true, 16) => false
-            case (true, 17) => false
-            // ... and leave the others untouched
-            case (value, _) => value
-          }).reverse.bytes.dropWhile(_ == 0)
-          tweakedFeatures
+        case None => nodeParams.features.maskFeaturesForEclairMobile()
       }
-      log.info(s"using features=${localFeatures.toBin}")
+      log.info(s"using features=$localFeatures")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit
       setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
@@ -129,27 +116,27 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         cancelTimer(INIT_TIMER)
         d.transport ! TransportHandler.ReadAck(remoteInit)
 
-        log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
+        log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
 
         if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
-          d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
           d.transport ! PoisonPill
           stay
         } else if (!Features.areSupported(remoteInit.features)) {
           log.warning("incompatible features, disconnecting")
-          d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible features"))
           d.transport ! PoisonPill
           stay
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
-          d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
 
-          def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
+          def localHasFeature(f: Feature): Boolean = d.localInit.features.hasFeature(f)
 
-          def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
+          def remoteHasFeature(f: Feature): Boolean = remoteInit.features.hasFeature(f)
 
           val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
           val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
@@ -177,8 +164,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
         }
 
-      case Event(InitTimeout, _) =>
+      case Event(InitTimeout, d: InitializingData) =>
         log.warning(s"initialization timed out after ${nodeParams.initTimeout}")
+        d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("initialization timed out"))
         stop(FSM.Normal)
     }
   }
@@ -382,6 +370,12 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
         log.info("transport died, stopping")
       }
+      d match {
+        case a: AuthenticatingData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("connection aborted while authenticating"))
+        case a: BeforeInitData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("connection aborted while initializing"))
+        case a: InitializingData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("connection aborted while initializing"))
+        case _ => ()
+      }
       stop(FSM.Normal)
 
     case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
@@ -499,6 +493,19 @@ object PeerConnection {
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
   case class InitializeConnection(peer: ActorRef)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
+
+  sealed trait ConnectionResult
+  object ConnectionResult {
+    sealed trait Success extends ConnectionResult
+    sealed trait Failure extends ConnectionResult
+
+    case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
+    case class ConnectionFailed(address: InetSocketAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
+    case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
+    case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
+    case object AlreadyConnected extends ConnectionResult.Failure { override def toString: String = "already connected" }
+    case object Connected extends ConnectionResult.Success { override def toString: String = "connected" }
+  }
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 

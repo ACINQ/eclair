@@ -68,22 +68,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       reconnectionTask forward p
       stay
 
-    case Event(PeerConnection.ConnectionReady(peerConnection, remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
-      require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
-      log.debug("got authenticated connection to address {}:{}", address.getHostString, address.getPort)
-
-      context watch peerConnection
-
-      if (outgoing) {
-        // we store the node address upon successful outgoing connection, so we can reconnect later
-        // any previous address is overwritten
-        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
-      }
-
-      // let's bring existing/requested channels online
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(peerConnection, localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-
-      goto(CONNECTED) using ConnectedData(address, peerConnection, localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
+    case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
+      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
@@ -102,7 +88,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   when(CONNECTED) {
     dropStaleMessages {
       case Event(_: Peer.Connect, _) =>
-        sender ! "already connected"
+        sender ! PeerConnection.ConnectionResult.AlreadyConnected
         stay
 
       case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -125,10 +111,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         stay
 
       case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-        if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
+        if (c.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Wumbo)) {
           sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
           stay
-        } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(d.remoteInit.features, Wumbo)) {
+        } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !d.remoteInit.features.hasFeature(Wumbo)) {
           sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
           stay
         } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
@@ -220,8 +206,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         context unwatch d.peerConnection
         d.peerConnection ! PoisonPill
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        self forward connectionReady // we preserve the origin
-        goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+        gotoConnected(connectionReady, d.channels)
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -251,8 +236,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   }
 
   onTransition {
-    case _ -> CONNECTED =>
+    case DISCONNECTED -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
+    case CONNECTED -> CONNECTED => // connection switch
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
       Metrics.PeersConnected.withoutTags().decrement()
@@ -264,6 +251,24 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       // the transition handler won't be fired if we go directly from CONNECTED to closed
       Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
+  def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
+    require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeid: $remoteNodeId != ${connectionReady.remoteNodeId}")
+    log.debug("got authenticated connection to address {}:{}", connectionReady.address.getHostString, connectionReady.address.getPort)
+
+    context watch connectionReady.peerConnection
+
+    if (connectionReady.outgoing) {
+      // we store the node address upon successful outgoing connection, so we can reconnect later
+      // any previous address is overwritten
+      NodeAddress.fromParts(connectionReady.address.getHostString, connectionReady.address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
+    }
+
+    // let's bring existing/requested channels online
+    channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels)
   }
 
   /**

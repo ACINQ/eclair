@@ -99,7 +99,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       localPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
-      features = randomBytes(256))
+      features = TestConstants.Alice.nodeParams.features)
     val encoded = localParamsCodec(ChannelVersion.ZEROES).encode(o).require
     val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require.value
     assert(decoded.localPaymentBasepoint.isEmpty)
@@ -108,7 +108,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
     val withGlobalFeaturesDecoded = localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features === hex"0a8a")
+    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
 
     val o1 = LocalParams(
       nodeId = randomKey.publicKey,
@@ -122,7 +122,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       localPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
       isFunder = Random.nextBoolean(),
-      features = randomBytes(256))
+      features = Features(randomBytes(256)))
     val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
     val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require.value
     assert(decoded1.localPaymentBasepoint.isDefined)
@@ -143,7 +143,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       paymentBasepoint = randomKey.publicKey,
       delayedPaymentBasepoint = randomKey.publicKey,
       htlcBasepoint = randomKey.publicKey,
-      features = randomBytes(256))
+      features = TestConstants.Alice.nodeParams.features)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
     assert(o === decoded)
@@ -151,7 +151,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // Backwards-compatibility: decode remoteparams with global features.
     val withGlobalFeatures = hex"03c70c3b813815a8b79f41622b6f2c343fa24d94fb35fa7110bbb3d4d59cd9612e0000000059844cbc000000001b1524ea000000001503cbac000000006b75d3272e38777e029fa4e94066163024177311de7ba1befec2e48b473c387bbcee1484bf276a54460215e3dfb8e6f262222c5f343f5e38c5c9a43d2594c7f06dd7ac1a4326c665dd050347aba4d56d7007a7dcf03594423dccba9ed700d11e665d261594e1154203df31020d457ee336ba6eeb328d00f1b8bd8bfefb8a4dcd5af6db4c438b7ec5106c7edc0380df17e1beb0f238e51a39122ac4c6fb57f3c4f5b7bc9432f991b1ef4a8af3570002020000018a"
     val withGlobalFeaturesDecoded = remoteParamsCodec.decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features === hex"028a")
+    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"028a")
   }
 
   test("encode/decode htlc") {
@@ -388,6 +388,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":[],"unknown":[]}""", """"features":""""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -399,6 +402,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":[],"unknown":[]}""", """"features":""""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -420,7 +426,7 @@ object ChannelCodecsSpec {
     defaultFinalScriptPubKey = ByteVector.empty,
     localPaymentBasepoint = None,
     isFunder = true,
-    features = hex"deadbeef")
+    features = Features.empty)
 
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,
@@ -435,7 +441,7 @@ object ChannelCodecsSpec {
     paymentBasepoint = PrivateKey(ByteVector.fill(32)(3)).publicKey,
     delayedPaymentBasepoint = PrivateKey(ByteVector.fill(32)(4)).publicKey,
     htlcBasepoint = PrivateKey(ByteVector.fill(32)(6)).publicKey,
-    features = hex"deadbeef")
+    features = Features.empty)
 
   val paymentPreimages = Seq(
     ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),
