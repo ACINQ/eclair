@@ -284,7 +284,7 @@ object Validation {
         val origins1 = d.rebroadcast.updates(u) ++ origins
         // NB: we update the channels because the balances may have changed even if the channel_update is the same.
         val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
       } else if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
@@ -293,7 +293,10 @@ object Validation {
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (duplicate)", u)
         sendDecision(origins, GossipDecision.Duplicate(u))
-        d
+        // NB: we update the graph because the balances may have changed even if the channel_update is the same.
+        val pc1 = pc.applyChannelUpdate(update)
+        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         sendDecision(origins, GossipDecision.InvalidSignature(u))
@@ -307,7 +310,7 @@ object Validation {
         // update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
-          d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+          d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
           d.graph.removeEdge(desc)
         }
@@ -356,7 +359,7 @@ object Validation {
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
-          d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+          d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
           d.graph.removeEdge(desc)
         }
@@ -468,7 +471,7 @@ object Validation {
         val pc1 = pc.updateBalances(e.commitments)
         val desc = ChannelDesc(e.shortChannelId, e.commitments.localParams.nodeId, e.commitments.remoteParams.nodeId)
         val update_opt = if (e.commitments.localParams.nodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
-        val graph1 = update_opt.map(u => d.graph.removeEdge(desc).addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(d.graph)
+        val graph1 = update_opt.map(u => d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(d.graph)
         (d.channels + (e.shortChannelId -> pc1), graph1)
       case None =>
         (d.channels, d.graph)
