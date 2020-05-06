@@ -64,14 +64,14 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
       // publish a notification that we have updated our backup
       context.system.eventStream.publish(BackupCompleted)
 
-      log.info(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
+      log.debug(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
 
       backupScript_opt.foreach(backupScript => {
         Try {
           // run the script in the current thread and wait until it terminates
           Process(backupScript).!
         } match {
-          case Success(exitCode) => log.info(s"backup notify script $backupScript returned $exitCode")
+          case Success(exitCode) => log.debug(s"backup notify script $backupScript returned $exitCode")
           case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
         }
       })
