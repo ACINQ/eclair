@@ -31,28 +31,28 @@ object FeatureSupport {
   case object Mandatory extends FeatureSupport { override def toString: String = "mandatory" }
   case object Optional extends FeatureSupport { override def toString: String = "optional" }
 }
-// @formatter:on
 
 sealed trait Feature {
+
   def rfcName: String
-
   def mandatory: Int
-
   def optional: Int = mandatory + 1
 
-  def supportBit(support : FeatureSupport): Int = support match {
+  def supportBit(support: FeatureSupport): Int = support match {
     case FeatureSupport.Mandatory => mandatory
     case FeatureSupport.Optional => optional
   }
 
   override def toString = rfcName
+
 }
+// @formatter:on
 
 case class ActivatedFeature(feature: Feature, support: FeatureSupport)
 
-case class InactiveFeature(bitIndex: Int)
+case class UnknownFeature(bitIndex: Int)
 
-case class Features(activated: Set[ActivatedFeature], inactive: Set[InactiveFeature] = Set.empty) {
+case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeature] = Set.empty) {
 
   def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
     case Some(s) => activated.contains(ActivatedFeature(feature, s))
@@ -60,21 +60,22 @@ case class Features(activated: Set[ActivatedFeature], inactive: Set[InactiveFeat
   }
 
   def toByteVector: ByteVector = {
-    val activatedFeatureBytes = toByteVectorFromInts(activated.map { case ActivatedFeature(f, s) => f.supportBit(s) })
-    val inactiveFeatureBytes = toByteVectorFromInts(inactive.map(_.bitIndex))
-    val maxSize = activatedFeatureBytes.size.max(inactiveFeatureBytes.size)
-    activatedFeatureBytes.padLeft(maxSize) | inactiveFeatureBytes.padLeft(maxSize)
+    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case ActivatedFeature(f, s) => f.supportBit(s) })
+    val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
+    val maxSize = activatedFeatureBytes.size.max(unknownFeatureBytes.size)
+    activatedFeatureBytes.padLeft(maxSize) | unknownFeatureBytes.padLeft(maxSize)
   }
 
-  /** encodes in a byte vector the given bit indexes */
-  private def toByteVectorFromInts(ints: Set[Int]): ByteVector = {
-    if (ints.isEmpty) return ByteVector.empty
-    var buf = BitVector.fill(ints.max + 1)(high = false).bytes.toBitVector
-    ints.foreach { i =>
+  private def toByteVectorFromIndex(indexes: Set[Int]): ByteVector = {
+    if (indexes.isEmpty) return ByteVector.empty
+    // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
+    var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
+    indexes.foreach { i =>
       buf = buf.set(i)
     }
     buf.reverse.bytes
   }
+
 }
 
 object Features {
@@ -83,35 +84,33 @@ object Features {
 
   def apply(features: Set[ActivatedFeature]): Features = Features(activated = features)
 
-  def apply(bytes: ByteVector): Features = apply(bytes.toBitVector)
+  def apply(bytes: ByteVector): Features = apply(bytes.bits)
 
   def apply(bits: BitVector): Features = {
-    val all = bits.toIndexedSeq.reverse.zipWithIndex.flatMap {
-      case (true, idx) if knownFeatures.exists(_.optional == idx) => Some(ActivatedFeature(knownFeatures.find(_.optional == idx).get, Optional))
-      case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Some(ActivatedFeature(knownFeatures.find(_.mandatory == idx).get, Mandatory))
-      case (true, idx) => Some(InactiveFeature(idx))
-      case (false, _) => None
+    val all = bits.toIndexedSeq.reverse.zipWithIndex.collect {
+      case (true, idx) if knownFeatures.exists(_.optional == idx) => Right(ActivatedFeature(knownFeatures.find(_.optional == idx).get, Optional))
+      case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Right(ActivatedFeature(knownFeatures.find(_.mandatory == idx).get, Mandatory))
+      case (true, idx) => Left(UnknownFeature(idx))
     }
-
     Features(
-      activated = all.collect { case af:ActivatedFeature => af }.toSet,
-      inactive = all.collect { case inf: InactiveFeature => inf }.toSet
+      activated = all.collect { case Right(af) => af }.toSet,
+      unknown = all.collect { case Left(inf) => inf }.toSet
     )
   }
 
   /** expects to have a top level config block named "features" */
-  def fromConfiguration(config: Config): Features = Features {
-    knownFeatures.flatMap { feature =>
-      getFeature(config, feature.rfcName) match {
-        case Some(support) => Some(ActivatedFeature(feature, support))
-        case _ => None
-      }
-    }
-  }
+  def fromConfiguration(config: Config): Features = Features(
+    knownFeatures.flatMap {
+      feature =>
+        getFeature(config, feature.rfcName) match {
+          case Some(support) => Some(ActivatedFeature(feature, support))
+          case _ => None
+        }
+    })
 
   /** tries to extract the given feature name from the config, if successful returns its feature support */
-  def getFeature(config: Config, name: String): Option[FeatureSupport] = {
-    if(!config.hasPath(s"features.$name")) None
+  private def getFeature(config: Config, name: String): Option[FeatureSupport] = {
+    if (!config.hasPath(s"features.$name")) None
     else {
       config.getString(s"features.$name") match {
         case support if support == Mandatory.toString => Some(Mandatory)
@@ -170,6 +169,28 @@ object Features {
     val mandatory = 50
   }
 
+  private val knownFeatures: Set[Feature] = Set(
+    OptionDataLossProtect,
+    InitialRoutingSync,
+    ChannelRangeQueries,
+    VariableLengthOnion,
+    ChannelRangeQueriesExtended,
+    PaymentSecret,
+    BasicMultiPartPayment,
+    Wumbo,
+    TrampolinePayment
+  )
+
+  private val supportedMandatoryFeatures: Set[Feature] = Set(
+    OptionDataLossProtect,
+    ChannelRangeQueries,
+    VariableLengthOnion,
+    ChannelRangeQueriesExtended,
+    PaymentSecret,
+    BasicMultiPartPayment,
+    Wumbo
+  )
+
   // Features may depend on other features, as specified in Bolt 9.
   private val featuresDependency = Map(
     ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
@@ -182,76 +203,20 @@ object Features {
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
 
-  def validateFeatureGraph(features: BitVector): Option[FeatureException] = featuresDependency.collectFirst {
-    case (feature, dependencies) if hasFeature(features, feature) && dependencies.exists(d => !hasFeature(features, d)) =>
-      FeatureException(s"${features.toBin} sets $feature but is missing a dependency (${dependencies.filter(d => !hasFeature(features, d)).mkString(" and ")})")
-  }
-
-  def validateFeatureGraph(features: ByteVector): Option[FeatureException] = validateFeatureGraph(features.bits)
-
   def validateFeatureGraph(features: Features): Option[FeatureException] = featuresDependency.collectFirst {
-    case (feature, dependencies) if features.hasFeature(feature) && dependencies.exists(d => !features.hasFeature(d) ) =>
-      FeatureException(s"${features.toByteVector.toBin} sets $feature but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
+    case (feature, dependencies) if features.hasFeature(feature) && dependencies.exists(d => !features.hasFeature(d)) =>
+      FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
   }
-
-  // Note that BitVector indexes from left to right whereas the specification indexes from right to left.
-  // This is why we have to reverse the bits to check if a feature is set.
-
-  private def hasFeature(features: BitVector, bit: Int): Boolean = features.sizeGreaterThan(bit) && features.reverse.get(bit)
-
-  def hasFeature(features: BitVector, feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
-    case Some(FeatureSupport.Mandatory) => hasFeature(features, feature.mandatory)
-    case Some(FeatureSupport.Optional) => hasFeature(features, feature.optional)
-    case None => hasFeature(features, feature.optional) || hasFeature(features, feature.mandatory)
-  }
-
-  def hasFeature(features: ByteVector, feature: Feature): Boolean = hasFeature(features.bits, feature)
-
-  def hasFeature(features: ByteVector, feature: Feature, support: Option[FeatureSupport]): Boolean = hasFeature(features.bits, feature, support)
-
-  def areSupported(features: ByteVector): Boolean = areSupported(features.bits)
-
-  def areSupported(features: BitVector): Boolean = areSupported(Features(features))
 
   /**
-    * A feature set is supported if all even bits are supported.
-    * We just ignore unknown odd bits.
-    */
+   * A feature set is supported if all even bits are supported.
+   * We just ignore unknown odd bits.
+   */
   def areSupported(features: Features): Boolean = {
-    features.activated.forall {
+    !features.unknown.exists(_.bitIndex % 2 == 0) && features.activated.forall {
       case ActivatedFeature(_, Optional) => true
       case ActivatedFeature(feature, Mandatory) => supportedMandatoryFeatures.contains(feature)
-    } && (features.inactive.isEmpty || !features.inactive.exists(_.bitIndex % 2 == 0))
+    }
   }
 
-  /**
-    * A feature set is supported if all even bits are supported.
-    * We just ignore unknown odd bits.
-    */
-  def isSupported(feature: Feature, support: FeatureSupport): Boolean = support match {
-    case FeatureSupport.Mandatory => supportedMandatoryFeatures.contains(feature)
-    case FeatureSupport.Optional => true
-  }
-
-  val supportedMandatoryFeatures: Set[Feature] = Set(
-    OptionDataLossProtect,
-    ChannelRangeQueries,
-    VariableLengthOnion,
-    ChannelRangeQueriesExtended,
-    PaymentSecret,
-    BasicMultiPartPayment,
-    Wumbo
-  )
-
-  val knownFeatures: Set[Feature] = Set(
-    OptionDataLossProtect,
-    InitialRoutingSync,
-    ChannelRangeQueries,
-    VariableLengthOnion,
-    ChannelRangeQueriesExtended,
-    PaymentSecret,
-    BasicMultiPartPayment,
-    Wumbo,
-    TrampolinePayment
-  )
 }

@@ -20,7 +20,6 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Features.{Wumbo, hasFeature}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
@@ -34,7 +33,6 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
@@ -105,7 +103,7 @@ object Helpers {
     if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis)
 
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Wumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING)
+    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Features.Wumbo)) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING)
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi)
