@@ -208,7 +208,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
 object NodeRelayer {
 
-  def props(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) = Props(classOf[NodeRelayer], nodeParams, relayer, router, commandBuffer, register)
+  def props(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) = Props(new NodeRelayer(nodeParams, relayer, router, commandBuffer, register))
 
   /**
    * We start by aggregating an incoming HTLC set. Once we received the whole set, we will compute a route to the next
@@ -260,13 +260,13 @@ object NodeRelayer {
    */
   private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
     def tooManyRouteNotFound(failures: Seq[PaymentFailure]): Boolean = {
-      val routeNotFoundCount = failures.count(_ == LocalFailure(RouteNotFound))
+      val routeNotFoundCount = failures.count(_ == LocalFailure(Nil, RouteNotFound))
       routeNotFoundCount > failures.length / 2
     }
 
     failures match {
       case Nil => None
-      case LocalFailure(PaymentError.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case LocalFailure(_, PaymentError.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
       case _ if tooManyRouteNotFound(failures) => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.

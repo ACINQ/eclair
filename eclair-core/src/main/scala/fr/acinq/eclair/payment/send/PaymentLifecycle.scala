@@ -40,7 +40,6 @@ import fr.acinq.eclair.wire._
 import kamon.Kamon
 import kamon.trace.Span
 
-import scala.compat.Platform
 import scala.util.{Failure, Success}
 
 /**
@@ -114,8 +113,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, _, failures)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(t))).increment()
-      onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(t)))
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(Nil, t))).increment()
+      onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t)))
       myStop()
   }
 
@@ -135,7 +134,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
       stay
 
-    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
+    case Event(fail: UpdateFailHtlc, data@WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       (Sphinx.FailurePacket.decrypt(fail.reason, sharedSecrets) match {
         case success@Success(e) =>
           Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(Nil, e))).increment()
@@ -163,17 +162,13 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           onFailure(s, PaymentFailed(id, paymentHash, failures :+ failure))
           myStop()
         case Failure(t) =>
-          log.warning(s"cannot parse returned error: ${t.getMessage}")
-          // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
-          val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
-          log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
-          router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels, c.routeParams)
-          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(cfg.fullRoute(hops)))
+          log.warning(s"cannot parse returned error: ${t.getMessage}, route=${hops.map(_.nextNodeId)}")
+          val failure = UnreadableRemoteFailure(cfg.fullRoute(hops))
+          retry(failure, data)
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
           log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
-          // let's try to route around this node
-          router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
-          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(cfg.fullRoute(hops), e))
+          val failure = RemoteFailure(cfg.fullRoute(hops), e)
+          retry(failure, data)
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           if (Announcements.checkSig(failureMessage.update, nodeId)) {
@@ -218,10 +213,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(cfg.fullRoute(hops), e))
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
-          // let's try again without the channel outgoing from nodeId
-          val faultyChannel = hops.find(_.nodeId == nodeId).map(hop => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId))
-          router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet, c.routeParams)
-          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(cfg.fullRoute(hops), e))
+          val failure = RemoteFailure(cfg.fullRoute(hops), e)
+          retry(failure, data)
       }
 
     case Event(fail: UpdateFailMalformedHtlc, _) =>
@@ -233,19 +226,18 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       self ! Status.Failure(new RuntimeException("first hop returned an UpdateFailMalformedHtlc message"))
       stay
 
-    case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(t))).increment()
+    case Event(Status.Failure(t), data@WaitingForComplete(s, c, _, failures, _, _, _, hops)) =>
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(hops), t))).increment()
       val isFatal = failures.size + 1 >= c.maxAttempts || // retries exhausted
         c.routePrefix.nonEmpty || // first hop was selected by the sender and failed, it doesn't make sense to retry
         t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs
       if (isFatal) {
-        onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(t)))
+        onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(cfg.fullRoute(hops), t)))
         myStop()
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-        val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
-        router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel, c.routeParams)
-        goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
+        val failure = LocalFailure(cfg.fullRoute(hops), t)
+        retry(failure, data)
       }
   }
 
@@ -271,13 +263,19 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
   }
 
-  def myStop(): State = {
+  private def retry(failure: PaymentFailure, data: WaitingForComplete): FSM.State[PaymentLifecycle.State, PaymentLifecycle.Data] = {
+    val (ignoreNodes1, ignoreChannels1) = PaymentFailure.updateIgnored(failure, data.ignoreNodes, data.ignoreChannels)
+    router ! RouteRequest(data.c.getRouteRequestStart(nodeParams), data.c.targetNodeId, data.c.finalPayload.amount, data.c.assistedRoutes, ignoreNodes1, ignoreChannels1, data.c.routeParams)
+    goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.sender, data.c, data.failures :+ failure)
+  }
+
+  private def myStop(): State = {
     stateSpan.foreach(_.finish())
     span.finish()
     stop(FSM.Normal)
   }
 
-  def onSuccess(sender: ActorRef, result: PaymentSent): Unit = {
+  private def onSuccess(sender: ActorRef, result: PaymentSent): Unit = {
     if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
     sender ! result
     if (cfg.publishEvent) context.system.eventStream.publish(result)
@@ -287,7 +285,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
   }
 
-  def onFailure(sender: ActorRef, result: PaymentFailed): Unit = {
+  private def onFailure(sender: ActorRef, result: PaymentFailed): Unit = {
     span.fail("payment failed")
     if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
     sender ! result
@@ -307,7 +305,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
 object PaymentLifecycle {
 
-  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], nodeParams, cfg, router, register)
+  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(new PaymentLifecycle(nodeParams, cfg, router, register))
 
   /**
    * Send a payment to a pre-defined route without running the path-finding algorithm.
