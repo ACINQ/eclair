@@ -340,8 +340,8 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
-    assert(res.hops.last.nextNodeId === d)
+    assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId === d)
   }
 
   test("route found (with extra routing info)") { fixture =>
@@ -355,8 +355,8 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
     sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
-    assert(res.hops.last.nextNodeId === z)
+    assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId === z)
   }
 
   test("route not found (channel disabled)") { fixture =>
@@ -365,8 +365,8 @@ class RouterSpec extends BaseRouterSpec {
     val peerConnection = TestProbe()
     sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
-    assert(res.hops.last.nextNodeId === d)
+    assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId === d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd1))
@@ -380,8 +380,8 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.hops.map(_.nodeId).toList === a :: g :: Nil)
-    assert(res.hops.last.nextNodeId === h)
+    assert(res.routes.head.hops.map(_.nodeId).toList === a :: g :: Nil)
+    assert(res.routes.head.hops.last.nextNodeId === h)
 
     val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
@@ -451,9 +451,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.hops.map(_.nodeId).toList == preComputedRoute.dropRight(1).toList)
-    assert(response.hops.last.nextNodeId == preComputedRoute.last)
-    assert(response.hops.map(_.lastUpdate).toList == List(update_ab, update_bc, update_cd))
+    assert(response.routes.head.hops.map(_.nodeId).toList == preComputedRoute.dropRight(1).toList)
+    assert(response.routes.head.hops.last.nextNodeId == preComputedRoute.last)
+    assert(response.routes.head.hops.map(_.lastUpdate).toList == List(update_ab, update_bc, update_cd))
   }
 
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>
