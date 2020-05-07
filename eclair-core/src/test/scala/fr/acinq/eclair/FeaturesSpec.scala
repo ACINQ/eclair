@@ -29,13 +29,13 @@ import scodec.bits._
 class FeaturesSpec extends AnyFunSuite {
 
   test("'initial_routing_sync' feature") {
-    assert(hasFeature(hex"08", InitialRoutingSync, Some(FeatureSupport.Optional)))
-    assert(!hasFeature(hex"08", InitialRoutingSync, Some(FeatureSupport.Mandatory)))
+    assert(Features(hex"08").hasFeature(InitialRoutingSync, Some(FeatureSupport.Optional)))
+    assert(!Features(hex"08").hasFeature(InitialRoutingSync, Some(FeatureSupport.Mandatory)))
   }
 
   test("'data_loss_protect' feature") {
-    assert(hasFeature(hex"01", OptionDataLossProtect, Some(FeatureSupport.Mandatory)))
-    assert(hasFeature(hex"02", OptionDataLossProtect, Some(FeatureSupport.Optional)))
+    assert(Features(hex"01").hasFeature(OptionDataLossProtect, Some(FeatureSupport.Mandatory)))
+    assert(Features(hex"02").hasFeature(OptionDataLossProtect, Some(FeatureSupport.Optional)))
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
@@ -48,10 +48,10 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("'variable_length_onion' feature") {
-    assert(hasFeature(hex"0100", VariableLengthOnion))
-    assert(hasFeature(hex"0100", VariableLengthOnion, Some(FeatureSupport.Mandatory)))
-    assert(hasFeature(hex"0200", VariableLengthOnion, None))
-    assert(hasFeature(hex"0200", VariableLengthOnion, Some(FeatureSupport.Optional)))
+    assert(Features(hex"0100").hasFeature(VariableLengthOnion))
+    assert(Features(hex"0100").hasFeature(VariableLengthOnion, Some(FeatureSupport.Mandatory)))
+    assert(Features(hex"0200").hasFeature(VariableLengthOnion, None))
+    assert(Features(hex"0200").hasFeature(VariableLengthOnion, Some(FeatureSupport.Optional)))
   }
 
   test("features dependencies") {
@@ -79,31 +79,31 @@ class FeaturesSpec extends AnyFunSuite {
 
     for ((testCase, valid) <- testCases) {
       if (valid) {
-        assert(validateFeatureGraph(testCase) === None)
-        assert(validateFeatureGraph(testCase.bytes) === None)
+        assert(validateFeatureGraph(Features(testCase)) === None)
+        assert(validateFeatureGraph(Features(testCase.bytes)) === None)
       } else {
-        assert(validateFeatureGraph(testCase).nonEmpty)
-        assert(validateFeatureGraph(testCase.bytes).nonEmpty)
+        assert(validateFeatureGraph(Features(testCase)).nonEmpty)
+        assert(validateFeatureGraph(Features(testCase.bytes)).nonEmpty)
       }
     }
   }
 
   test("features compatibility") {
-    assert(isSupported(InitialRoutingSync, Optional))
-    assert(isSupported(OptionDataLossProtect, Mandatory))
-    assert(isSupported(OptionDataLossProtect, Optional))
-    assert(isSupported(ChannelRangeQueries, Mandatory))
-    assert(isSupported(ChannelRangeQueries, Optional))
-    assert(isSupported(ChannelRangeQueriesExtended, Mandatory))
-    assert(isSupported(ChannelRangeQueriesExtended, Optional))
-    assert(isSupported(VariableLengthOnion, Mandatory))
-    assert(isSupported(VariableLengthOnion, Optional))
-    assert(isSupported(PaymentSecret, Mandatory))
-    assert(isSupported(PaymentSecret, Optional))
-    assert(isSupported(BasicMultiPartPayment, Mandatory))
-    assert(isSupported(BasicMultiPartPayment, Optional))
-    assert(isSupported(Wumbo, Mandatory))
-    assert(isSupported(Wumbo, Optional))
+    assert(areSupported(Features(Set(ActivatedFeature(InitialRoutingSync, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(OptionDataLossProtect, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(OptionDataLossProtect, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueries, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueriesExtended, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueriesExtended, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(VariableLengthOnion, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(PaymentSecret, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(PaymentSecret, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(BasicMultiPartPayment, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(BasicMultiPartPayment, Optional)))))
+    assert(areSupported(Features(Set(ActivatedFeature(Wumbo, Mandatory)))))
+    assert(areSupported(Features(Set(ActivatedFeature(Wumbo, Optional)))))
 
     val testCases = Map(
       bin"            00000000000000001011" -> true,
@@ -131,63 +131,111 @@ class FeaturesSpec extends AnyFunSuite {
     }
   }
 
-  test("parse features from configuration") {
-    val commonConf = ConfigFactory.parseString(
-      """
-        |features {
-        |  option_data_loss_protect = optional
-        |  initial_routing_sync = optional
-        |  gossip_queries = optional
-        |  gossip_queries_ex = optional
-        |  var_onion_optin = optional
-        |  payment_secret = optional
-        |  basic_mpp = optional
-        |}
-      """.stripMargin)
-
-    assert(fromConfiguration(commonConf).toByteVector === hex"028a8a")
-
-    val conf = ConfigFactory.parseString(
-      """
-        |  features {
-        |    initial_routing_sync = optional
-        |    option_data_loss_protect = optional
-        |    gossip_queries = optional
-        |    gossip_queries_ex = mandatory
-        |    var_onion_optin = optional
-        |  }
-        |
-      """.stripMargin
+  test("features to bytes") {
+    val testCases = Map(
+      hex"" -> Features.empty,
+      hex"0100" -> Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory))),
+      hex"028a8a" -> Features(Set(ActivatedFeature(OptionDataLossProtect, Optional), ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueriesExtended, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional))),
+      hex"09004200" -> Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Mandatory)), Set(UnknownFeature(24), UnknownFeature(27))),
+      hex"52000000" -> Features(Set.empty, Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
     )
 
-    val features = fromConfiguration(conf)
-    assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
-    assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
-    assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
-    assert(features.hasFeature(ChannelRangeQueriesExtended, Some(Mandatory)))
-    assert(features.hasFeature(VariableLengthOnion, Some(Optional)))
+    for ((bin, features) <- testCases) {
+      assert(features.toByteVector === bin)
+      assert(Features(bin) === features)
+      val notMinimallyEncoded = Features(hex"00" ++ bin)
+      assert(notMinimallyEncoded === features)
+      assert(notMinimallyEncoded.toByteVector === bin) // features are minimally-encoded when converting to bytes
+    }
+  }
 
-    val confWithUnknownFeatures = ConfigFactory.parseString(
-      """
-        |features {
-        |  option_non_existent = mandatory # this is ignored
-        |  gossip_queries = optional
-        |  payment_secret = mandatory
-        |}
+  test("parse features from configuration") {
+    {
+      val conf = ConfigFactory.parseString(
+        """
+          |features {
+          |  option_data_loss_protect = optional
+          |  initial_routing_sync = optional
+          |  gossip_queries = optional
+          |  gossip_queries_ex = optional
+          |  var_onion_optin = optional
+          |  payment_secret = optional
+          |  basic_mpp = optional
+          |}
       """.stripMargin)
 
-    assert(fromConfiguration(confWithUnknownFeatures).toByteVector === hex"4080")
+      val features = fromConfiguration(conf)
+      assert(features.toByteVector === hex"028a8a")
+      assert(Features(hex"028a8a") === features)
+      assert(areSupported(features))
+      assert(validateFeatureGraph(features) === None)
+      assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
+      assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
+      assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
+      assert(features.hasFeature(ChannelRangeQueriesExtended, Some(Optional)))
+      assert(features.hasFeature(VariableLengthOnion, Some(Optional)))
+      assert(features.hasFeature(PaymentSecret, Some(Optional)))
+      assert(features.hasFeature(BasicMultiPartPayment, Some(Optional)))
+    }
 
-    val confWithUnknownSupport = ConfigFactory.parseString(
-      """
-        |features {
-        |  option_data_loss_protect = what
-        |  gossip_queries = optional
-        |  payment_secret = mandatory
-        |}
+    {
+      val conf = ConfigFactory.parseString(
+        """
+          |  features {
+          |    initial_routing_sync = optional
+          |    option_data_loss_protect = optional
+          |    gossip_queries = optional
+          |    gossip_queries_ex = mandatory
+          |    var_onion_optin = optional
+          |  }
+          |
+      """.stripMargin
+      )
+
+      val features = fromConfiguration(conf)
+      assert(features.toByteVector === hex"068a")
+      assert(Features(hex"068a") === features)
+      assert(areSupported(features))
+      assert(validateFeatureGraph(features) === None)
+      assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
+      assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
+      assert(!features.hasFeature(InitialRoutingSync, Some(Mandatory)))
+      assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
+      assert(features.hasFeature(ChannelRangeQueriesExtended, Some(Mandatory)))
+      assert(features.hasFeature(VariableLengthOnion, Some(Optional)))
+      assert(!features.hasFeature(PaymentSecret))
+    }
+
+    {
+      val confWithUnknownFeatures = ConfigFactory.parseString(
+        """
+          |features {
+          |  option_non_existent = mandatory # this is ignored
+          |  gossip_queries = optional
+          |  payment_secret = mandatory
+          |}
       """.stripMargin)
 
-    assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
+      val features = fromConfiguration(confWithUnknownFeatures)
+      assert(features.toByteVector === hex"4080")
+      assert(Features(hex"4080") === features)
+      assert(areSupported(features))
+      assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
+      assert(features.hasFeature(PaymentSecret, Some(Mandatory)))
+    }
+
+    {
+      val confWithUnknownSupport = ConfigFactory.parseString(
+        """
+          |features {
+          |  option_data_loss_protect = what
+          |  gossip_queries = optional
+          |  payment_secret = mandatory
+          |}
+      """.stripMargin)
+
+      assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
+    }
   }
 
 }
