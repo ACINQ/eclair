@@ -18,15 +18,12 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{PaymentSecret => PaymentSecretF, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, InactiveFeature, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Try
 
@@ -46,7 +43,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.Description(_) | PaymentRequest.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
-  private val featuresErr = validateFeatureGraph(features.bitmask)
+  private val featuresErr = Features.validateFeatureGraph(features.features)
   require(featuresErr.isEmpty, featuresErr.map(_.message))
   if (features.allowPaymentSecret) {
     require(tags.collect { case _: PaymentRequest.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
@@ -130,7 +127,7 @@ object PaymentRequest {
   def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecretF.optional))): PaymentRequest = {
+            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
@@ -333,20 +330,16 @@ object PaymentRequest {
    * Features supported or required for receiving this payment.
    */
   case class PaymentRequestFeatures(bitmask: BitVector) extends TaggedField {
-    lazy val supported: Boolean = areSupported(bitmask)
-    lazy val allowMultiPart: Boolean = hasFeature(bitmask, BasicMultiPartPayment)
-    lazy val allowPaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF)
-    lazy val requirePaymentSecret: Boolean = hasFeature(bitmask, PaymentSecretF, Some(Mandatory))
-    lazy val allowTrampoline: Boolean = hasFeature(bitmask, TrampolinePayment)
+    lazy val features: Features = Features(bitmask)
+    lazy val supported: Boolean = Features.areSupported(features)
+    lazy val allowMultiPart: Boolean = features.hasFeature(Features.BasicMultiPartPayment)
+    lazy val allowPaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret)
+    lazy val requirePaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory))
+    lazy val allowTrampoline: Boolean = features.hasFeature(Features.TrampolinePayment)
+
+    def toByteVector: ByteVector = features.toByteVector
 
     override def toString: String = s"Features(${bitmask.toBin})"
-
-    // When converting from BitVector to ByteVector, scodec pads right instead of left so we have to do this ourselves.
-    // We also want to enforce a minimal encoding of the feature bytes.
-    def toByteVector: ByteVector = {
-      val pad = if (bitmask.length % 8 == 0) 0 else 8 - bitmask.length % 8
-      bitmask.padLeft(bitmask.length + pad).bytes.dropWhile(_ == 0)
-    }
   }
 
   object PaymentRequestFeatures {

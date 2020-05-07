@@ -365,8 +365,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"inactive":[]}""", """"features":"8a"""")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"inactive":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -378,8 +378,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"inactive":[]}""", """"features":"8a"""")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"inactive":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
+        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)

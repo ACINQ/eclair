@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentTo
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, randomBytes32}
 
 /**
  * Created by PM on 29/08/2016.
@@ -51,7 +51,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
         case Some(invoice) if !invoice.features.supported =>
-          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(UnsupportedFeatures(invoice.features.toByteVector.toBitVector)) :: Nil)
+          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(UnsupportedFeatures(invoice.features.features)) :: Nil)
         case Some(invoice) if invoice.features.allowMultiPart && nodeParams.features.hasFeature(BasicMultiPartPayment) =>
           invoice.paymentSecret match {
             case Some(paymentSecret) =>
