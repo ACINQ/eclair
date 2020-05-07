@@ -15,8 +15,10 @@ that we release, you must use the build environment (OS, JDK, maven...) that we 
 To build the project and run the tests, simply run:
 
 ```shell
-mvn clean package
+mvn package
 ```
+
+NB: if the build fails, you may need to clean previously built artifacts with the `mvn clean` commands.
 
 NB: some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
 
@@ -25,13 +27,13 @@ NB: some of the tests use [Docker](https://www.docker.com/), so make sure your d
 To skip all tests, run:
 
 ```shell
-mvn clean package -DskipTests
+mvn package -DskipTests
 ```
 
 To only build the `eclair-node` module, run:
 
 ```shell
-mvn clean package -pl eclair-node -am -DskipTests
+mvn package -pl eclair-node -am -DskipTests
 ```
 
 To run the tests, run:
