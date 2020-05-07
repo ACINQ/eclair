@@ -18,6 +18,7 @@ To build the project and run the tests, simply run:
 mvn package
 ```
 
+NB: if the build fails, you may need to clean previously built artifacts with the `mvn clean` command.
 NB: some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
 
 ### Other build options
