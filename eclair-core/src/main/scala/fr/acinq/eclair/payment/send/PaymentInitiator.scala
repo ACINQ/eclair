@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
-import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop, RouteParams}
+import fr.acinq.eclair.router.Router.{Hop, NodeHop, Route, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, NodeParams, randomBytes32}
@@ -310,7 +310,7 @@ object PaymentInitiator {
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean,
                                additionalHops: Seq[NodeHop]) {
-    def fullRoute(hops: Seq[ChannelHop]): Seq[Hop] = hops ++ additionalHops
+    def fullRoute(route: Route): Seq[Hop] = route.hops ++ additionalHops
 
     def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeId, parts)
   }
