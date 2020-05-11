@@ -207,7 +207,7 @@ object FailureType extends Enumeration {
 
 object FailureSummary {
   def apply(f: PaymentFailure): FailureSummary = f match {
-    case f: LocalFailure => FailureSummary(FailureType.LOCAL, f.t.getMessage, f.route.map(h => HopSummary(h)).toList)
+    case LocalFailure(route, t) => FailureSummary(FailureType.LOCAL, t.getMessage, route.map(h => HopSummary(h)).toList)
     case RemoteFailure(route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList)
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }

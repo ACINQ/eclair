@@ -260,13 +260,13 @@ object NodeRelayer {
    */
   private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
     def tooManyRouteNotFound(failures: Seq[PaymentFailure]): Boolean = {
-      val routeNotFoundCount = failures.collect { case f: LocalFailure if f.t == RouteNotFound => f }.length
+      val routeNotFoundCount = failures.collect { case f@LocalFailure(_, RouteNotFound) => f }.length
       routeNotFoundCount > failures.length / 2
     }
 
     failures match {
       case Nil => None
-      case NonRetriableLocalFailure(_, PaymentError.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case LocalFailure(_, PaymentError.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
       case _ if tooManyRouteNotFound(failures) => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
