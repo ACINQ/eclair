@@ -30,7 +30,7 @@ import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{ShortChannelId, _}
 
 import scala.concurrent.duration._
-import scala.util.{Random, Try}
+import scala.util.{Failure, Random, Try}
 
 object RouteCalculation {
 
@@ -71,7 +71,7 @@ object RouteCalculation {
 
     log.info(s"finding a route ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
     log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-    findRoute(d.graph, r.source, r.target, r.amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = r.ignoreNodes, routeParams = params, currentBlockHeight)
+    findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignoreNodes, params, currentBlockHeight)
       .map(route => ctx.sender ! RouteResponse(route :: Nil))
       .recover { case t => ctx.sender ! Status.Failure(t) }
     d
@@ -147,6 +147,7 @@ object RouteCalculation {
    * @param localNodeId  sender node (payer)
    * @param targetNodeId target node (final recipient)
    * @param amount       the amount that will be sent along this route
+   * @param maxFee       the maximum fee of the resulting route
    * @param numRoutes    the number of shortest-paths to find
    * @param extraEdges   a set of extra edges we want to CONSIDER during the search
    * @param ignoredEdges a set of extra edges we want to IGNORE during the search
@@ -157,6 +158,7 @@ object RouteCalculation {
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
                 amount: MilliSatoshi,
+                maxFee: MilliSatoshi,
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
@@ -164,23 +166,16 @@ object RouteCalculation {
                 routeParams: RouteParams,
                 currentBlockHeight: Long): Try[Route] = Try {
 
-    if (localNodeId == targetNodeId) throw CannotRouteToSelf
+    if (localNodeId == targetNodeId) return Failure(CannotRouteToSelf)
 
-    def feeBaseOk(fee: MilliSatoshi): Boolean = fee <= routeParams.maxFeeBase
-
-    def feePctOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = {
-      val maxFee = amount * routeParams.maxFeePct
-      fee <= maxFee
-    }
-
-    def feeOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = feeBaseOk(fee) || feePctOk(fee, amount)
+    def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
 
     def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
 
     val boundaries: RichWeight => Boolean = { weight =>
-      feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
+      feeOk(weight.cost - amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
     }
 
     val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
@@ -189,10 +184,10 @@ object RouteCalculation {
     foundRoutes match {
       case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
         Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
-        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
+        return findRoute(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
       case Nil =>
         Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
-        throw RouteNotFound
+        return Failure(RouteNotFound)
       case foundRoutes =>
         val routes = foundRoutes.find(_.path.size == 1) match {
           case Some(directRoute) => directRoute :: Nil
