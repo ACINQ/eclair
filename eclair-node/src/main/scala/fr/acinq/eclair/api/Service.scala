@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.api
 
-import java.net.InetSocketAddress
 import java.util.UUID
 
 import akka.NotUsed

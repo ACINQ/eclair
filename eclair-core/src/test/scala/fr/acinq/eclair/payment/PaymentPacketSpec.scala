@@ -48,8 +48,6 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  val variableLengthOnionFeature = Features(Set(ActivatedFeature(VariableLengthOnion, Optional)))
-
   test("compute fees") {
     val feeBaseMsat = 150000 msat
     val feeProportionalMillionth = 4L
@@ -382,7 +380,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
 object PaymentPacketSpec {
 
-  val variableLengthOnionFeature = ByteVector.fromLong(1L << VariableLengthOnion.optional)
+  val variableLengthOnionFeature = Features(Set(ActivatedFeature(VariableLengthOnion, Optional)))
 
   /** Build onion from arbitrary tlv stream (potentially invalid). */
   def buildTlvOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[TlvStream[OnionTlv]], associatedData: ByteVector32): OnionRoutingPacket = {

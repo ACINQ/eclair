@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import com.typesafe.config.Config
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -74,6 +75,23 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
       buf = buf.set(i)
     }
     buf.reverse.bytes
+  }
+
+  /**
+    * Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
+    * off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
+    * We use a long enough mask to account for future features.
+    * TODO: remove that once eclair-mobile is patched.
+    */
+  def maskFeaturesForEclairMobile(): Features = {
+    Features(
+      activated = activated.filter {
+        case ActivatedFeature(PaymentSecret, _) => false
+        case ActivatedFeature(BasicMultiPartPayment, _) => false
+        case _ => true
+      },
+      unknown = unknown
+    )
   }
 
 }

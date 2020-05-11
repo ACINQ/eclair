@@ -205,7 +205,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("don't sync if whitelist doesn't contain peer", Tag("sync-whitelist-random")) { f =>
     import f._
-    val remoteInit = wire.Init(Features(bin"0000001010000000")) // bob supports channel range queries
+    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional)))) // bob supports channel range queries
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = false)
   }
 

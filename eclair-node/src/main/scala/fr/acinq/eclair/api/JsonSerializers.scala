@@ -336,7 +336,7 @@ object JsonSupport extends Json4sSupport {
         JField("name", JString(a.feature.rfcName)),
         JField("support", JString(a.support.toString))
       )}.toList)),
-    JField("inactive", JArray(features.inactive.map { i =>
+    JField("unknown", JArray(features.unknown.map { i =>
       JObject(
         JField("featureBit", JInt(i.bitIndex))
       )}.toList))
