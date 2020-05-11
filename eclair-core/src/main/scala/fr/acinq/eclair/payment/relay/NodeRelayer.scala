@@ -260,7 +260,7 @@ object NodeRelayer {
    */
   private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
     def tooManyRouteNotFound(failures: Seq[PaymentFailure]): Boolean = {
-      val routeNotFoundCount = failures.count(_ == LocalFailure(Nil, RouteNotFound))
+      val routeNotFoundCount = failures.collect { case f@LocalFailure(_, RouteNotFound) => f }.length
       routeNotFoundCount > failures.length / 2
     }
 
