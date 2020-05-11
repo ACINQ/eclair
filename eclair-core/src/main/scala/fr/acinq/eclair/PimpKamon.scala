@@ -45,7 +45,7 @@ object KamonExt {
    */
   def failSpan(span: Span, failure: PaymentFailure) = {
     failure match {
-      case LocalFailure(t) => span.fail("local failure", t)
+      case f: LocalFailure => span.fail("local failure", f.t)
       case RemoteFailure(_, e) => span.fail(s"remote failure: origin=${e.originNode} error=${e.failureMessage}")
       case UnreadableRemoteFailure(_) => span.fail("unreadable remote failure")
     }

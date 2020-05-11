@@ -18,8 +18,8 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import akka.actor.{ActorRef, ActorSystem}
-import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import akka.actor.ActorRef
+import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._
@@ -237,7 +237,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id === id)
-    assert(fail.failures === LocalFailure(PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
+    assert(fail.failures === NonRetriableLocalFailure(Nil, PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
 
     multiPartPayFsm.expectNoMsg(50 millis)
     payFsm.expectNoMsg(50 millis)

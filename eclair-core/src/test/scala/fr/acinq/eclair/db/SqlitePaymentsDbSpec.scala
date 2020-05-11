@@ -29,7 +29,6 @@ import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 class SqlitePaymentsDbSpec extends AnyFunSuite {
@@ -245,7 +244,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     using(connection.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, completed_at, failures) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, ps1.id.toString)
       statement.setString(2, ps1.parentId.toString)
-      statement.setString(3, ps1.externalId.get.toString)
+      statement.setString(3, ps1.externalId.get)
       statement.setBytes(4, ps1.paymentHash.toArray)
       statement.setLong(5, ps1.amount.toLong)
       statement.setBytes(6, ps1.recipientNodeId.value.toArray)
@@ -258,7 +257,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     using(connection.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, ps2.id.toString)
       statement.setString(2, ps2.parentId.toString)
-      statement.setString(3, ps2.externalId.get.toString)
+      statement.setString(3, ps2.externalId.get)
       statement.setBytes(4, ps2.paymentHash.toArray)
       statement.setLong(5, ps2.amount.toLong)
       statement.setBytes(6, ps2.recipientNodeId.value.toArray)
@@ -394,8 +393,8 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310))
     val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310))
     assert(db.getOutgoingPayment(s3.id) === Some(ss3))
-    db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(new RuntimeException("woops")), RemoteFailure(Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
-    val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", Nil), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320))
+    db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(RetriableLocalFailure(Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
+    val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42))))), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320))
     assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
     // can't update again once it's in a final state

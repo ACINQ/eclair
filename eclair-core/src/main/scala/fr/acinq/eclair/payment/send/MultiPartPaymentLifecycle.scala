@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannel, OutgoingChannels}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.router.Router.{ChannelHop, GetNetworkStats, GetNetworkStatsResponse, RouteParams, TickComputeNetworkStats}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, ToMilliSatoshiConversion}
@@ -41,7 +41,6 @@ import kamon.context.Context
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
-import scala.compat.Platform
 import scala.util.Random
 
 /**
@@ -96,8 +95,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.request.totalAmount, channels, d.networkStats, d.request, randomize = false)
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.request.totalAmount} with our current balance")
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(PaymentError.BalanceTooLow)))
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, LocalFailure(PaymentError.BalanceTooLow) :: Nil, Set.empty)
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(NonRetriableLocalFailure(Nil, PaymentError.BalanceTooLow)))
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, NonRetriableLocalFailure(Nil, PaymentError.BalanceTooLow) :: Nil, Set.empty)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size)
         Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
@@ -155,8 +154,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (remaining, payments) = splitPayment(nodeParams, d.toSend, filteredChannels, d.networkStats, d.request, randomize = true) // we randomize channel selection when we retry
       if (remaining > 0.msat) {
         log.warning(s"cannot send ${d.toSend} with our current balance")
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(PaymentError.BalanceTooLow)))
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ LocalFailure(PaymentError.BalanceTooLow), d.pending.keySet)
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(NonRetriableLocalFailure(Nil, PaymentError.BalanceTooLow)))
+        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ NonRetriableLocalFailure(Nil, PaymentError.BalanceTooLow), d.pending.keySet)
       } else {
         val pending = setFees(d.request.routeParams, payments, payments.size + d.pending.size)
         pending.foreach { case (childId, payment) => spawnChildPaymentFsm(childId) ! payment }
@@ -270,7 +269,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (isFromFinalRecipient) {
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
     } else if (d.remainingAttempts == 0) {
-      val failure = LocalFailure(PaymentError.RetryExhausted)
+      val failure = NonRetriableLocalFailure(Nil, PaymentError.RetryExhausted)
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure))
       Some(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
     } else {
@@ -390,7 +389,7 @@ object MultiPartPaymentLifecycle {
 
   /** If the payment failed immediately with a RouteNotFound, the channel we selected should be ignored in retries. */
   private def shouldBlacklistChannel(pf: PaymentFailed): Boolean = pf.failures match {
-    case LocalFailure(RouteNotFound) :: Nil => true
+    case NonRetriableLocalFailure(_, RouteNotFound) :: Nil => true
     case _ => false
   }
 

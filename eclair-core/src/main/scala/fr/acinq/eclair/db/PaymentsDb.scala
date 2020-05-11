@@ -25,8 +25,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
-import scala.compat.Platform
-
 trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
@@ -209,7 +207,7 @@ object FailureType extends Enumeration {
 
 object FailureSummary {
   def apply(f: PaymentFailure): FailureSummary = f match {
-    case LocalFailure(t) => FailureSummary(FailureType.LOCAL, t.getMessage, Nil)
+    case f: LocalFailure => FailureSummary(FailureType.LOCAL, f.t.getMessage, f.route.map(h => HopSummary(h)).toList)
     case RemoteFailure(route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList)
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }

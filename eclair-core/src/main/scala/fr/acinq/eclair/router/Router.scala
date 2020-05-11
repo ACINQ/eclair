@@ -375,8 +375,16 @@ object Router {
 
   case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
-  case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], allowEmpty: Boolean = false) {
     require(allowEmpty || hops.nonEmpty, "route cannot be empty")
+    val length = hops.length
+
+    /** This method retrieves the channel update that we used when we built the route. */
+    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
+  }
+
+  case class RouteResponse(routes: Seq[Route]) {
+    require(routes.nonEmpty, "routes cannot be empty")
   }
 
   // @formatter:off
