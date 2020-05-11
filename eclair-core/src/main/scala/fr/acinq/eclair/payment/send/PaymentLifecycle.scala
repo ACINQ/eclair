@@ -113,8 +113,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, Route(c.finalPayload.amount, hops))
 
     case Event(Status.Failure(t), WaitingForRoute(s, _, failures, _, _)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(Nil, t))).increment()
-      onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t)))
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(NonRetriableLocalFailure(Nil, t))).increment()
+      onFailure(s, PaymentFailed(id, paymentHash, failures :+ NonRetriableLocalFailure(Nil, t)))
       myStop()
   }
 
@@ -229,16 +229,16 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       stay
 
     case Event(Status.Failure(t), data@WaitingForComplete(s, c, _, failures, _, _, _, hops)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(hops), t))).increment()
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RetriableLocalFailure(cfg.fullRoute(hops), t))).increment()
       val isFatal = failures.size + 1 >= c.maxAttempts || // retries exhausted
         c.routePrefix.nonEmpty || // first hop was selected by the sender and failed, it doesn't make sense to retry
         t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs
       if (isFatal) {
-        onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(cfg.fullRoute(hops), t)))
+        onFailure(s, PaymentFailed(id, paymentHash, failures :+ NonRetriableLocalFailure(cfg.fullRoute(hops), t)))
         myStop()
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-        val failure = LocalFailure(cfg.fullRoute(hops), t)
+        val failure = RetriableLocalFailure(cfg.fullRoute(hops), t)
         retry(failure, data)
       }
   }

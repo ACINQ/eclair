@@ -331,7 +331,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val faultyLocalPayments = pending.filter { case (_, p) => getFirstHopShortChannelId(p) == faultyLocalChannelId }
     val faultyRemotePayment = pending.filter { case (_, p) => getFirstHopShortChannelId(p) != faultyLocalChannelId }.head
     faultyLocalPayments.keys.foreach(id => {
-      childPayFsm.send(payFsm, PaymentFailed(id, paymentHash, LocalFailure(Nil, RouteNotFound) :: Nil))
+      childPayFsm.send(payFsm, PaymentFailed(id, paymentHash, NonRetriableLocalFailure(Nil, RouteNotFound) :: Nil))
     })
     childPayFsm.send(payFsm, PaymentFailed(faultyRemotePayment._1, paymentHash, UnreadableRemoteFailure(Nil) :: Nil))
 
@@ -345,7 +345,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     // New payments should be sent that match the failed amount.
     waitUntilAmountSent(f, faultyRemotePayment._2.finalPayload.amount + faultyLocalPayments.values.map(_.finalPayload.amount).sum)
     val stateData = payFsm.stateData.asInstanceOf[PaymentProgress]
-    assert(stateData.failures.toSet === Set(LocalFailure(Nil, RouteNotFound), UnreadableRemoteFailure(Nil)))
+    assert(stateData.failures.toSet === Set(NonRetriableLocalFailure(Nil, RouteNotFound), UnreadableRemoteFailure(Nil)))
     assert(stateData.pending.values.forall(p => getFirstHopShortChannelId(p) != faultyLocalChannelId))
   }
 

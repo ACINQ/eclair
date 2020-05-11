@@ -237,7 +237,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id === id)
-    assert(fail.failures === LocalFailure(Nil, PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
+    assert(fail.failures === NonRetriableLocalFailure(Nil, PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
 
     multiPartPayFsm.expectNoMsg(50 millis)
     payFsm.expectNoMsg(50 millis)

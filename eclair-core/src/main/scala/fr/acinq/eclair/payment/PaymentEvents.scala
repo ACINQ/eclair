@@ -116,8 +116,15 @@ sealed trait PaymentFailure {
   def route: Seq[Hop]
 }
 
-/** A failure happened locally, preventing the payment from being sent (e.g. no route found). */
-case class LocalFailure(route: Seq[Hop], t: Throwable) extends PaymentFailure
+sealed trait LocalFailure {
+  def t: Throwable
+}
+
+/** A retriable local failure (e.g. local channel unavailable or doesn't have enough outgoing capacity). */
+case class RetriableLocalFailure(route: Seq[Hop], t: Throwable) extends PaymentFailure with LocalFailure
+
+/** A non-retriable local failure (e.g. no route found). */
+case class NonRetriableLocalFailure(route: Seq[Hop], t: Throwable) extends PaymentFailure with LocalFailure
 
 /** A remote node failed the payment and we were able to decrypt the onion failure packet. */
 case class RemoteFailure(route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
@@ -144,10 +151,12 @@ object PaymentFailure {
    */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures.map {
-      case LocalFailure(hops, AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(hops, t) // we're interested in the error which caused the add-htlc to fail
+      // we're interested in the error which caused the add-htlc to fail
+      case RetriableLocalFailure(hops, AddHtlcFailed(_, _, t, _, _, _)) => RetriableLocalFailure(hops, t)
+      case NonRetriableLocalFailure(hops, AddHtlcFailed(_, _, t, _, _, _)) => NonRetriableLocalFailure(hops, t)
       case other => other
     } match {
-      case previousFailures :+ LocalFailure(_, RouteNotFound) if previousFailures.nonEmpty => previousFailures
+      case previousFailures :+ NonRetriableLocalFailure(_, RouteNotFound) if previousFailures.nonEmpty => previousFailures
       case other => other
     }
   }
@@ -188,7 +197,7 @@ object PaymentFailure {
       // We don't know which node is sending garbage, let's blacklist all nodes except the one we are directly connected to and the final recipient.
       val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
       (ignoreNodes ++ blacklist, ignoreChannels)
-    case LocalFailure(hops, _) => hops.headOption match {
+    case f: LocalFailure => f.route.headOption match {
       case Some(hop: ChannelHop) =>
         val faultyChannel = ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
         (ignoreNodes, ignoreChannels + faultyChannel)
