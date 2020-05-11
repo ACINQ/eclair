@@ -210,14 +210,12 @@ object Graph {
       if (current.key != sourceNode) {
         val currentWeight = bestWeights.get(current.key) // NB: there is always an entry for the current in the 'weights' map
         // build the neighbors with optional extra edges
-        val currentNeighbors = extraEdges.isEmpty match {
-          case true => g.getIncomingEdgesOf(current.key)
-          case false =>
-            val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
-            // the resulting set must have only one element per shortChannelId; we prioritize extra edges
-            g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
+        val neighborEdges = {
+          val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
+          // the resulting set must have only one element per shortChannelId; we prioritize extra edges
+          g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
         }
-        currentNeighbors.foreach { edge =>
+        neighborEdges.foreach { edge =>
           val neighbor = edge.desc.a
           // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
           // will be relayed through that edge is the one in `currentWeight`.

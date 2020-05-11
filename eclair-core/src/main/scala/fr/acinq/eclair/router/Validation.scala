@@ -293,10 +293,14 @@ object Validation {
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (duplicate)", u)
         sendDecision(origins, GossipDecision.Duplicate(u))
-        // NB: we update the graph because the balances may have changed even if the channel_update is the same.
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
+        update match {
+          case Left(_) =>
+            // NB: we update the graph because the balances may have changed even if the channel_update is the same.
+            val pc1 = pc.applyChannelUpdate(update)
+            val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+            d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
+          case Right(_) => d
+        }
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         sendDecision(origins, GossipDecision.InvalidSignature(u))
