@@ -342,6 +342,11 @@ class RouterSpec extends BaseRouterSpec {
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
+
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    val res1 = sender.expectMsgType[RouteResponse]
+    assert(res1.hops.map(_.nodeId).toList === a :: g :: Nil)
+    assert(res1.hops.last.nextNodeId === h)
   }
 
   test("route found (with extra routing info)") { fixture =>
@@ -387,6 +392,27 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
     sender.expectMsg(Failure(RouteNotFound))
+  }
+
+  test("route not found (balance too low)") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+
+    // Via private channels.
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.expectMsgType[RouteResponse]
+    sender.send(router, RouteRequest(a, h, 50000000 msat))
+    sender.expectMsg(Failure(RouteNotFound))
+
+    // Via public channels.
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.expectMsgType[RouteResponse]
+    val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
+    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
+    sender.send(router, RouteRequest(a, d, 12000000 msat))
+    sender.expectMsg(Failure(RouteNotFound))
+    sender.send(router, RouteRequest(a, d, 5000000 msat))
+    sender.expectMsgType[RouteResponse]
   }
 
   test("temporary channel exclusion") { fixture =>
@@ -495,37 +521,64 @@ class RouterSpec extends BaseRouterSpec {
     val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
     assert(channel_ab.meta_opt === None)
 
-    // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
-    val balances1 = Set[Option[MilliSatoshi]](Some(10000 msat), Some(15000 msat))
-    val commitments1 = CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, b, announceChannel = true)
-    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
-    sender.send(router, GetRoutingState)
-    val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(Set(channel_ab1.meta_opt.map(_.balance1), channel_ab1.meta_opt.map(_.balance2)) === balances1)
-    // And the graph should be updated too.
-    sender.send(router, 'data)
-    val g1 = sender.expectMsgType[Data].graph
-    val edge_ab1 = g1.getEdge(ChannelDesc(channelId_ab, a, b)).get
-    val edge_ba1 = g1.getEdge(ChannelDesc(channelId_ab, b, a)).get
-    assert(edge_ab1.capacity == channel_ab.capacity && edge_ba1.capacity == channel_ab.capacity)
-    assert(balances1.contains(edge_ab1.balance_opt))
-    assert(edge_ba1.balance_opt === None)
+    {
+      // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
+      val balances = Set[Option[MilliSatoshi]](Some(10000 msat), Some(15000 msat))
+      val commitments = CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, b, announceChannel = true)
+      sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments))
+      sender.send(router, GetRoutingState)
+      val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
+      // And the graph should be updated too.
+      sender.send(router, Symbol("data"))
+      val g = sender.expectMsgType[Data].graph
+      val edge_ab = g.getEdge(ChannelDesc(channelId_ab, a, b)).get
+      val edge_ba = g.getEdge(ChannelDesc(channelId_ab, b, a)).get
+      assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
+      assert(balances.contains(edge_ab.balance_opt))
+      assert(edge_ba.balance_opt === None)
+    }
 
-    // When HTLCs are relayed through the channel, balance changes are sent to the router.
-    val balances2 = Set[Option[MilliSatoshi]](Some(12000 msat), Some(13000 msat))
-    val commitments2 = CommitmentsSpec.makeCommitments(12000 msat, 13000 msat, a, b, announceChannel = true)
-    sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ab, commitments2))
-    sender.send(router, GetRoutingState)
-    val channel_ab2 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-    assert(Set(channel_ab2.meta_opt.map(_.balance1), channel_ab2.meta_opt.map(_.balance2)) === balances2)
-    // And the graph should be updated too.
-    sender.send(router, 'data)
-    val g2 = sender.expectMsgType[Data].graph
-    val edge_ab2 = g2.getEdge(ChannelDesc(channelId_ab, a, b)).get
-    val edge_ba2 = g2.getEdge(ChannelDesc(channelId_ab, b, a)).get
-    assert(edge_ab2.capacity == channel_ab.capacity && edge_ba2.capacity == channel_ab.capacity)
-    assert(balances2.contains(edge_ab2.balance_opt))
-    assert(edge_ba2.balance_opt === None)
+    {
+      // First we make sure we aren't in the "pending rebroadcast" state for this channel update.
+      sender.send(router, TickBroadcast)
+      sender.send(router, Symbol("data"))
+      assert(sender.expectMsgType[Data].rebroadcast.updates.isEmpty)
+
+      // Then we update the balance without changing the contents of the channel update; the graph should still be updated.
+      val balances = Set[Option[MilliSatoshi]](Some(11000 msat), Some(14000 msat))
+      val commitments = CommitmentsSpec.makeCommitments(11000 msat, 14000 msat, a, b, announceChannel = true)
+      sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments))
+      sender.send(router, GetRoutingState)
+      val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
+      // And the graph should be updated too.
+      sender.send(router, Symbol("data"))
+      val g = sender.expectMsgType[Data].graph
+      val edge_ab = g.getEdge(ChannelDesc(channelId_ab, a, b)).get
+      val edge_ba = g.getEdge(ChannelDesc(channelId_ab, b, a)).get
+      assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
+      assert(balances.contains(edge_ab.balance_opt))
+      assert(edge_ba.balance_opt === None)
+    }
+
+    {
+      // When HTLCs are relayed through the channel, balance changes are sent to the router.
+      val balances = Set[Option[MilliSatoshi]](Some(12000 msat), Some(13000 msat))
+      val commitments = CommitmentsSpec.makeCommitments(12000 msat, 13000 msat, a, b, announceChannel = true)
+      sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ab, commitments))
+      sender.send(router, GetRoutingState)
+      val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
+      // And the graph should be updated too.
+      sender.send(router, Symbol("data"))
+      val g = sender.expectMsgType[Data].graph
+      val edge_ab = g.getEdge(ChannelDesc(channelId_ab, a, b)).get
+      val edge_ba = g.getEdge(ChannelDesc(channelId_ab, b, a)).get
+      assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
+      assert(balances.contains(edge_ab.balance_opt))
+      assert(edge_ba.balance_opt === None)
+    }
   }
 
 }
