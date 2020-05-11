@@ -209,6 +209,28 @@ class GraphSpec extends AnyFunSuite {
     assert(!withoutE.containsEdge(descFromNodes(6, b, e)))
   }
 
+  test("update edge balance") {
+    val edgeAB = makeEdge(1L, a, b, 0 msat, 0, capacity = 1500 sat, balance_opt = Some(300000 msat))
+    val edgeBC = makeEdge(2L, b, c, 0 msat, 0, capacity = 500 sat, balance_opt = None)
+    val edgeAD = makeEdge(3L, a, d, 0 msat, 0, capacity = 1000 sat, balance_opt = Some(50000 msat))
+    val edgeDC = makeEdge(4L, d, c, 0 msat, 0, capacity = 800 sat, balance_opt = Some(50000 msat))
+    val graph = DirectedGraph(Seq(edgeAB, edgeAD, edgeBC, edgeDC))
+
+    assert(graph.edgesOf(a).toSet === Set(edgeAB, edgeAD))
+    assert(graph.getIncomingEdgesOf(a) === Nil)
+    assert(graph.edgesOf(c) === Nil)
+    assert(graph.getIncomingEdgesOf(c).toSet === Set(edgeBC, edgeDC))
+
+    val edgeAB1 = edgeAB.copy(balance_opt = Some(200000 msat))
+    val edgeBC1 = edgeBC.copy(balance_opt = Some(150000 msat))
+    val graph1 = graph.addEdge(edgeAB1).addEdge(edgeBC1)
+
+    assert(graph1.edgesOf(a).toSet === Set(edgeAB1, edgeAD))
+    assert(graph1.getIncomingEdgesOf(a) === Nil)
+    assert(graph1.edgesOf(c) === Nil)
+    assert(graph1.getIncomingEdgesOf(c).toSet === Set(edgeBC1, edgeDC))
+  }
+
   def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = makeEdge(shortChannelId, a, b, 0 msat, 0).desc
 
   def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
