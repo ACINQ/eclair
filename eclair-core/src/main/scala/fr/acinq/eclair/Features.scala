@@ -187,7 +187,7 @@ object Features {
     val mandatory = 50
   }
 
-  private val knownFeatures: Set[Feature] = Set(
+  val knownFeatures: Set[Feature] = Set(
     OptionDataLossProtect,
     InitialRoutingSync,
     ChannelRangeQueries,
