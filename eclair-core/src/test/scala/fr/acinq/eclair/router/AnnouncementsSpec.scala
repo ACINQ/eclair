@@ -49,7 +49,7 @@ class AnnouncementsSpec extends AnyFunSuite {
 
   test("create valid signed node announcement") {
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, Alice.nodeParams.features)
-    assert(Features.hasFeature(ann.features, Features.VariableLengthOnion, Some(FeatureSupport.Optional)))
+    assert(Features(ann.features).hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Optional)))
     assert(checkSig(ann))
     assert(checkSig(ann.copy(timestamp = 153)) === false)
   }

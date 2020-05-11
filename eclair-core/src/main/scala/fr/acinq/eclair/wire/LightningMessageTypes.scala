@@ -23,7 +23,7 @@ import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.Try
@@ -46,7 +46,7 @@ sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
-case class Init(features: ByteVector, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
+case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
 }
 
