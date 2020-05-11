@@ -101,21 +101,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
-        case None =>
-          // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
-          // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
-          // We use a long enough mask to account for future features.
-          // TODO: remove that once eclair-mobile is patched.
-          val tweakedFeatures = BitVector.bits(nodeParams.features.toByteVector.bits.reverse.toIndexedSeq.zipWithIndex.map {
-            // we disable those bits if they are set...
-            case (true, 14) => false
-            case (true, 15) => false
-            case (true, 16) => false
-            case (true, 17) => false
-            // ... and leave the others untouched
-            case (value, _) => value
-          }).reverse.bytes.dropWhile(_ == 0)
-          Features(tweakedFeatures)
+        case None => nodeParams.features.maskFeaturesForEclairMobile()
       }
       log.info(s"using features=$localFeatures")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
