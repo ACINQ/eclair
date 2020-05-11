@@ -238,4 +238,17 @@ class FeaturesSpec extends AnyFunSuite {
     }
   }
 
+  test("'knownFeatures' contains all our known features (reflection test)") {
+    import scala.reflect.runtime.universe._
+    import scala.reflect.runtime.{ universe => runtime }
+    val mirror = runtime.runtimeMirror(ClassLoader.getSystemClassLoader)
+    val subclasses = typeOf[Feature].typeSymbol.asClass.knownDirectSubclasses
+    val knownFeatures = subclasses.map({ desc =>
+      val mod = mirror.staticModule(desc.asClass.fullName)
+      mirror.reflectModule(mod).instance.asInstanceOf[Feature]
+    })
+
+    assert((knownFeatures -- Features.knownFeatures).isEmpty)
+  }
+
 }
