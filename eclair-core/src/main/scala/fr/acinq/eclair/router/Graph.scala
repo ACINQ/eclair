@@ -208,7 +208,7 @@ object Graph {
       // node with the smallest distance from the target
       val current = toExplore.deleteMin().getKey // O(log(n))
       if (current.key != sourceNode) {
-        val currentWeight = bestWeights.get(current.key) // NB: there is always an entry for the current in the 'weights' map
+        val currentWeight = bestWeights.get(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
         // build the neighbors with optional extra edges
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
