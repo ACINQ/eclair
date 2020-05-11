@@ -58,7 +58,10 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     ActivatedFeature(ChannelRangeQueriesExtended, Optional),
     ActivatedFeature(VariableLengthOnion, Optional)))
 
-  val featuresWithMpp = Features(defaultTestFeatures.activated + ActivatedFeature(BasicMultiPartPayment, Optional))
+  val featuresWithMpp = Features(
+    defaultTestFeatures.activated +
+      ActivatedFeature(PaymentSecret, Optional) +
+      ActivatedFeature(BasicMultiPartPayment, Optional))
 
   override def withFixture(test: OneArgTest): Outcome = {
     val features = if (test.tags.contains("mpp_disabled")) defaultTestFeatures else featuresWithMpp

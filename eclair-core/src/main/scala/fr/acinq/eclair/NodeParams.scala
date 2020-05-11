@@ -147,7 +147,7 @@ object NodeParams {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
     }
 
-    // since v0.3.5 features cannot be a byte vector (hex string)
+    // since v0.4.1 features cannot be a byte vector (hex string)
     val isFeatureByteVector = config.getValue("features").valueType() == ConfigValueType.STRING
     require(!isFeatureByteVector, "configuration key 'features' have moved from bytevector to human readable (ex: 'feature-name' = optional/mandatory)")
 
