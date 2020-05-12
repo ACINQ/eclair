@@ -16,10 +16,11 @@
 
 package fr.acinq.eclair.db
 
+import java.sql.SQLException
+
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import org.scalatest.funsuite.AnyFunSuite
-import org.sqlite.SQLiteException
 
 class SqliteUtilsSpec extends AnyFunSuite {
 
@@ -41,7 +42,7 @@ class SqliteUtilsSpec extends AnyFunSuite {
       assert(!results.next())
     }
 
-    assertThrows[SQLiteException](using(conn.createStatement(), inTransaction = true) { statement =>
+    assertThrows[SQLException](using(conn.createStatement(), inTransaction = true) { statement =>
       statement.executeUpdate("INSERT INTO utils_test VALUES (3, 3)")
       statement.executeUpdate("INSERT INTO utils_test VALUES (1, 3)") // should throw (primary key violation)
     })
