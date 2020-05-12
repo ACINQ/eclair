@@ -29,7 +29,6 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{ShortChannelId, _}
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.{Random, Try}
 
@@ -49,7 +48,7 @@ object RouteCalculation {
         // select the largest edge (using balance when available, otherwise capacity).
         val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
         val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
-        ctx.sender ! RouteResponse(hops, Set.empty, Set.empty)
+        ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
       case _ => // some nodes in the supplied route aren't connected in our graph
         ctx.sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
     }
@@ -69,16 +68,16 @@ object RouteCalculation {
     val defaultRouteParams: RouteParams = getDefaultRouteParams(routerConf)
     val params = r.routeParams.getOrElse(defaultRouteParams)
     val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
-    
+
     log.info(s"finding a route ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
     log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
     findRoute(d.graph, r.source, r.target, r.amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = r.ignoreNodes, routeParams = params, currentBlockHeight)
-      .map(route => ctx.sender ! RouteResponse(route, r.ignoreNodes, r.ignoreChannels))
+      .map(route => ctx.sender ! RouteResponse(route :: Nil))
       .recover { case t => ctx.sender ! Status.Failure(t) }
     d
   }
 
-  def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
+  private def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
     // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
     // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
     ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, System.currentTimeMillis.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
@@ -100,11 +99,9 @@ object RouteCalculation {
   }
 
   /** Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount. */
-  def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi + 1.sat
+  private def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi + 1.sat
 
-  /**
-   * This method is used after a payment failed, and we want to exclude some nodes that we know are failing
-   */
+  /** This method is used after a payment failed, and we want to exclude some nodes that we know are failing */
   def getIgnoredChannelDesc(channels: Map[ShortChannelId, PublicChannel], ignoreNodes: Set[PublicKey]): Iterable[ChannelDesc] = {
     val desc = if (ignoreNodes.isEmpty) {
       Iterable.empty[ChannelDesc]
@@ -117,18 +114,16 @@ object RouteCalculation {
     desc
   }
 
-  /**
-   * https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications
-   */
+  /** https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications */
   val ROUTE_MAX_LENGTH = 20
 
-  // Max allowed CLTV for a route
+  /** Max allowed CLTV for a route (one week) */
   val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(1008)
 
-  // The default number of routes we'll search for when findRoute is called with randomize = true
+  /** The default number of routes we'll search for when findRoute is called with randomize = true */
   val DEFAULT_ROUTES_COUNT = 3
 
-  def getDefaultRouteParams(routerConf: RouterConf) = RouteParams(
+  def getDefaultRouteParams(routerConf: RouterConf): RouteParams = RouteParams(
     randomize = routerConf.randomizeRouteSelection,
     maxFeeBase = routerConf.searchMaxFeeBase.toMilliSatoshi,
     maxFeePct = routerConf.searchMaxFeePct,
@@ -167,7 +162,7 @@ object RouteCalculation {
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
-                currentBlockHeight: Long): Try[Seq[ChannelHop]] = Try {
+                currentBlockHeight: Long): Try[Route] = Try {
 
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
@@ -207,7 +202,8 @@ object RouteCalculation {
         val randomizedRoutes = if (routeParams.randomize) Random.shuffle(routes) else routes
         val route = randomizedRoutes.head.path.map(graphEdgeToHop)
         Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(route.length)
-        route
+        Route(amount, route)
     }
   }
+
 }
