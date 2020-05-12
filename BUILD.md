@@ -26,7 +26,7 @@ NB: some of the tests use [Docker](https://www.docker.com/), so make sure your d
 To skip all tests, run:
 
 ```shell
-mvn package -DskipTests
+mvn package -Dmaven.test.skip=true
 ```
 
 To only build the `eclair-node` module, run:
@@ -45,6 +45,12 @@ To run tests for a specific class, run:
 
 ```shell
 mvn test -Dsuites=*<TestClassName>
+```
+
+To install eclair-core into your local maven repository, run:
+
+```shell
+mvn clean install -pl eclair-core -am -Dmaven.test.skip=true
 ```
 
 ## Build the API documentation
