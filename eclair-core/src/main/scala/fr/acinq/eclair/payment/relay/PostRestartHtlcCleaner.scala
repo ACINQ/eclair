@@ -106,6 +106,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       Metrics.PendingNotRelayed.update(notRelayed1.size)
       context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
 
+    case _: ChannelStateChanged => // ignore other channel state changes
+
     case ff: Relayer.ForwardFulfill =>
       log.info("htlc fulfilled downstream: ({},{})", ff.htlc.channelId, ff.htlc.id)
       handleDownstreamFulfill(brokenHtlcs, ff.to, ff.htlc, ff.paymentPreimage)

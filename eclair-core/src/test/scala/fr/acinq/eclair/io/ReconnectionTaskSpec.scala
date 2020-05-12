@@ -33,7 +33,7 @@ import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
-  val fakeIPAddress = NodeAddress.fromParts("localhost", 42000).get
+  val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
   val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
 
   val PeerNothingData = Peer.Nothing
@@ -134,13 +134,13 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect) // we send it manually in order to not have to actually wait (duplicates don't matter since we look at transitions sequentially)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
-    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData1: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData1: WaitingData) = monitor.expectMsgType[TransitionWithData](60 seconds)
     assert(waitingData1.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 2))
 
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
 
-    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData2: WaitingData) = monitor.expectMsgType[TransitionWithData]
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, waitingData2: WaitingData) = monitor.expectMsgType[TransitionWithData](60 seconds)
     assert(waitingData2.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 4))
 
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
