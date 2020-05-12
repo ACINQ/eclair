@@ -1,6 +1,8 @@
 ## PostgreSQL Configuration
 
-By default Eclair stores its data on the machine's local file system (typically in `~/.eclair` directory) using SQLite. 
+By default Eclair stores its data on the machine's local file system (typically in `~/.eclair` directory) using SQLite.
+
+Also it supports PostgreSQL as a database backend. Eclair was tested with PostgreSQL version 10.6 and higher. 
 
 To enable PostgreSQL support set `driver` parameter to `psql`:
 
