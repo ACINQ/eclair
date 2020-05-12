@@ -90,7 +90,7 @@ object Databases extends Logging {
                    instanceId: String,
                    databaseLeaseInterval: FiniteDuration,
                    lockExceptionHandler: LockExceptionHandler = { _ => () },
-                   lockType: LockType = LockType.NONE, datadir: File = new File(File.separator + "tmp")): Databases = {
+                   lockType: LockType = LockType.NONE, datadir: File): Databases = {
     val url = s"jdbc:postgresql://${host}:${port}/${database}"
 
     checkIfDatabaseUrlIsUnchanged(url, datadir)
@@ -138,7 +138,7 @@ object Databases extends Logging {
       val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
 
       SqliteUtils.using(eclairJdbc.createStatement()) {
-        statement =>  {
+        statement => {
           statement.executeUpdate(s"backup to ${tmpFile.getAbsolutePath}")
         }
       }
@@ -147,6 +147,7 @@ object Databases extends Logging {
       // as the temporary file
       Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
+
     override def obtainExclusiveLock(): Unit = ()
   }
 
