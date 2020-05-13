@@ -28,7 +28,7 @@ import scala.concurrent.{ExecutionContext, Future}
   */
 class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: Long)(implicit ec: ExecutionContext) extends FeeProvider with Logging {
 
-  require(providers.size >= 1, "need at least one fee provider")
+  require(providers.nonEmpty, "need at least one fee provider")
   require(minFeeratePerByte > 0, "minimum fee rate must be strictly greater than 0")
 
   def getFeerates(fallbacks: Seq[FeeProvider]): Future[FeeratesPerKB] =

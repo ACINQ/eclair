@@ -57,6 +57,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 /**
  * Setup eclair from a data directory.
@@ -234,19 +235,23 @@ class Setup(datadir: File,
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
-        case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
+        case (Block.RegtestGenesisBlock.hash, _) =>
+          new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: Nil, minFeeratePerByte) // order matters!
         case _ =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: Nil, minFeeratePerByte) // order matters!
       }
-      _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
-        case feerates: FeeratesPerKB =>
+      _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.onComplete {
+        case Success(feerates) =>
           feeratesPerKB.set(feerates)
           feeratesPerKw.set(FeeratesPerKw(feerates))
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${feeratesPerKB.get()} feeratesPerKw=${feeratesPerKw.get()}")
           feeratesRetrieved.trySuccess(Done)
+        case Failure(exception) =>
+          logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
+          feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
       })
       _ <- feeratesRetrieved.future
 
