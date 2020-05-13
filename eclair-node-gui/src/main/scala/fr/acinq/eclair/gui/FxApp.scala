@@ -82,7 +82,8 @@ class FxApp extends Application with Logging {
           mainFXML.setController(controller)
           val mainRoot = mainFXML.load[Parent]
           val datadir = new File(getParameters.getUnnamed.get(0))
-          implicit val system = ActorSystem("eclair-node-gui")
+          val config = NodeParams.loadConfiguration(datadir)
+          implicit val system = ActorSystem("eclair-node-gui", config)
           val setup = new Setup(datadir)
 
           val unitConf = setup.config.getString("gui.unit")
@@ -103,7 +104,7 @@ class FxApp extends Application with Logging {
           pKit.completeWith(setup.bootstrap)
           pKit.future.onComplete {
             case Success(kit) =>
-              Boot.startApiServiceIfEnabled(setup.config, kit)
+              Boot.startApiServiceIfEnabled(kit)
               Platform.runLater(new Runnable {
                 override def run(): Unit = {
                   val scene = new Scene(mainRoot)
