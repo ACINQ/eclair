@@ -95,7 +95,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         // If the sender already provided a route to the target, no need to involve the router.
         self ! RouteResponse(Seq(Route(c.finalPayload.amount, Nil, allowEmpty = true)))
       } else {
-        router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, routeParams = c.routeParams, ignoreNodes = ignoredNodes)
+        router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, routeParams = c.routeParams, ignoreNodes = ignoredNodes)
       }
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
@@ -204,12 +204,12 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               case extraHop => extraHop
             })
             // let's try again, router will have updated its state
-            router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, assistedRoutes1, ignoreNodes, ignoreChannels, c.routeParams)
+            router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), assistedRoutes1, ignoreNodes, ignoreChannels, c.routeParams)
             ignoreNodes
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-            router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
+            router ! RouteRequest(c.getRouteRequestStart(nodeParams), c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels, c.routeParams)
             ignoreNodes + nodeId
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(cfg.fullRoute(route), e), ignoreNodes1, ignoreChannels)
@@ -267,7 +267,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
   private def retry(failure: PaymentFailure, data: WaitingForComplete): FSM.State[PaymentLifecycle.State, PaymentLifecycle.Data] = {
     val (ignoreNodes1, ignoreChannels1) = PaymentFailure.updateIgnored(failure, data.ignoreNodes, data.ignoreChannels)
-    router ! RouteRequest(data.c.getRouteRequestStart(nodeParams), data.c.targetNodeId, data.c.finalPayload.amount, data.c.assistedRoutes, ignoreNodes1, ignoreChannels1, data.c.routeParams)
+    router ! RouteRequest(data.c.getRouteRequestStart(nodeParams), data.c.targetNodeId, data.c.finalPayload.amount, data.c.getMaxFee(nodeParams), data.c.assistedRoutes, ignoreNodes1, ignoreChannels1, data.c.routeParams)
     goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.sender, data.c, data.failures :+ failure, ignoreNodes1, ignoreChannels1)
   }
 
@@ -339,6 +339,9 @@ object PaymentLifecycle {
                          routeParams: Option[RouteParams] = None,
                          routePrefix: Seq[ChannelHop] = Nil) {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
+
+    def getMaxFee(nodeParams: NodeParams): MilliSatoshi =
+      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).getMaxFee(finalPayload.amount)
 
     /** Returns the node from which the path-finding algorithm should start. */
     def getRouteRequestStart(nodeParams: NodeParams): PublicKey = routePrefix match {
