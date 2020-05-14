@@ -29,6 +29,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{ShortChannelId, _}
 
+import scala.annotation.tailrec
 import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success, Try}
 
@@ -172,8 +173,25 @@ object RouteCalculation {
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
                 currentBlockHeight: Long): Try[Seq[Route]] = Try {
+    findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
+      case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
+      case Left(ex) => return Failure(ex)
+    }
+  }
 
-    if (localNodeId == targetNodeId) return Failure(CannotRouteToSelf)
+  @tailrec
+  private def findRouteInternal(g: DirectedGraph,
+                                localNodeId: PublicKey,
+                                targetNodeId: PublicKey,
+                                amount: MilliSatoshi,
+                                maxFee: MilliSatoshi,
+                                numRoutes: Int,
+                                extraEdges: Set[GraphEdge] = Set.empty,
+                                ignoredEdges: Set[ChannelDesc] = Set.empty,
+                                ignoredVertices: Set[PublicKey] = Set.empty,
+                                routeParams: RouteParams,
+                                currentBlockHeight: Long): Either[RouterException, Seq[Graph.WeightedPath]] = {
+    if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
 
     def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
 
@@ -191,13 +209,13 @@ object RouteCalculation {
       } else {
         directRoutes ++ indirectRoutes
       }
-      routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
+      Right(routes)
     } else if (routeParams.routeMaxLength < ROUTE_MAX_LENGTH) {
       // if not found within the constraints we relax and repeat the search
       val relaxedRouteParams = routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV)
-      return findRoute(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight)
+      findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight)
     } else {
-      return Failure(RouteNotFound)
+      Left(RouteNotFound)
     }
   }
 
