@@ -104,8 +104,8 @@ object Graph {
     }
 
     var allSpurPathsFound = false
-    val shortestPaths = new mutable.ArrayDeque[WeightedPath]
-    shortestPaths += WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr))
+    val shortestPaths = new mutable.Queue[WeightedPath]
+    shortestPaths.enqueue(WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr)))
     // stores the candidates for the k-th shortest path, sorted by path cost
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
@@ -150,7 +150,7 @@ object Graph {
         allSpurPathsFound = true
       } else {
         // move the best candidate to the shortestPaths container
-        shortestPaths += candidates.dequeue()
+        shortestPaths.enqueue(candidates.dequeue())
       }
     }
 
