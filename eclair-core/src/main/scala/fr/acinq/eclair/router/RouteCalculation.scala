@@ -29,8 +29,10 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{ShortChannelId, _}
 
+import scala.annotation.tailrec
+import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.util.{Random, Try}
+import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
 
@@ -71,9 +73,16 @@ object RouteCalculation {
 
     log.info(s"finding a route ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
     log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-    findRoute(d.graph, r.source, r.target, r.amount, numRoutes = routesToFind, extraEdges = extraEdges, ignoredEdges = ignoredEdges, ignoredVertices = r.ignoreNodes, routeParams = params, currentBlockHeight)
-      .map(route => ctx.sender ! RouteResponse(route :: Nil))
-      .recover { case t => ctx.sender ! Status.Failure(t) }
+    KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, routesToFind).withTag(Tags.Amount, Tags.amountBucket(r.amount))) {
+      findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignoreNodes, params, currentBlockHeight) match {
+        case Success(routes) =>
+          Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(r.amount)).record(routes.head.length)
+          ctx.sender ! RouteResponse(routes)
+        case Failure(t) =>
+          Metrics.FindRouteErrors.withTag(Tags.Amount, Tags.amountBucket(r.amount)).withTag(Tags.Error, t.getClass.getSimpleName).increment()
+          ctx.sender ! Status.Failure(t)
+      }
+    }
     d
   }
 
@@ -136,74 +145,213 @@ object RouteCalculation {
         ageFactor = routerConf.searchRatioChannelAge,
         capacityFactor = routerConf.searchRatioChannelCapacity
       ))
-    }
+    },
+    mpp = MultiPartParams(routerConf.mppMinPartAmount, routerConf.mppMaxParts)
   )
 
   /**
    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.
    *
-   * @param g            graph of the whole network
-   * @param localNodeId  sender node (payer)
-   * @param targetNodeId target node (final recipient)
-   * @param amount       the amount that will be sent along this route
-   * @param numRoutes    the number of shortest-paths to find
-   * @param extraEdges   a set of extra edges we want to CONSIDER during the search
-   * @param ignoredEdges a set of extra edges we want to IGNORE during the search
-   * @param routeParams  a set of parameters that can restrict the route search
-   * @return the computed route to the destination @targetNodeId
+   * @param g               graph of the whole network
+   * @param localNodeId     sender node (payer)
+   * @param targetNodeId    target node (final recipient)
+   * @param amount          the amount that the target node should receive
+   * @param maxFee          the maximum fee of a resulting route
+   * @param numRoutes       the number of routes to find
+   * @param extraEdges      a set of extra edges we want to CONSIDER during the search
+   * @param ignoredEdges    a set of extra edges we want to IGNORE during the search
+   * @param ignoredVertices a set of extra vertices we want to IGNORE during the search
+   * @param routeParams     a set of parameters that can restrict the route search
+   * @return the computed routes to the destination @param targetNodeId
    */
   def findRoute(g: DirectedGraph,
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
                 amount: MilliSatoshi,
+                maxFee: MilliSatoshi,
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
-                currentBlockHeight: Long): Try[Route] = Try {
-
-    if (localNodeId == targetNodeId) throw CannotRouteToSelf
-
-    def feeBaseOk(fee: MilliSatoshi): Boolean = fee <= routeParams.maxFeeBase
-
-    def feePctOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = {
-      val maxFee = amount * routeParams.maxFeePct
-      fee <= maxFee
+                currentBlockHeight: Long): Try[Seq[Route]] = Try {
+    findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
+      case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
+      case Left(ex) => return Failure(ex)
     }
+  }
 
-    def feeOk(fee: MilliSatoshi, amount: MilliSatoshi): Boolean = feeBaseOk(fee) || feePctOk(fee, amount)
+  @tailrec
+  private def findRouteInternal(g: DirectedGraph,
+                                localNodeId: PublicKey,
+                                targetNodeId: PublicKey,
+                                amount: MilliSatoshi,
+                                maxFee: MilliSatoshi,
+                                numRoutes: Int,
+                                extraEdges: Set[GraphEdge] = Set.empty,
+                                ignoredEdges: Set[ChannelDesc] = Set.empty,
+                                ignoredVertices: Set[PublicKey] = Set.empty,
+                                routeParams: RouteParams,
+                                currentBlockHeight: Long): Either[RouterException, Seq[Graph.WeightedPath]] = {
+    if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
+
+    def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
 
     def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
 
-    val boundaries: RichWeight => Boolean = { weight =>
-      feeOk(weight.cost - amount, amount) && lengthOk(weight.length) && cltvOk(weight.cltv)
-    }
+    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.cost - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes = KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, numRoutes).withTag(Tags.Amount, Tags.amountBucket(amount))) {
-      Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries).toList
+    val foundRoutes = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries)
+    if (foundRoutes.nonEmpty) {
+      val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
+      val routes = if (routeParams.randomize) {
+        Random.shuffle(directRoutes) ++ Random.shuffle(indirectRoutes)
+      } else {
+        directRoutes ++ indirectRoutes
+      }
+      Right(routes)
+    } else if (routeParams.routeMaxLength < ROUTE_MAX_LENGTH) {
+      // if not found within the constraints we relax and repeat the search
+      val relaxedRouteParams = routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV)
+      findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight)
+    } else {
+      Left(RouteNotFound)
     }
-    foundRoutes match {
-      case Nil if routeParams.routeMaxLength < ROUTE_MAX_LENGTH => // if not found within the constraints we relax and repeat the search
-        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
-        return findRoute(g, localNodeId, targetNodeId, amount, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV), currentBlockHeight)
-      case Nil =>
-        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(0)
-        throw RouteNotFound
-      case foundRoutes =>
-        val routes = foundRoutes.find(_.path.size == 1) match {
-          case Some(directRoute) => directRoute :: Nil
-          case _ => foundRoutes
+  }
+
+  /**
+   * Find a multi-part route in the graph between localNodeId and targetNodeId.
+   *
+   * @param g               graph of the whole network
+   * @param localNodeId     sender node (payer)
+   * @param targetNodeId    target node (final recipient)
+   * @param amount          the amount that the target node should receive
+   * @param maxFee          the maximum fee of a resulting route
+   * @param extraEdges      a set of extra edges we want to CONSIDER during the search
+   * @param ignoredEdges    a set of extra edges we want to IGNORE during the search
+   * @param ignoredVertices a set of extra vertices we want to IGNORE during the search
+   * @param pendingHtlcs    a list of htlcs that have already been sent for that multi-part payment (used to avoid finding conflicting HTLCs)
+   * @param routeParams     a set of parameters that can restrict the route search
+   * @return a set of disjoint routes to the destination @param targetNodeId with the payment amount split between them
+   */
+  def findMultiPartRoute(g: DirectedGraph,
+                         localNodeId: PublicKey,
+                         targetNodeId: PublicKey,
+                         amount: MilliSatoshi,
+                         maxFee: MilliSatoshi,
+                         extraEdges: Set[GraphEdge] = Set.empty,
+                         ignoredEdges: Set[ChannelDesc] = Set.empty,
+                         ignoredVertices: Set[PublicKey] = Set.empty,
+                         pendingHtlcs: Seq[Route] = Nil,
+                         routeParams: RouteParams,
+                         currentBlockHeight: Long): Try[Seq[Route]] = Try {
+    val result = findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight) match {
+      case Right(routes) => Right(routes)
+      case Left(RouteNotFound) if routeParams.randomize =>
+        // If we couldn't find a randomized solution, fallback to a deterministic one.
+        findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams.copy(randomize = false), currentBlockHeight)
+      case Left(ex) => Left(ex)
+    }
+    result match {
+      case Right(routes) => routes
+      case Left(ex) => return Failure(ex)
+    }
+  }
+
+  private def findMultiPartRouteInternal(g: DirectedGraph,
+                                         localNodeId: PublicKey,
+                                         targetNodeId: PublicKey,
+                                         amount: MilliSatoshi,
+                                         maxFee: MilliSatoshi,
+                                         extraEdges: Set[GraphEdge] = Set.empty,
+                                         ignoredEdges: Set[ChannelDesc] = Set.empty,
+                                         ignoredVertices: Set[PublicKey] = Set.empty,
+                                         pendingHtlcs: Seq[Route] = Nil,
+                                         routeParams: RouteParams,
+                                         currentBlockHeight: Long): Either[RouterException, Seq[Route]] = {
+    // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
+    val numRoutes = {
+      val directChannelsCount = g.getEdgesBetween(localNodeId, targetNodeId).length
+      routeParams.mpp.maxParts.max(directChannelsCount) // if we have direct channels to the target, we can use them all
+    }
+    findRouteInternal(g, localNodeId, targetNodeId, routeParams.mpp.minPartAmount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
+      case Right(routes) =>
+        // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
+        split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams) match {
+          case Right(routes) if validateMultiPartRoute(amount, maxFee, routes) => Right(routes)
+          case _ => Left(RouteNotFound)
         }
-        // At this point 'routes' cannot be empty
-        val randomizedRoutes = if (routeParams.randomize) Random.shuffle(routes) else routes
-        val route = randomizedRoutes.head.path.map(graphEdgeToHop)
-        Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(amount)).record(route.length)
-        Route(amount, route)
+      case Left(ex) => Left(ex)
     }
+  }
+
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams): Either[RouterException, Seq[Route]] = {
+    if (amount == 0.msat) {
+      Right(Nil)
+    } else if (paths.isEmpty) {
+      Left(RouteNotFound)
+    } else {
+      val current = paths.dequeue()
+      val candidate = computeRouteMaxAmount(current.path, usedCapacity)
+      if (candidate.amount < routeParams.mpp.minPartAmount.min(amount)) {
+        // this route doesn't have enough capacity left: we remove it and continue.
+        split(amount, paths, usedCapacity, routeParams)
+      } else {
+        val route = if (routeParams.randomize) {
+          // randomly choose the amount to be between 20% and 100% of the available capacity.
+          val randomizedAmount = candidate.amount * ((20d + Random.nextInt(81)) / 100)
+          if (randomizedAmount < routeParams.mpp.minPartAmount) {
+            candidate.copy(amount = routeParams.mpp.minPartAmount.min(amount))
+          } else {
+            candidate.copy(amount = randomizedAmount.min(amount))
+          }
+        } else {
+          candidate.copy(amount = candidate.amount.min(amount))
+        }
+        updateUsedCapacity(route, usedCapacity)
+        // NB: we re-enqueue the current path, it may still have capacity for a second HTLC.
+        split(amount - route.amount, paths.enqueue(current), usedCapacity, routeParams).map(routes => route +: routes)
+      }
+    }
+  }
+
+  /** Compute the maximum amount that we can send through the given route. */
+  private def computeRouteMaxAmount(route: Seq[GraphEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
+    val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.update.shortChannelId, 0 msat))
+    val amount = route.drop(1).foldLeft(firstHopMaxAmount) { case (amount, edge) =>
+      // We compute fees going forward instead of backwards. That means we will slightly overestimate the fees of some
+      // edges, but we will always stay inside the capacity bounds we computed.
+      val amountMinusFees = amount - edge.fee(amount)
+      val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.update.shortChannelId, 0 msat))
+      amountMinusFees.min(edgeMaxAmount)
+    }
+    Route(amount.max(0 msat), route.map(graphEdgeToHop))
+  }
+
+  /** Initialize known used capacity based on pending HTLCs. */
+  private def initializeUsedCapacity(pendingHtlcs: Seq[Route]): mutable.Map[ShortChannelId, MilliSatoshi] = {
+    val usedCapacity = mutable.Map.empty[ShortChannelId, MilliSatoshi]
+    // We always skip the first hop: since they are local channels, we already take into account those sent HTLCs in the
+    // channel balance (which overrides the channel capacity in route calculation).
+    pendingHtlcs.filter(_.hops.length > 1).foreach(route => updateUsedCapacity(route.copy(hops = route.hops.tail), usedCapacity))
+    usedCapacity
+  }
+
+  /** Update used capacity by taking into account an HTLC sent to the given route. */
+  private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
+    route.hops.reverse.foldLeft(route.amount) { case (amount, hop) =>
+      usedCapacity.updateWith(hop.lastUpdate.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
+      amount + hop.fee(amount)
+    }
+  }
+
+  private def validateMultiPartRoute(amount: MilliSatoshi, maxFee: MilliSatoshi, routes: Seq[Route]): Boolean = {
+    val amountOk = routes.map(_.amount).sum == amount
+    val feeOk = routes.map(_.fee).sum <= maxFee
+    amountOk && feeOk
   }
 
 }
