@@ -104,8 +104,8 @@ object Graph {
     }
 
     var allSpurPathsFound = false
-    val shortestPaths = new mutable.ArrayDeque[WeightedPath]
-    shortestPaths += WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr))
+    val shortestPaths = new mutable.Queue[WeightedPath]
+    shortestPaths.enqueue(WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr)))
     // stores the candidates for the k-th shortest path, sorted by path cost
     val candidates = new mutable.PriorityQueue[WeightedPath]
 
@@ -150,7 +150,7 @@ object Graph {
         allSpurPathsFound = true
       } else {
         // move the best candidate to the shortestPaths container
-        shortestPaths += candidates.dequeue()
+        shortestPaths.enqueue(candidates.dequeue())
       }
     }
 
@@ -195,20 +195,21 @@ object Graph {
     // conservative estimation to avoid over-allocating memory: this is not the actual optimal size for the maps,
     // because in the worst case scenario we will insert all the vertices.
     val initialSize = 100
-    val bestWeights = new java.util.HashMap[PublicKey, RichWeight](initialSize)
-    val bestEdges = new java.util.HashMap[PublicKey, GraphEdge](initialSize)
-    val toExplore = new org.jheaps.tree.SimpleFibonacciHeap[WeightedNode, Short](NodeComparator)
+    val bestWeights = mutable.HashMap.newBuilder[PublicKey, RichWeight](initialSize, 0.75).result()
+    val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialSize, 0.75).result()
+    // NB: we want the elements with smallest weight first, hence the `reverse`.
+    val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
 
     // initialize the queue and cost array with the initial weight
     bestWeights.put(targetNode, initialWeight)
-    toExplore.insert(WeightedNode(targetNode, initialWeight))
+    toExplore.enqueue(WeightedNode(targetNode, initialWeight))
 
     var targetFound = false
-    while (!toExplore.isEmpty && !targetFound) {
+    while (toExplore.nonEmpty && !targetFound) {
       // node with the smallest distance from the target
-      val current = toExplore.deleteMin().getKey // O(log(n))
+      val current = toExplore.dequeue() // O(log(n))
       if (current.key != sourceNode) {
-        val currentWeight = bestWeights.get(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
+        val currentWeight = bestWeights(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
         // build the neighbors with optional extra edges
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
@@ -225,17 +226,13 @@ object Graph {
             edge.update.htlcMaximumMsat.forall(currentWeight.cost <= _) &&
             currentWeight.cost >= edge.update.htlcMinimumMsat
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
-            // we don't use "getOrDefault" because it is not available in JDK7
-            val previousNeighborWeight = bestWeights.get(neighbor) match {
-              case null => RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue)
-              case w => w
-            }
+            val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue))
             // if this path between neighbor and the target has a shorter distance than previously known, we select it
             if (neighborWeight.weight < previousNeighborWeight.weight) {
               // update the best edge for this vertex
               bestEdges.put(neighbor, edge)
               // add this updated node to the list for further exploration
-              toExplore.insert(WeightedNode(neighbor, neighborWeight)) // O(1)
+              toExplore.enqueue(WeightedNode(neighbor, neighborWeight)) // O(1)
               // update the minimum known distance array
               bestWeights.put(neighbor, neighborWeight)
             }
@@ -251,9 +248,9 @@ object Graph {
       case true =>
         val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
         var current = bestEdges.get(sourceNode)
-        while (current != null) {
-          edgePath += current
-          current = bestEdges.get(current.desc.b)
+        while (current.isDefined) {
+          edgePath += current.get
+          current = bestEdges.get(current.get.desc.b)
         }
         edgePath.toSeq
     }
