@@ -37,7 +37,7 @@ import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, rando
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
 
@@ -50,7 +50,7 @@ import scala.util.Random
  * Created by PM on 31/05/2016.
  */
 
-class ChannelCodecsSpec extends FunSuite {
+class ChannelCodecsSpec extends AnyFunSuite {
 
   import ChannelCodecsSpec._
 
@@ -285,7 +285,7 @@ class ChannelCodecsSpec extends FunSuite {
     // let's decode the old data (this will use the old codec that provides default values for new fields)
     val data_new = stateDataCodec.decode(bin_old.toBitVector).require.value
     assert(data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx === None)
-    assert(Platform.currentTime.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
+    assert(System.currentTimeMillis.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format, with version=0 and type=8

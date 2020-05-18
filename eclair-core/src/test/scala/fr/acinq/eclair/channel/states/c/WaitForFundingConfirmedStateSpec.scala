@@ -25,8 +25,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestkitBaseClass, randomKey}
+import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
 
@@ -34,7 +35,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 

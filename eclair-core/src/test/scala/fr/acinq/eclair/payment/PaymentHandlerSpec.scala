@@ -18,15 +18,16 @@ package fr.acinq.eclair.payment
 
 import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorSystem}
-import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
+import akka.event.DiagnosticLoggingAdapter
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.payment.receive.{PaymentHandler, ReceiveHandler}
-import org.scalatest.FunSuiteLike
+import org.scalatest.funsuite.AnyFunSuiteLike
 
 import scala.concurrent.duration._
 
-class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class PaymentHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("compose payment handlers") {
     val handler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref))

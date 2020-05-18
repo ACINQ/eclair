@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import java.util.UUID
 
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{DeterministicWallet, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -27,14 +28,15 @@ import fr.acinq.eclair.payment.relay.Origin.Local
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{TestkitBaseClass, _}
+import fr.acinq.eclair.{TestKitBaseClass, _}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success}
 
-class CommitmentsSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
@@ -498,6 +500,28 @@ object CommitmentsSpec {
       channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
       LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
       RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32, randomKey.publicKey),
+      LocalChanges(Nil, Nil, Nil),
+      RemoteChanges(Nil, Nil, Nil),
+      localNextHtlcId = 1,
+      remoteNextHtlcId = 1,
+      originChannels = Map.empty,
+      remoteNextCommitInfo = Right(randomKey.publicKey),
+      commitInput = commitmentInput,
+      remotePerCommitmentSecrets = ShaChain.init,
+      channelId = randomBytes32)
+  }
+
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
+    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, ByteVector.empty)
+    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, ByteVector.empty)
+    val commitmentInput = Funding.makeFundingInputInfo(randomBytes32, 0, (toLocal + toRemote).truncateToSatoshi, randomKey.publicKey, remoteParams.fundingPubKey)
+    Commitments(
+      ChannelVersion.STANDARD,
+      localParams,
+      remoteParams,
+      channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
+      LocalCommit(0, CommitmentSpec(Set.empty, 0, toLocal, toRemote), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
+      RemoteCommit(0, CommitmentSpec(Set.empty, 0, toRemote, toLocal), randomBytes32, randomKey.publicKey),
       LocalChanges(Nil, Nil, Nil),
       RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 1,

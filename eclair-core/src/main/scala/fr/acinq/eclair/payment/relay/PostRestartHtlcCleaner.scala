@@ -106,6 +106,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       Metrics.PendingNotRelayed.update(notRelayed1.size)
       context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
 
+    case _: ChannelStateChanged => // ignore other channel state changes
+
     case ff: Relayer.ForwardFulfill =>
       log.info("htlc fulfilled downstream: ({},{})", ff.htlc.channelId, ff.htlc.id)
       handleDownstreamFulfill(brokenHtlcs, ff.to, ff.htlc, ff.paymentPreimage)
@@ -146,7 +148,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
               // dummy values in the DB (to make sure we store the preimage) but we don't emit an event.
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
-              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, Platform.currentTime, None, OutgoingPaymentStatus.Pending))
+              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, System.currentTimeMillis, None, OutgoingPaymentStatus.Pending))
               nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
@@ -353,6 +355,7 @@ object PostRestartHtlcCleaner {
         case Origin.Relayed(channelId, htlcId, _, _) => isPendingUpstream(channelId, htlcId)
         case Origin.TrampolineRelayed(htlcs, _) => htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId) }
       }
+      .toMap
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")

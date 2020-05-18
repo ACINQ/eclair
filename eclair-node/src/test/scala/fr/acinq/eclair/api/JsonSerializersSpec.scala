@@ -24,11 +24,12 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
-import fr.acinq.eclair.wire.{NodeAddress, OnionRoutingPacket, Tor2, Tor3, UpdateAddHtlc}
-import org.scalatest.{FunSuite, Matchers}
+import fr.acinq.eclair.wire._
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
-class JsonSerializersSpec extends FunSuite with Matchers {
+class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
   test("deserialize Map[OutPoint, ByteVector]") {
     val output1 = OutPoint(ByteVector32(hex"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)

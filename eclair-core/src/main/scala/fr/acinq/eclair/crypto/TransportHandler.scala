@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, _}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
@@ -307,6 +307,7 @@ object TransportHandler {
   val prefix: Byte = 0x00
 
   case class InvalidTransportPrefix(buffer: ByteVector) extends RuntimeException(s"invalid transport prefix first64=${buffer.take(64).toHex}")
+
   case class UnexpectedDataDuringHandshake(buffer: ByteVector) extends RuntimeException(s"unexpected additional data received during handshake first64=${buffer.take(64).toHex}")
 
   val prologue = ByteVector.view("lightning".getBytes("UTF-8"))

@@ -32,18 +32,18 @@ import fr.acinq.eclair.{Logs, NodeParams}
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 27/10/2015.
-  *
-  */
+ * Created by PM on 27/10/2015.
+ *
+ */
 class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
 
   import context.system
 
   // we could connect directly here but this allows to take advantage of the automated mdc configuration on message reception
-  self ! 'connect
+  self ! Symbol("connect")
 
   def receive: Receive = {
-    case 'connect =>
+    case Symbol("connect") =>
       val (peerOrProxyAddress, proxyParams_opt) = nodeParams.socksProxy_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
         case Some((proxyParams, Some(proxyAddress))) =>
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")

@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
 import scodec.codecs.bits
@@ -32,7 +32,7 @@ import scodec.codecs.bits
  * Created by fabrice on 15/05/17.
  */
 
-class PaymentRequestSpec extends FunSuite {
+class PaymentRequestSpec extends AnyFunSuite {
 
   val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
   val pub = priv.publicKey

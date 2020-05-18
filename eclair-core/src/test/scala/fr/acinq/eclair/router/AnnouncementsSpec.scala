@@ -21,14 +21,14 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 /**
  * Created by PM on 31/05/2016.
  */
 
-class AnnouncementsSpec extends FunSuite {
+class AnnouncementsSpec extends AnyFunSuite {
 
   test("check nodeId1/nodeId2 lexical ordering") {
     val node1 = PublicKey(hex"027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")

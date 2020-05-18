@@ -20,15 +20,15 @@ import java.io.File
 import java.sql.DriverManager
 import java.util.UUID
 
-import akka.actor.{ActorSystem, Props}
+import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecsSpec
-import fr.acinq.eclair.{TestConstants, TestUtils, randomBytes32}
-import org.scalatest.FunSuiteLike
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
+import org.scalatest.funsuite.AnyFunSuiteLike
 
-class BackupHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class BackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("process backups") {
     val db = TestConstants.inMemoryDb()

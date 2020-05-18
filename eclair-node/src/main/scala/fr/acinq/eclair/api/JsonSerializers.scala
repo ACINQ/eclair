@@ -182,7 +182,7 @@ class RouteResponseSerializer extends CustomSerializer[RouteResponse](_ => ( {
   null
 }, {
   case route: RouteResponse =>
-    val nodeIds = route.hops match {
+    val nodeIds = route.routes.head.hops match {
       case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
       case Nil => Nil
     }

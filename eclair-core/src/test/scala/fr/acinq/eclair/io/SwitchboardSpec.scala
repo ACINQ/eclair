@@ -1,19 +1,19 @@
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorRef, ActorSystem}
-import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import akka.actor.ActorRef
+import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.wire._
-import org.scalatest.FunSuiteLike
+import fr.acinq.eclair.{NodeParams, TestKitBaseClass}
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
-class SwitchboardSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
-  class TestSwitchboard(nodeParams: NodeParams, remoteNodeId: PublicKey, remotePeer: TestProbe) extends Switchboard(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref, TestProbe().ref, new TestWallet()) {
+  class TestSwitchboard(nodeParams: NodeParams, remoteNodeId: PublicKey, remotePeer: TestProbe) extends Switchboard(nodeParams, TestProbe().ref, TestProbe().ref, new TestWallet()) {
     override def createPeer(remoteNodeId2: PublicKey): ActorRef = {
       assert(remoteNodeId === remoteNodeId2)
       remotePeer.ref

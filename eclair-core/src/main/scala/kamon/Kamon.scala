@@ -76,7 +76,5 @@ object Kamon {
 
   def gauge() = Mock
 
-  def gauge(a: String) = Mock
-
-  def gauge(a: String, b: String) = Mock
+  def gauge(a: String, args: Any*) = Mock
 }

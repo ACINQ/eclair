@@ -21,12 +21,12 @@ import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class HelpersSpec extends FunSuite {
+class HelpersSpec extends AnyFunSuite {
 
   test("compute the funding tx min depth according to funding amount") {
     assert(Helpers.minDepthForFunding(nodeParams, Btc(1)) == 4)
@@ -39,12 +39,12 @@ class HelpersSpec extends FunSuite {
   }
 
   test("compute refresh delay") {
-    import org.scalatest.Matchers._
+    import org.scalatest.matchers.should.Matchers._
     implicit val log: akka.event.DiagnosticLoggingAdapter = NoLoggingDiagnostics
     Helpers.nextChannelUpdateRefresh(1544400000).toSeconds should equal(0)
-    Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
-    Helpers.nextChannelUpdateRefresh((Platform.currentTime.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)
-    Helpers.nextChannelUpdateRefresh(Platform.currentTime.milliseconds.toSeconds).toSeconds should equal(10 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh((System.currentTimeMillis.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh((System.currentTimeMillis.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh(System.currentTimeMillis.milliseconds.toSeconds).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
   test("tell closing type") {

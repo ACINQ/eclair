@@ -26,12 +26,12 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends FunSuite {
+class SqliteNetworkDbSpec extends AnyFunSuite {
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
@@ -53,7 +53,6 @@ class SqliteNetworkDbSpec extends FunSuite {
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
     }
-
 
     using(sqlite.createStatement()) { statement =>
       assert(getVersion(statement, "network", 2) == 1)
@@ -77,7 +76,6 @@ class SqliteNetworkDbSpec extends FunSuite {
     using(sqlite.createStatement()) { statement =>
       assert(getVersion(statement, "network", 2) == 2)
     }
-
   }
 
   test("add/remove/list nodes") {
@@ -113,7 +111,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     val c_shrunk = shrink(c)
     val txid = ByteVector32.fromValidHex("0001" * 16)
     db.addChannel(c, txid, Satoshi(42))
-    assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c_shrunk, txid, Satoshi(42), None, None)))
+    assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c_shrunk, txid, Satoshi(42), None, None, None)))
   }
 
   def shrink(c: ChannelAnnouncement) = c.copy(bitcoinKey1 = null, bitcoinKey2 = null, bitcoinSignature1 = null, bitcoinSignature2 = null, nodeSignature1 = null, nodeSignature2 = null, chainHash = null, features = null)
@@ -156,13 +154,13 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None),
-      channel_2.shortChannelId -> PublicChannel(channel_2_shrunk, txid_2, capacity, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None, None),
+      channel_2.shortChannelId -> PublicChannel(channel_2_shrunk, txid_2, capacity, None, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None, None)))
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None),
-      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None, None),
+      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None, None)))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
@@ -178,16 +176,53 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.updateChannel(channel_update_2)
     db.updateChannel(channel_update_3)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1_shrunk), Some(channel_update_2_shrunk)),
-      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, Some(channel_update_3_shrunk), None)))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1_shrunk), Some(channel_update_2_shrunk), None),
+      channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, Some(channel_update_3_shrunk), None, None)))
     db.removeChannel(channel_3.shortChannelId)
     assert(db.listChannels() === SortedMap(
-      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1_shrunk), Some(channel_update_2_shrunk))))
+      channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1_shrunk), Some(channel_update_2_shrunk), None)))
   }
 
   test("add/remove/list channels and channel_updates") {
     val sqlite = TestConstants.sqliteInMemory()
     simpleTest(sqlite)
+  }
+
+  test("creating a table that already exists but with different column types is ignored") {
+    val sqlite = TestConstants.sqliteInMemory()
+    using(sqlite.createStatement(), inTransaction = true) { statement =>
+      statement.execute("CREATE TABLE IF NOT EXISTS test (txid STRING NOT NULL)")
+    }
+    // column type is STRING
+    assert(sqlite.getMetaData.getColumns(null, null, "test", null).getString("TYPE_NAME") == "STRING")
+
+    // insert and read back random values
+    val txids = for (_ <- 0 until 1000) yield randomBytes32
+    txids.foreach { txid =>
+      using(sqlite.prepareStatement("INSERT OR IGNORE INTO test VALUES (?)")) { statement =>
+        statement.setString(1, txid.toHex)
+        statement.executeUpdate()
+      }
+    }
+
+    val check = using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT txid FROM test")
+      val q = new mutable.Queue[ByteVector32]()
+      while (rs.next()) {
+        val txId = ByteVector32.fromValidHex(rs.getString("txid"))
+        q.enqueue(txId)
+      }
+      q
+    }
+    assert(txids.toSet == check.toSet)
+
+
+    using(sqlite.createStatement(), inTransaction = true) { statement =>
+      statement.execute("CREATE TABLE IF NOT EXISTS test (txid TEXT NOT NULL)")
+    }
+
+    // column type has not changed
+    assert(sqlite.getMetaData.getColumns(null, null, "test", null).getString("TYPE_NAME") == "STRING")
   }
 
   test("remove many channels") {

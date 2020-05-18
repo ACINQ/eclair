@@ -205,7 +205,7 @@ object Relayer extends Logging {
     Props(classOf[Relayer], nodeParams, router, register, commandBuffer, paymentHandler, initialized)
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
-  type NodeChannels = mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]
+  type NodeChannels =  mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]
 
   // @formatter:off
   sealed trait ForwardMessage

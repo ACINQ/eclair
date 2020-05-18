@@ -21,10 +21,10 @@ import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
-class ExtendedQueriesCodecsSpec extends FunSuite {
+class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode a list of short channel ids") {
     {

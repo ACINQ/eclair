@@ -8,12 +8,13 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import upickle.default.{read, write}
 
 import scala.util.Random
 
-class JsonSerializersSpec extends FunSuite with Logging {
+class JsonSerializersSpec extends AnyFunSuite with Logging {
   import JsonSerializers._
 
   val tx1 = Transaction(version = 2,

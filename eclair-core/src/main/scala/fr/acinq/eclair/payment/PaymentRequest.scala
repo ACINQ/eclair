@@ -89,8 +89,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val features: Features = tags.collectFirst { case f: Features => f }.getOrElse(Features(BitVector.empty))
 
   def isExpired: Boolean = expiry match {
-    case Some(expiryTime) => timestamp + expiryTime <= Platform.currentTime.milliseconds.toSeconds
-    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+    case Some(expiryTime) => timestamp + expiryTime <= System.currentTimeMillis.milliseconds.toSeconds
+    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= System.currentTimeMillis.milliseconds.toSeconds
   }
 
   /**
@@ -478,7 +478,7 @@ object PaymentRequest {
   }
 
   // char -> 5 bits value
-  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian))
+  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)).toMap
 
   // TODO: could be optimized by preallocating the resulting buffer
   def string2Bits(data: String): BitVector = data.map(charToint5).foldLeft(BitVector.empty)(_ ++ _)
@@ -550,8 +550,8 @@ object PaymentRequest {
     }
     val timestamp = bolt11Data.timestamp
     expiry_opt match {
-      case Some(expiry) => timestamp + expiry.toLong <= Platform.currentTime.milliseconds.toSeconds
-      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= Platform.currentTime.milliseconds.toSeconds
+      case Some(expiry) => timestamp + expiry.toLong <= System.currentTimeMillis.milliseconds.toSeconds
+      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= System.currentTimeMillis.milliseconds.toSeconds
     }
   }
 

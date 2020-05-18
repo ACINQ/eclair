@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel._
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -74,7 +74,7 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
 
-    case 'peers => sender ! context.children
+    case Symbol("peers") => sender ! context.children
 
   }
 
@@ -89,7 +89,7 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
   def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
-    Peer.props(nodeParams, remoteNodeId, self, router, watcher, relayer, paymentHandler, wallet),
+    Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet),
     name = peerActorName(remoteNodeId))
 
   def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[HasCommitments]): ActorRef = {
@@ -111,7 +111,7 @@ class Switchboard(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, r
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, router, watcher, relayer, paymentHandler, wallet))
+  def props(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, watcher, relayer, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 

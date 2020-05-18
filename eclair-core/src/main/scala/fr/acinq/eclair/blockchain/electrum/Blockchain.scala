@@ -98,7 +98,7 @@ object Blockchain extends Logging {
 
     lazy val blockId = header.blockId
 
-    lazy val logwork = if (chainwork == 0) 0.0 else Math.log(chainwork.doubleValue()) / Math.log(2.0)
+    lazy val logwork = if (chainwork == 0) 0.0 else Math.log(chainwork.doubleValue) / Math.log(2.0)
 
     override def toString = s"BlockIndex($blockId, $height, ${parent.map(_.blockId)}, $logwork)"
   }
