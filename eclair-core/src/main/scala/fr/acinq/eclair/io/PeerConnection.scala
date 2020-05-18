@@ -89,8 +89,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       switchboard ! Authenticated(self, remoteNodeId)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
-    case Event(AuthTimeout, _) =>
+    case Event(AuthTimeout, d: AuthenticatingData) =>
       log.warning(s"authentication timed out after ${nodeParams.authTimeout}")
+      d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
   }
 
@@ -133,19 +134,19 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
         if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
-          d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible networks")))
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
           d.transport ! PoisonPill
           stay
         } else if (!Features.areSupported(remoteInit.features)) {
           log.warning("incompatible features, disconnecting")
-          d.pendingAuth.origin_opt.foreach(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible features"))
           d.transport ! PoisonPill
           stay
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
 
-          d.pendingAuth.origin_opt.foreach(origin => origin ! "connected")
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
 
           def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
 
@@ -177,8 +178,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
         }
 
-      case Event(InitTimeout, _) =>
+      case Event(InitTimeout, d: InitializingData) =>
         log.warning(s"initialization timed out after ${nodeParams.initTimeout}")
+        d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("initialization timed out"))
         stop(FSM.Normal)
     }
   }
@@ -382,6 +384,12 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
         log.info("transport died, stopping")
       }
+      d match {
+        case a: AuthenticatingData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("connection aborted while authenticating"))
+        case a: BeforeInitData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("connection aborted while initializing"))
+        case a: InitializingData => a.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("connection aborted while initializing"))
+        case _ => ()
+      }
       stop(FSM.Normal)
 
     case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
@@ -499,6 +507,19 @@ object PeerConnection {
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
   case class InitializeConnection(peer: ActorRef)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
+
+  sealed trait ConnectionResult
+  object ConnectionResult {
+    sealed trait Success extends ConnectionResult
+    sealed trait Failure extends ConnectionResult
+
+    case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
+    case class ConnectionFailed(address: InetSocketAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
+    case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
+    case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
+    case object AlreadyConnected extends ConnectionResult.Failure { override def toString: String = "already connected" }
+    case object Connected extends ConnectionResult.Success { override def toString: String = "connected" }
+  }
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
 

@@ -24,7 +24,6 @@ import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.io.Client.ConnectionFailed
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected, Socks5Error}
 import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
 import fr.acinq.eclair.{Logs, NodeParams}
@@ -60,7 +59,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
     case Tcp.CommandFailed(c: Tcp.Connect) =>
       val peerOrProxyAddress = c.remoteAddress
       log.info(s"connection failed to ${str(peerOrProxyAddress)}")
-      origin_opt.foreach(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
+      origin_opt.foreach(_ ! PeerConnection.ConnectionResult.ConnectionFailed(remoteAddress))
       context stop self
 
     case Tcp.Connected(peerOrProxyAddress, _) =>
@@ -75,24 +74,28 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
           context become {
             case Tcp.CommandFailed(_: Socks5Connect) =>
               log.info(s"connection failed to ${str(remoteAddress)} via SOCKS5 ${str(proxyAddress)}")
-              origin_opt.foreach(_ ! Status.Failure(ConnectionFailed(remoteAddress)))
+              origin_opt.foreach(_ ! PeerConnection.ConnectionResult.ConnectionFailed(remoteAddress))
               context stop self
             case Socks5Connected(_) =>
               log.info(s"connected to ${str(remoteAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
-              auth(proxy)
-              context become connected(proxy)
+              context unwatch proxy
+              val peerConnection = auth(connection)
+              context watch peerConnection
+              context become connected(peerConnection)
+            case Terminated(actor) if actor == proxy =>
+              context stop self
           }
         case None =>
           val peerAddress = peerOrProxyAddress
           log.info(s"connected to ${str(peerAddress)}")
-          auth(connection)
-          context watch connection
-          context become connected(connection)
+          val peerConnection = auth(connection)
+          context watch peerConnection
+          context become connected(peerConnection)
       }
   }
 
-  def connected(connection: ActorRef): Receive = {
-    case Terminated(actor) if actor == connection =>
+  def connected(peerConnection: ActorRef): Receive = {
+    case Terminated(actor) if actor == peerConnection =>
       context stop self
   }
 
@@ -100,7 +103,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
     log.warning(s"unhandled message=$message")
   }
 
-  // we should not restart a failing socks client
+  // we should not restart a failing socks client or transport handler
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false) {
     case t =>
       Logs.withMdc(log)(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
@@ -112,24 +115,28 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
       SupervisorStrategy.Stop
   }
 
+
+  override def postStop(): Unit = {
+    log.info("stopping client")
+  }
+
   override def mdc(currentMessage: Any): MDC = Logs.mdc(Some(LogCategory.CONNECTION), remoteNodeId_opt = Some(remoteNodeId))
 
   private def str(address: InetSocketAddress): String = s"${address.getHostString}:${address.getPort}"
 
-  def auth(connection: ActorRef) = {
+  def auth(connection: ActorRef): ActorRef = {
     val peerConnection = context.actorOf(PeerConnection.props(
       nodeParams = nodeParams,
       switchboard = switchboard,
       router = router
     ))
     peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = remoteAddress, origin_opt = origin_opt)
+    peerConnection
   }
 }
 
 object Client {
 
   def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, switchboard, router, address, remoteNodeId, origin_opt))
-
-  case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
 
 }

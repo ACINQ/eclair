@@ -92,7 +92,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
     probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
-    probe.expectMsg(s"no address found")
+    probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
   test("successfully connect to peer at user request") { f =>
@@ -156,7 +156,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
 
     probe.send(peer, Peer.Connect(remoteNodeId, None))
-    probe.expectMsg("already connected")
+    probe.expectMsg(PeerConnection.ConnectionResult.AlreadyConnected)
   }
 
   test("handle disconnect in state CONNECTED") { f =>
