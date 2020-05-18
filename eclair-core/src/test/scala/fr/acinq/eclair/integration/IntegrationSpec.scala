@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.integration
 
-import java.io.{File, PrintWriter}
+import java.io.File
 import java.util.{Properties, UUID}
 
 import akka.actor.{ActorRef, ActorSystem}
@@ -102,7 +102,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     "eclair.router.broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false,
     "eclair.to-remote-delay-blocks" -> 144,
-    "eclair.multi-part-payment-expiry" -> "20 seconds").asJava)
+    "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
 
   implicit val formats = DefaultFormats
 
@@ -135,11 +135,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
-    new PrintWriter(new File(datadir, "eclair.conf")) {
-      write(config.root().render())
-      close()
-    }
-    implicit val system = ActorSystem(s"system-$name")
+    implicit val system = ActorSystem(s"system-$name", config)
     val setup = new Setup(datadir)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)

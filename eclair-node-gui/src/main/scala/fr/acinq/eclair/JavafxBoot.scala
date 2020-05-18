@@ -27,15 +27,16 @@ import scala.concurrent.ExecutionContext.Implicits.global
   * Created by PM on 25/01/2016.
   */
 object JavafxBoot extends App with Logging {
-  val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
   try {
+    val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
+    val config = NodeParams.loadConfiguration(datadir)
     val headless = System.getProperty("eclair.headless") != null
 
     if (headless) {
-      implicit val system = ActorSystem("eclair-node-gui")
+      implicit val system = ActorSystem("eclair-node-gui", config)
       val setup = new Setup(datadir)
       setup.bootstrap.map { kit =>
-        Boot.startApiServiceIfEnabled(setup.config, kit)
+        Boot.startApiServiceIfEnabled(kit)
       }
     } else {
       System.setProperty("javafx.preloader", classOf[FxPreloader].getName)
