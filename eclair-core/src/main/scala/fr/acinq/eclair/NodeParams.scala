@@ -105,10 +105,9 @@ object NodeParams {
    * 3) Optionally provided config
    * 4) Default values in reference.conf
    */
-  def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) =
+  def loadConfiguration(datadir: File) =
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
-      .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load())
 
   def getSeed(datadir: File): ByteVector = {
