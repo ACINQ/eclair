@@ -21,7 +21,6 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
@@ -31,7 +30,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.Random

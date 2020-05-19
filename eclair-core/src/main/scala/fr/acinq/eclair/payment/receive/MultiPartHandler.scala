@@ -20,8 +20,6 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret, TrampolinePayment, VariableLengthOnion, Wumbo}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -29,7 +27,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
