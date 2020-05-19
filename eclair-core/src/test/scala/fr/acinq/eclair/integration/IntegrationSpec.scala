@@ -50,7 +50,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams, NORMAL => _, State => _}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -62,7 +62,6 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -275,6 +274,17 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // - A is not announced (no node_announcement)
     awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)).toMap, 10, 12, 26)
     awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)).toMap, 10, 12, 24)
+  }
+
+  test("wait for channels balance") {
+    // Channels balance should now be available in the router
+    val sender = TestProbe()
+    val nodeId = nodes("C").nodeParams.nodeId
+    sender.send(nodes("C").router, Router.GetRoutingState)
+    val routingState = sender.expectMsgType[Router.RoutingState]
+    val publicChannels = routingState.channels.filter(pc => Set(pc.ann.nodeId1, pc.ann.nodeId2).contains(nodeId))
+    assert(publicChannels.nonEmpty)
+    publicChannels.foreach(pc => assert(pc.meta_opt.map(m => m.balance1 > 0.msat || m.balance2 > 0.msat) === Some(true), pc))
   }
 
   test("open a wumbo channel and wait for longer than the default min_depth") {
