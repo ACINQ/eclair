@@ -121,11 +121,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
   implicit val formats = DefaultFormats
 
-  override def beforeAll(): Unit = {
+  override def beforeAll: Unit = {
     startBitcoind()
   }
 
-  override def afterAll(): Unit = {
+  override def afterAll: Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
     logger.info(s"stopping bitcoind")
     stopBitcoind()
@@ -156,7 +156,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     nodes = nodes + (name -> kit)
   }
 
-  def javaProps(props: Seq[(String, String)]) = {
+  def javaProps(props: Seq[(String, String)]): Properties = {
     val properties = new Properties()
     props.foreach(p => properties.setProperty(p._1, p._2))
     properties
@@ -230,7 +230,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     awaitCond({
       val watches = nodes.values.foldLeft(Set.empty[Watch]) {
         case (watches, setup) =>
-          sender.send(setup.watcher, 'watches)
+          sender.send(setup.watcher, Symbol("watches"))
           watches ++ sender.expectMsgType[Set[Watch]]
       }
       watches.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
@@ -252,15 +252,15 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     subset.foreach {
       case (_, setup) =>
         awaitCond({
-          sender.send(setup.router, 'nodes)
+          sender.send(setup.router, Symbol("nodes"))
           sender.expectMsgType[Iterable[NodeAnnouncement]](20 seconds).size == nodes
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          sender.send(setup.router, 'channels)
+          sender.send(setup.router, Symbol("channels"))
           sender.expectMsgType[Iterable[ChannelAnnouncement]](20 seconds).size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          sender.send(setup.router, 'updates)
+          sender.send(setup.router, Symbol("updates"))
           sender.expectMsgType[Iterable[ChannelUpdate]](20 seconds).size == updates
         }, max = 60 seconds, interval = 1 second)
     }
@@ -305,7 +305,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 2)
 
     // get the channelId
-    sender.send(fundee.register, 'channels)
+    sender.send(fundee.register, Symbol("channels"))
     val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
     sender.send(fundeeChannel, CMD_GETSTATEDATA)
     val channelId = sender.expectMsgType[HasCommitments].channelId
@@ -384,7 +384,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
-    sender.send(nodes("B").router, 'channels)
+    sender.send(nodes("B").router, Symbol("channels"))
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
@@ -409,7 +409,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     awaitCond({
       // in the meantime, the router will have updated its state
-      sender.send(nodes("A").router, 'channelsMap)
+      sender.send(nodes("A").router, Symbol("channelsMap"))
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
       val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId))
       u_opt.contains(channelUpdateBC)
@@ -425,7 +425,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
     assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
-      sender.send(nodes("A").router, 'channelsMap)
+      sender.send(nodes("A").router, Symbol("channelsMap"))
       val u = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId)).get
       u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
     }, max = 30 seconds, interval = 1 second)
@@ -891,7 +891,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
-    sender.send(nodes("F1").switchboard, 'peers)
+    sender.send(nodes("F1").switchboard, Symbol("peers"))
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Peer.Disconnect(nodes("C").nodeParams.nodeId)
@@ -972,7 +972,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
-    sender.send(nodes("F2").switchboard, 'peers)
+    sender.send(nodes("F2").switchboard, Symbol("peers"))
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Disconnect(nodes("C").nodeParams.nodeId)
@@ -1284,7 +1284,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       sender.expectMsg(GossipDecision.Accepted(ann))
     }
     awaitCond({
-      sender.send(nodes("D").router, 'channels)
+      sender.send(nodes("D").router, Symbol("channels"))
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 8 // 8 remaining channels because  D->F{1-5} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
