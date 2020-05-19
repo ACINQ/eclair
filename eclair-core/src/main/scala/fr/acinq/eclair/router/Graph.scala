@@ -194,9 +194,9 @@ object Graph {
 
     // conservative estimation to avoid over-allocating memory: this is not the actual optimal size for the maps,
     // because in the worst case scenario we will insert all the vertices.
-    val initialSize = 100
-    val bestWeights = mutable.HashMap.newBuilder[PublicKey, RichWeight](initialSize, 0.75).result()
-    val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialSize, 0.75).result()
+    val initialCapacity = 100
+    val bestWeights = mutable.HashMap.newBuilder[PublicKey, RichWeight](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
+    val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
     // NB: we want the elements with smallest weight first, hence the `reverse`.
     val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
 
