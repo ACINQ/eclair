@@ -79,7 +79,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
             case Socks5Connected(_) =>
               log.info(s"connected to ${str(remoteAddress)} via SOCKS5 proxy ${str(proxyAddress)}")
               context unwatch proxy
-              val peerConnection = auth(connection)
+              val peerConnection = auth(proxy)
               context watch peerConnection
               context become connected(peerConnection)
             case Terminated(actor) if actor == proxy =>
