@@ -115,11 +115,6 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
       SupervisorStrategy.Stop
   }
 
-
-  override def postStop(): Unit = {
-    log.info("stopping client")
-  }
-
   override def mdc(currentMessage: Any): MDC = Logs.mdc(Some(LogCategory.CONNECTION), remoteNodeId_opt = Some(remoteNodeId))
 
   private def str(address: InetSocketAddress): String = s"${address.getHostString}:${address.getPort}"
