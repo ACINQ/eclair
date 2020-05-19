@@ -36,7 +36,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.io.Peer.{Disconnect, PeerRoutingMessage}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
@@ -172,7 +172,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       nodeId = node2.nodeParams.nodeId,
       address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort))
     ))
-    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+    sender.expectMsgAnyOf(10 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
       fundingSatoshis = fundingSatoshis,
@@ -318,7 +318,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
         nodeId = funder.nodeParams.nodeId,
         address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
       ))
-      sender.expectMsgAnyOf(10 seconds, "connected", "already connected", "reconnection in progress")
+      sender.expectMsgAnyOf(10 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
 
       sender.send(fundee.register, Forward(channelId, CMD_GETSTATE))
       val fundeeState = sender.expectMsgType[State](max = 30 seconds)

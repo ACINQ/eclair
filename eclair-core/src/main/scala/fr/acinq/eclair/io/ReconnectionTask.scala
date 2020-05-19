@@ -50,7 +50,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   startWith(IDLE, IdleData(Nothing))
 
   when(CONNECTING) {
-    case Event(Status.Failure(_: Client.ConnectionFailed), d: ConnectingData) =>
+    case Event(_: PeerConnection.ConnectionResult.ConnectionFailed, d: ConnectingData) =>
       log.info(s"connection failed, next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds")
       setReconnectTimer(d.nextReconnectionDelay)
       goto(WAITING) using WaitingData(nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
@@ -121,9 +121,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   }
 
   whenUnhandled {
-    case Event("connected", _) => stay
-
-    case Event(Status.Failure(_: Client.ConnectionFailed), _) => stay
+    case Event(_: PeerConnection.ConnectionResult, _) => stay
 
     case Event(TickReconnect, _) => stay
 
@@ -135,7 +133,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
         case Some(address) => connect(address, origin = sender)
-        case None => sender ! "no address found"
+        case None => sender ! PeerConnection.ConnectionResult.NoAddressFound
       }
       stay
   }
