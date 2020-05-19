@@ -23,6 +23,7 @@ import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
+import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
@@ -1106,8 +1107,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features == hex"2000")
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
 
     def aliceToRemoteScript() = {
       val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toRemote

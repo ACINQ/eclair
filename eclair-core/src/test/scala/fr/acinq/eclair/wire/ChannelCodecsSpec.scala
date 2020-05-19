@@ -122,7 +122,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       localPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
       isFunder = Random.nextBoolean(),
-      features = randomBytes(256))
+      features = Features(randomBytes(256)))
     val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
     val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require.value
     assert(decoded1.localPaymentBasepoint.isDefined)

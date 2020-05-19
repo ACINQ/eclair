@@ -201,7 +201,8 @@ object Features {
     PaymentSecret,
     BasicMultiPartPayment,
     Wumbo,
-    TrampolinePayment
+    TrampolinePayment,
+    StaticRemoteKey
   )
 
   private val supportedMandatoryFeatures: Set[Feature] = Set(
@@ -243,8 +244,8 @@ object Features {
   }
 
   /** returns true if both have at least optional support */
-  def canUseFeature(localFeatures: ByteVector, remoteFeatures: ByteVector, feature: Feature): Boolean = {
-    hasFeature(localFeatures, feature) && hasFeature(remoteFeatures, feature)
+  def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {
+    localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
   }
 
 }
