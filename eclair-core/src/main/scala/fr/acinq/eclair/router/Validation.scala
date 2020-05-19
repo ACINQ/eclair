@@ -125,7 +125,8 @@ object Validation {
                     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features)
                     ctx.self ! nodeAnn
                   }
-                  Some(PublicChannel(c, tx.txid, capacity, None, None, None))
+                  val channelMeta_opt = d0.privateChannels.get(c.shortChannelId).map(_.meta)
+                  Some(PublicChannel(c, tx.txid, capacity, None, None, channelMeta_opt))
                 }
               case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
                 if (fundingTxStatus.spendingTxConfirmed) {
