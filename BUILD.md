@@ -8,7 +8,7 @@
 
 ## Build
 
-Eclair is packaged as a compressed archive with a launcher script, the archives are built deterministically
+Eclair is packaged as a compressed archive with a launcher script. The archives are built deterministically
 so it's possible to reproduce the build and verify its equality byte-by-byte. To build the exact same artifacts
 that we release, you must use the build environment (OS, JDK, maven...) that we specify in our release notes.
 
@@ -18,23 +18,29 @@ To build the project and run the tests, simply run:
 mvn package
 ```
 
-NB: some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
+Notes:
+- This command will build all modules (core, node, gui).
+- If the build fails, you may need to clean previously built artifacts with the `mvn clean` command.
+- Some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
+- Archives can be found in the `target` folder for each module.
 
-### Other build options
+### Skip tests
 
-To skip all tests, run:
+Running tests takes time. If you want to skip them, use `-DskipTests`:
 
 ```shell
 mvn package -DskipTests
 ```
 
-To only build the `eclair-node` module, run:
+You can even skip the tests compilation with `maven.test.skip`:
 
 ```shell
-mvn package -pl eclair-node -am -DskipTests
+mvn package -Dmaven.test.skip=true
 ```
 
-To run the tests, run:
+### Run tests
+
+To only run the tests, run:
 
 ```shell
 mvn test
@@ -44,6 +50,20 @@ To run tests for a specific class, run:
 
 ```shell
 mvn test -Dsuites=*<TestClassName>
+```
+
+### Build specific module
+
+To only build the `eclair-node` module, run:
+
+```shell
+mvn package -pl eclair-node -am -Dmaven.test.skip=true
+```
+
+To install `eclair-core` into your local maven repository and use it in another project, run:
+
+```shell
+mvn clean install -pl eclair-core -am -Dmaven.test.skip=true
 ```
 
 ## Build the API documentation

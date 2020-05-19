@@ -22,10 +22,9 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{Features, ShortChannelId}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import scodec.bits.ByteVector
 
 trait KeyManager {
   def nodeKey: DeterministicWallet.ExtendedPrivateKey
@@ -106,7 +105,7 @@ trait KeyManager {
     * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
     *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
     */
-  def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: ByteVector): (ByteVector64, ByteVector64)
+  def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): (ByteVector64, ByteVector64)
 }
 
 object KeyManager {

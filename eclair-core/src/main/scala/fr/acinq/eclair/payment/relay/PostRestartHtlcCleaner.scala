@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
+import fr.acinq.eclair.{Features, LongToBtcAmount, NodeParams}
 import scodec.bits.ByteVector
 
 import scala.compat.Platform
@@ -105,6 +105,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
       val notRelayed1 = brokenHtlcs.notRelayed diff acked
       Metrics.PendingNotRelayed.update(notRelayed1.size)
       context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
+
+    case _: ChannelStateChanged => // ignore other channel state changes
 
     case ff: Relayer.ForwardFulfill =>
       log.info("htlc fulfilled downstream: ({},{})", ff.htlc.channelId, ff.htlc.id)
@@ -292,7 +294,7 @@ object PostRestartHtlcCleaner {
    * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
    * result upstream to preserve channels.
    */
-  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: ByteVector)(implicit log: LoggingAdapter): BrokenHtlcs = {
+  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: Features)(implicit log: LoggingAdapter): BrokenHtlcs = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.

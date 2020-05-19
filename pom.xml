@@ -71,7 +71,7 @@
         <sttp.version>1.7.2</sttp.version>
         <bitcoinlib.version>0.18</bitcoinlib.version>
         <guava.version>24.0-android</guava.version>
-        <kamon.version>2.0.0</kamon.version>
+        <kamon.version>2.1.0</kamon.version>
     </properties>
 
     <build>
@@ -160,6 +160,7 @@
                             <goal>doc-jar</goal>
                         </goals>
                         <configuration>
+                            <skip>${maven.test.skip}</skip>
                             <args>
                                 <arg>-no-link-warnings</arg>
                             </args>
@@ -246,6 +247,7 @@
                 <artifactId>scoverage-maven-plugin</artifactId>
                 <version>1.4.0-RC1</version>
                 <configuration>
+                    <skip>${maven.test.skip}</skip>
                     <scalaVersion>${scala.version}</scalaVersion>
                 </configuration>
             </plugin>

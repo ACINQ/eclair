@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # Copyright (c) 2012, Joshua Suereth
 # All rights reserved.
 #
@@ -6,8 +8,6 @@
 # Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
 # Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-#!/usr/bin/env bash
 
 ###  ------------------------------- ###
 ###  Helper methods for BASH scripts ###
@@ -346,7 +346,7 @@ declare -a java_args
 declare -a app_commands
 declare -r real_script_path="$(realpath "$0")"
 declare -r app_home="$(realpath "$(dirname "$real_script_path")")"
-declare -r lib_dir="$(realpath "${app_home::-4}/lib")" # {app_home::-4} transforms ../bin in ../
+declare -r lib_dir="$(realpath "${app_home:0:${#app_home}-4}/lib")" # {app_home:0:${#app_home}-4} transforms ../bin in ../
 declare -a app_mainclass=("fr.acinq.eclair.JavafxBoot")
 declare -a app_entrypoint=$(ls $lib_dir |grep eclair-node-gui) # TODO: improve this
 declare -a app_classpath=("$lib_dir:$lib_dir/$app_entrypoint")
