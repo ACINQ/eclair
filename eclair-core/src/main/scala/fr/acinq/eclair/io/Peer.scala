@@ -86,7 +86,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   when(CONNECTED) {
     dropStaleMessages {
       case Event(_: Peer.Connect, _) =>
-        sender ! "already connected"
+        sender ! PeerConnection.ConnectionResult.AlreadyConnected
         stay
 
       case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
