@@ -162,7 +162,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeSignature2: ByteVector64,
                                bitcoinSignature1: ByteVector64,
                                bitcoinSignature2: ByteVector64,
-                               features: ByteVector,
+                               features: Features,
                                chainHash: ByteVector32,
                                shortChannelId: ShortChannelId,
                                nodeId1: PublicKey,
@@ -206,7 +206,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 
 
 case class NodeAnnouncement(signature: ByteVector64,
-                            features: ByteVector,
+                            features: Features,
                             timestamp: Long,
                             nodeId: PublicKey,
                             rgbColor: Color,

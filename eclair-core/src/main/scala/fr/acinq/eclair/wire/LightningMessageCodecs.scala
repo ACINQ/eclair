@@ -28,6 +28,11 @@ import scodec.{Attempt, Codec}
  */
 object LightningMessageCodecs {
 
+  val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](
+    { bytes => Features(bytes) },
+    { features => features.toByteVector }
+  )
+
   /** For historical reasons, features are divided into two feature bitmasks. We only send from the second one, but we allow receiving in both. */
   val combinedFeaturesCodec: Codec[Features] = (
     ("globalFeatures" | varsizebinarydata) ::
@@ -165,7 +170,7 @@ object LightningMessageCodecs {
       ("bitcoinSignature" | bytes64)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec =
-    ("features" | varsizebinarydata) ::
+    ("features" | featuresCodec) ::
       ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       ("nodeId1" | publicKey) ::
@@ -182,7 +187,7 @@ object LightningMessageCodecs {
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
-    ("features" | varsizebinarydata) ::
+    ("features" | featuresCodec) ::
       ("timestamp" | uint32) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::

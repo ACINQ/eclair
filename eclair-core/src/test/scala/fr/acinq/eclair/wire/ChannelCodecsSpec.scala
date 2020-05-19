@@ -367,6 +367,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""version":0,""", "")
         .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
         .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":[],"unknown":[]}""", """"features":""""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -380,6 +381,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""version":0,""", "")
         .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
         .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":[],"unknown":[]}""", """"features":""""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
