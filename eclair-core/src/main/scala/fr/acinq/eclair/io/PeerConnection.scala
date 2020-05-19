@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -101,23 +101,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
         case Some(f) => f
-        case None =>
-          // Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
-          // off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
-          // We use a long enough mask to account for future features.
-          // TODO: remove that once eclair-mobile is patched.
-          val tweakedFeatures = BitVector.bits(nodeParams.features.bits.reverse.toIndexedSeq.zipWithIndex.map {
-            // we disable those bits if they are set...
-            case (true, 14) => false
-            case (true, 15) => false
-            case (true, 16) => false
-            case (true, 17) => false
-            // ... and leave the others untouched
-            case (value, _) => value
-          }).reverse.bytes.dropWhile(_ == 0)
-          tweakedFeatures
+        case None => nodeParams.features.maskFeaturesForEclairMobile()
       }
-      log.info(s"using features=${localFeatures.toBin}")
+      log.info(s"using features=$localFeatures")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit
       setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
@@ -130,7 +116,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         cancelTimer(INIT_TIMER)
         d.transport ! TransportHandler.ReadAck(remoteInit)
 
-        log.info(s"peer is using features=${remoteInit.features.toBin}, networks=${remoteInit.networks.mkString(",")}")
+        log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
 
         if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
@@ -148,9 +134,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
 
-          def localHasFeature(f: Feature): Boolean = Features.hasFeature(d.localInit.features, f)
+          def localHasFeature(f: Feature): Boolean = d.localInit.features.hasFeature(f)
 
-          def remoteHasFeature(f: Feature): Boolean = Features.hasFeature(remoteInit.features, f)
+          def remoteHasFeature(f: Feature): Boolean = remoteInit.features.hasFeature(f)
 
           val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
           val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
