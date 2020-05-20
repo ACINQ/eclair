@@ -49,7 +49,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTr
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams, NORMAL => _, State => _}
+import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PublicChannel, RouteParams, NORMAL => _, State => _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
@@ -87,7 +87,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       cltvDeltaFactor = 0.1,
       ageFactor = 0,
       capacityFactor = 0
-    ))
+    )),
+    mpp = MultiPartParams(15000000 msat, 6)
   ))
 
   val commonConfig = ConfigFactory.parseMap(Map(
