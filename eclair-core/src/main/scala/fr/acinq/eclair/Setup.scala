@@ -57,12 +57,10 @@ import scala.util.{Failure, Success}
  * Created by PM on 25/01/2016.
  *
  * @param datadir          directory where eclair-core will write/read its data.
- * @param overrideDefaults use this parameter to programmatically override the node configuration .
  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
  * @param db               optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
-            overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
@@ -77,8 +75,7 @@ class Setup(datadir: File,
 
 
   datadir.mkdirs()
-  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val config = appConfig.getConfig("eclair")
+  val config = system.settings.config.getConfig("eclair")
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)

@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnection}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
@@ -41,7 +41,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: String, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -127,8 +127,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   private val externalIdMaxLength = 66
 
   override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
-    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[String]
-    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[String]
+    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[PeerConnection.ConnectionResult].map(_.toString)
+    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[PeerConnection.ConnectionResult].map(_.toString)
   }
 
   override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {
@@ -204,7 +204,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def newAddress(): Future[String] = Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
 
   override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {
-    (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amount, assistedRoutes)).mapTo[RouteResponse]
+    val maxFee = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf).getMaxFee(amount)
+    (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amount, maxFee, assistedRoutes)).mapTo[RouteResponse]
   }
 
   override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: Seq[PublicKey], trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
@@ -311,7 +312,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     GetInfoResponse(
       version = Kit.getVersionLong,
       color = appKit.nodeParams.color.toString,
-      features = appKit.nodeParams.features.toHex,
+      features = appKit.nodeParams.features,
       nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,

@@ -21,6 +21,7 @@ import java.util.UUID
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair.channel.ChannelCommandResponse.ChannelClosed
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -176,7 +177,7 @@ class ApiServiceSpec extends AnyFunSuiteLike with ScalatestRouteTest with RouteT
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = "#000102",
-      features = ""
+      features = Features(Set(ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional)))
     ))
 
     Post("/getinfo") ~>

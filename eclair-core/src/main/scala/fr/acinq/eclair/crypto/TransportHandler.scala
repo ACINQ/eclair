@@ -269,7 +269,10 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
     }
   }
 
-  override def aroundPostStop(): Unit = connection ! Tcp.Close // attempts to gracefully close the connection when dying
+  onTermination {
+    case _: StopEvent =>
+      connection ! Tcp.Close // attempts to gracefully close the connection when dying
+  }
 
   initialize()
 

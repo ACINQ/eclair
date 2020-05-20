@@ -63,7 +63,7 @@ class JsonSerializersSpec extends AnyFunSuite with Logging {
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       isFunder = Random.nextBoolean(),
-      features = randomBytes(256))
+      features = Features(randomBytes(256)))
 
     logger.info(write(localParams))
 
@@ -83,7 +83,7 @@ class JsonSerializersSpec extends AnyFunSuite with Logging {
       paymentBasepoint = randomKey.publicKey,
       delayedPaymentBasepoint = randomKey.publicKey,
       htlcBasepoint = randomKey.publicKey,
-      features = randomBytes(256))
+      features = Features(randomBytes(256)))
 
     logger.info(write(remoteParams))
   }

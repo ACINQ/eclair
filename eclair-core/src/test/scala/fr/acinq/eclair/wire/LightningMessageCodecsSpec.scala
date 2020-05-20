@@ -44,7 +44,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode init message") {
-    case class TestCase(encoded: ByteVector, features: ByteVector, networks: List[ByteVector32], valid: Boolean, reEncoded: Option[ByteVector] = None)
+    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[ByteVector32], valid: Boolean, reEncoded: Option[ByteVector] = None)
     val chainHash1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val chainHash2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val testCases = Seq(
@@ -67,7 +67,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for (testCase <- testCases) {
       if (testCase.valid) {
         val init = initCodec.decode(testCase.encoded.bits).require.value
-        assert(init.features === testCase.features)
+        assert(init.features.toByteVector === testCase.rawFeatures)
         assert(init.networks === testCase.networks)
         val encoded = initCodec.encode(init).require
         assert(encoded.bytes === testCase.reEncoded.getOrElse(testCase.encoded))
@@ -173,8 +173,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes32, 2, randomBytes32, 1111)
     val commit_sig = CommitSig(randomBytes32, randomBytes64, randomBytes64 :: randomBytes64 :: randomBytes64 :: Nil)
     val revoke_and_ack = RevokeAndAck(randomBytes32, scalar(0), point(1))
-    val channel_announcement = ChannelAnnouncement(randomBytes64, randomBytes64, randomBytes64, randomBytes64, bin(7, 9), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
-    val node_announcement = NodeAnnouncement(randomBytes64, bin(1, 2), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
+    val channel_announcement = ChannelAnnouncement(randomBytes64, randomBytes64, randomBytes64, randomBytes64, Features(bin(7, 9)), Block.RegtestGenesisBlock.hash, ShortChannelId(1), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    val node_announcement = NodeAnnouncement(randomBytes64, Features(bin(1, 2)), 1, randomKey.publicKey, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", IPv4(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)).asInstanceOf[Inet4Address], 42000) :: Nil)
     val channel_update = ChannelUpdate(randomBytes64, Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2, 42, 0, CltvExpiryDelta(3), 4 msat, 5 msat, 6, None)
     val announcement_signatures = AnnouncementSignatures(randomBytes32, ShortChannelId(42), randomBytes64, randomBytes64)
     val gossip_timestamp_filter = GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000, 1500)

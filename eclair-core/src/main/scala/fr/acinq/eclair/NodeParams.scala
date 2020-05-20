@@ -22,8 +22,8 @@ import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
+import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import com.google.common.io.Files
-import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
@@ -48,8 +48,8 @@ case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
-                      features: ByteVector,
-                      overrideFeatures: Map[PublicKey, ByteVector],
+                      features: Features,
+                      overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
@@ -107,10 +107,9 @@ object NodeParams {
    * 3) Optionally provided config
    * 4) Default values in reference.conf
    */
-  def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) =
+  def loadConfiguration(datadir: File) =
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
-      .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load())
 
   def getSeed(datadir: File): ByteVector = {
@@ -149,6 +148,10 @@ object NodeParams {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
     }
 
+    // since v0.4.1 features cannot be a byte vector (hex string)
+    val isFeatureByteVector = config.getValue("features").valueType() == ConfigValueType.STRING
+    require(!isFeatureByteVector, "configuration key 'features' have moved from bytevector to human readable (ex: 'feature-name' = optional/mandatory)")
+
     val chain = config.getString("chain")
     val chainHash = makeChainHash(chain)
 
@@ -182,13 +185,13 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = ByteVector.fromValidHex(config.getString("features"))
+    val features = Features.fromConfiguration(config)
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 
-    val overrideFeatures: Map[PublicKey, ByteVector] = config.getConfigList("override-features").asScala.map { e =>
+    val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = ByteVector.fromValidHex(e.getString("features"))
+      val f = Features.fromConfiguration(e)
       p -> f
     }.toMap
 

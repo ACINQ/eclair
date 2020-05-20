@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
 import scodec.bits.ByteVector
@@ -227,6 +227,7 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
+    val features = JField("features", JsonSupport.featuresToJson(Features(p.features.bitmask)))
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
@@ -238,8 +239,15 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
       expiry ++
       minFinalCltvExpiry ++
-      amount
+      amount :+
+      features
     JObject(fieldList)
+}))
+
+class FeaturesSerializer extends CustomSerializer[Features](_ => ( {
+  null
+}, {
+  case features: Features => JsonSupport.featuresToJson(features)
 }))
 
 class JavaUUIDSerializer extends CustomSerializer[UUID](_ => ( {
@@ -281,7 +289,8 @@ object JsonSupport extends Json4sJacksonSupport {
     new NodeAddressSerializer +
     new DirectedHtlcSerializer +
     new PaymentRequestSerializer +
-    new JavaUUIDSerializer
+    new JavaUUIDSerializer +
+    new FeaturesSerializer
 
   case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
     val reverse: Map[String, Class[_]] = custom.map(_.swap)
@@ -293,4 +302,15 @@ object JsonSupport extends Json4sJacksonSupport {
     override def classFor(hint: String): Option[Class[_]] = reverse.get(hint)
   }
 
+  def featuresToJson(features: Features) = JObject(
+    JField("activated", JArray(features.activated.map { a =>
+      JObject(
+        JField("name", JString(a.feature.rfcName)),
+        JField("support", JString(a.support.toString))
+      )}.toList)),
+    JField("unknown", JArray(features.unknown.map { i =>
+      JObject(
+        JField("featureBit", JInt(i.bitIndex))
+      )}.toList))
+  )
 }

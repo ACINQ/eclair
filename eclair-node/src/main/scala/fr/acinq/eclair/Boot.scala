@@ -32,20 +32,20 @@ import scala.util.{Failure, Success}
   * Created by PM on 25/01/2016.
   */
 object Boot extends App with Logging {
-
-  val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
-
   try {
+    val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
+    val config = NodeParams.loadConfiguration(datadir)
+
     val plugins = Plugin.loadPlugins(args.map(new File(_)))
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
-    implicit val system: ActorSystem = ActorSystem("eclair-node")
+    implicit val system: ActorSystem = ActorSystem("eclair-node", config)
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
 
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
-        startApiServiceIfEnabled(setup.config, kit)
+        startApiServiceIfEnabled(kit)
         plugins.foreach(_.onKit(kit))
       case Failure(t) => onError(t)
     }
@@ -56,12 +56,12 @@ object Boot extends App with Logging {
   /**
     * Starts the http APIs service if enabled in the configuration
     *
-    * @param config
     * @param kit
     * @param system
     * @param ec
     */
-  def startApiServiceIfEnabled(config: Config, kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
+  def startApiServiceIfEnabled(kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
+    val config = system.settings.config.getConfig("eclair")
     if(config.getBoolean("api.enabled")){
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
       val apiPassword = config.getString("api.password") match {

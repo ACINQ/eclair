@@ -22,6 +22,8 @@ import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.{ChannelRangeQueries, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -107,26 +109,31 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("disconnect if authentication timeout") { f =>
     import f._
     val probe = TestProbe()
+    val origin = TestProbe()
     probe.watch(peerConnection)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     probe.expectTerminated(peerConnection, nodeParams.authTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+    origin.expectMsg(PeerConnection.ConnectionResult.AuthenticationFailed("authentication timed out"))
   }
 
   test("disconnect if init timeout") { f =>
     import f._
     val probe = TestProbe()
+    val origin = TestProbe()
     probe.watch(peerConnection)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("initialization timed out"))
   }
 
   test("disconnect if incompatible local features") { f =>
     import f._
     val probe = TestProbe()
+    val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
@@ -134,13 +141,15 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
   }
 
   test("disconnect if incompatible global features") { f =>
     import f._
     val probe = TestProbe()
+    val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
@@ -148,6 +157,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
   }
 
   test("masks off MPP and PaymentSecret features") { f =>
@@ -164,22 +174,23 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     )
 
     for ((configuredFeatures, sentFeatures) <- testCases) {
-      val nodeParams = TestConstants.Alice.nodeParams.copy(features = configuredFeatures.bytes)
+      val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(configuredFeatures))
       val peerConnection = TestFSMRef(new PeerConnection(nodeParams, switchboard.ref, router.ref))
       probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
       transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
       probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
       transport.expectMsgType[TransportHandler.Listener]
       val init = transport.expectMsgType[wire.Init]
-      assert(init.features === sentFeatures.bytes)
+      assert(init.features.toByteVector === sentFeatures.bytes)
     }
   }
 
   test("disconnect if incompatible networks") { f =>
     import f._
     val probe = TestProbe()
+    val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
     transport.expectMsgType[TransportHandler.Listener]
@@ -187,23 +198,24 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, wire.Init(Bob.nodeParams.features, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible networks"))
   }
 
   test("sync if no whitelist is defined") { f =>
     import f._
-    val remoteInit = wire.Init(bin"10000000".bytes) // bob supports channel range queries
+    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))))
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = true)
   }
 
   test("sync if whitelist contains peer", Tag("sync-whitelist-bob")) { f =>
     import f._
-    val remoteInit = wire.Init(bin"0000001010000000".bytes) // bob supports channel range queries and variable length onion
+    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(VariableLengthOnion, Optional))))
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = true)
   }
 
   test("don't sync if whitelist doesn't contain peer", Tag("sync-whitelist-random")) { f =>
     import f._
-    val remoteInit = wire.Init(bin"0000001010000000".bytes) // bob supports channel range queries
+    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional)))) // bob supports channel range queries
     connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = false)
   }
 

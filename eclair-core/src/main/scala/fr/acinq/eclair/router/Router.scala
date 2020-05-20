@@ -330,11 +330,17 @@ object Router {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios]) {
+    def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
+      // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
+      maxFeeBase.max(amount * maxFeePct)
+    }
+  }
 
   case class RouteRequest(source: PublicKey,
                           target: PublicKey,
                           amount: MilliSatoshi,
+                          maxFee: MilliSatoshi,
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                           ignoreNodes: Set[PublicKey] = Set.empty,
                           ignoreChannels: Set[ChannelDesc] = Set.empty,

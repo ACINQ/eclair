@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{Features, ShortChannelId}
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
@@ -43,7 +43,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
 
   // on Android we prune as many fields as possible to save memory
   val channelAnnouncementWitnessCodec =
-    ("features" | provide(null.asInstanceOf[ByteVector])) ::
+    ("features" | provide(null.asInstanceOf[Features])) ::
       ("chainHash" | provide(null.asInstanceOf[ByteVector32])) ::
       ("shortChannelId" | shortchannelid) ::
       ("nodeId1" | publicKey) ::
