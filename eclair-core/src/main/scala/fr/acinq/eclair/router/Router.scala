@@ -385,8 +385,8 @@ object Router {
 
   case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
-  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], allowEmpty: Boolean = false) {
-    require(allowEmpty || hops.nonEmpty, "route cannot be empty")
+  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop]) {
+    require(hops.nonEmpty, "route cannot be empty")
     val length = hops.length
     lazy val fee: MilliSatoshi = {
       val amountToSend = hops.drop(1).reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
