@@ -33,8 +33,9 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, NodeParams, TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.concurrent.Promise
@@ -44,7 +45,7 @@ import scala.concurrent.duration._
  * Created by t-bast on 21/11/2019.
  */
 
-class PostRestartHtlcCleanerSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   import PostRestartHtlcCleanerSpec._
 

@@ -20,21 +20,24 @@ import akka.actor.{ActorContext, ActorRef}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, LocalChannelDown, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Logs, LongToBtcAmount, NodeParams, ShortChannelId, TxCoordinates}
 import kamon.Kamon
 
 object Validation {
 
-  def sendDecision(peerConnection: ActorRef, decision: GossipDecision)(implicit sender: ActorRef): Unit = {
+  private def sendDecision(origins: Set[GossipOrigin], decision: GossipDecision)(implicit sender: ActorRef): Unit = {
+    origins.collect { case RemoteGossip(peerConnection, _) => sendDecision(peerConnection, decision) }
+  }
+
+  private def sendDecision(peerConnection: ActorRef, decision: GossipDecision)(implicit sender: ActorRef): Unit = {
     peerConnection ! decision
     Metrics.gossipResult(decision).increment()
   }
@@ -97,19 +100,19 @@ object Validation {
                 None
               case ValidateResult(c, Right((tx, UtxoStatus.Unspent))) =>
                 val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
-                val (fundingOutputScript, ok) = Kamon.runWithSpan(Kamon.spanBuilder("checked-pubkeyscript").start(), finishSpan = true) {
+                val (fundingOutputScript, fundingOutputIsInvalid) = Kamon.runWithSpan(Kamon.spanBuilder("checked-pubkeyscript").start(), finishSpan = true) {
                   // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
                   val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
-                  val ok = tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript
-                  (fundingOutputScript, ok)
+                  val fundingOutputIsInvalid = tx.txOut.size < outputIndex + 1 || fundingOutputScript != tx.txOut(outputIndex).publicKeyScript
+                  (fundingOutputScript, fundingOutputIsInvalid)
                 }
-                if (ok) {
+                if (fundingOutputIsInvalid) {
                   log.error(s"invalid script for shortChannelId={}: txid={} does not have script=$fundingOutputScript at outputIndex=$outputIndex ann={}", c.shortChannelId, tx.txid, c)
                   remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c))))
                   None
                 } else {
-                  watcher ! WatchSpentBasic(ctx.self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
-                  // TODO: check feature bit set
+                  // on Android we only watch our channels
+                  // watcher ! WatchSpentBasic(ctx.self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
                   log.debug("added channel channelId={}", c.shortChannelId)
                   remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c))))
                   val capacity = tx.txOut(outputIndex).amount
@@ -123,7 +126,7 @@ object Validation {
                     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features)
                     ctx.self ! nodeAnn
                   }
-                  Some(PublicChannel(c, tx.txid, capacity, None, None))
+                  Some(PublicChannel(c, tx.txid, capacity, None, None, None))
                 }
               case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
                 if (fundingTxStatus.spendingTxConfirmed) {
@@ -161,7 +164,7 @@ object Validation {
                     awaiting = awaiting1)
                   // we only reprocess updates and nodes if validation succeeded
                   val d2 = reprocessUpdates.foldLeft(d1) {
-                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, origins, u, wasStashed = true)
+                    case (d, (u, origins)) => Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, origins)), wasStashed = true)
                   }
                   val d3 = reprocessNodes.foldLeft(d2) {
                     case (d, (n, origins)) => Validation.handleNodeAnnouncement(d, nodeParams.db.network, origins, n, wasStashed = true)
@@ -259,18 +262,17 @@ object Validation {
     }
   }
 
-  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, origins: Set[GossipOrigin], uOriginal: ChannelUpdate, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val remoteOrigins = origins flatMap {
-      case r: RemoteGossip if wasStashed =>
-        Some(r.peerConnection)
-      case RemoteGossip(peerConnection, _) =>
-        peerConnection ! TransportHandler.ReadAck(uOriginal)
-        log.debug("received channel update for shortChannelId={}", uOriginal.shortChannelId)
-        Some(peerConnection)
-      case LocalGossip =>
-        log.debug("received channel update from {}", ctx.sender)
-        None
+    val (uOriginal: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
+      case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
+      case Right(rcu) =>
+        rcu.origins.collect {
+          case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
+            log.debug("received channel update for shortChannelId={}", rcu.channelUpdate.shortChannelId)
+            peerConnection ! TransportHandler.ReadAck(rcu.channelUpdate)
+        }
+        (rcu.channelUpdate, rcu.origins)
     }
     val u = uOriginal.copy(signature = null)
     if (d.channels.contains(u.shortChannelId)) {
@@ -280,46 +282,56 @@ object Validation {
       val desc = getDesc(u, pc.ann)
       if (d.rebroadcast.updates.contains(u)) {
         log.debug("ignoring {} (pending rebroadcast)", u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
+        sendDecision(origins, GossipDecision.Accepted(u))
         val origins1 = d.rebroadcast.updates(u) ++ origins
+        // NB: we update the channels because the balances may have changed even if the channel_update is the same.
+        val pc1 = pc.applyChannelUpdate(update)
+        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         // On Android we don't implement rebroadcasting
-        //d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
-        d
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
       } else if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Stale(u)))
+        sendDecision(origins, GossipDecision.Stale(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (duplicate)", u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Duplicate(u)))
-        d
+        sendDecision(origins, GossipDecision.Duplicate(u))
+        update match {
+          case Left(_) =>
+            // NB: we update the graph because the balances may have changed even if the channel_update is the same.
+            val pc1 = pc.applyChannelUpdate(update)
+            val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+            d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
+          case Right(_) => d
+        }
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.InvalidSignature(u)))
+        sendDecision(origins, GossipDecision.InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
+        Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
+        sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // update the graph
+        val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
-          d.graph.removeEdge(desc).addEdge(desc, u)
+          d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
           d.graph.removeEdge(desc)
         }
-        // d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
+        sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         db.updateChannel(u)
         // we also need to update the graph
-        val graph1 = d.graph.addEdge(desc, u)
+        val pc1 = pc.applyChannelUpdate(update)
+        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         // On Android we don't implement rebroadcasting
-        // d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
-        d.copy(channels = d.channels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), privateChannels = d.privateChannels - u.shortChannelId, graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -334,33 +346,40 @@ object Validation {
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
       val pc = d.privateChannels(u.shortChannelId)
-      val desc = if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
+      val desc = getDesc(u, pc)
       if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Stale(u)))
+        sendDecision(origins, GossipDecision.Stale(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
         log.debug("ignoring {} (already know same or newer)", u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Duplicate(u)))
+        sendDecision(origins, GossipDecision.Duplicate(u))
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.InvalidSignature(u)))
+        sendDecision(origins, GossipDecision.InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
+        Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
+        sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
-        val graph1 = d.graph.removeEdge(desc).addEdge(desc, u)
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
+        val pc1 = pc.applyChannelUpdate(update)
+        val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
+          d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+        } else {
+          d.graph.removeEdge(desc)
+        }
+        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
-        remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(u)))
+        sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
-        val graph1 = d.graph.addEdge(desc, u)
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc.updateChannelUpdateSameSideAs(u)), graph = graph1)
+        val pc1 = pc.applyChannelUpdate(update)
+        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
+        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
@@ -369,9 +388,8 @@ object Validation {
       // let's remove the channel from the zombie list and ask the sender to re-send announcements (channel_announcement + updates)
       // about that channel. We can ignore this update since we will receive it again
       log.info(s"channel shortChannelId=${u.shortChannelId} is back from the dead! requesting announcements about this channel")
-      remoteOrigins.foreach(sendDecision(_, GossipDecision.Duplicate(u)))
+      sendDecision(origins, GossipDecision.RelatedChannelPruned(u))
       db.removeFromPruned(u.shortChannelId)
-
       // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
       // when we're sending updates to ourselves
       origins head match {
@@ -395,39 +413,39 @@ object Validation {
       }
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
-      remoteOrigins.foreach(sendDecision(_, GossipDecision.NoRelatedChannel(u)))
+      sendDecision(origins, GossipDecision.NoRelatedChannel(u))
       d
     }
   }
 
   def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: ActorRef, lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    import lcu.{channelAnnouncement_opt, shortChannelId, channelUpdate => u}
-    d.channels.get(shortChannelId) match {
+    d.channels.get(lcu.shortChannelId) match {
       case Some(_) =>
         // channel has already been announced and router knows about it, we can process the channel_update
-        handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+        handleChannelUpdate(d, db, routerConf, Left(lcu))
       case None =>
-        channelAnnouncement_opt match {
+        lcu.channelAnnouncement_opt match {
           case Some(c) if d.awaiting.contains(c) =>
             // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(c)
             val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
-            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
-          case None if d.privateChannels.contains(shortChannelId) =>
+            handleChannelUpdate(d1, db, routerConf, Left(lcu))
+          case None if d.privateChannels.contains(lcu.shortChannelId) =>
             // channel isn't announced but we already know about it, we can process the channel_update
-            handleChannelUpdate(d, db, routerConf, Set(LocalGossip), u)
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case None =>
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
-            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, shortChannelId)
-            val d1 = d.copy(privateChannels = d.privateChannels + (shortChannelId -> PrivateChannel(localNodeId, lcu.remoteNodeId, None, None)))
-            handleChannelUpdate(d1, db, routerConf, Set(LocalGossip), u)
+            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
+            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
+            val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
+            handleChannelUpdate(d1, db, routerConf, Left(lcu))
         }
     }
   }
@@ -454,4 +472,26 @@ object Validation {
       d
     }
   }
+
+  def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged): Data = {
+    val (channels1, graph1) = d.channels.get(e.shortChannelId) match {
+      case Some(pc) =>
+        val pc1 = pc.updateBalances(e.commitments)
+        val desc = ChannelDesc(e.shortChannelId, e.commitments.localParams.nodeId, e.commitments.remoteParams.nodeId)
+        val update_opt = if (e.commitments.localParams.nodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
+        val graph1 = update_opt.map(u => d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(d.graph)
+        (d.channels + (e.shortChannelId -> pc1), graph1)
+      case None =>
+        (d.channels, d.graph)
+    }
+    val privateChannels1 = d.privateChannels.get(e.shortChannelId) match {
+      case Some(pc) =>
+        val pc1 = pc.updateBalances(e.commitments)
+        d.privateChannels + (e.shortChannelId -> pc1)
+      case None =>
+        d.privateChannels
+    }
+    d.copy(channels = channels1, privateChannels = privateChannels1, graph = graph1)
+  }
+
 }

@@ -21,22 +21,18 @@ import java.util.UUID
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair._
-import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair.channel.ChannelCommandResponse.ChannelClosed
-import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
-import fr.acinq.eclair.payment.{PaymentFailed, _}
-import fr.acinq.eclair.router.{NetworkStats, Stats}
-import fr.acinq.eclair.wire.{Color, NodeAddress}
 import fr.acinq.eclair.wire.NodeAddress
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi, _}
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 import spray.http.StatusCodes._
 import spray.http.{BasicHttpCredentials, FormData, HttpResponse}
@@ -49,7 +45,7 @@ import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Try
 
-class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest with IdiomaticMockito with Matchers {
+class ApiServiceSpec extends AnyFunSuiteLike with ScalatestRouteTest with RouteTest with IdiomaticMockito with Matchers {
 
   implicit val formats = JsonSupport.json4sJacksonFormats
   implicit val serialization = JsonSupport.serialization
@@ -181,7 +177,7 @@ class ApiServiceSpec extends FunSuite with ScalatestRouteTest with RouteTest wit
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = "#000102",
-      features = ""
+      features = Features(Set(ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional)))
     ))
 
     Post("/getinfo") ~>

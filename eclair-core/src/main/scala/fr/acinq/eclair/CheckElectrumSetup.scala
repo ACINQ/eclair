@@ -52,8 +52,7 @@ class CheckElectrumSetup(datadir: File,
 
   implicit val ec = ExecutionContext.Implicits.global
 
-  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val config = appConfig.getConfig("eclair")
+  val config = system.settings.config.getConfig("eclair")
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(randomBytes(32), NodeParams.makeChainHash(chain))
   val database = db match {

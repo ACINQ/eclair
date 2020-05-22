@@ -48,14 +48,9 @@ import scala.util.{Failure, Success, Try}
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
-
-  val reconnectionTask: ActorRef = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId, switchboard, router), "reconnection-task")
-  // we register the reconnection task to our transitions ourselves; if we let the child actor register itself, there is
-  // a race condition and it may miss the first transition
-  listeners.add(reconnectionTask)
 
   startWith(INSTANTIATING, Nothing)
 
@@ -75,22 +70,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       reconnectionTask forward p
       stay
 
-    case Event(PeerConnection.ConnectionReady(peerConnection, remoteNodeId1, address, outgoing, localInit, remoteInit), d: DisconnectedData) =>
-      require(remoteNodeId == remoteNodeId1, s"invalid nodeid: $remoteNodeId != $remoteNodeId1")
-      log.debug("got authenticated connection to address {}:{}", address.getHostString, address.getPort)
-
-      context watch peerConnection
-
-      if (outgoing) {
-        // we store the node address upon successful outgoing connection, so we can reconnect later
-        // any previous address is overwritten
-        NodeAddress.fromParts(address.getHostString, address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
-      }
-
-      // let's bring existing/requested channels online
-      d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(peerConnection, localInit, remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-
-      goto(CONNECTED) using ConnectedData(address, peerConnection, localInit, remoteInit, d.channels.map { case (k: ChannelId, v) => (k, v) })
+    case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
+      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
       val h = d.channels.filter(_._2 == actor).keys
@@ -105,7 +86,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
   when(CONNECTED) {
     dropStaleMessages {
       case Event(_: Peer.Connect, _) =>
-        sender ! "already connected"
+        sender ! PeerConnection.ConnectionResult.AlreadyConnected
         stay
 
       case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -119,13 +100,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
         d.peerConnection ! PoisonPill
         stay
 
-    case Event(err: wire.Error, d: ConnectedData) =>
-      // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
-      d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
-        case Some(channel) => channel forward err
-        case None => () // let's not create a ping-pong of error messages here
-      }
-      stay
+      case Event(err: wire.Error, d: ConnectedData) =>
+        // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
+        d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
+          case Some(channel) => channel forward err
+          case None => () // let's not create a ping-pong of error messages here
+        }
+        stay
 
     case Event(payToOpenRequest: PayToOpenRequest, d: ConnectedData) =>
       d.peerConnection ! TransportHandler.ReadAck(payToOpenRequest)
@@ -166,10 +147,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
+      if (c.fundingSatoshis >= Channel.MAX_FUNDING && !nodeParams.features.hasFeature(Wumbo)) {
         sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
         stay
-      } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(d.remoteInit.features, Wumbo)) {
+      } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !d.remoteInit.features.hasFeature(Wumbo)) {
         sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
         stay
       } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
@@ -234,12 +215,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
           }
       }
 
-    case Event(msg: wire.HasChannelId, d: ConnectedData) =>
-      d.channels.get(FinalChannelId(msg.channelId)) match {
-        case Some(channel) => channel forward msg
-        case None => replyUnknownChannel(d.peerConnection, msg.channelId)
-      }
-      stay
+      case Event(msg: wire.HasChannelId, d: ConnectedData) =>
+        d.channels.get(FinalChannelId(msg.channelId)) match {
+          case Some(channel) => channel forward msg
+          case None => replyUnknownChannel(d.peerConnection, msg.channelId)
+        }
+        stay
 
       case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
@@ -283,8 +264,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
         context unwatch d.peerConnection
         d.peerConnection ! PoisonPill
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        self ! connectionReady
-        goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+        gotoConnected(connectionReady, d.channels)
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -313,9 +293,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
 
   }
 
+  private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
+
   onTransition {
-    case _ -> CONNECTED =>
+    case _ -> (DISCONNECTED | CONNECTED) => reconnectionTask ! Peer.Transition(stateData, nextStateData)
+  }
+
+  onTransition {
+    case DISCONNECTED -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
+    case CONNECTED -> CONNECTED => // connection switch
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
     case CONNECTED -> DISCONNECTED =>
       Metrics.PeersConnected.withoutTags().decrement()
@@ -329,6 +317,24 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
       // the transition handler won't be fired if we go directly from CONNECTED to closed
       Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+  }
+
+  def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
+    require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeid: $remoteNodeId != ${connectionReady.remoteNodeId}")
+    log.debug("got authenticated connection to address {}:{}", connectionReady.address.getHostString, connectionReady.address.getPort)
+
+    context watch connectionReady.peerConnection
+
+    if (connectionReady.outgoing) {
+      // we store the node address upon successful outgoing connection, so we can reconnect later
+      // any previous address is overwritten
+      NodeAddress.fromParts(connectionReady.address.getHostString, connectionReady.address.getPort).map(nodeAddress => nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeAddress))
+    }
+
+    // let's bring existing/requested channels online
+    channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels)
   }
 
   /**
@@ -420,7 +426,7 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: ActorRef, router: ActorRef, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, switchboard: ActorRef, router, watcher, relayer, paymentHandler, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, paymentHandler: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer, paymentHandler, wallet))
 
   // @formatter:off
 
@@ -462,7 +468,9 @@ object Peer {
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
-  case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: LightningMessage)
+  case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
+
+  case class Transition(previousData: Peer.Data, nextData: Peer.Data)
 
   case class SendSwapOutRequest(nodeId: PublicKey, amountSatoshis: Satoshi, bitcoinAddress: String, feeratePerKw: Long)
   case class SendSwapInRequest(nodeId: PublicKey)

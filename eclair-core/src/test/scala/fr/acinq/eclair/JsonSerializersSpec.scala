@@ -8,12 +8,13 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
 import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import upickle.default.{read, write}
 
 import scala.util.Random
 
-class JsonSerializersSpec extends FunSuite with Logging {
+class JsonSerializersSpec extends AnyFunSuite with Logging {
   import JsonSerializers._
 
   val tx1 = Transaction(version = 2,
@@ -62,7 +63,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       isFunder = Random.nextBoolean(),
-      features = randomBytes(256))
+      features = Features(randomBytes(256)))
 
     logger.info(write(localParams))
 
@@ -82,7 +83,7 @@ class JsonSerializersSpec extends FunSuite with Logging {
       paymentBasepoint = randomKey.publicKey,
       delayedPaymentBasepoint = randomKey.publicKey,
       htlcBasepoint = randomKey.publicKey,
-      features = randomBytes(256))
+      features = Features(randomBytes(256)))
 
     logger.info(write(remoteParams))
   }

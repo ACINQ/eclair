@@ -25,8 +25,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
-import scala.compat.Platform
-
 trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
@@ -37,7 +35,7 @@ trait IncomingPaymentsDb {
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
    * Note that this function assumes that there is a matching payment request in the DB.
    */
-  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = Platform.currentTime): Unit
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = System.currentTimeMillis): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
@@ -209,7 +207,7 @@ object FailureType extends Enumeration {
 
 object FailureSummary {
   def apply(f: PaymentFailure): FailureSummary = f match {
-    case LocalFailure(t) => FailureSummary(FailureType.LOCAL, t.getMessage, Nil)
+    case LocalFailure(route, t) => FailureSummary(FailureType.LOCAL, t.getMessage, route.map(h => HopSummary(h)).toList)
     case RemoteFailure(route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList)
     case UnreadableRemoteFailure(route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
   }

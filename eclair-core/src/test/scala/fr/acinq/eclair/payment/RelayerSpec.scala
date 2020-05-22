@@ -32,8 +32,9 @@ import fr.acinq.eclair.router.Router.{ChannelHop, GetNetworkStats, GetNetworkSta
 import fr.acinq.eclair.router.{Announcements, _}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, TestkitBaseClass, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, UInt64, nodeFee, randomBytes32}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -42,7 +43,7 @@ import scala.concurrent.duration._
  * Created by PM on 29/08/2016.
  */
 
-class RelayerSpec extends TestkitBaseClass {
+class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   import PaymentPacketSpec._
 

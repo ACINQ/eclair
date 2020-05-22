@@ -21,19 +21,19 @@ import fr.acinq.eclair._
 import scala.concurrent.Future
 
 /**
-  * Created by PM on 09/07/2017.
-  */
+ * Created by PM on 09/07/2017.
+ */
 trait FeeProvider {
-
   def getFeerates: Future[FeeratesPerKB]
-
 }
+
+case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates: channels may be at risk")
 
 // stores fee rate in satoshi/kb (1 kb = 1000 bytes)
 case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long, blocks_144: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0 && blocks_144 > 0, "all feerates must be strictly greater than 0")
 
-  def feePerBlock(target: Int) = target match {
+  def feePerBlock(target: Int): Long = target match {
     case 1 => block_1
     case 2 => blocks_2
     case t if t <= 6 => blocks_6
@@ -48,7 +48,7 @@ case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_1
 case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long, blocks_144: Long) {
   require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0 && blocks_144 > 0, "all feerates must be strictly greater than 0")
 
-  def feePerBlock(target: Int) = target match {
+  def feePerBlock(target: Int): Long = target match {
     case 1 => block_1
     case 2 => blocks_2
     case t if t <= 6 => blocks_6
@@ -69,12 +69,7 @@ object FeeratesPerKw {
     blocks_72 = feerateKB2Kw(feerates.blocks_72),
     blocks_144 = feerateKB2Kw(feerates.blocks_144))
 
-  /**
-    * Used in tests
-    *
-    * @param feeratePerKw
-    * @return
-    */
+  /** Used in tests */
   def single(feeratePerKw: Long): FeeratesPerKw = FeeratesPerKw(
     block_1 = feeratePerKw,
     blocks_2 = feeratePerKw,

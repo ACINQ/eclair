@@ -38,7 +38,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
   import scala.concurrent.ExecutionContext.Implicits.global
 
   // refresh our map of channel_updates regularly from the router
-  context.system.scheduler.schedule(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, 'data)
+  context.system.scheduler.schedule(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, Symbol("data"))
 
   override def receive: Receive = {
     case routingData: Data =>
@@ -91,7 +91,7 @@ object Autoprobe {
     // we only pick direct peers with enabled public channels
     val peers = routingData.channels
       .collect {
-        case (shortChannelId, c@PublicChannel(ann, _, _, Some(u1), _))
+        case (shortChannelId, c@PublicChannel(ann, _, _, Some(u1), _, _))
           if c.getNodeIdSameSideAs(u1) == nodeId && Announcements.isEnabled(u1.channelFlags) && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {

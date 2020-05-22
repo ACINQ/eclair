@@ -21,6 +21,9 @@ blocks:
       jobs:
         - name: Build & Test
           commands:
+            # configure file limits
+            - ulimit -S -n 1024000
+            - echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
             - sem-version java 11
             - checkout
             - cache restore maven

@@ -20,18 +20,19 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 
-import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit
-import akka.testkit.{TestActor, TestFSMRef, TestKit, TestProbe}
+import akka.actor.{ActorRef, Props}
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
-import fr.acinq.eclair.wire.{Init, LightningMessage}
-import fr.acinq.eclair.{LongToBtcAmount, TestUtils}
-import org.scalatest.{BeforeAndAfterAll, Matchers, Outcome, fixture}
+import fr.acinq.eclair.wire.Init
+import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, TestUtils}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.{BeforeAndAfterAll, Outcome}
 
 import scala.concurrent.duration._
 import scala.io.Source
@@ -40,7 +41,8 @@ import scala.io.Source
  * Created by PM on 30/05/2016.
  */
 
-class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
+class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSuiteLike with BeforeAndAfterAll {
+
   private val number = new AtomicLong
 
   private def randomName: String = {

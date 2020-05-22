@@ -116,7 +116,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event)
-      statement.setLong(7, Platform.currentTime)
+      statement.setLong(7, System.currentTimeMillis)
       statement.executeUpdate()
     }
 
@@ -179,7 +179,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(3, e.tx.txid.toArray)
       statement.setLong(4, e.fee.toLong)
       statement.setString(5, e.txType)
-      statement.setLong(6, Platform.currentTime)
+      statement.setLong(6, System.currentTimeMillis)
       statement.executeUpdate()
     }
 
@@ -194,7 +194,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setString(3, errorName)
       statement.setString(4, errorMessage)
       statement.setBoolean(5, e.isFatal)
-      statement.setLong(6, Platform.currentTime)
+      statement.setLong(6, System.currentTimeMillis)
       statement.executeUpdate()
     }
 
@@ -300,10 +300,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def stats: Seq[Stats] = {
-    val networkFees = listNetworkFees(0, Platform.currentTime + 1).foldLeft(Map.empty[ByteVector32, Satoshi]) { case (feeByChannelId, f) =>
+    val networkFees = listNetworkFees(0, System.currentTimeMillis + 1).foldLeft(Map.empty[ByteVector32, Satoshi]) { case (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }
-    val relayed = listRelayed(0, Platform.currentTime + 1).foldLeft(Map.empty[ByteVector32, Seq[PaymentRelayed]]) { case (relayedByChannelId, e) =>
+    val relayed = listRelayed(0, System.currentTimeMillis + 1).foldLeft(Map.empty[ByteVector32, Seq[PaymentRelayed]]) { case (relayedByChannelId, e) =>
       val relayedTo = e match {
         case c: ChannelPaymentRelayed => Set(c.toChannelId)
         case t: TrampolinePaymentRelayed => t.outgoing.map(_.channelId).toSet

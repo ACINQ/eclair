@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Try
 
 
 
-class ShortChannelIdSpec extends FunSuite {
+class ShortChannelIdSpec extends AnyFunSuite {
 
   test("handle values from 0 to 0xffffffffffff") {
 

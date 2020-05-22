@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment.send
 
-import scodec.bits.BitVector
+import fr.acinq.eclair.Features
 
 sealed trait PaymentError extends Throwable
 
@@ -25,7 +25,7 @@ object PaymentError {
   // @formatter:off
   sealed trait InvalidInvoice extends PaymentError
   /** The invoice contains a feature we don't support. */
-  case class UnsupportedFeatures(features: BitVector) extends InvalidInvoice
+  case class UnsupportedFeatures(features: Features) extends InvalidInvoice
   /** The invoice is missing a payment secret. */
   case object PaymentSecretMissing extends InvalidInvoice
   // @formatter:on

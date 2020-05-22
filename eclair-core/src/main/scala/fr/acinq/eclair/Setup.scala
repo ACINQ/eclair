@@ -27,9 +27,8 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.ELECTRUM
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum._
@@ -39,17 +38,18 @@ import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.{BackupHandler, Databases}
-import fr.acinq.eclair.io.{Server, Switchboard}
+import fr.acinq.eclair.io.{ClientSpawner, Server, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
-import fr.acinq.eclair.payment.send.PaymentInitiator
+import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 /**
  * Setup eclair from a data directory.
@@ -57,11 +57,10 @@ import scala.concurrent.duration._
  * Created by PM on 25/01/2016.
  *
  * @param datadir          directory where eclair-core will write/read its data.
- * @param overrideDefaults use this parameter to programmatically override the node configuration .
  * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ * @param db               optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
-            overrideDefaults: Config = ConfigFactory.empty(),
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None,
             eclairWallet_opt: Option[EclairWallet] = None)(implicit system: ActorSystem) extends Logging {
@@ -77,8 +76,7 @@ class Setup(datadir: File,
 
 
   datadir.mkdirs()
-  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val config = appConfig.getConfig("eclair")
+  val config = system.settings.config.getConfig("eclair")
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
@@ -109,8 +107,10 @@ class Setup(datadir: File,
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
 
   val feeEstimator = new FeeEstimator {
+    // @formatter:off
     override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
+    // @formatter:on
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, blockCount, feeEstimator)
@@ -215,18 +215,20 @@ class Setup(datadir: File,
           case _ => ???
         }
       }
-
-      _ = wallet.getFinalAddress.map {
-        case address => logger.info(s"initial wallet address=$address")
-      }
+      _ = wallet.getFinalAddress.map(address => logger.info(s"initial wallet address=$address"))
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
-      backupHandler = system.actorOf(SimpleSupervisor.props(
-        BackupHandler.props(
-          nodeParams.db,
-          new File(chaindir, "eclair.sqlite.bak"),
-          if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-        ), "backuphandler", SupervisorStrategy.Resume))
+      backupHandler = if (config.getBoolean("enable-db-backup")) {
+        system.actorOf(SimpleSupervisor.props(
+          BackupHandler.props(
+            nodeParams.db,
+            new File(chaindir, "eclair.sqlite.bak"),
+            if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
+          ), "backuphandler", SupervisorStrategy.Resume))
+      } else {
+        logger.warn("database backup is disabled")
+        system.deadLetters
+      }
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
@@ -235,7 +237,8 @@ class Setup(datadir: File,
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
       _ <- postRestartCleanUpInitialized.future
-      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, router, watcher, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, paymentHandler, wallet), "switchboard", SupervisorStrategy.Resume))
+      clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, relayer, register), "payment-initiator", SupervisorStrategy.Restart))
 
       kit = Kit(
@@ -256,7 +259,6 @@ class Setup(datadir: File,
 
 // @formatter:off
 sealed trait Bitcoin
-case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 

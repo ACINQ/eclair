@@ -18,17 +18,18 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit.{TestKit, TestProbe}
+import akka.actor.{ActorRef, Props}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
+import fr.acinq.eclair.TestKitBaseClass
 import grizzled.slf4j.Logging
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
-class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
+class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike with Logging {
 
   import ElectrumClient._
 
@@ -56,10 +57,6 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   override protected def beforeAll(): Unit = {
     client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)), "electrum-client")
-  }
-
-  override protected def afterAll(): Unit = {
-    TestKit.shutdownActorSystem(system)
   }
 
   test("connect to an electrumx mainnet server") {

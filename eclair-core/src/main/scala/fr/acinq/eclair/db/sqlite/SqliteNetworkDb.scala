@@ -20,7 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{Features, ShortChannelId}
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
@@ -43,7 +43,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
 
   // on Android we prune as many fields as possible to save memory
   val channelAnnouncementWitnessCodec =
-    ("features" | provide(null.asInstanceOf[ByteVector])) ::
+    ("features" | provide(null.asInstanceOf[Features])) ::
       ("chainHash" | provide(null.asInstanceOf[ByteVector32])) ::
       ("shortChannelId" | shortchannelid) ::
       ("nodeId1" | publicKey) ::
@@ -164,7 +164,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
         val capacity = rs.getLong("capacity_sat")
         val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
         val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-        m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt))
+        m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
       }
       m
     }
@@ -172,12 +172,12 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
 
   override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = {
     using(sqlite.createStatement) { statement =>
-    shortChannelIds
-      .grouped(1000) // remove channels by batch of 1000
-      .foreach {group =>
-        val ids = shortChannelIds.map(_.toLong).mkString(",")
-        statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id IN ($ids)")
-      }
+      shortChannelIds
+        .grouped(1000) // remove channels by batch of 1000
+        .foreach { _ =>
+          val ids = shortChannelIds.map(_.toLong).mkString(",")
+          statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id IN ($ids)")
+        }
     }
   }
 

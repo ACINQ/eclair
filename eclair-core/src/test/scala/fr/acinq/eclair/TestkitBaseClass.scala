@@ -16,32 +16,17 @@
 
 package fr.acinq.eclair
 
-import java.util.concurrent.atomic.AtomicLong
-
-import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
+import akka.actor.ActorSystem
 import akka.testkit.TestKit
-import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
-
-import scala.concurrent.Await
+import org.scalatest.{BeforeAndAfterAll, TestSuite}
 
 /**
-  * This base class kills all actor between each tests.
-  * Created by PM on 06/09/2016.
-  */
-abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
-
-  override def afterEach() {
-    system.actorSelection(system / "*") ! PoisonPill
-    intercept[ActorNotFound] {
-      import scala.concurrent.duration._
-      Await.result(system.actorSelection(system / "*").resolveOne(42 days), 42 days)
-    }
-  }
+ * This base class kills all actor between each tests.
+ * Created by PM on 06/09/2016.
+ */
+abstract class TestKitBaseClass extends TestKit(ActorSystem("test")) with TestSuite with BeforeAndAfterAll {
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }
-
 }

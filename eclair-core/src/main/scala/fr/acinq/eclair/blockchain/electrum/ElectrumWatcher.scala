@@ -26,9 +26,7 @@ import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFI
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, TxCoordinates}
 
-import scala.collection.SortedMap
-import scala.collection.immutable.Queue
-import scala.util.Random
+import scala.collection.immutable.{Queue, SortedMap}
 
 
 class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor with Stash with ActorLogging {

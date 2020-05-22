@@ -19,11 +19,11 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Scripts._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 
-class ClaimSentHtlcSpec extends FunSuite {
+class ClaimSentHtlcSpec extends AnyFunSuite {
 
   object Alice {
     val (commitKey, true) = PrivateKey.fromBase58("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g", Base58.Prefix.SecretKeyTestnet)

@@ -26,13 +26,14 @@ import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.ChannelCodecs
-import org.scalatest.{FunSuite, Tag}
+import org.scalatest.Tag
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 
-class SqliteAuditDbSpec extends FunSuite {
+class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
@@ -53,14 +54,14 @@ class SqliteAuditDbSpec extends FunSuite {
     val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = 0)
     val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32, None, timestamp = 1)
     val e5 = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, 84100 msat, randomKey.publicKey, pp5a :: pp5b :: Nil)
-    val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = (Platform.currentTime.milliseconds + 10.minutes).toMillis)
+    val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None, timestamp = (System.currentTimeMillis.milliseconds + 10.minutes).toMillis)
     val e6 = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, 42000 msat, randomKey.publicKey, pp6 :: Nil)
     val e7 = ChannelLifecycleEvent(randomBytes32, randomKey.publicKey, 456123000 sat, isFunder = true, isPrivate = false, "mutual")
     val e8 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
     val e9 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, RemoteError(wire.Error(randomBytes32, "remote oops")), isFatal = true)
     val e10 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(20000 msat, randomBytes32), PaymentRelayed.Part(22000 msat, randomBytes32)), Seq(PaymentRelayed.Part(10000 msat, randomBytes32), PaymentRelayed.Part(12000 msat, randomBytes32), PaymentRelayed.Part(15000 msat, randomBytes32)))
     val multiPartPaymentHash = randomBytes32
-    val now = Platform.currentTime
+    val now = System.currentTimeMillis
     val e11 = ChannelPaymentRelayed(13000 msat, 11000 msat, multiPartPaymentHash, randomBytes32, randomBytes32, now)
     val e12 = ChannelPaymentRelayed(15000 msat, 12500 msat, multiPartPaymentHash, randomBytes32, randomBytes32, now)
 
@@ -77,12 +78,12 @@ class SqliteAuditDbSpec extends FunSuite {
     db.add(e11)
     db.add(e12)
 
-    assert(db.listSent(from = 0L, to = (Platform.currentTime.milliseconds + 15.minute).toMillis).toSet === Set(e1, e5, e6))
-    assert(db.listSent(from = 100000L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e1))
-    assert(db.listReceived(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e2))
-    assert(db.listRelayed(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).toList === List(e3, e10, e11, e12))
-    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).size === 1)
-    assert(db.listNetworkFees(from = 0L, to = (Platform.currentTime.milliseconds + 1.minute).toMillis).head.txType === "mutual")
+    assert(db.listSent(from = 0L, to = (System.currentTimeMillis.milliseconds + 15.minute).toMillis).toSet === Set(e1, e5, e6))
+    assert(db.listSent(from = 100000L, to = (System.currentTimeMillis.milliseconds + 1.minute).toMillis).toList === List(e1))
+    assert(db.listReceived(from = 0L, to = (System.currentTimeMillis.milliseconds + 1.minute).toMillis).toList === List(e2))
+    assert(db.listRelayed(from = 0L, to = (System.currentTimeMillis.milliseconds + 1.minute).toMillis).toList === List(e3, e10, e11, e12))
+    assert(db.listNetworkFees(from = 0L, to = (System.currentTimeMillis.milliseconds + 1.minute).toMillis).size === 1)
+    assert(db.listNetworkFees(from = 0L, to = (System.currentTimeMillis.milliseconds + 1.minute).toMillis).head.txType === "mutual")
   }
 
   test("stats") {
@@ -147,9 +148,9 @@ class SqliteAuditDbSpec extends FunSuite {
       }
     })
     // Test starts here.
-    val start = Platform.currentTime
+    val start = System.currentTimeMillis
     assert(db.stats.nonEmpty)
-    val end = Platform.currentTime
+    val end = System.currentTimeMillis
     fail(s"took ${end - start}ms")
   }
 
@@ -203,7 +204,7 @@ class SqliteAuditDbSpec extends FunSuite {
     }
 
     // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
-    assert(migratedDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID)))))
+    assert(migratedDb.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID)))))
 
     val postMigrationDb = new SqliteAuditDb(connection)
 
@@ -217,7 +218,7 @@ class SqliteAuditDbSpec extends FunSuite {
 
     // the old record will have the UNKNOWN_UUID but the new ones will have their actual id
     val expected = Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID))), ps1)
-    assert(postMigrationDb.listSent(0, (Platform.currentTime.milliseconds + 1.minute).toMillis) === expected)
+    assert(postMigrationDb.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === expected)
   }
 
   test("handle migration version 2 -> 4") {

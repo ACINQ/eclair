@@ -24,12 +24,12 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Random, Success, Try}
 
-class ElectrumWalletBasicSpec extends FunSuite with Logging {
+class ElectrumWalletBasicSpec extends AnyFunSuite with Logging {
 
   import ElectrumWallet._
   import ElectrumWalletBasicSpec._
