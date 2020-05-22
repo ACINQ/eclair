@@ -65,7 +65,7 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
       stay
 
     case Event(Terminated(actor), _) =>
-      log.info("lost connection to {}", addresses(actor))
+      log.debug("lost connection to {}", addresses(actor))
       addresses -= actor
       context.system.scheduler.scheduleOnce(5 seconds, self, Connect)
       stay
@@ -97,7 +97,7 @@ class ElectrumClientPool(blockCount: AtomicLong, serverAddresses: Set[ElectrumSe
         log.info("lost connection to {}, no active connections left", address)
         goto(Disconnected) using DisconnectedData // no more connections
       } else if (d.master != actor) {
-        log.info("lost connection to {}, we still have our master server", address)
+        log.debug("lost connection to {}, we still have our master server", address)
         stay using d.copy(tips = tips1) // we don't care, this wasn't our master
       } else {
         log.info("lost connection to our master server {}", address)
