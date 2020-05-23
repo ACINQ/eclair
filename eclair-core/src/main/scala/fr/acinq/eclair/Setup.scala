@@ -93,7 +93,7 @@ class Setup(datadir: File,
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
-  val instanceId = UUID.randomUUID().toString
+  val instanceId = UUID.randomUUID()
 
   logger.info(s"instanceid=$instanceId")
 
@@ -370,7 +370,7 @@ class Setup(datadir: File,
     }
   }
 
-  private def initDatabase(dbConfig: Config, instanceId: String): Databases = {
+  private def initDatabase(dbConfig: Config, instanceId: UUID): Databases = {
     db match {
       case Some(d) => d
       case None =>

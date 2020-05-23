@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -39,7 +40,7 @@ class StartupSpec extends AnyFunSuite {
     val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
     val feeEstimator = new TestConstants.TestFeeEstimator
     val db = TestConstants.inMemoryDb()
-    NodeParams.makeNodeParams(conf, "this instance", keyManager, None, db, blockCount, feeEstimator)
+    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), keyManager, None, db, blockCount, feeEstimator)
   }
 
   test("check configuration") {

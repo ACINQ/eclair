@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db.pg
 
 import java.sql.{Connection, Statement, Timestamp}
+import java.util.UUID
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 import grizzled.slf4j.Logging
@@ -44,7 +45,7 @@ object PgUtils extends JdbcUtils with Logging {
     }
   }
 
-  case class LockLease(expiresAt: Timestamp, instanceId: String, expired: Boolean)
+  case class LockLease(expiresAt: Timestamp, instanceId: UUID, expired: Boolean)
 
   class TooManyLockAttempts(msg: String) extends RuntimeException(msg)
 
@@ -69,7 +70,7 @@ object PgUtils extends JdbcUtils with Logging {
       inTransaction(f)
   }
 
-  case class LeaseLock(instanceId: String, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
+  case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
     override def obtainExclusiveLock(implicit ds: DataSource): Unit =
       obtainDatabaseLease(instanceId, leaseDuration)
 
@@ -128,7 +129,7 @@ object PgUtils extends JdbcUtils with Logging {
     statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
   }
 
-  private def obtainDatabaseLease(instanceId: String, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
+  private def obtainDatabaseLease(instanceId: UUID, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
     logger.debug(s"Trying to acquire database lease (attempt #$attempt) instance ID=${instanceId}")
 
     if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database lease")
@@ -174,7 +175,7 @@ object PgUtils extends JdbcUtils with Logging {
     }
   }
 
-  private def checkDatabaseLease(connection: Connection, instanceId: String, lockExceptionHandler: LockExceptionHandler): Unit = {
+  private def checkDatabaseLease(connection: Connection, instanceId: UUID, lockExceptionHandler: LockExceptionHandler): Unit = {
     Try {
       getCurrentLease(connection) match {
         case Some(lease) =>
@@ -204,14 +205,14 @@ object PgUtils extends JdbcUtils with Logging {
         if (rs.next())
           Some(LockLease(
             expiresAt = rs.getTimestamp("expires_at"),
-            instanceId = rs.getString("instance"),
+            instanceId = UUID.fromString(rs.getString("instance")),
             expired = rs.getBoolean("expired")))
         else
           None
     }
   }
 
-  private def updateLease(instanceId: String, leaseDuration: FiniteDuration, insertNew: Boolean = false)(implicit connection: Connection): Unit = {
+  private def updateLease(instanceId: UUID, leaseDuration: FiniteDuration, insertNew: Boolean = false)(implicit connection: Connection): Unit = {
     val sql = if (insertNew)
       s"INSERT INTO $LeaseTable (expires_at, instance) VALUES (now() + ?, ?)"
     else
@@ -221,7 +222,7 @@ object PgUtils extends JdbcUtils with Logging {
         statement.setObject(1, new PGInterval(s"${
           leaseDuration.toSeconds
         } seconds"))
-        statement.setString(2, instanceId)
+        statement.setString(2, instanceId.toString)
         statement.executeUpdate()
     }
   }

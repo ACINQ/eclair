@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.sql.{Connection, DriverManager, Statement}
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
@@ -195,7 +196,7 @@ object TestConstants {
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
-      instanceId = "this instance"
+      instanceId = UUID.fromString("01234567-0123-4567-89ab-0123456789ab")
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -278,7 +279,7 @@ object TestConstants {
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
-      instanceId = "this instance"
+      instanceId = UUID.fromString("01234567-0123-4567-89ab-0123456789ab")
     )
 
     def channelParams = Peer.makeChannelParams(

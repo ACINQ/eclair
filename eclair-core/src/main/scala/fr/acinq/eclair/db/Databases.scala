@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import java.io.File
 import java.nio.file._
 import java.sql.{Connection, DriverManager}
+import java.util.UUID
 
 import com.typesafe.config.Config
 import fr.acinq.eclair.db.pg.PgUtils.LockType.LockType
@@ -85,7 +86,7 @@ object Databases extends Logging {
   def postgresJDBC(database: String, host: String, port: Int,
                    username: Option[String], password: Option[String],
                    poolProperties: Map[String, Long],
-                   instanceId: String,
+                   instanceId: UUID,
                    databaseLeaseInterval: FiniteDuration,
                    lockExceptionHandler: LockExceptionHandler = { _ => () },
                    lockType: LockType = LockType.NONE, datadir: File): Databases = {
@@ -149,7 +150,7 @@ object Databases extends Logging {
     override def obtainExclusiveLock(): Unit = ()
   }
 
-  def setupPgDatabases(dbConfig: Config, instanceId: String, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
+  def setupPgDatabases(dbConfig: Config, instanceId: UUID, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
     val port = dbConfig.getInt("postgres.port")
