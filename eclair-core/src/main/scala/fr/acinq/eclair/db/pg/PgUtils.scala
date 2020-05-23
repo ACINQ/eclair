@@ -24,14 +24,14 @@ import grizzled.slf4j.Logging
 import javax.sql.DataSource
 import org.postgresql.util.{PGInterval, PSQLException}
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 object PgUtils extends JdbcUtils with Logging {
 
   val LeaseTable = "lease"
 
-  val lockTimeout = FiniteDuration(5, "s")
+  val LockTimeout = 5 seconds
 
   object LockType extends Enumeration {
     type LockType = Value
@@ -47,13 +47,12 @@ object PgUtils extends JdbcUtils with Logging {
 
   case class LockLease(expiresAt: Timestamp, instanceId: UUID, expired: Boolean)
 
+  // @formatter:off
   class TooManyLockAttempts(msg: String) extends RuntimeException(msg)
-
   class UninitializedLockTable(msg: String) extends RuntimeException(msg)
-
   class LockException(msg: String, cause: Option[Throwable] = None) extends RuntimeException(msg, cause.orNull)
-
   class LeaseException(msg: String) extends RuntimeException(msg)
+  // @formatter:on
 
   type LockExceptionHandler = LockException => Unit
 
@@ -70,6 +69,19 @@ object PgUtils extends JdbcUtils with Logging {
       inTransaction(f)
   }
 
+  /**
+   * This class represents a lease based locking mechanism [[https://en.wikipedia.org/wiki/Lease_(computer_science]].
+   * It allows only one process to access the database at a time.
+   *
+   * `obtainExclusiveLock` method updates the record in `lease` table with the instance id and the expiration date
+   * calculated as the current time plus the lease duration. If the current lease is not expired or it belongs to
+   * another instance `obtainExclusiveLock` throws an exception.
+   *
+   * withLock method executes its `f` function and reads the record from lease table to checks if this instance still
+   * holds the lease and it's not expired. If so, the database transaction gets committed, otherwise en exception is thrown.
+   *
+   * `lockExceptionHandler` provides a lock exception handler to customize the behavior when locking errors occur.
+   */
   case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
     override def obtainExclusiveLock(implicit ds: DataSource): Unit =
       obtainDatabaseLease(instanceId, leaseDuration)
@@ -130,7 +142,7 @@ object PgUtils extends JdbcUtils with Logging {
   }
 
   private def obtainDatabaseLease(instanceId: UUID, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
-    logger.debug(s"Trying to acquire database lease (attempt #$attempt) instance ID=${instanceId}")
+    logger.debug(s"trying to acquire database lease (attempt #$attempt) instance ID=${instanceId}")
 
     if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database lease")
 
@@ -147,12 +159,12 @@ object PgUtils extends JdbcUtils with Logging {
             updateLease(instanceId, leaseDuration, insertNew = true)
         }
       }
-      logger.debug("Database lease was successfully acquired.")
+      logger.debug("database lease was successfully acquired")
     } catch {
       case e: PSQLException if (e.getServerErrorMessage != null && e.getServerErrorMessage.getSQLState == "42P01") =>
         withConnection {
           connection =>
-            logger.warn(s"Table $LeaseTable does not exist, trying to recreate it...")
+            logger.warn(s"table $LeaseTable does not exist, trying to recreate it")
             initializeLeaseTable(connection)
             obtainDatabaseLease(instanceId, leaseDuration, attempt + 1)
         }
@@ -170,7 +182,7 @@ object PgUtils extends JdbcUtils with Logging {
   private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
     using(connection.createStatement()) {
       statement =>
-        statement.executeUpdate(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
+        statement.executeUpdate(s"SET lock_timeout TO '${LockTimeout.toSeconds}s'")
         statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
     }
   }
@@ -180,7 +192,7 @@ object PgUtils extends JdbcUtils with Logging {
       getCurrentLease(connection) match {
         case Some(lease) =>
           if (!(lease.instanceId == instanceId) || lease.expired) {
-            logger.info(s"Database lease: $lease")
+            logger.info(s"database lease: $lease")
             throw new LockException("This Eclair instance is not a database owner")
           }
         case None =>

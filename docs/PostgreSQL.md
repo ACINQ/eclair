@@ -47,7 +47,7 @@ Use `postgres.lock-type` parameter to set the locking schemes.
 
  Lock type | Description 
 ---|---
-`lease` | At the beginning, Eclair acquires a lease for the database that expires after some time. Then it constantly extends the lease. On each lease extension and each database transaction, Eclair checks if the lease belongs to the Eclair instance. If it doesn't, Eclair assumes that the database was updated by another Eclair process and terminates.      
+`lease` | At the beginning, Eclair acquires a lease for the database that expires after some time. Then it constantly extends the lease. On each lease extension and each database transaction, Eclair checks if the lease belongs to the Eclair instance. If it doesn't, Eclair assumes that the database was updated by another Eclair process and terminates. Note that this is just a safeguard feature for Eclair rather than a bulletproof database-wide lock, because third-party applications still have the ability to access the database without honoring this locking scheme.
 `none` | No locking at all. Useful for tests. DO NOT USE ON MAINNET! 
 
 ```

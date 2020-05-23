@@ -50,7 +50,7 @@ trait Databases {
 
 object Databases extends Logging {
 
-  trait CanBackup {
+  trait CanBackup { this: Databases =>
     def backup(file: File): Unit
   }
 
