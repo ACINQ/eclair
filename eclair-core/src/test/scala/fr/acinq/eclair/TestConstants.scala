@@ -84,7 +84,7 @@ object TestConstants {
     override def close(): Unit = ()
   }
 
-  case class TestPsqlDatabases() extends TestDatabases {
+  case class TestPgDatabases() extends TestDatabases {
     private val pg = EmbeddedPostgres.start()
 
     override val connection: Connection = pg.getPostgresDatabase.getConnection
@@ -113,7 +113,7 @@ object TestConstants {
   def forAllDbs(f: TestDatabases => Unit): Unit = {
     def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
     using(TestSqliteDatabases())(f)
-    using(TestPsqlDatabases())(f)
+    using(TestPgDatabases())(f)
   }
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)

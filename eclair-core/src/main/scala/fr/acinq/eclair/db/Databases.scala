@@ -95,8 +95,8 @@ object Databases extends Logging {
 
     implicit val lock: DatabaseLock = lockType match {
       case LockType.NONE => NoLock
-      case LockType.OWNERSHIP_LEASE => OwnershipLeaseLock(instanceId, databaseLeaseInterval, lockExceptionHandler)
-      case x@_ => throw new RuntimeException(s"Unknown psql lock type: `$lockType`")
+      case LockType.LEASE => LeaseLock(instanceId, databaseLeaseInterval, lockExceptionHandler)
+      case x@_ => throw new RuntimeException(s"Unknown postgres lock type: `$lockType`")
     }
 
     import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
@@ -149,20 +149,20 @@ object Databases extends Logging {
     override def obtainExclusiveLock(): Unit = ()
   }
 
-  def setupPsqlDatabases(dbConfig: Config, instanceId: String, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
-    val database = dbConfig.getString("psql.database")
-    val host = dbConfig.getString("psql.host")
-    val port = dbConfig.getInt("psql.port")
-    val username = if (dbConfig.getIsNull("psql.username") || dbConfig.getString("psql.username").isEmpty)
+  def setupPgDatabases(dbConfig: Config, instanceId: String, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
+    val database = dbConfig.getString("postgres.database")
+    val host = dbConfig.getString("postgres.host")
+    val port = dbConfig.getInt("postgres.port")
+    val username = if (dbConfig.getIsNull("postgres.username") || dbConfig.getString("postgres.username").isEmpty)
       None
     else
-      Some(dbConfig.getString("psql.username"))
-    val password = if (dbConfig.getIsNull("psql.password") || dbConfig.getString("psql.password").isEmpty)
+      Some(dbConfig.getString("postgres.username"))
+    val password = if (dbConfig.getIsNull("postgres.password") || dbConfig.getString("postgres.password").isEmpty)
       None
     else
-      Some(dbConfig.getString("psql.password"))
+      Some(dbConfig.getString("postgres.password"))
     val properties = {
-      val poolConfig = dbConfig.getConfig("psql.pool")
+      val poolConfig = dbConfig.getConfig("postgres.pool")
       Map.empty
         .updated("max-size", poolConfig.getInt("max-size").toLong)
         .updated("connection-timeout", poolConfig.getDuration("connection-timeout").toMillis)
@@ -170,8 +170,8 @@ object Databases extends Logging {
         .updated("max-life-time", poolConfig.getDuration("max-life-time").toMillis)
 
     }
-    val lockType = LockType(dbConfig.getString("psql.lock-type"))
-    val leaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
+    val lockType = LockType(dbConfig.getString("postgres.lock-type"))
+    val leaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
 
     Databases.postgresJDBC(
       database = database, host = host, port = port,

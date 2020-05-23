@@ -33,21 +33,21 @@ class PgPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
   val DB_NAME = "peers"
   val CURRENT_VERSION = 1
 
-  inTransaction { psql =>
-    using(psql.createStatement()) { statement =>
+  inTransaction { pg =>
+    using(pg.createStatement()) { statement =>
       require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
     }
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = {
-    withLock { psql =>
+    withLock { pg =>
       val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
-      using(psql.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
+      using(pg.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
         update.setBytes(1, data)
         update.setString(2, nodeId.value.toHex)
         if (update.executeUpdate() == 0) {
-          using(psql.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
+          using(pg.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
             statement.setString(1, nodeId.value.toHex)
             statement.setBytes(2, data)
             statement.executeUpdate()
@@ -58,8 +58,8 @@ class PgPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
-    withLock { psql =>
-      using(psql.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.executeUpdate()
       }
@@ -67,8 +67,8 @@ class PgPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
   }
 
   override def getPeer(nodeId: PublicKey): Option[NodeAddress] = {
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         val rs = statement.executeQuery()
         codecSequence(rs, CommonCodecs.nodeaddress).headOption
@@ -77,8 +77,8 @@ class PgPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
   }
 
   override def listPeers(): Map[PublicKey, NodeAddress] = {
-    withLock { psql =>
-      using(psql.createStatement()) { statement =>
+    withLock { pg =>
+      using(pg.createStatement()) { statement =>
         val rs = statement.executeQuery("SELECT node_id, data FROM peers")
         var m: Map[PublicKey, NodeAddress] = Map()
         while (rs.next()) {

@@ -20,7 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
-import fr.acinq.eclair.TestConstants.{TestPsqlDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
@@ -45,7 +45,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
   test("handle version migration 1->4") {
     import fr.acinq.eclair.db.sqlite.SqliteUtils._
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 
@@ -103,7 +103,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
   test("handle version migration 2->4") {
     import fr.acinq.eclair.db.sqlite.SqliteUtils._
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val connection = dbs.connection
 
@@ -228,7 +228,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   test("handle version migration 3->4") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         import fr.acinq.eclair.db.sqlite.SqliteUtils._
         val connection = dbs.connection

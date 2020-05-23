@@ -20,7 +20,7 @@ import java.sql.SQLException
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
-import fr.acinq.eclair.TestConstants.{TestPsqlDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
@@ -71,7 +71,7 @@ class SqliteChannelsDbSpec extends AnyFunSuite {
 
   test("migrate channel database v1 -> v2") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         val sqlite = dbs.connection
 

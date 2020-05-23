@@ -20,7 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
-import fr.acinq.eclair.TestConstants.{TestPsqlDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
@@ -160,7 +160,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("handle migration version 1 -> 4") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         import fr.acinq.eclair.db.sqlite.SqliteUtils.getVersion
         val connection = dbs.connection
@@ -232,7 +232,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("handle migration version 2 -> 4") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         import fr.acinq.eclair.db.sqlite.SqliteUtils.getVersion
         val connection = dbs.connection
@@ -282,7 +282,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("handle migration version 3 -> 4") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
         import fr.acinq.eclair.db.sqlite.SqliteUtils.getVersion
         val connection = dbs.connection

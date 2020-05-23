@@ -28,19 +28,19 @@ import scala.util.{Failure, Success, Try}
 
 object PgUtils extends JdbcUtils with Logging {
 
-  val OwnershipTable = "lease"
+  val LeaseTable = "lease"
 
   val lockTimeout = FiniteDuration(5, "s")
 
   object LockType extends Enumeration {
     type LockType = Value
 
-    val NONE, OWNERSHIP_LEASE = Value
+    val NONE, LEASE = Value
 
     def apply(s: String): LockType = s match {
       case "none" => NONE
-      case "ownership-lease" => OWNERSHIP_LEASE
-      case _ => throw new RuntimeException(s"Unknown psql lock type: `$s`")
+      case "lease" => LEASE
+      case _ => throw new RuntimeException(s"Unknown postgres lock type: `$s`")
     }
   }
 
@@ -52,7 +52,7 @@ object PgUtils extends JdbcUtils with Logging {
 
   class LockException(msg: String, cause: Option[Throwable] = None) extends RuntimeException(msg, cause.orNull)
 
-  class OwnershipException(msg: String) extends RuntimeException(msg)
+  class LeaseException(msg: String) extends RuntimeException(msg)
 
   type LockExceptionHandler = LockException => Unit
 
@@ -69,14 +69,14 @@ object PgUtils extends JdbcUtils with Logging {
       inTransaction(f)
   }
 
-  case class OwnershipLeaseLock(instanceId: String, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
+  case class LeaseLock(instanceId: String, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
     override def obtainExclusiveLock(implicit ds: DataSource): Unit =
-      obtainDatabaseOwnership(instanceId, leaseDuration)
+      obtainDatabaseLease(instanceId, leaseDuration)
 
     override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
       inTransaction { connection =>
         val res = f(connection)
-        checkDatabaseOwnership(connection, instanceId, lockExceptionHandler)
+        checkDatabaseLease(connection, instanceId, lockExceptionHandler)
         res
       }
     }
@@ -105,7 +105,7 @@ object PgUtils extends JdbcUtils with Logging {
   }
 
   /**
-    * Several logical databases (channels, network, peers) may be stored in the same physical psql database.
+    * Several logical databases (channels, network, peers) may be stored in the same physical postgres database.
     * We keep track of their respective version using a dedicated table. The version entry will be created if
     * there is none but will never be updated here (use setVersion to do that).
     */
@@ -128,10 +128,10 @@ object PgUtils extends JdbcUtils with Logging {
     statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
   }
 
-  private def obtainDatabaseOwnership(instanceId: String, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
-    logger.debug(s"Trying to acquire database ownership (attempt #$attempt) instance ID=${instanceId}")
+  private def obtainDatabaseLease(instanceId: String, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
+    logger.debug(s"Trying to acquire database lease (attempt #$attempt) instance ID=${instanceId}")
 
-    if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database ownership")
+    if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database lease")
 
     try {
       inTransaction { implicit connection =>
@@ -141,28 +141,28 @@ object PgUtils extends JdbcUtils with Logging {
             if (lease.instanceId == instanceId || lease.expired)
               updateLease(instanceId, leaseDuration)
             else
-              throw new OwnershipException(s"The database is locked by instance ID=${lease.instanceId}")
+              throw new LeaseException(s"The database is locked by instance ID=${lease.instanceId}")
           case None =>
             updateLease(instanceId, leaseDuration, insertNew = true)
         }
       }
-      logger.debug("Database ownership was successfully acquired.")
+      logger.debug("Database lease was successfully acquired.")
     } catch {
       case e: PSQLException if (e.getServerErrorMessage != null && e.getServerErrorMessage.getSQLState == "42P01") =>
         withConnection {
           connection =>
-            logger.warn(s"Table $OwnershipTable does not exist, trying to recreate it...")
-            initializeOwnershipTable(connection)
-            obtainDatabaseOwnership(instanceId, leaseDuration, attempt + 1)
+            logger.warn(s"Table $LeaseTable does not exist, trying to recreate it...")
+            initializeLeaseTable(connection)
+            obtainDatabaseLease(instanceId, leaseDuration, attempt + 1)
         }
     }
   }
 
-  private def initializeOwnershipTable(implicit connection: Connection): Unit = {
+  private def initializeLeaseTable(implicit connection: Connection): Unit = {
     using(connection.createStatement()) {
       statement =>
         // allow only one row in the ownership lease table
-        statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $OwnershipTable (id INTEGER PRIMARY KEY default(1), expires_at TIMESTAMP NOT NULL, instance VARCHAR NOT NULL, CONSTRAINT one_row CHECK (id = 1))")
+        statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $LeaseTable (id INTEGER PRIMARY KEY default(1), expires_at TIMESTAMP NOT NULL, instance VARCHAR NOT NULL, CONSTRAINT one_row CHECK (id = 1))")
     }
   }
 
@@ -170,11 +170,11 @@ object PgUtils extends JdbcUtils with Logging {
     using(connection.createStatement()) {
       statement =>
         statement.executeUpdate(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
-        statement.executeUpdate(s"LOCK TABLE $OwnershipTable IN ACCESS EXCLUSIVE MODE")
+        statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
     }
   }
 
-  private def checkDatabaseOwnership(connection: Connection, instanceId: String, lockExceptionHandler: LockExceptionHandler): Unit = {
+  private def checkDatabaseLease(connection: Connection, instanceId: String, lockExceptionHandler: LockExceptionHandler): Unit = {
     Try {
       getCurrentLease(connection) match {
         case Some(lease) =>
@@ -183,14 +183,14 @@ object PgUtils extends JdbcUtils with Logging {
             throw new LockException("This Eclair instance is not a database owner")
           }
         case None =>
-          throw new LockException("No database ownership info")
+          throw new LockException("No database lease info")
       }
     } match {
       case Success(_) => ()
       case Failure(ex) =>
         val lex = ex match {
           case e: LockException => e
-          case t: Throwable => new LockException("Cannot check database ownership", Some(t))
+          case t: Throwable => new LockException("Cannot check database lease", Some(t))
         }
         lockExceptionHandler(lex)
         throw lex
@@ -200,7 +200,7 @@ object PgUtils extends JdbcUtils with Logging {
   private def getCurrentLease(implicit connection: Connection): Option[LockLease] = {
     using(connection.createStatement()) {
       statement =>
-        val rs = statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $OwnershipTable WHERE id = 1")
+        val rs = statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $LeaseTable WHERE id = 1")
         if (rs.next())
           Some(LockLease(
             expiresAt = rs.getTimestamp("expires_at"),
@@ -213,9 +213,9 @@ object PgUtils extends JdbcUtils with Logging {
 
   private def updateLease(instanceId: String, leaseDuration: FiniteDuration, insertNew: Boolean = false)(implicit connection: Connection): Unit = {
     val sql = if (insertNew)
-      s"INSERT INTO $OwnershipTable (expires_at, instance) VALUES (now() + ?, ?)"
+      s"INSERT INTO $LeaseTable (expires_at, instance) VALUES (now() + ?, ?)"
     else
-      s"UPDATE $OwnershipTable SET expires_at = now() + ?, instance = ? WHERE id = 1"
+      s"UPDATE $LeaseTable SET expires_at = now() + ?, instance = ? WHERE id = 1"
     using(connection.prepareStatement(sql)) {
       statement =>
         statement.setObject(1, new PGInterval(s"${

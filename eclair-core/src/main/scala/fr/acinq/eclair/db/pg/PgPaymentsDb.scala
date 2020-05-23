@@ -51,8 +51,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
   private val paymentFailuresCodec = discriminated[List[FailureSummary]].by(byte)
     .typecase(0x01, listOfN(uint8, failureSummaryCodec))
 
-  inTransaction { psql =>
-    using(psql.createStatement()) { statement =>
+  inTransaction { pg =>
+    using(pg.createStatement()) { statement =>
 
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION =>
@@ -70,8 +70,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
-    withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, sent.id.toString)
         statement.setString(2, sent.parentId.toString)
         statement.setString(3, sent.externalId.orNull)
@@ -88,8 +88,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
   }
 
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit =
-    withLock { psql =>
-      using(psql.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         paymentResult.parts.foreach(p => {
           statement.setLong(1, p.timestamp)
           statement.setString(2, paymentResult.paymentPreimage.toHex)
@@ -103,8 +103,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit =
-    withLock { psql =>
-      using(psql.prepareStatement("UPDATE sent_payments SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("UPDATE sent_payments SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         statement.setLong(1, paymentResult.timestamp)
         statement.setBytes(2, paymentFailuresCodec.encode(paymentResult.failures.map(f => FailureSummary(f)).toList).require.toByteArray)
         statement.setString(3, paymentResult.id.toString)
@@ -161,8 +161,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
   }
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
         statement.setString(1, id.toString)
         val rs = statement.executeQuery()
         if (rs.next()) {
@@ -174,8 +174,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
         statement.setString(1, parentId.toString)
         val rs = statement.executeQuery()
         var q: Queue[OutgoingPayment] = Queue()
@@ -187,8 +187,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
         statement.setString(1, paymentHash.toHex)
         val rs = statement.executeQuery()
         var q: Queue[OutgoingPayment] = Queue()
@@ -200,8 +200,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
@@ -214,8 +214,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit =
-    withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
         statement.setString(2, preimage.toHex)
         statement.setString(3, paymentType)
@@ -227,8 +227,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
-    withLock { psql =>
-      using(psql.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
+    withLock { pg =>
+      using(pg.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
         update.setLong(1, amount.toLong)
         update.setLong(2, receivedAt)
         update.setString(3, paymentHash.toHex)
@@ -258,8 +258,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
   }
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
         statement.setString(1, paymentHash.toHex)
         val rs = statement.executeQuery()
         if (rs.next()) {
@@ -271,8 +271,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
@@ -285,8 +285,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
@@ -299,8 +299,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         statement.setLong(3, System.currentTimeMillis)
@@ -314,8 +314,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
 
   override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         statement.setLong(3, System.currentTimeMillis)
@@ -334,8 +334,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     // - only retrieve incoming payments that did receive funds.
     // - outgoing payments are grouped by parent_id.
     // - order by completion date (or creation date if nothing else).
-    withLock { psql =>
-      using(psql.prepareStatement(
+    withLock { pg =>
+      using(pg.prepareStatement(
         """
           |SELECT * FROM (
           |	 SELECT 'received' as type,

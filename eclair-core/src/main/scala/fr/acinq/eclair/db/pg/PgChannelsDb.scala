@@ -36,8 +36,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   val DB_NAME = "channels"
   val CURRENT_VERSION = 2
 
-  inTransaction { psql =>
-    using(psql.createStatement()) { statement =>
+  inTransaction { pg =>
+    using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
@@ -49,13 +49,13 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
-    withLock { psql =>
+    withLock { pg =>
       val data = stateDataCodec.encode(state).require.toByteArray
-      using(psql.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+      using(pg.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
         update.setBytes(1, data)
         update.setString(2, state.channelId.toHex)
         if (update.executeUpdate() == 0) {
-          using(psql.prepareStatement("INSERT INTO local_channels VALUES (?, ?, FALSE)")) { statement =>
+          using(pg.prepareStatement("INSERT INTO local_channels VALUES (?, ?, FALSE)")) { statement =>
             statement.setString(1, state.channelId.toHex)
             statement.setBytes(2, data)
             statement.executeUpdate()
@@ -66,18 +66,18 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = {
-    withLock { psql =>
-      using(psql.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeUpdate()
       }
 
-      using(psql.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
+      using(pg.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeUpdate()
       }
 
-      using(psql.prepareStatement("UPDATE local_channels SET is_closed=TRUE WHERE channel_id=?")) { statement =>
+      using(pg.prepareStatement("UPDATE local_channels SET is_closed=TRUE WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeUpdate()
       }
@@ -85,8 +85,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   }
 
   override def listLocalChannels(): Seq[HasCommitments] = {
-    withLock { psql =>
-      using(psql.createStatement) { statement =>
+    withLock { pg =>
+      using(pg.createStatement) { statement =>
         val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=FALSE")
         codecSequence(rs, stateDataCodec)
       }
@@ -94,8 +94,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
-    withLock { psql =>
-      using(psql.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, commitmentNumber)
         statement.setString(3, paymentHash.toHex)
@@ -106,8 +106,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   }
 
   override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
-    withLock { psql =>
-      using(psql.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setString(2, commitmentNumber.toString)
         val rs = statement.executeQuery

@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
-import fr.acinq.eclair.TestConstants.{TestDatabases, TestPsqlDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.TestConstants.{TestDatabases, TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
@@ -45,7 +45,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("migration test 1->2") {
     forAllDbs {
-      case _: TestPsqlDatabases => // no migration
+      case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
 
       using(dbs.connection.createStatement()) { statement =>

@@ -4,10 +4,10 @@ By default Eclair stores its data on the machine's local file system (typically 
 
 Also it supports PostgreSQL as a database backend. Eclair was tested with PostgreSQL version 10.6 and higher. 
 
-To enable PostgreSQL support set `driver` parameter to `psql`:
+To enable PostgreSQL support set `driver` parameter to `postgres`:
 
 ```
-eclair.db.driver = psql
+eclair.db.driver = postgres
 ```
 
 ### Connection settings
@@ -15,11 +15,11 @@ eclair.db.driver = psql
 To configure the connection settings use the `database`, `host`, `port` `username` and `password` parameters:
 
 ```
-eclair.db.psql.database = "mydb"
-eclair.db.psql.host = "127.0.0.1"      # Default: "localhost"
-eclair.db.psql.port = 12345            # Default: 5432
-eclair.db.psql.username = "myuser"
-eclair.db.psql.password = "mypassword"
+eclair.db.postgres.database = "mydb"
+eclair.db.postgres.host = "127.0.0.1"      # Default: "localhost"
+eclair.db.postgres.port = 12345            # Default: 5432
+eclair.db.postgres.username = "myuser"
+eclair.db.postgres.password = "mypassword"
 ```
 
 Eclair uses Hikari connection pool (https://github.com/brettwooldridge/HikariCP) which has a lot of configuration 
@@ -30,7 +30,7 @@ A good rule of thumb is to set `pool.max-size` to the CPU core count times 2.
 See https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing for better estimation. 
 
 ```    
-eclair.db.psql.pool {
+eclair.db.postgres.pool {
     max-size = 8                    # Default: 10
     connection-timeout = 10 seconds # Default: 30 seconds
     idle-timeout = 1 minute         # Default: 10 minutes
@@ -43,28 +43,28 @@ eclair.db.psql.pool {
 Running multiple Eclair processes connected to the same database can lead to data corruption and loss of funds. 
 That's why Eclair supports database locking mechanisms to prevent multiple Eclair instances access to one database together. 
 
-Use `psql.lock-type` parameter to set the locking schemes.
+Use `postgres.lock-type` parameter to set the locking schemes.
 
  Lock type | Description 
 ---|---
-`ownership-lease` | At the beginning, Eclair acquires a lease for the database that expires after some time. Then it constantly extends the lease. On each lease extension and each database transaction, Eclair checks if the lease belongs to the Eclair instance. If it doesn't, Eclair assumes that the database was updated by another Eclair process and terminates.      
+`lease` | At the beginning, Eclair acquires a lease for the database that expires after some time. Then it constantly extends the lease. On each lease extension and each database transaction, Eclair checks if the lease belongs to the Eclair instance. If it doesn't, Eclair assumes that the database was updated by another Eclair process and terminates.      
 `none` | No locking at all. Useful for tests. DO NOT USE ON MAINNET! 
 
 ```
-eclair.db.psql.lock-type = "none" // Default: "ownership-lease"
+eclair.db.postgres.lock-type = "none" // Default: "lease"
 ```
 
-#### Ownership Lease Settings
+#### Database Lease Settings
 
-There are two main configuration parameters for the ownership lease locking scheme: `lease-interval` and `lease-renew-interval`.
-`lease-interval` defines lease validity time. During the lease time no other node can acquire ownership, except the lease owner.
-After that time the lease is assumed expired, any node can acquire the ownership. This is so that only one node can update the database 
-at a time. Eclair extends the lease every `lease-renew-interval` until terminated.  
+There are two main configuration parameters for the lease locking scheme: `lease.interval` and `lease.renew-interval`.
+`lease.interval` defines lease validity time. During the lease time no other node can acquire the lock, except the lease holder.
+After that time the lease is assumed expired, any node can acquire the lock. This is so that only one node can update the database 
+at a time. Eclair extends the lease every `lease.renew-interval` until terminated.  
 
 ```
-eclair.db.psql.ownership-lease {
-    lease-interval = 30 seconds        // Deafult: 5 minutes
-    lease-renew-interval =  10 seconds // Default: 1 minute
+eclair.db.postgres.lease {
+    interval = 30 seconds        // Deafult: 5 minutes
+    renew-interval =  10 seconds // Default: 1 minute
 }
 ```
 

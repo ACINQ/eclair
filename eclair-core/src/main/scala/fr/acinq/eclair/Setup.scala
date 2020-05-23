@@ -376,27 +376,27 @@ class Setup(datadir: File,
       case None =>
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqliteJDBC(chaindir)
-          case "psql" =>
-            val psql = Databases.setupPsqlDatabases(dbConfig, instanceId, datadir, { ex =>
+          case "postgres" =>
+            val pg = Databases.setupPgDatabases(dbConfig, instanceId, datadir, { ex =>
               logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
               sys.exit(-2)
             })
-            if (LockType(dbConfig.getString("psql.lock-type")) == LockType.OWNERSHIP_LEASE) {
-              val dbLockLeaseRenewInterval = dbConfig.getDuration("psql.ownership-lease.lease-renew-interval").toSeconds.seconds
-              val dbLockLeaseInterval = dbConfig.getDuration("psql.ownership-lease.lease-interval").toSeconds.seconds
+            if (LockType(dbConfig.getString("postgres.lock-type")) == LockType.LEASE) {
+              val dbLockLeaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
+              val dbLockLeaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
               if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)
-                throw new RuntimeException("Invalid configuration: `db.psql.ownership-lease.lease-interval` must be greater than `db.psql.ownership-lease.lease-renew-interval`")
+                throw new RuntimeException("Invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
               system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
                 try {
-                  psql.obtainExclusiveLock()
+                  pg.obtainExclusiveLock()
                 } catch {
                   case e: Throwable =>
-                    logger.error("fatal error: Cannot obtain ownership on the database.\n", e)
+                    logger.error("fatal error: Cannot obtain the database lease.\n", e)
                     sys.exit(-1)
                 }
               }
             }
-            psql
+            pg
           case driver => throw new RuntimeException(s"Unknown database driver `$driver`")
         }
     }

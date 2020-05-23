@@ -39,8 +39,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 
-  inTransaction { psql =>
-    using(psql.createStatement()) { statement =>
+  inTransaction { pg =>
+    using(pg.createStatement()) { statement =>
 
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION =>
@@ -65,8 +65,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   }
 
   override def add(e: ChannelLifecycleEvent): Unit =
-    inTransaction { psql =>
-      using(psql.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, e.channelId.toHex)
         statement.setString(2, e.remoteNodeId.value.toHex)
         statement.setLong(3, e.capacity.toLong)
@@ -79,8 +79,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def add(e: PaymentSent): Unit =
-    inTransaction { psql =>
-      using(psql.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
           statement.setLong(1, p.amount.toLong)
           statement.setLong(2, p.feesPaid.toLong)
@@ -99,8 +99,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def add(e: PaymentReceived): Unit =
-    inTransaction { psql =>
-      using(psql.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
           statement.setLong(1, p.amount.toLong)
           statement.setString(2, e.paymentHash.toHex)
@@ -113,7 +113,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def add(e: PaymentRelayed): Unit =
-    inTransaction { psql =>
+    inTransaction { pg =>
       val payments = e match {
         case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
           // non-trampoline relayed payments have one input and one output
@@ -123,7 +123,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", ts)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", ts))
       }
       for (p <- payments) {
-        using(psql.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+        using(pg.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
           statement.setString(1, e.paymentHash.toHex)
           statement.setLong(2, p.amount.toLong)
           statement.setString(3, p.channelId.toHex)
@@ -136,8 +136,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def add(e: NetworkFeePaid): Unit =
-    inTransaction { psql =>
-      using(psql.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, e.channelId.toHex)
         statement.setString(2, e.remoteNodeId.value.toHex)
         statement.setString(3, e.tx.txid.toHex)
@@ -149,8 +149,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def add(e: ChannelErrorOccurred): Unit =
-    inTransaction { psql =>
-      using(psql.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         val (errorName, errorMessage) = e.error match {
           case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
           case RemoteError(error) => ("remote", error.toAscii)
@@ -166,8 +166,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
-    inTransaction { psql =>
-      using(psql.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
@@ -198,8 +198,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
-    inTransaction { psql =>
-      using(psql.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
@@ -221,8 +221,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
-    inTransaction { psql =>
-      using(psql.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
@@ -255,8 +255,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
-    inTransaction { psql =>
-      using(psql.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
         val rs = statement.executeQuery()
