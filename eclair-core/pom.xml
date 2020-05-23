@@ -43,6 +43,7 @@
                             <goal>wget</goal>
                         </goals>
                         <configuration>
+                            <skip>${maven.test.skip}</skip>
                             <url>${bitcoind.url}</url>
                             <unpack>true</unpack>
                             <outputDirectory>${project.build.directory}</outputDirectory>

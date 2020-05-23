@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicLong
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.{ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, VariableLengthOnion}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -127,7 +129,12 @@ object TestConstants {
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
-      features = ByteVector.fromValidHex("0a8a"),
+      features = Features(Set(
+        ActivatedFeature(InitialRoutingSync, Optional),
+        ActivatedFeature(OptionDataLossProtect, Optional),
+        ActivatedFeature(ChannelRangeQueries, Optional),
+        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
+        ActivatedFeature(VariableLengthOnion, Optional))),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
@@ -210,7 +217,7 @@ object TestConstants {
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      features = ByteVector.fromValidHex("0200"), // variable_length_onion, no announcement
+      features = Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1000 sat,

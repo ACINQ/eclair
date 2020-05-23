@@ -26,9 +26,9 @@ import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, ToMilliSatoshiConversion, randomKey}
-import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, ToMilliSatoshiConversion, randomKey}
 import org.scalatest.ParallelTestExecution
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.collection.immutable.SortedMap
@@ -52,18 +52,19 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 2 :: 3 :: 4 :: Nil)
   }
 
   test("check fee against max pct properly") {
-    // fee is acceptable if it is either
-    // - below our maximum fee base
-    // - below our maximum fraction of the paid amount
-
+    // fee is acceptable if it is either:
+    //  - below our maximum fee base
+    //  - below our maximum fraction of the paid amount
     // here we have a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
     // so our fee will always be above the base fee, and we will always check that it is below our maximum percentage
     // of the amount being paid
+    val routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 1 msat)
+    val maxFee = routeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
 
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 10 msat, 10, cltvDelta = CltvExpiryDelta(1)),
@@ -72,9 +73,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 10 msat, 10, cltvDelta = CltvExpiryDelta(1))
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 1 msat), currentBlockHeight = 400000)
-
-    assert(route.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, maxFee, numRoutes = 1, routeParams = routeParams, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 2 :: 3 :: 4 :: Nil)
   }
 
   test("calculate the shortest path (correct fees)") {
@@ -116,7 +116,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6L, f, d, feeBase = 1 msat, feeProportionalMillionth = 100, minHtlc = 0 msat)
     ))
 
-    val Success(route) = findRoute(graph, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 7 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, None)
     assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
     assert(weightedPath.length === 3)
@@ -127,7 +127,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val graph2 = graph.addEdge(makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat, capacity = 10 sat))
     val graph3 = graph.addEdge(makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat, balance_opt = Some(10001 msat)))
     for (g <- Seq(graph1, graph2, graph3)) {
-      val Success(route1) = findRoute(g, a, d, amount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+      val Success(route1 :: Nil) = findRoute(g, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
       assert(route2Ids(route1) === 1 :: 2 :: 3 :: Nil)
     }
   }
@@ -141,8 +141,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(5L, d, e, 5 msat, 0) // d -> e
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(2 :: 5 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 2 :: 5 :: Nil)
   }
 
   test("calculate simple route (add and remove edges") {
@@ -153,12 +153,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route1) === 1 :: 2 :: 3 :: 4 :: Nil)
 
     val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d))
-    val route2 = findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route2.map(route2Ids) === Failure(RouteNotFound))
+    val route2 = findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2 === Failure(RouteNotFound))
   }
 
   test("calculate the shortest path (hardcoded nodes)") {
@@ -176,8 +176,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, f, h, 50 msat, 0) // more expensive but fee will be ignored since f is the payer
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(4 :: 3 :: Nil))
+    val Success(route :: Nil) = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 4 :: 3 :: Nil)
   }
 
   test("calculate the shortest path (select direct channel)") {
@@ -195,8 +195,9 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, h, i, 0 msat, 0)
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 2, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(4 :: Nil))
+    val Success(route1 :: route2 :: Nil) = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 2, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route1) === 4 :: Nil)
+    assert(route2Ids(route2) === 1 :: 2 :: 3 :: Nil)
   }
 
   test("find a route using channels with htlMaximumMsat close to the payment amount") {
@@ -214,8 +215,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, h, i, 1 msat, 0)
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) == Success(1 :: 2 :: 3 :: Nil))
+    val Success(route :: Nil) = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 2 :: 3 :: Nil)
   }
 
   test("find a route using channels with htlMinimumMsat close to the payment amount") {
@@ -233,8 +234,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, h, i, 1 msat, 0)
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Failure(RouteNotFound))
+    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route === Failure(RouteNotFound))
   }
 
   test("if there are multiple channels between the same node, select the cheapest") {
@@ -252,8 +253,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, h, i, 0 msat, 0)
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(1 :: 6 :: 3 :: Nil))
+    val Success(route :: Nil) = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 6 :: 3 :: Nil)
   }
 
   test("if there are multiple channels between the same node, select one that has enough balance") {
@@ -271,8 +272,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, h, i, 0 msat, 0)
     ))
 
-    val route = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(1 :: 2 :: 3 :: Nil))
+    val Success(route :: Nil) = findRoute(graph, f, i, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 2 :: 3 :: Nil)
   }
 
   test("calculate longer but cheaper route") {
@@ -284,8 +285,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(5L, b, e, 10 msat, 10)
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 2 :: 3 :: 4 :: Nil)
   }
 
   test("no local channels") {
@@ -294,8 +295,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Failure(RouteNotFound))
+    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route === Failure(RouteNotFound))
   }
 
   test("route not found") {
@@ -305,8 +306,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Failure(RouteNotFound))
+    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route === Failure(RouteNotFound))
   }
 
   test("route not found (source OR target node not connected)") {
@@ -315,8 +316,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, c, d, 0 msat, 0)
     )).addVertex(a).addVertex(e)
 
-    assert(findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
-    assert(findRoute(g, b, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
+    assert(findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
+    assert(findRoute(g, b, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
   }
 
   test("route not found (amount too high OR too low)") {
@@ -338,8 +339,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val g = DirectedGraph(edgesHi)
     val g1 = DirectedGraph(edgesLo)
 
-    assert(findRoute(g, a, d, highAmount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
-    assert(findRoute(g1, a, d, lowAmount, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
+    assert(findRoute(g, a, d, highAmount, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
+    assert(findRoute(g1, a, d, lowAmount, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
   }
 
   test("route not found (balance too low)") {
@@ -348,7 +349,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(2L, b, c, 1 msat, 2, minHtlc = 10000 msat),
       makeEdge(3L, c, d, 1 msat, 2, minHtlc = 10000 msat)
     ))
-    assert(findRoute(g, a, d, 15000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).isSuccess)
+    assert(findRoute(g, a, d, 15000 msat, 100 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).isSuccess)
 
     // not enough balance on the last edge
     val g1 = DirectedGraph(List(
@@ -368,7 +369,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(2L, b, c, 1 msat, 2, minHtlc = 10000 msat),
       makeEdge(3L, c, d, 1 msat, 2, minHtlc = 10000 msat)
     ))
-    Seq(g1, g2, g3).foreach(g => assert(findRoute(g, a, d, 15000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound)))
+    Seq(g1, g2, g3).foreach(g => assert(findRoute(g, a, d, 15000 msat, 100 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound)))
   }
 
   test("route to self") {
@@ -378,8 +379,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, c, d, 0 msat, 0)
     ))
 
-    val route = findRoute(g, a, a, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Failure(CannotRouteToSelf))
+    val route = findRoute(g, a, a, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route === Failure(CannotRouteToSelf))
   }
 
   test("route to immediate neighbor") {
@@ -390,8 +391,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(1 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: Nil)
   }
 
   test("directed graph") {
@@ -403,11 +404,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route1) === 1 :: 2 :: 3 :: 4 :: Nil)
 
-    val route2 = findRoute(g, e, a, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route2.map(route2Ids) === Failure(RouteNotFound))
+    val route2 = findRoute(g, e, a, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2 === Failure(RouteNotFound))
   }
 
   test("calculate route and return metadata") {
@@ -434,8 +435,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     )
 
     val g = DirectedGraph(edges)
-    val hops = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).get.hops
-    assert(hops === ChannelHop(a, b, uab) :: ChannelHop(b, c, ubc) :: ChannelHop(c, d, ucd) :: ChannelHop(d, e, ude) :: Nil)
+    val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route.hops === ChannelHop(a, b, uab) :: ChannelHop(b, c, ubc) :: ChannelHop(c, d, ucd) :: ChannelHop(d, e, ude) :: Nil)
   }
 
   test("convert extra hops to assisted channels") {
@@ -468,8 +469,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Failure(RouteNotFound))
+    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route1 === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
     assert(g.containsEdge(ChannelDesc(ShortChannelId(3), c, d)))
@@ -477,8 +478,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(g.containsVertex(d))
 
     // make sure we can find a route if without the blacklist
-    val route2 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route2.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route2 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route2) === 1 :: 2 :: 3 :: 4 :: Nil)
   }
 
   test("route to a destination that is not in the graph (with assisted routes)") {
@@ -488,13 +489,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, c, d, 10 msat, 10)
     ))
 
-    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Failure(RouteNotFound))
+    val route = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route === Failure(RouteNotFound))
 
     // now we add the missing edge to reach the destination
     val extraGraphEdges = Set(makeEdge(4L, d, e, 5 msat, 5))
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route1) === 1 :: 2 :: 3 :: 4 :: Nil)
   }
 
   test("route from a source that is not in the graph (with assisted routes)") {
@@ -503,13 +504,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(3L, c, d, 10 msat, 10)
     ))
 
-    val route = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Failure(RouteNotFound))
+    val route = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route === Failure(RouteNotFound))
 
     // now we add the missing starting edge
     val extraGraphEdges = Set(makeEdge(1L, a, b, 5 msat, 5))
-    val route1 = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 2 :: 3 :: Nil))
+    val Success(route1 :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route1) === 1 :: 2 :: 3 :: Nil)
   }
 
   test("verify that extra hops takes precedence over known channels") {
@@ -520,14 +521,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 10 msat, 10)
     ))
 
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-    assert(route1.get.hops(1).lastUpdate.feeBaseMsat === 10.msat)
+    val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route1) === 1 :: 2 :: 3 :: 4 :: Nil)
+    assert(route1.hops(1).lastUpdate.feeBaseMsat === 10.msat)
 
     val extraGraphEdges = Set(makeEdge(2L, b, c, 5 msat, 5))
-    val route2 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route2.map(route2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
-    assert(route2.get.hops(1).lastUpdate.feeBaseMsat === 5.msat)
+    val Success(route2 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, extraEdges = extraGraphEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route2) === 1 :: 2 :: 3 :: 4 :: Nil)
+    assert(route2.hops(1).lastUpdate.feeBaseMsat === 5.msat)
   }
 
   test("compute ignored channels") {
@@ -583,10 +584,10 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val g = DirectedGraph(edges)
 
-    assert(findRoute(g, nodes(0), nodes(18), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(route2Ids) === Success(0 until 18))
-    assert(findRoute(g, nodes(0), nodes(19), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(route2Ids) === Success(0 until 19))
-    assert(findRoute(g, nodes(0), nodes(20), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(route2Ids) === Success(0 until 20))
-    assert(findRoute(g, nodes(0), nodes(21), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(route2Ids) === Failure(RouteNotFound))
+    assert(findRoute(g, nodes(0), nodes(18), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(r => route2Ids(r.head)) === Success(0 until 18))
+    assert(findRoute(g, nodes(0), nodes(19), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(r => route2Ids(r.head)) === Success(0 until 19))
+    assert(findRoute(g, nodes(0), nodes(20), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000).map(r => route2Ids(r.head)) === Success(0 until 20))
+    assert(findRoute(g, nodes(0), nodes(21), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000) === Failure(RouteNotFound))
   }
 
   test("ignore cheaper route when it has more than 20 hops") {
@@ -601,8 +602,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val g = DirectedGraph(expensiveShortEdge :: edges)
 
-    val route = findRoute(g, nodes(0), nodes(49), DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(0 :: 1 :: 99 :: 48 :: Nil))
+    val Success(route :: Nil) = findRoute(g, nodes(0), nodes(49), DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 0 :: 1 :: 99 :: 48 :: Nil)
   }
 
   test("ignore cheaper route when it has more than the requested CLTV") {
@@ -616,8 +617,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6, f, d, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
     ))
 
-    val route = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = CltvExpiryDelta(28)), currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(4 :: 5 :: 6 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = CltvExpiryDelta(28)), currentBlockHeight = 400000)
+    assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
   }
 
   test("ignore cheaper route when it grows longer than the requested size") {
@@ -631,8 +632,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6, b, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
     ))
 
-    val route = findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3), currentBlockHeight = 400000)
-    assert(route.map(route2Ids) === Success(1 :: 6 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3), currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 6 :: Nil)
   }
 
   test("ignore loops") {
@@ -644,8 +645,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(5L, d, e, 10 msat, 10)
     ))
 
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 2 :: 4 :: 5 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 2 :: 4 :: 5 :: Nil)
   }
 
   test("ensure the route calculation terminates correctly when selecting 0-fees edges") {
@@ -660,8 +661,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(5L, e, d, 0 msat, 0) // e -> d
     ))
 
-    val route1 = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
-    assert(route1.map(route2Ids) === Success(1 :: 3 :: 5 :: Nil))
+    val Success(route :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(route2Ids(route) === 1 :: 3 :: 5 :: Nil)
   }
 
   // +---+                       +---+    +---+
@@ -769,29 +770,31 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("select a random route below the requested fee") {
-    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 7 msat, maxFeePct = 0)
+    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 7 msat, maxFeePct = 0, randomize = true)
+    val strictFee = strictFeeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
+    assert(strictFee === 7.msat)
 
     // A -> B -> C -> D has total cost of 10000005
-    // A -> E -> C -> D has total cost of 11080003 !!
+    // A -> E -> C -> D has total cost of 10000103 !!
     // A -> E -> F -> D has total cost of 10000006
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, feeBase = 1 msat, 0),
-      makeEdge(4L, a, e, feeBase = 1 msat, 0),
       makeEdge(2L, b, c, feeBase = 2 msat, 0),
       makeEdge(3L, c, d, feeBase = 3 msat, 0),
+      makeEdge(4L, a, e, feeBase = 1 msat, 0),
       makeEdge(5L, e, f, feeBase = 3 msat, 0),
       makeEdge(6L, f, d, feeBase = 3 msat, 0),
-      makeEdge(7L, e, c, feeBase = 9 msat, 0)
+      makeEdge(7L, e, c, feeBase = 100 msat, 0)
     ))
 
-    (for {_ <- 0 to 10} yield findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = 400000)).map {
-      case Failure(thr) => fail(thr)
-      case Success(someRoute) =>
-        val weightedPath = Graph.pathWeight(a, route2Edges(someRoute), DEFAULT_AMOUNT_MSAT, 0, None)
-        val totalFees = weightedPath.cost - DEFAULT_AMOUNT_MSAT
-        // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7 msat of fees)
-        assert(totalFees === 5.msat || totalFees === 6.msat)
-        assert(weightedPath.length === 3)
+    for (_ <- 0 to 10) {
+      val Success(routes) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, strictFee, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = 400000)
+      assert(routes.length === 2, routes)
+      val weightedPath = Graph.pathWeight(a, route2Edges(routes.head), DEFAULT_AMOUNT_MSAT, 400000, None)
+      val totalFees = weightedPath.cost - DEFAULT_AMOUNT_MSAT
+      // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7 msat of fees)
+      assert(totalFees === 5.msat || totalFees === 6.msat)
+      assert(weightedPath.length === 3)
     }
   }
 
@@ -812,17 +815,17 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = largeCapacity, cltvDelta = CltvExpiryDelta(12))
     ))
 
-    val Success(routeFeeOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    val Success(routeFeeOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route2Nodes(routeFeeOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
 
-    val Success(routeCltvOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+    val Success(routeCltvOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0
     ))), currentBlockHeight = 400000)
     assert(route2Nodes(routeCltvOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
 
-    val Success(routeCapacityOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+    val Success(routeCapacityOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       cltvDeltaFactor = 0,
       ageFactor = 0,
       capacityFactor = 1
@@ -842,7 +845,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(ShortChannelId(s"${currentBlockHeight}x0x6").toLong, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
     ))
 
-    val Success(routeScoreOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+    val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33
@@ -861,7 +864,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))
     ))
 
-    val Success(routeScoreOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+    val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33
@@ -882,7 +885,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
     ))
 
-    val Success(routeScoreOptimized) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
+    val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = Some(WeightRatios(
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33
@@ -929,7 +932,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val targetNode = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
     val amount = 351000 msat
 
-    val Success(route) = findRoute(g, thisNode, targetNode, amount, 1, Set.empty, Set.empty, Set.empty, params, currentBlockHeight = 567634) // simulate mainnet block for heuristic
+    val Success(route :: Nil) = findRoute(g, thisNode, targetNode, amount, DEFAULT_MAX_FEE, 1, Set.empty, Set.empty, Set.empty, params, currentBlockHeight = 567634) // simulate mainnet block for heuristic
     assert(route.length == 2)
     assert(route.hops.last.nextNodeId == targetNode)
   }
@@ -961,6 +964,7 @@ object RouteCalculationSpec {
   val noopBoundaries = { _: RichWeight => true }
 
   val DEFAULT_AMOUNT_MSAT = 10000000 msat
+  val DEFAULT_MAX_FEE = 100000 msat
   val DEFAULT_CAPACITY = 100000 sat
 
   val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, maxFeeBase = 21000 msat, maxFeePct = 0.03, routeMaxCltv = CltvExpiryDelta(2016), routeMaxLength = 6, ratios = None)
@@ -969,7 +973,7 @@ object RouteCalculationSpec {
 
   def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey): ChannelAnnouncement = {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeIdA, nodeIdB)) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
-    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, ByteVector.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
+    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, Features.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
   def makeEdge(shortChannelId: Long,

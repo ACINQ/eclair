@@ -27,14 +27,13 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
-import fr.acinq.eclair.router.RouteCalculationSpec.DEFAULT_AMOUNT_MSAT
+import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{Color, QueryShortChannelIds}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, randomKey}
 import scodec.bits._
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -42,8 +41,6 @@ import scala.concurrent.duration._
  */
 
 class RouterSpec extends BaseRouterSpec {
-
-  val relaxedRouteParams = Some(RouteCalculationSpec.DEFAULT_ROUTE_PARAMS.copy(maxFeePct = 0.3))
 
   test("properly announce valid new channels and ignore invalid ones") { fixture =>
     import fixture._
@@ -56,7 +53,7 @@ class RouterSpec extends BaseRouterSpec {
       // valid channel announcement, no stashing
       val chan_ac = channelAnnouncement(ShortChannelId(420000, 5, 0), priv_a, priv_c, priv_funding_a, priv_funding_c)
       val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, hex"0200", timestamp = System.currentTimeMillis.milliseconds.toSeconds + 1)
+      val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features, timestamp = System.currentTimeMillis.milliseconds.toSeconds + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
       peerConnection.expectNoMsg(100 millis) // we don't immediately acknowledge the announcement (back pressure)
       watcher.expectMsg(ValidateRequest(chan_ac))
@@ -86,7 +83,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_u = randomKey
       val chan_uc = channelAnnouncement(ShortChannelId(420000, 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, hex"00")
+      val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_uc))
       peerConnection.expectNoMsg(200 millis) // we don't immediately acknowledge the announcement (back pressure)
       watcher.expectMsg(ValidateRequest(chan_uc))
@@ -174,7 +171,7 @@ class RouterSpec extends BaseRouterSpec {
       // unknown channel
       val priv_y = randomKey
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, ShortChannelId(4646464), CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, hex"0200")
+      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
       peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
@@ -192,7 +189,7 @@ class RouterSpec extends BaseRouterSpec {
       val priv_funding_y = randomKey // a-y will have an invalid script
       val chan_ay = channelAnnouncement(ShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
-      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, hex"0200")
+      val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ay))
       watcher.expectMsg(ValidateRequest(chan_ay))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay))
@@ -315,7 +312,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, f, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -323,7 +320,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(randomKey.publicKey, f, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(randomKey.publicKey, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -331,19 +328,19 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, randomKey.publicKey, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, randomKey.publicKey, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route found") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.routes.head.hops.last.nextNodeId === d)
 
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     val res1 = sender.expectMsgType[RouteResponse]
     assert(res1.routes.head.hops.map(_.nodeId).toList === a :: g :: Nil)
     assert(res1.routes.head.hops.last.nextNodeId === h)
@@ -358,7 +355,7 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
-    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
+    sender.send(router, RouteRequest(a, z, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
     assert(res.routes.head.hops.last.nextNodeId === z)
@@ -368,7 +365,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     val peerConnection = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.routes.head.hops.last.nextNodeId === d)
@@ -376,21 +373,21 @@ class RouterSpec extends BaseRouterSpec {
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(3), 0 msat, 153000 msat, 4, htlcMaximum, enable = false)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_cd1))
     peerConnection.expectMsg(TransportHandler.ReadAck(channelUpdate_cd1))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route not found (private channel disabled)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.routes.head.hops.map(_.nodeId).toList === a :: g :: Nil)
     assert(res.routes.head.hops.last.nextNodeId === h)
 
     val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -399,38 +396,38 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
 
     // Via private channels.
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
-    sender.send(router, RouteRequest(a, h, 50000000 msat))
+    sender.send(router, RouteRequest(a, h, 50000000 msat, Long.MaxValue.msat))
     sender.expectMsg(Failure(RouteNotFound))
 
     // Via public channels.
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
     val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
-    sender.send(router, RouteRequest(a, d, 12000000 msat))
+    sender.send(router, RouteRequest(a, d, 12000000 msat, Long.MaxValue.msat))
     sender.expectMsg(Failure(RouteNotFound))
-    sender.send(router, RouteRequest(a, d, 5000000 msat))
+    sender.send(router, RouteRequest(a, d, 5000000 msat, Long.MaxValue.msat))
     sender.expectMsgType[RouteResponse]
   }
 
   test("temporary channel exclusion") { fixture =>
     import fixture._
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(channelId_bc, b, c)
     // let's exclude channel b->c
     sender.send(router, ExcludeChannel(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
-    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(d, a, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
     // let's remove the exclusion
     sender.send(router, LiftChannelExclusion(bc))
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, routeParams = relaxedRouteParams))
+    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
   }
 

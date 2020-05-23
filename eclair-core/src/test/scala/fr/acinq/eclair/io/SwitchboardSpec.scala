@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, TestKitBaseClass}
+import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -36,7 +36,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val (probe, peer) = (TestProbe(), TestProbe())
     val remoteNodeId = PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")
     val remoteNodeAddress = NodeAddress.fromParts("127.0.0.1", 9735).get
-    nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, ByteVector.empty, 0, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
+    nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, Features.empty, 0, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
 
     val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
     probe.send(switchboard, Peer.Connect(remoteNodeId, None))
