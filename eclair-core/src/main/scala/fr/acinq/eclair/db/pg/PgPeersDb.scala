@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.PeersDb
-import fr.acinq.eclair.db.psql.PsqlUtils.DatabaseLock
+import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
 import fr.acinq.eclair.wire._
 import javax.sql.DataSource
 import scodec.bits.BitVector
 
-class PsqlPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
+class PgPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
 
-  import PsqlUtils.ExtendedResultSet._
-  import PsqlUtils._
+  import PgUtils.ExtendedResultSet._
+  import PgUtils._
   import lock._
 
   val DB_NAME = "peers"

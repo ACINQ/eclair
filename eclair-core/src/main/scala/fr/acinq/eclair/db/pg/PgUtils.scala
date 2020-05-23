@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
 import java.sql.{Connection, Statement, Timestamp}
-import java.util.concurrent.atomic.AtomicLong
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 import grizzled.slf4j.Logging
@@ -27,9 +26,7 @@ import org.postgresql.util.{PGInterval, PSQLException}
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
-object PsqlUtils extends JdbcUtils with Logging {
-
-  val DataVersionTable = "data_version"
+object PgUtils extends JdbcUtils with Logging {
 
   val OwnershipTable = "lease"
 

@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
-import java.sql.Statement
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db._
@@ -29,11 +28,10 @@ import grizzled.slf4j.Logging
 import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
-import scala.compat.Platform
 
-class PsqlAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
+class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
-  import PsqlUtils._
+  import PgUtils._
   import ExtendedResultSet._
 
   val DB_NAME = "audit"

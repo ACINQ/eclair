@@ -17,15 +17,13 @@
 package fr.acinq.eclair.db
 
 import java.io.File
-import java.lang.management.ManagementFactory
-import java.sql.{Connection, DriverManager}
-import java.util.concurrent.atomic.AtomicLong
 import java.nio.file._
+import java.sql.{Connection, DriverManager}
 
 import com.typesafe.config.Config
-import fr.acinq.eclair.db.psql.PsqlUtils.LockType.LockType
-import fr.acinq.eclair.db.psql.PsqlUtils._
-import fr.acinq.eclair.db.psql._
+import fr.acinq.eclair.db.pg.PgUtils.LockType.LockType
+import fr.acinq.eclair.db.pg.PgUtils._
+import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
 import grizzled.slf4j.Logging
 import javax.sql.DataSource
@@ -115,12 +113,12 @@ object Databases extends Logging {
     implicit val ds: DataSource = new HikariDataSource(config)
 
     val databases: Databases = new Databases {
-      override val network = new PsqlNetworkDb
-      override val audit = new PsqlAuditDb
-      override val channels = new PsqlChannelsDb
-      override val peers = new PsqlPeersDb
-      override val payments = new PsqlPaymentsDb
-      override val pendingRelay = new PsqlPendingRelayDb
+      override val network = new PgNetworkDb
+      override val audit = new PgAuditDb
+      override val channels = new PgChannelsDb
+      override val peers = new PgPeersDb
+      override val payments = new PgPaymentsDb
+      override val pendingRelay = new PgPendingRelayDb
       override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock
     }
     databases.obtainExclusiveLock()

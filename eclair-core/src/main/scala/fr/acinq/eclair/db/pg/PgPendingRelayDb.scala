@@ -14,22 +14,22 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{Command, HasHtlcId}
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.db.psql.PsqlUtils._
+import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
 
-class PsqlPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends PendingRelayDb {
+class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends PendingRelayDb {
 
-  import PsqlUtils.ExtendedResultSet._
-  import PsqlUtils._
+  import PgUtils.ExtendedResultSet._
+  import PgUtils._
   import lock._
 
   val DB_NAME = "pending_relay"

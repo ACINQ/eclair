@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
-import java.sql.{ResultSet, Statement}
+import java.sql.ResultSet
 import java.util.UUID
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.db.psql.PsqlUtils.DatabaseLock
+import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
 import fr.acinq.eclair.db.{HopSummary, _}
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
@@ -33,13 +33,12 @@ import scodec.bits.BitVector
 import scodec.codecs._
 
 import scala.collection.immutable.Queue
-import scala.compat.Platform
 import scala.concurrent.duration._
 
-class PsqlPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends PaymentsDb with Logging {
+class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends PaymentsDb with Logging {
 
-  import PsqlUtils.ExtendedResultSet._
-  import PsqlUtils._
+  import PgUtils.ExtendedResultSet._
+  import PgUtils._
   import lock._
 
   val DB_NAME = "payments"

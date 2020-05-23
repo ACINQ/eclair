@@ -24,15 +24,12 @@ import fr.acinq.eclair.TestConstants.{TestPsqlDatabases, TestSqliteDatabases, fo
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
-import fr.acinq.eclair.db.psql.PsqlAuditDb
-import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.ChannelCodecs
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 

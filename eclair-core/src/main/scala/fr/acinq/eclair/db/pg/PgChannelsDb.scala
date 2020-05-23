@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.db.psql.PsqlUtils.DatabaseLock
+import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
 import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
 
-class PsqlChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends ChannelsDb with Logging {
+class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends ChannelsDb with Logging {
 
-  import PsqlUtils.ExtendedResultSet._
-  import PsqlUtils._
+  import PgUtils.ExtendedResultSet._
+  import PgUtils._
   import lock._
 
   val DB_NAME = "channels"

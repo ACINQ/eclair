@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.db.psql
+package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
@@ -27,10 +27,10 @@ import javax.sql.DataSource
 
 import scala.collection.immutable.SortedMap
 
-class PsqlNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
+class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
 
-  import PsqlUtils.ExtendedResultSet._
-  import PsqlUtils._
+  import PgUtils.ExtendedResultSet._
+  import PgUtils._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 2

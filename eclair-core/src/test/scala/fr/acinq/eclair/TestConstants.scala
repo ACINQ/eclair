@@ -28,8 +28,8 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.psql.PsqlUtils.NoLock
-import fr.acinq.eclair.db.psql._
+import fr.acinq.eclair.db.pg.PgUtils.NoLock
+import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.router.Router.RouterConf
@@ -98,13 +98,13 @@ object TestConstants {
 
     implicit val lock = NoLock
 
-    override def network(): NetworkDb = new PsqlNetworkDb
-    override def audit(): AuditDb = new PsqlAuditDb
-    override def channels(): ChannelsDb = new PsqlChannelsDb
-    override def peers(): PeersDb = new PsqlPeersDb
-    override def payments(): PaymentsDb = new PsqlPaymentsDb
-    override def pendingRelay(): PendingRelayDb = new PsqlPendingRelayDb
-    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PsqlUtils.getVersion(statement, db_name, currentVersion)
+    override def network(): NetworkDb = new PgNetworkDb
+    override def audit(): AuditDb = new PgAuditDb
+    override def channels(): ChannelsDb = new PgChannelsDb
+    override def peers(): PeersDb = new PgPeersDb
+    override def payments(): PaymentsDb = new PgPaymentsDb
+    override def pendingRelay(): PendingRelayDb = new PgPendingRelayDb
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = pg.close()
   }
 
