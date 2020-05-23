@@ -377,11 +377,12 @@ class SqliteAuditDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.audit()
       val sqlite = dbs.connection
+      val isPg = dbs.isInstanceOf[TestPgDatabases]
 
       using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, randomBytes32.toArray)
+        if (isPg) statement.setString(1, randomBytes32.toHex) else statement.setBytes(1, randomBytes32.toArray)
         statement.setLong(2, 42)
-        statement.setBytes(3, randomBytes32.toArray)
+        if (isPg) statement.setString(3, randomBytes32.toHex) else statement.setBytes(3, randomBytes32.toArray)
         statement.setString(4, "IN")
         statement.setString(5, "unknown") // invalid relay type
         statement.setLong(6, 10)
@@ -389,9 +390,9 @@ class SqliteAuditDbSpec extends AnyFunSuite {
       }
 
       using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, randomBytes32.toArray)
+        if (isPg) statement.setString(1, randomBytes32.toHex) else statement.setBytes(1, randomBytes32.toArray)
         statement.setLong(2, 51)
-        statement.setBytes(3, randomBytes32.toArray)
+        if (isPg) statement.setString(3, randomBytes32.toHex) else statement.setBytes(3, randomBytes32.toArray)
         statement.setString(4, "UP") // invalid direction
         statement.setString(5, "channel")
         statement.setLong(6, 20)
@@ -402,9 +403,9 @@ class SqliteAuditDbSpec extends AnyFunSuite {
       val channelId = randomBytes32
 
       using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, paymentHash.toArray)
+        if (isPg) statement.setString(1, paymentHash.toHex) else statement.setBytes(1, paymentHash.toArray)
         statement.setLong(2, 65)
-        statement.setBytes(3, channelId.toArray)
+        if (isPg) statement.setString(3, channelId.toHex) else statement.setBytes(3, channelId.toArray)
         statement.setString(4, "IN") // missing a corresponding OUT
         statement.setString(5, "channel")
         statement.setLong(6, 30)

@@ -81,16 +81,15 @@ trait JdbcUtils {
     }
 
     def getByteVector32FromHex(columnLabel: String): ByteVector32 = {
-      val s = rs.getString(columnLabel).stripPrefix("\\x")
+      val s = rs.getString(columnLabel)
       ByteVector32(ByteVector.fromValidHex(s))
     }
 
     def getByteVector32FromHexNullable(columnLabel: String): Option[ByteVector32] = {
       val s = rs.getString(columnLabel)
-      if (s != null) {
-        val bytes = s.stripPrefix("\\x")
-        Some(ByteVector32(ByteVector.fromValidHex(bytes)))
-      } else None
+      if (rs.wasNull()) None else {
+        Some(ByteVector32(ByteVector.fromValidHex(s)))
+      }
     }
 
     def getBitVectorOpt(columnLabel: String): Option[BitVector] = Option(rs.getBytes(columnLabel)).map(BitVector(_))
