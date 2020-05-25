@@ -105,12 +105,14 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
   socksProxy_opt.foreach(params => b.resolver(NoopAddressResolverGroup.INSTANCE))
   
   // Start the client.
-  log.info("connecting to server={}", serverAddress)
+  log.debug("connecting to server={}", serverAddress)
 
   val channelOpenFuture = b.connect(serverAddress.getHostName, serverAddress.getPort)
 
   def errorHandler(t: Throwable): Unit = {
-    log.info("server={} connection error (reason={})", serverAddress, t.getMessage)
+    // generic errors don't need to be logged in most cases, what we actually want are errors that happened once we were
+    // properly connected and had exchanged version messages
+    log.debug("server={} connection error (reason={})", serverAddress, t.getMessage)
     self ! Close
   }
 
@@ -124,7 +126,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
             if (!future.isSuccess) {
               errorHandler(future.cause())
             } else {
-              log.info("server={} channel closed: {}", serverAddress, future.channel())
+              log.debug("server={} channel closed: {}", serverAddress, future.channel())
               self ! Close
             }
           }
@@ -271,7 +273,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
 
   def disconnected: Receive = {
     case ctx: ChannelHandlerContext =>
-      log.info("connected to server={}", serverAddress)
+      log.debug("connected to server={}", serverAddress)
       send(ctx, version)
       context become waitingForVersion(ctx)
 
