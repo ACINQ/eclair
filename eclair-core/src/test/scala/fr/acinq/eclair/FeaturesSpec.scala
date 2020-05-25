@@ -244,6 +244,26 @@ class FeaturesSpec extends AnyFunSuite {
 
       assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
     }
+
+    {
+      val confWithDisabledFeatures = ConfigFactory.parseString(
+        """
+          |features {
+          |  option_data_loss_protect = disabled
+          |  gossip_queries = optional
+          |  payment_secret = mandatory
+          |  option_support_large_channel = disabled
+          |  gossip_queries_ex = mandatory
+          |}
+        """.stripMargin)
+
+      val features = fromConfiguration(confWithDisabledFeatures)
+      assert(!features.hasFeature(OptionDataLossProtect))
+      assert(!features.hasFeature(Wumbo))
+      assert(features.hasFeature(ChannelRangeQueries))
+      assert(features.hasFeature(ChannelRangeQueriesExtended))
+      assert(features.hasFeature(PaymentSecret))
+    }
   }
 
   test("'knownFeatures' contains all our known features (reflection test)") {
