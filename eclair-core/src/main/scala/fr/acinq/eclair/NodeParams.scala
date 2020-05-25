@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.eclair.Features.{ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, VariableLengthOnion}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
@@ -91,6 +92,14 @@ case class NodeParams(keyManager: KeyManager,
 }
 
 object NodeParams {
+
+  val defaultFeatures = ConfigFactory.parseMap(Map(
+    s"features.${InitialRoutingSync.rfcName}" -> "optional",
+    s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+    s"features.${ChannelRangeQueries.rfcName}" -> "optional",
+    s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
+    s"features.${VariableLengthOnion.rfcName}" -> "optional"
+  ).asJava)
 
   sealed trait WatcherType
 
@@ -183,7 +192,11 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = Features.fromConfiguration(config)
+    val features = Features.fromConfiguration(config) match {
+      // if the user did not provide any features we fallback to the default
+      case parsedFeatures if parsedFeatures.isEmpty() => Features.fromConfiguration(defaultFeatures)
+      case parsedFeatures => parsedFeatures
+    }
     val featuresErr = Features.validateFeatureGraph(features)
     require(featuresErr.isEmpty, featuresErr.map(_.message))
 

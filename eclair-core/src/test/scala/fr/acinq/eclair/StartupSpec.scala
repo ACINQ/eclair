@@ -21,8 +21,8 @@ import java.util.concurrent.atomic.AtomicLong
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.FeatureSupport.Mandatory
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion, Wumbo}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import scodec.bits.ByteVector
 import org.scalatest.funsuite.AnyFunSuite
@@ -80,6 +80,26 @@ class StartupSpec extends AnyFunSuite {
     val conf = illegalByteVectorFeatures.withFallback(defaultConf)
     val nodeParamsAttempt = Try(makeNodeParamsWithDefaults(conf))
     assert(nodeParamsAttempt.failed.get.getMessage == "requirement failed: configuration key 'features' have moved from bytevector to human readable (ex: 'feature-name' = optional/mandatory)")
+  }
+
+  test("NodeParams should not merge user defined features with default features") {
+    val userDefinedConf = ConfigFactory.parseString(
+      """
+        |features {
+        |  option_support_large_channel = optional
+        |}
+      """.stripMargin)
+    val userDefinedFeatures = makeNodeParamsWithDefaults(userDefinedConf.withFallback(defaultConf)).features
+    assert(userDefinedFeatures.hasFeature(Wumbo, Some(Optional)))
+    assert(!userDefinedFeatures.hasFeature(OptionDataLossProtect))
+    assert(!userDefinedFeatures.hasFeature(InitialRoutingSync))
+
+    // if the user doesn't specify any features we fallback to our defaults
+    val emptyUserConf = ConfigFactory.parseString("")
+    val fallbackFeatures = makeNodeParamsWithDefaults(emptyUserConf.withFallback(defaultConf)).features
+    assert(!fallbackFeatures.hasFeature(Wumbo, Some(Optional)))
+    assert(fallbackFeatures.hasFeature(OptionDataLossProtect))
+    assert(fallbackFeatures.hasFeature(InitialRoutingSync))
   }
 
   test("NodeParams should fail if features are inconsistent") {
