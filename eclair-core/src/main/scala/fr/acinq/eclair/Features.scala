@@ -94,6 +94,7 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     )
   }
 
+  def isEmpty(): Boolean = activated.isEmpty && unknown.isEmpty
 }
 
 object Features {
