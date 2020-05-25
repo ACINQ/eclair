@@ -21,6 +21,8 @@ import java.util.UUID
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, ScriptFlags, Transaction}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -32,6 +34,7 @@ import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
+import scodec.bits._
 
 import scala.concurrent.duration._
 
@@ -49,7 +52,8 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
                           router: TestProbe,
                           relayerA: TestProbe,
                           relayerB: TestProbe,
-                          channelUpdateListener: TestProbe) {
+                          channelUpdateListener: TestProbe,
+                          wallet: EclairWallet) {
     def currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
@@ -70,16 +74,22 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     val router = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref), alicePeer.ref)
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref), bobPeer.ref)
-    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener)
+    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
   def reachNormal(setup: SetupFixture,
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelVersion = if(tags.contains("static_remotekey")) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
+    val (aliceParams, bobParams) = if(tags.contains("static_remotekey")) {
+      (Alice.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))),
+       Bob.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))))
+    } else {
+      (Alice.channelParams, Bob.channelParams)
+    }
+
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)

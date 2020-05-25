@@ -88,7 +88,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       }
     } else {
       within(30 seconds) {
-        reachNormal(setup)
+        reachNormal(setup, test.tags)
         val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
@@ -549,6 +549,22 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv BITCOIN_TX_CONFIRMED (remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
+    val bobCommitTx = bobCommitTxes.last.commitTx.tx
+    assert(bobCommitTx.txOut.size == 2) // two main outputs
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+
+    // alice won't create a claimMainOutputTx because her main output is already spendable by the wallet
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimMainOutputTx.isEmpty)
+    assert(alice.stateName == CLOSING)
+    // once the remote commit is confirmed the channel is definitively closed
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
   test("recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment)") { f =>
     import f._
 
@@ -633,7 +649,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(100 millis)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit)") { f =>
+  private def testNextRemoteCommitTxConfirmed(f: FixtureParam): (Transaction, RemoteCommitPublished, Set[UpdateAddHtlc]) = {
     import f._
 
     // alice sends a first htlc to bob
@@ -656,7 +672,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
     assert(closingState.claimHtlcTimeoutTxs.length === 3)
+    (bobCommitTx, closingState, Set(htlca1, htlca2, htlca3))
+  }
 
+  test("recv BITCOIN_TX_CONFIRMED (next remote commit)") { f =>
+    import f._
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 0, bobCommitTx)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimMainOutputTx.get), 45, 0, closingState.claimMainOutputTx.get)
     relayerA.expectNoMsg(100 millis)
@@ -668,7 +689,26 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(250 millis)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimHtlcTimeoutTxs(2)), 203, 1, closingState.claimHtlcTimeoutTxs(2))
     val forwardedFail3 = relayerA.expectMsgType[ForwardOnChainFail].htlc
-    assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === Set(htlca1, htlca2, htlca3))
+    assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === htlcs)
+    relayerA.expectNoMsg(250 millis)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv BITCOIN_TX_CONFIRMED (next remote commit, static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 0, bobCommitTx)
+    assert(closingState.claimMainOutputTx.isEmpty) // with static_remotekey we don't claim out main output
+    relayerA.expectNoMsg(100 millis)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimHtlcTimeoutTxs.head), 201, 0, closingState.claimHtlcTimeoutTxs.head)
+    val forwardedFail1 = relayerA.expectMsgType[ForwardOnChainFail].htlc
+    relayerA.expectNoMsg(250 millis)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimHtlcTimeoutTxs(1)), 202, 0, closingState.claimHtlcTimeoutTxs(1))
+    val forwardedFail2 = relayerA.expectMsgType[ForwardOnChainFail].htlc
+    relayerA.expectNoMsg(250 millis)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.claimHtlcTimeoutTxs(2)), 203, 1, closingState.claimHtlcTimeoutTxs(2))
+    val forwardedFail3 = relayerA.expectMsgType[ForwardOnChainFail].htlc
+    assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) === htlcs)
     relayerA.expectNoMsg(250 millis)
     awaitCond(alice.stateName == CLOSED)
   }
@@ -723,7 +763,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(100 millis)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit)") { f =>
+  private def testFutureRemoteCommitTxConfirmed(f: FixtureParam): Transaction = {
     import f._
     val sender = TestProbe()
     val oldStateData = alice.stateData
@@ -762,6 +802,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     assert(bobCommitTx.txOut.length === 4) // two main outputs + 2 HTLCs
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+    bobCommitTx
+  }
+
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit)") { f =>
+    import f._
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f)
     // alice is able to claim its main output
     val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
     Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -776,7 +822,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { f =>
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f)
+    // using option_static_remotekey alice doesn't need to sweep her output
+    awaitCond(alice.stateName == CLOSING, 10 seconds)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
+    // after the commit tx is confirmed the channel is closed, no claim transactions needed
+    awaitCond(alice.stateName == CLOSED, 10 seconds)
+  }
+
+  private def testFundingSpentRevokedTx(f: FixtureParam) = {
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -784,6 +840,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobRevokedTx = bobCommitTxes.head.commitTx.tx
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
 
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].copy(revokedCommitPublished = Nil) == initialState)
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { f =>
+    import f._
+    testFundingSpentRevokedTx(f)
     // alice publishes and watches the penalty tx
     alice2blockchain.expectMsgType[PublishAsap] // claim-main
     alice2blockchain.expectMsgType[PublishAsap] // main-penalty
@@ -793,9 +856,18 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchSpent] // main-penalty
     alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
     alice2blockchain.expectNoMsg(1 second)
+  }
 
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].copy(revokedCommitPublished = Nil) == initialState)
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    import f._
+    testFundingSpentRevokedTx(f)
+    // alice publishes and watches the penalty tx, but she won't claim her main output (claim-main)
+    alice2blockchain.expectMsgType[PublishAsap] // main-penalty
+    alice2blockchain.expectMsgType[PublishAsap] // htlc-penalty
+    alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
+    alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+    alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
+    alice2blockchain.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (multiple revoked tx)") { f =>
