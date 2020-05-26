@@ -125,6 +125,7 @@ object Validation {
                     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features)
                     ctx.self ! nodeAnn
                   }
+                  // public channels that haven't yet been announced are considered as private channels
                   val channelMeta_opt = d0.privateChannels.get(c.shortChannelId).map(_.meta)
                   Some(PublicChannel(c, tx.txid, capacity, None, None, channelMeta_opt))
                 }
