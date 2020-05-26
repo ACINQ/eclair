@@ -381,7 +381,9 @@ object Router {
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                           ignoreNodes: Set[PublicKey] = Set.empty,
                           ignoreChannels: Set[ChannelDesc] = Set.empty,
-                          routeParams: Option[RouteParams] = None)
+                          routeParams: Option[RouteParams] = None,
+                          allowMultiPart: Boolean = false,
+                          pendingPayments: Seq[Route] = Nil)
 
   case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 

@@ -166,7 +166,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   test("starting eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0).asJava).withFallback(commonFeatures).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15).asJava).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withWumbo).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(commonConfig))
     instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085).asJava).withFallback(withWumbo).withFallback(commonConfig))
@@ -176,7 +176,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089).asJava).withFallback(commonConfig))
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
 
-    // by default C has a normal payment handler, but this can be overriden in tests
+    // by default C has a normal payment handler, but this can be overridden in tests
     val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").commandBuffer))
     nodes("C").paymentHandler ! paymentHandlerC
   }
@@ -720,14 +720,14 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(pr.features.allowMultiPart)
     assert(pr.features.allowTrampoline)
 
-    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((300000 msat, CltvExpiryDelta(144))))
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((350000 msat, CltvExpiryDelta(288))))
     sender.send(nodes("D").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID](30 seconds)
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
     assert(paymentSent.id === paymentId, paymentSent)
     assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
     assert(paymentSent.recipientAmount === amount, paymentSent)
-    assert(paymentSent.feesPaid === 300000.msat, paymentSent)
+    assert(paymentSent.feesPaid === 350000.msat, paymentSent)
     assert(paymentSent.nonTrampolineFees === 0.msat, paymentSent)
 
     awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
@@ -740,14 +740,14 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     })
     val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, System.currentTimeMillis).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
-    assert(relayed.amountIn - relayed.amountOut < 300000.msat, relayed)
+    assert(relayed.amountIn - relayed.amountOut < 350000.msat, relayed)
 
     val outgoingSuccess = nodes("D").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(p => p.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     outgoingSuccess.collect { case p@OutgoingPayment(_, _, _, _, _, _, _, recipientNodeId, _, _, OutgoingPaymentStatus.Succeeded(_, _, route, _)) =>
       assert(recipientNodeId === nodes("B").nodeParams.nodeId, p)
       assert(route.lastOption === Some(HopSummary(nodes("C").nodeParams.nodeId, nodes("B").nodeParams.nodeId)), p)
     }
-    assert(outgoingSuccess.map(_.amount).sum === amount + 300000.msat, outgoingSuccess)
+    assert(outgoingSuccess.map(_.amount).sum === amount + 350000.msat, outgoingSuccess)
 
     awaitCond(nodes("D").nodeParams.db.audit.listSent(start, System.currentTimeMillis).nonEmpty)
     val sent = nodes("D").nodeParams.db.audit.listSent(start, System.currentTimeMillis)
@@ -815,7 +815,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(pr.features.allowMultiPart)
     assert(pr.features.allowTrampoline)
 
-    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(144))))
+    val payment = SendTrampolinePaymentRequest(amount, pr, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(288))))
     sender.send(nodes("B").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID](30 seconds)
     val paymentFailed = sender.expectMsgType[PaymentFailed](30 seconds)
