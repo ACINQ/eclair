@@ -1230,6 +1230,34 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
   }
 
+  test("calculate multipart route to remote node (tiny amount)") {
+    // A ----- C ----- E
+    // |               |
+    // +--- B --- D ---+
+    // Our balance and the amount we want to send are below the minimum part amount.
+    val routeParams = DEFAULT_ROUTE_PARAMS.copy(mpp = MultiPartParams(5000 msat, 5))
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(1500 msat)),
+      makeEdge(2L, b, d, 15 msat, 0, minHtlc = 1 msat, capacity = 25 sat),
+      makeEdge(3L, d, e, 15 msat, 0, minHtlc = 1 msat, capacity = 20 sat),
+      makeEdge(4L, a, c, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(1000 msat)),
+      makeEdge(5L, c, e, 50 msat, 30, minHtlc = 1 msat, capacity = 20 sat),
+    ))
+
+    {
+      // We can send single-part tiny payments.
+      val (amount, maxFee) = (1400 msat, 30 msat)
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = routeParams, currentBlockHeight = 400000)
+      checkRouteAmounts(routes, amount, maxFee)
+    }
+    {
+      // But we don't want to split such tiny amounts.
+      val (amount, maxFee) = (2000 msat, 150 msat)
+      val failure = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = routeParams, currentBlockHeight = 400000)
+      assert(failure === Failure(RouteNotFound))
+    }
+  }
+
   test("calculate multipart route to remote node (single local channel)") {
     //       +--- C ---+
     //       |         |

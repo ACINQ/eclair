@@ -277,7 +277,8 @@ object RouteCalculation {
       val directChannelsCount = g.getEdgesBetween(localNodeId, targetNodeId).length
       routeParams.mpp.maxParts.max(directChannelsCount) // if we have direct channels to the target, we can use them all
     }
-    findRouteInternal(g, localNodeId, targetNodeId, routeParams.mpp.minPartAmount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
+    val routeAmount = routeParams.mpp.minPartAmount.min(amount)
+    findRouteInternal(g, localNodeId, targetNodeId, routeAmount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
       case Right(routes) =>
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
         split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams) match {
