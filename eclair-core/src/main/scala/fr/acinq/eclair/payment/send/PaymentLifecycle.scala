@@ -107,6 +107,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, route)
 
     case Event(Status.Failure(t), WaitingForRoute(s, _, failures, _, _)) =>
+      log.warning("router error: {}", t.getMessage)
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(Nil, t))).increment()
       onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t)))
       myStop()

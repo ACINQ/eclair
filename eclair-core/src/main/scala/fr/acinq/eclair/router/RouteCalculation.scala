@@ -67,22 +67,32 @@ object RouteCalculation {
       GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
     ).toSet
     val ignoredEdges = r.ignoreChannels ++ d.excludedChannels
-    val defaultRouteParams: RouteParams = getDefaultRouteParams(routerConf)
-    val params = r.routeParams.getOrElse(defaultRouteParams)
-    val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
+    val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
 
-    log.info(s"finding a route ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
-    log.info(s"finding a route with randomize={} params={}", routesToFind > 1, params)
-    KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, routesToFind).withTag(Tags.Amount, Tags.amountBucket(r.amount))) {
-      findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignoreNodes, params, currentBlockHeight) match {
-        case Success(routes) =>
-          Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(r.amount)).record(routes.head.length)
-          ctx.sender ! RouteResponse(routes)
+    log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
+    log.info("finding routes with randomize={} params={}", params.randomize, params)
+    if (r.allowMultiPart) {
+      findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignoreNodes, r.pendingPayments, params, currentBlockHeight) match {
+        case Success(routes) => ctx.sender ! RouteResponse(routes)
         case Failure(t) =>
-          Metrics.FindRouteErrors.withTag(Tags.Amount, Tags.amountBucket(r.amount)).withTag(Tags.Error, t.getClass.getSimpleName).increment()
-          ctx.sender ! Status.Failure(t)
+          val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
+          ctx.sender ! Status.Failure(failure)
+      }
+    } else {
+      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
+      KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, routesToFind).withTag(Tags.Amount, Tags.amountBucket(r.amount))) {
+        findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignoreNodes, params, currentBlockHeight) match {
+          case Success(routes) =>
+            Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(r.amount)).record(routes.head.length)
+            ctx.sender ! RouteResponse(routes)
+          case Failure(t) =>
+            val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
+            Metrics.FindRouteErrors.withTag(Tags.Amount, Tags.amountBucket(r.amount)).withTag(Tags.Error, failure.getClass.getSimpleName).increment()
+            ctx.sender ! Status.Failure(failure)
+        }
       }
     }
+
     d
   }
 
@@ -354,6 +364,16 @@ object RouteCalculation {
     val amountOk = routes.map(_.amount).sum == amount
     val feeOk = routes.map(_.fee).sum <= maxFee
     amountOk && feeOk
+  }
+
+  /**
+   * Checks if we are directly connected to the target but don't have enough balance in our local channels to send the
+   * requested amount. We could potentially relay the payment by using indirect routes, but since we're connected to
+   * the target node it means we'd like to reach it via direct channels as much as possible.
+   */
+  private def isNeighborBalanceTooLow(g: DirectedGraph, r: RouteRequest): Boolean = {
+    val neighborEdges = g.getEdgesBetween(r.source, r.target)
+    neighborEdges.nonEmpty && neighborEdges.map(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)).sum < r.amount
   }
 
 }
