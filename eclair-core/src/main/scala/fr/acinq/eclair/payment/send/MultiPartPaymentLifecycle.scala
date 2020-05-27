@@ -114,7 +114,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
       if (isFinalRecipientFailure(pf, d)) {
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(pf.failures.head)).increment()
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id)
       } else {
         val (ignoreNodes, ignoreChannels) = PaymentFailure.updateIgnored(pf.failures, d.ignoreNodes, d.ignoreChannels)
@@ -132,7 +131,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   when(PAYMENT_IN_PROGRESS) {
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
       if (isFinalRecipientFailure(pf, d)) {
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(pf.failures.head)).increment()
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id)
       } else if (d.remainingAttempts == 0) {
         val failure = LocalFailure(Nil, PaymentError.RetryExhausted)
@@ -152,6 +150,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
+      Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = true).record(d.request.maxAttempts - d.remainingAttempts)
       goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id)
   }
 

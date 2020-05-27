@@ -28,6 +28,7 @@ import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{ShortChannelId, _}
+import kamon.tag.TagSet
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -68,28 +69,26 @@ object RouteCalculation {
     ).toSet
     val ignoredEdges = r.ignoreChannels ++ d.excludedChannels
     val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
+    val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
     log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignoreNodes.map(_.value).mkString(","), r.ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
     log.info("finding routes with randomize={} params={}", params.randomize, params)
-    if (r.allowMultiPart) {
-      findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignoreNodes, r.pendingPayments, params, currentBlockHeight) match {
-        case Success(routes) => ctx.sender ! RouteResponse(routes)
+    val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
+    KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
+      val result = if (r.allowMultiPart) {
+        findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignoreNodes, r.pendingPayments, params, currentBlockHeight)
+      } else {
+        findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignoreNodes, params, currentBlockHeight)
+      }
+      result match {
+        case Success(routes) =>
+          Metrics.RouteResults.withTags(tags).record(routes.length)
+          routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
+          ctx.sender ! RouteResponse(routes)
         case Failure(t) =>
           val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
+          Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
           ctx.sender ! Status.Failure(failure)
-      }
-    } else {
-      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
-      KamonExt.time(Metrics.FindRouteDuration.withTag(Tags.NumberOfRoutes, routesToFind).withTag(Tags.Amount, Tags.amountBucket(r.amount))) {
-        findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignoreNodes, params, currentBlockHeight) match {
-          case Success(routes) =>
-            Metrics.RouteLength.withTag(Tags.Amount, Tags.amountBucket(r.amount)).record(routes.head.length)
-            ctx.sender ! RouteResponse(routes)
-          case Failure(t) =>
-            val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
-            Metrics.FindRouteErrors.withTag(Tags.Amount, Tags.amountBucket(r.amount)).withTag(Tags.Error, failure.getClass.getSimpleName).increment()
-            ctx.sender ! Status.Failure(failure)
-        }
       }
     }
 

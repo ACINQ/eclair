@@ -116,7 +116,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event(ChannelCommandResponse.Ok, _) => stay
 
-    case Event(fulfill: Relayer.ForwardFulfill, WaitingForComplete(s, c, cmd, _, _, _, _, route)) =>
+    case Event(fulfill: Relayer.ForwardFulfill, WaitingForComplete(s, c, cmd, failures, _, _, _, route)) =>
+      Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(failures.size + 1)
       val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.htlc.channelId, Some(cfg.fullRoute(route)))
       onSuccess(s, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
       myStop()
