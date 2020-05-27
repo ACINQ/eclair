@@ -27,6 +27,7 @@ object Monitoring {
     val PaymentParts = Kamon.histogram("payment.parts", "Number of HTLCs per payment (MPP)")
     val PaymentFailed = Kamon.counter("payment.failed", "Number of failed payment")
     val PaymentError = Kamon.counter("payment.error", "Non-fatal errors encountered during payment attempts")
+    val PaymentAttempt = Kamon.histogram("payment.attempt", "Number of attempts before a payment succeeds")
     val SentPaymentDuration = Kamon.timer("payment.duration.sent", "Outgoing payment duration")
     val ReceivedPaymentDuration = Kamon.timer("payment.duration.received", "Incoming payment duration")
 
