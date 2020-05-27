@@ -44,15 +44,12 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTrampolinePaymentRequest}
-import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PublicChannel, RouteParams, NORMAL => _, State => _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
@@ -595,8 +592,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
-    sender.send(nodes("B").relayer, GetOutgoingChannels())
-    val canSend = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
+    val canSend = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     assert(canSend > amount)
 
     sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 1, paymentRequest = Some(pr)))
@@ -608,8 +605,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     assert(nodes("D").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
-    sender.send(nodes("B").relayer, GetOutgoingChannels())
-    val canSend2 = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
+    val canSend2 = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     // Fee updates may impact balances, but it shouldn't have changed much.
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
   }
@@ -650,8 +647,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val pr = sender.expectMsgType[PaymentRequest](15 seconds)
     assert(pr.features.allowMultiPart)
 
-    sender.send(nodes("D").relayer, GetOutgoingChannels())
-    val canSend = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    sender.send(nodes("D").relayer, Relayer.GetOutgoingChannels())
+    val canSend = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     assert(canSend < amount)
 
     sender.send(nodes("D").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("C").nodeParams.nodeId, 1, paymentRequest = Some(pr)))
@@ -663,8 +660,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val incoming = nodes("C").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(incoming.get.status === IncomingPaymentStatus.Pending, incoming)
 
-    sender.send(nodes("D").relayer, GetOutgoingChannels())
-    val canSend2 = sender.expectMsgType[OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
+    sender.send(nodes("D").relayer, Relayer.GetOutgoingChannels())
+    val canSend2 = sender.expectMsgType[Relayer.OutgoingChannels].channels.map(_.commitments.availableBalanceForSend).sum
     // Fee updates may impact balances, but it shouldn't have changed much.
     assert(math.abs((canSend - canSend2).toLong) < 50000000)
   }
@@ -1198,8 +1195,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // in this commitment, both parties should have a main output, and there are four pending htlcs
     val localCommitF = commitmentsF.localCommit.publishableTxs
     assert(localCommitF.commitTx.tx.txOut.size === 6)
-    val htlcTimeoutTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: HtlcTimeoutTx, _, _) => h }
-    val htlcSuccessTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: HtlcSuccessTx, _, _) => h }
+    val htlcTimeoutTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: Transactions.HtlcTimeoutTx, _, _) => h }
+    val htlcSuccessTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: Transactions.HtlcSuccessTx, _, _) => h }
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimagse
@@ -1230,8 +1227,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // F will publish the commitment above, which is now revoked
     val revokedCommitTx = localCommitF.commitTx.tx
-    val htlcSuccess = Transactions.addSigs(htlcSuccessTxs.head.txinfo.asInstanceOf[HtlcSuccessTx], htlcSuccessTxs.head.localSig, htlcSuccessTxs.head.remoteSig, preimage1).tx
-    val htlcTimeout = Transactions.addSigs(htlcTimeoutTxs.head.txinfo.asInstanceOf[HtlcTimeoutTx], htlcTimeoutTxs.head.localSig, htlcTimeoutTxs.head.remoteSig).tx
+    val htlcSuccess = Transactions.addSigs(htlcSuccessTxs.head.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcSuccessTxs.head.localSig, htlcSuccessTxs.head.remoteSig, preimage1).tx
+    val htlcTimeout = Transactions.addSigs(htlcTimeoutTxs.head.txinfo.asInstanceOf[Transactions.HtlcTimeoutTx], htlcTimeoutTxs.head.localSig, htlcTimeoutTxs.head.remoteSig).tx
     Transaction.correctlySpends(htlcSuccess, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     Transaction.correctlySpends(htlcTimeout, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // we then generate blocks to make the htlc timeout (nothing will happen in the channel because all of them have already been fulfilled)
