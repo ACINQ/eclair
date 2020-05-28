@@ -28,7 +28,7 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
-import akka.stream.{ActorMaterializer, OverflowStrategy}
+import akka.stream.{Materializer, OverflowStrategy}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -55,7 +55,7 @@ trait Service extends ExtraDirectives with Logging {
   val eclairApi: Eclair
 
   implicit val actorSystem: ActorSystem
-  implicit val mat: ActorMaterializer
+  implicit val mat: Materializer
 
   // timeout for reading request parameters from the underlying stream
   val paramParsingTimeout = 5 seconds
@@ -150,22 +150,22 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("updaterelayfee") {
-                          withChannelIdentifier { channelIdentifier =>
+                          withChannelsIdentifier { channels =>
                             formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
-                              complete(eclairApi.updateRelayFee(channelIdentifier, feeBase, feeProportional))
+                              complete(eclairApi.updateRelayFee(channels, feeBase, feeProportional))
                             }
                           }
                         } ~
                         path("close") {
-                          withChannelIdentifier { channelIdentifier =>
+                          withChannelsIdentifier { channels =>
                             formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { scriptPubKey_opt =>
-                              complete(eclairApi.close(channelIdentifier, scriptPubKey_opt))
+                              complete(eclairApi.close(channels, scriptPubKey_opt))
                             }
                           }
                         } ~
                         path("forceclose") {
-                          withChannelIdentifier { channelIdentifier =>
-                            complete(eclairApi.forceClose(channelIdentifier))
+                          withChannelsIdentifier { channels =>
+                            complete(eclairApi.forceClose(channels))
                           }
                         } ~
                         path("peers") {
@@ -177,8 +177,8 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("channel") {
-                          withChannelIdentifier { channelIdentifier =>
-                            complete(eclairApi.channelInfo(channelIdentifier))
+                          withChannelIdentifier { channel =>
+                            complete(eclairApi.channelInfo(channel))
                           }
                         } ~
                         path("allnodes") {
