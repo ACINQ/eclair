@@ -70,7 +70,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val routeParams = r.getRouteParams(nodeParams, randomize = false) // we don't randomize the first attempt, regardless of configuration choices
       val maxFee = routeParams.getMaxFee(r.totalAmount)
       log.debug("sending {} with maximum fee {}", r.totalAmount, maxFee)
-      val d = PaymentProgress(sender, r, r.maxAttempts, Map.empty, Set.empty, Set.empty, Nil)
+      val d = PaymentProgress(sender, r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
       router ! createRouteRequest(nodeParams, r.totalAmount, maxFee, routeParams, d)
       goto(WAIT_FOR_ROUTES) using d
   }
@@ -99,16 +99,16 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
     case Event(Status.Failure(t), d: PaymentProgress) =>
       log.warning("router error: {}", t.getMessage)
-      if (d.ignoreChannels.nonEmpty) {
+      if (d.ignore.channels.nonEmpty) {
         // Channels are mostly ignored for temporary reasons, likely because they didn't have enough balance to forward
         // the payment. When we're retrying an MPP split, it may make sense to retry those ignored channels because with
         // a different split, they may have enough balance to forward the payment.
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
         retriedFailedChannels = true
-        log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignoreChannels.map(_.shortChannelId).mkString(","))
+        log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
-        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d).copy(ignoreChannels = Set.empty)
-        stay using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignoreChannels = Set.empty)
+        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d).copy(ignore = d.ignore.emptyChannels())
+        stay using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
       } else {
         val failure = LocalFailure(Nil, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
@@ -119,8 +119,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (isFinalRecipientFailure(pf, d)) {
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id)
       } else {
-        val (ignoreNodes, ignoreChannels) = PaymentFailure.updateIgnored(pf.failures, d.ignoreNodes, d.ignoreChannels)
-        stay using d.copy(pending = d.pending - pf.id, ignoreNodes = ignoreNodes, ignoreChannels = ignoreChannels, failures = d.failures ++ pf.failures)
+        val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
+        stay using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures)
       }
 
     // The recipient released the preimage without receiving the full payment amount.
@@ -140,12 +140,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
         goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id)
       } else {
-        val (ignoreNodes, ignoreChannels) = PaymentFailure.updateIgnored(pf.failures, d.ignoreNodes, d.ignoreChannels)
+        val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val stillPending = d.pending - pf.id
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, stillPending.values)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
-        val d1 = d.copy(pending = stillPending, ignoreNodes = ignoreNodes, ignoreChannels = ignoreChannels, failures = d.failures ++ pf.failures)
+        val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures)
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1)
         goto(WAIT_FOR_ROUTES) using d1
       }
@@ -331,15 +331,14 @@ object MultiPartPaymentLifecycle {
    * @param request           payment request containing the total amount to send.
    * @param remainingAttempts remaining attempts (after child payments fail).
    * @param pending           pending child payments (payment sent, we are waiting for a fulfill or a failure).
-   * @param ignoreChannels    channels that should be ignored (previously returned a permanent error).
+   * @param ignore            channels and nodes that should be ignored (previously returned a permanent error).
    * @param failures          previous child payment failures.
    */
   case class PaymentProgress(sender: ActorRef,
                              request: SendMultiPartPayment,
                              remainingAttempts: Int,
                              pending: Map[UUID, Route],
-                             ignoreNodes: Set[PublicKey],
-                             ignoreChannels: Set[ChannelDesc],
+                             ignore: Ignore,
                              failures: Seq[PaymentFailure]) extends Data
 
   /**
@@ -373,8 +372,7 @@ object MultiPartPaymentLifecycle {
       toSend,
       maxFee,
       d.request.assistedRoutes,
-      d.ignoreNodes,
-      d.ignoreChannels,
+      d.ignore,
       Some(routeParams),
       allowMultiPart = true,
       d.pending.values.toSeq)
