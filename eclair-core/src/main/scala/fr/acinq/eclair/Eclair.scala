@@ -62,6 +62,10 @@ object TimestampQueryFilters {
   }
 }
 
+object ApiTypes {
+  type ChannelIdentifier = Either[ByteVector32, ShortChannelId]
+}
+
 trait Eclair {
 
   def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
@@ -70,15 +74,15 @@ trait Eclair {
 
   def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeerateSatByte_opt: Option[Long], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelCommandResponse]
 
-  def close(channels: List[Either[ByteVector32, ShortChannelId]], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]]
+  def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, ChannelCommandResponse]]
 
-  def forceClose(channels: List[Either[ByteVector32, ShortChannelId]])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]]
+  def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, ChannelCommandResponse]]
 
-  def updateRelayFee(channels: List[Either[ByteVector32, ShortChannelId]], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]]
+  def updateRelayFee(channels: List[ApiTypes.ChannelIdentifier], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, ChannelCommandResponse]]
 
   def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]]
 
-  def channelInfo(channel: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO]
+  def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO]
 
   def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
@@ -149,15 +153,15 @@ class EclairImpl(appKit: Kit) extends Eclair {
       timeout_opt = Some(openTimeout))).mapTo[ChannelCommandResponse]
   }
 
-  override def close(channels: List[Either[ByteVector32, ShortChannelId]], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]] = {
+  override def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, ChannelCommandResponse]] = {
     sendToChannels[ChannelCommandResponse](channels, CMD_CLOSE(scriptPubKey_opt))
   }
 
-  override def forceClose(channels: List[Either[ByteVector32, ShortChannelId]])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]] = {
+  override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, ChannelCommandResponse]] = {
     sendToChannels[ChannelCommandResponse](channels, CMD_FORCECLOSE)
   }
 
-  override def updateRelayFee(channels: List[Either[ByteVector32, ShortChannelId]], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]] = {
+  override def updateRelayFee(channels: List[ApiTypes.ChannelIdentifier], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, ChannelCommandResponse]] = {
     sendToChannels[ChannelCommandResponse](channels, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths))
   }
 
@@ -177,7 +181,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     } yield channels
   }
 
-  override def channelInfo(channel: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO] = {
+  override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO] = {
     sendToChannel[RES_GETINFO](channel, CMD_GETINFO)
   }
 
@@ -310,7 +314,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
    *
    * @param channel either a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded).
    */
-  private def sendToChannel[T: ClassTag](channel: Either[ByteVector32, ShortChannelId], request: Any)(implicit timeout: Timeout): Future[T] = (channel match {
+  private def sendToChannel[T: ClassTag](channel: ApiTypes.ChannelIdentifier, request: Any)(implicit timeout: Timeout): Future[T] = (channel match {
     case Left(channelId) => appKit.register ? Forward(channelId, request)
     case Right(shortChannelId) => appKit.register ? ForwardShortId(shortChannelId, request)
   }).mapTo[T]
@@ -320,8 +324,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
    *
    * @param channels either shortChannelIds (BOLT encoded) or channelIds (32-byte hex encoded).
    */
-  private def sendToChannels[T: ClassTag](channels: List[Either[ByteVector32, ShortChannelId]], request: Any)(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], T]] = {
-    Future.foldLeft(channels.map(c => sendToChannel[T](c, request).map(r => c -> r)))(Map.empty[Either[ByteVector32, ShortChannelId], T])(_ + _)
+  private def sendToChannels[T: ClassTag](channels: List[ApiTypes.ChannelIdentifier], request: Any)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, T]] = {
+    Future.foldLeft(channels.map(c => sendToChannel[T](c, request).map(r => c -> r)))(Map.empty[ApiTypes.ChannelIdentifier, T])(_ + _)
   }
 
   override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(

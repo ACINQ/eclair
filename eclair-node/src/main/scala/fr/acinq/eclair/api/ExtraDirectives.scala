@@ -22,6 +22,7 @@ import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
@@ -52,20 +53,20 @@ trait ExtraDirectives extends Directives {
     case Failure(_) => reject
   }
 
-  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {
+  def withChannelIdentifier: Directive1[ChannelIdentifier] = formFields(channelIdFormParam.?, shortChannelIdFormParam.?).tflatMap {
     case (Some(channelId), None) => provide(Left(channelId))
     case (None, Some(shortChannelId)) => provide(Right(shortChannelId))
     case _ => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId (not both)"))
   }
 
-  def withChannelsIdentifier: Directive1[List[Either[ByteVector32, ShortChannelId]]] = formFields(channelIdFormParam.?, channelIdsFormParam.?, shortChannelIdFormParam.?, shortChannelIdsFormParam.?).tflatMap {
+  def withChannelsIdentifier: Directive1[List[ChannelIdentifier]] = formFields(channelIdFormParam.?, channelIdsFormParam.?, shortChannelIdFormParam.?, shortChannelIdsFormParam.?).tflatMap {
     case (None, None, None, None) => reject(MalformedFormFieldRejection("channelId(s)/shortChannelId(s)", "Must specify channelId, channelIds, shortChannelId or shortChannelIds"))
     case (channelId_opt, channelIds_opt, shortChannelId_opt, shortChannelIds_opt) =>
-      val channelId: List[Either[ByteVector32, ShortChannelId]] = channelId_opt.map(cid => Left(cid)).toList
-      val channelIds: List[Either[ByteVector32, ShortChannelId]] = channelIds_opt.map(_.map(cid => Left(cid))).toList.flatten
-      val shortChannelId: List[Either[ByteVector32, ShortChannelId]] = shortChannelId_opt.map(scid => Right(scid)).toList
-      val shortChannelIds: List[Either[ByteVector32, ShortChannelId]] = shortChannelIds_opt.map(_.map(scid => Right(scid))).toList.flatten
-      provide(channelId ++ channelIds ++ shortChannelId ++ shortChannelIds)
+      val channelId: List[ChannelIdentifier] = channelId_opt.map(cid => Left(cid)).toList
+      val channelIds: List[ChannelIdentifier] = channelIds_opt.map(_.map(cid => Left(cid))).toList.flatten
+      val shortChannelId: List[ChannelIdentifier] = shortChannelId_opt.map(scid => Right(scid)).toList
+      val shortChannelIds: List[ChannelIdentifier] = shortChannelIds_opt.map(_.map(scid => Right(scid))).toList.flatten
+      provide((channelId ++ channelIds ++ shortChannelId ++ shortChannelIds).distinct)
   }
 
 }

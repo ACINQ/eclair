@@ -29,6 +29,7 @@ import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
@@ -197,7 +198,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'close' method should accept channelIds and shortChannelIds") {
     val shortChannelIdSerialized = "42000x27x3"
     val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
-    val response = Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse](
+    val response = Map[ChannelIdentifier, ChannelCommandResponse](
       Left(ByteVector32.fromValidHex(channelId)) -> ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId)),
       Right(ShortChannelId(shortChannelIdSerialized)) -> ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId.reverse))
     )
