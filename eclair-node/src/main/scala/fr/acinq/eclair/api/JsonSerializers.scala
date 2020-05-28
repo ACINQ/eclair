@@ -94,6 +94,13 @@ class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
   case x: ShortChannelId => JString(x.toString)
 }))
 
+class ChannelIdentifierSerializer extends CustomKeySerializer[Either[ByteVector32, ShortChannelId]](_ => ( {
+  null
+}, {
+  case Left(x: ByteVector32) => x.toHex
+  case Right(x: ShortChannelId) => x.toString
+}))
+
 class StateSerializer extends CustomSerializer[State](_ => ( {
   null
 }, {
@@ -305,6 +312,7 @@ object JsonSupport extends Json4sSupport {
     new CltvExpirySerializer +
     new CltvExpiryDeltaSerializer +
     new ShortChannelIdSerializer +
+    new ChannelIdentifierSerializer +
     new StateSerializer +
     new ShaChainSerializer +
     new PublicKeySerializer +

@@ -24,7 +24,7 @@ import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
-import akka.stream.ActorMaterializer
+import akka.stream.Materializer
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -36,14 +36,14 @@ import fr.acinq.eclair.channel.ChannelCommandResponse
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
-import fr.acinq.eclair.payment.{PaymentFailed, _}
 import fr.acinq.eclair.router.{NetworkStats, Stats}
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.matchers.should.Matchers
 import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
 import scala.concurrent.Future
@@ -67,7 +67,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     override def password: String = "mock"
 
     override implicit val actorSystem: ActorSystem = system
-    override implicit val mat: ActorMaterializer = materializer
+    override implicit val mat: Materializer = materializer
   }
 
   test("API service should handle failures correctly") {
@@ -188,18 +188,22 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        assert(resp.toString.contains(aliceNodeId.toString))
+        assert(resp.contains(aliceNodeId.toString))
         eclair.getInfoResponse()(any[Timeout]).wasCalled(once)
         matchTestJson("getinfo", resp)
       }
   }
 
-  test("'close' method should accept a channelId and shortChannelId") {
+  test("'close' method should accept channelIds and shortChannelIds") {
     val shortChannelIdSerialized = "42000x27x3"
     val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
+    val response = Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse](
+      Left(ByteVector32.fromValidHex(channelId)) -> ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId)),
+      Right(ShortChannelId(shortChannelIdSerialized)) -> ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId.reverse))
+    )
 
     val eclair = mock[Eclair]
-    eclair.close(any, any)(any[Timeout]) returns Future.successful(ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId)))
+    eclair.close(any, any)(any[Timeout]) returns Future.successful(response)
     val mockService = new MockService(eclair)
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
@@ -210,7 +214,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Right(ShortChannelId(shortChannelIdSerialized)), None)(any[Timeout]).wasCalled(once)
+        eclair.close(Right(ShortChannelId(shortChannelIdSerialized)) :: Nil, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
 
@@ -222,7 +226,19 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(ByteVector32.fromValidHex(channelId)), None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(ByteVector32.fromValidHex(channelId)) :: Nil, None)(any[Timeout]).wasCalled(once)
+        matchTestJson("close", resp)
+      }
+
+    Post("/close", FormData("channelIds" -> channelId, "shortChannelIds" -> "42000x27x3,42000x561x1").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val resp = entityAs[String]
+        eclair.close(Left(ByteVector32.fromValidHex(channelId)) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
   }
@@ -418,7 +434,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[PaymentRequest], any[CltvExpiryDelta], any[List[PublicKey]], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
-    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId.toString, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
+    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>

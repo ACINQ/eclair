@@ -41,6 +41,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.reflect.ClassTag
 
 case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
 
@@ -69,15 +70,15 @@ trait Eclair {
 
   def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeerateSatByte_opt: Option[Long], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelCommandResponse]
 
-  def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[ChannelCommandResponse]
+  def close(channels: List[Either[ByteVector32, ShortChannelId]], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]]
 
-  def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[ChannelCommandResponse]
+  def forceClose(channels: List[Either[ByteVector32, ShortChannelId]])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]]
 
-  def updateRelayFee(channelIdentifier: Either[ByteVector32, ShortChannelId], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[ChannelCommandResponse]
+  def updateRelayFee(channels: List[Either[ByteVector32, ShortChannelId]], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]]
 
   def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]]
 
-  def channelInfo(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO]
+  def channelInfo(channel: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO]
 
   def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
@@ -148,16 +149,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
       timeout_opt = Some(openTimeout))).mapTo[ChannelCommandResponse]
   }
 
-  override def close(channelIdentifier: Either[ByteVector32, ShortChannelId], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[ChannelCommandResponse] = {
-    sendToChannel(channelIdentifier, CMD_CLOSE(scriptPubKey_opt)).mapTo[ChannelCommandResponse]
+  override def close(channels: List[Either[ByteVector32, ShortChannelId]], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]] = {
+    sendToChannels[ChannelCommandResponse](channels, CMD_CLOSE(scriptPubKey_opt))
   }
 
-  override def forceClose(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[ChannelCommandResponse] = {
-    sendToChannel(channelIdentifier, CMD_FORCECLOSE).mapTo[ChannelCommandResponse]
+  override def forceClose(channels: List[Either[ByteVector32, ShortChannelId]])(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]] = {
+    sendToChannels[ChannelCommandResponse](channels, CMD_FORCECLOSE)
   }
 
-  override def updateRelayFee(channelIdentifier: Either[ByteVector32, ShortChannelId], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[ChannelCommandResponse] = {
-    sendToChannel(channelIdentifier, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths)).mapTo[ChannelCommandResponse]
+  override def updateRelayFee(channels: List[Either[ByteVector32, ShortChannelId]], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], ChannelCommandResponse]] = {
+    sendToChannels[ChannelCommandResponse](channels, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths))
   }
 
   override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
@@ -168,16 +169,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = toRemoteNode_opt match {
     case Some(pk) => for {
       channelIds <- (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel(Left(channelId), CMD_GETINFO).mapTo[RES_GETINFO]))
+      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[RES_GETINFO](Left(channelId), CMD_GETINFO)))
     } yield channels
     case None => for {
       channelIds <- (appKit.register ? Symbol("channels")).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel(Left(channelId), CMD_GETINFO).mapTo[RES_GETINFO]))
+      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[RES_GETINFO](Left(channelId), CMD_GETINFO)))
     } yield channels
   }
 
-  override def channelInfo(channelIdentifier: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO] = {
-    sendToChannel(channelIdentifier, CMD_GETINFO).mapTo[RES_GETINFO]
+  override def channelInfo(channel: Either[ByteVector32, ShortChannelId])(implicit timeout: Timeout): Future[RES_GETINFO] = {
+    sendToChannel[RES_GETINFO](channel, CMD_GETINFO)
   }
 
   override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? Symbol("nodes")).mapTo[Iterable[NodeAnnouncement]]
@@ -305,13 +306,22 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   /**
-   * Sends a request to a channel and expects a response
+   * Send a request to a channel and expect a response.
    *
-   * @param channelIdentifier either a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded)
+   * @param channel either a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded).
    */
-  def sendToChannel(channelIdentifier: Either[ByteVector32, ShortChannelId], request: Any)(implicit timeout: Timeout): Future[Any] = channelIdentifier match {
+  private def sendToChannel[T: ClassTag](channel: Either[ByteVector32, ShortChannelId], request: Any)(implicit timeout: Timeout): Future[T] = (channel match {
     case Left(channelId) => appKit.register ? Forward(channelId, request)
     case Right(shortChannelId) => appKit.register ? ForwardShortId(shortChannelId, request)
+  }).mapTo[T]
+
+  /**
+   * Send a request to multiple channels and expect responses.
+   *
+   * @param channels either shortChannelIds (BOLT encoded) or channelIds (32-byte hex encoded).
+   */
+  private def sendToChannels[T: ClassTag](channels: List[Either[ByteVector32, ShortChannelId]], request: Any)(implicit timeout: Timeout): Future[Map[Either[ByteVector32, ShortChannelId], T]] = {
+    Future.foldLeft(channels.map(c => sendToChannel[T](c, request).map(r => c -> r)))(Map.empty[Either[ByteVector32, ShortChannelId], T])(_ + _)
   }
 
   override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
