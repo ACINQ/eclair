@@ -374,13 +374,26 @@ object Router {
     }
   }
 
+  case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
+    // @formatter:off
+    def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
+    def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
+    def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
+    def emptyNodes(): Ignore = copy(nodes = Set.empty)
+    def emptyChannels(): Ignore = copy(channels = Set.empty)
+    // @formatter:on
+  }
+
+  object Ignore {
+    def empty: Ignore = Ignore(Set.empty, Set.empty)
+  }
+
   case class RouteRequest(source: PublicKey,
                           target: PublicKey,
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                          ignoreNodes: Set[PublicKey] = Set.empty,
-                          ignoreChannels: Set[ChannelDesc] = Set.empty,
+                          ignore: Ignore = Ignore.empty,
                           routeParams: Option[RouteParams] = None,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil)

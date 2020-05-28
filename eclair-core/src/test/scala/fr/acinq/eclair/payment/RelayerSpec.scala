@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPa
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
-import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
+import fr.acinq.eclair.router.Router.{ChannelHop, Ignore, NodeHop}
 import fr.acinq.eclair.router.{Announcements, _}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
@@ -182,7 +182,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(routeRequest1.target === c)
     assert(routeRequest1.amount === finalAmount)
     assert(routeRequest1.allowMultiPart)
-    assert(routeRequest1.ignoreChannels.isEmpty && routeRequest1.ignoreNodes.isEmpty)
+    assert(routeRequest1.ignore === Ignore.empty)
     router.send(router.lastSender, Router.RouteResponse(Router.Route(finalAmount, ChannelHop(b, c, channelUpdate_bc) :: Nil) :: Nil))
 
     // first try
@@ -196,7 +196,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // second try
     val routeRequest2 = router.expectMsgType[Router.RouteRequest]
-    assert(routeRequest2.ignoreChannels.map(_.shortChannelId) === Set(channelUpdate_bc.shortChannelId))
+    assert(routeRequest2.ignore.channels.map(_.shortChannelId) === Set(channelUpdate_bc.shortChannelId))
     router.send(router.lastSender, Router.RouteResponse(Router.Route(finalAmount, ChannelHop(b, c, channelUpdate_bc) :: Nil) :: Nil))
 
     val fwd2 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
