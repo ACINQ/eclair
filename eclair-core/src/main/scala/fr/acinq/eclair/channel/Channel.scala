@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.actor.{ActorCell, ActorRef, FSM, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -105,7 +105,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] with Stash {
 
   import Channel._
   import nodeParams.keyManager
@@ -819,7 +819,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
       handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-      else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
+        else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
         handleCommandError(InvalidFinalScript(d.channelId), c)
       else {
         val shutdown = Shutdown(d.channelId, localScriptPubKey)
@@ -1412,26 +1412,45 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
       goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d1 sending error
 
-    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: HasCommitments) =>
-      activeConnection = r
 
-      val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
-      val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
-      val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index)
+    case Event(inputReconnected: INPUT_RECONNECTED, d: HasCommitments) =>
+      if (d.commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+        // On Phoenix we don't send our channel_reestablish right away because we might be late (typically if user is
+        // using two devices at the same time) and can tell by looking at the channel data that the remote will send
+        // to us with their channel_reestablish. Note: This only works because we know our peer won't also wait for our
+        // channel_reestablish, otherwise we would be stuck.
+        stay using DATA_PHOENIX_WAIT_REMOTE_CHANNEL_REESTABLISH(d, inputReconnected)
+      } else {
+        handleReconnected(inputReconnected, d)
+      }
 
-      val channelReestablish = ChannelReestablish(
-        channelId = d.channelId,
-        nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
-        nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
-        yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-        channelData = d.commitments.remoteChannelData
-      )
-
-      // we update local/remote connection-local global/local features, we don't persist it right now
-      val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
-
-      goto(SYNCING) using d1 sending channelReestablish
+    case Event(remoteChannelReestablish: ChannelReestablish, DATA_PHOENIX_WAIT_REMOTE_CHANNEL_REESTABLISH(d, inputReconnected)) =>
+      // the following results in prepending the received channel_reestablish to the mailbox
+      // that way we are sure it will be the next processed message
+      stash()
+      unstashAll()
+      remoteChannelReestablish.channelData match {
+        case Some(channelData) =>
+          Try(Helpers.decrypt(nodeParams.privateKey.value, channelData)) match {
+            case Success(state) =>
+              log.debug("successfully read channel data from remote")
+              if (
+                state.commitments.localCommit.index > d.commitments.localCommit.index ||
+                  state.commitments.remoteCommit.index > d.commitments.remoteCommit.index ||
+                  (state.commitments.remoteNextCommitInfo.isLeft && d.commitments.remoteNextCommitInfo.isRight)
+              ) {
+                log.warning("they have a more recent commitment, using it instead")
+                handleReconnected(inputReconnected, state) storing()
+              } else {
+                handleReconnected(inputReconnected, d)
+              }
+            case Failure(t) =>
+              log.error(t, s"ignoring unreadable channel data for channelId=${d.channelId} ")
+              handleReconnected(inputReconnected, d)
+          }
+        case None =>
+          handleReconnected(inputReconnected, d)
+      }
 
     // note: this can only happen if state is NORMAL or SHUTDOWN
     // -> in NEGOTIATING there are no more htlcs
@@ -1692,8 +1711,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   /**
-    * This is needed because of a bug in akka where onTransition event are not fired for same-state transition
-    */
+   * This is needed because of a bug in akka where onTransition event are not fired for same-state transition
+   */
   def manualTransition(state: channel.State, nextState: channel.State, stateData: Data, nextStateData: Data): Data = {
     // if channel is private, we send the channel_update directly to remote
     // they need it "to learn the other end's forwarding parameters" (BOLT 7)
@@ -1711,28 +1730,28 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _ => ()
     }
 
-      (state, nextState, stateData, nextStateData) match {
-        // ORDER MATTERS!
-        case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
-          Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-            log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
-        case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
-          // don't do anything if neither the channel_update nor the channel_announcement didn't change
-          ()
-        case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
-          // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          log.info(s"emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
-        case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
-          // in any other case (e.g. WAIT_FOR_INIT_INTERNAL->OFFLINE) we do nothing
-          ()
-        case (_, _, normal: DATA_NORMAL, _) =>
-          // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
-          // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
-          context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
-        case _ => ()
+    (state, nextState, stateData, nextStateData) match {
+      // ORDER MATTERS!
+      case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
+        Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+          log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+        }
+        context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+      case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
+        // don't do anything if neither the channel_update nor the channel_announcement didn't change
+        ()
+      case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
+        // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
+        log.info(s"emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+        context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+      case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
+        // in any other case (e.g. WAIT_FOR_INIT_INTERNAL->OFFLINE) we do nothing
+        ()
+      case (_, _, normal: DATA_NORMAL, _) =>
+        // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
+        // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
+        context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
+      case _ => ()
     }
     nextStateData
   }
@@ -1820,6 +1839,28 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     } else {
       stay
     }
+  }
+
+  def handleReconnected(inputReconnected: INPUT_RECONNECTED, d: HasCommitments) = {
+    activeConnection = inputReconnected.remote
+
+    val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
+    val channelKeyPath = keyManager.channelKeyPath(d.commitments.localParams, d.commitments.channelVersion)
+    val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index)
+
+    val channelReestablish = ChannelReestablish(
+      channelId = d.channelId,
+      nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
+      nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
+      yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+      myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+      channelData = d.commitments.remoteChannelData
+    )
+
+    // we update local/remote connection-local global/local features, we don't persist it right now
+    val d1 = Helpers.updateFeatures(d, inputReconnected.localInit, inputReconnected.remoteInit)
+
+    goto(SYNCING) using d1 sending channelReestablish
   }
 
   def handleCommandSuccess(sender: ActorRef, newData: Data) = {
@@ -2320,6 +2361,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     def sending(msg: LightningMessage): FSM.State[fr.acinq.eclair.channel.State, Data] = {
       def isZeroReserve(d: HasCommitments) = d.commitments.channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)
+
       val key = nodeParams.privateKey.value
       import Helpers.encrypt
       // only Phoenix sends its channel data (zero-reserve + fundee)

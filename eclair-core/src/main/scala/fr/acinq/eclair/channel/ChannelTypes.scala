@@ -219,6 +219,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
+final case class DATA_PHOENIX_WAIT_REMOTE_CHANNEL_REESTABLISH(data: HasCommitments, inputReconnected: INPUT_RECONNECTED) extends Data
 
 final case class LocalParams(nodeId: PublicKey,
                              fundingKeyPath: DeterministicWallet.KeyPath,

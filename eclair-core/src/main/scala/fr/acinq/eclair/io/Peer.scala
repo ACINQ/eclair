@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
@@ -31,7 +31,6 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.Metrics
-import fr.acinq.eclair.io.Peer.PayToOpen
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.bits.ByteVector
@@ -119,75 +118,75 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
         d.peerConnection ! PoisonPill
         stay
 
-    case Event(err: wire.Error, d: ConnectedData) =>
-      // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
-      d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
-        case Some(channel) => channel forward err
-        case None => () // let's not create a ping-pong of error messages here
-      }
-      stay
-
-    case Event(payToOpenRequest: PayToOpenRequest, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(payToOpenRequest)
-      paymentHandler forward payToOpenRequest
-      stay
-
-    case Event(_: SendSwapInRequest, d: ConnectedData) =>
-      d.peerConnection ! SwapInRequest(nodeParams.chainHash)
-      stay
-
-    case Event(s: SwapInResponse, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(s)
-      context.system.eventStream.publish(s)
-      stay
-
-    case Event(s: SwapInPending, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(s)
-      context.system.eventStream.publish(s)
-      stay
-
-    case Event(s: SwapInConfirmed, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(s)
-      context.system.eventStream.publish(s)
-      stay
-
-    case Event(s: SendSwapOutRequest, d: ConnectedData) =>
-      d.peerConnection ! SwapOutRequest(nodeParams.chainHash, s.amountSatoshis, s.bitcoinAddress, s.feeratePerKw)
-      stay
-
-    case Event(swapOutRequest: SwapOutRequest, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(swapOutRequest)
-      paymentHandler forward swapOutRequest
-      stay
-
-    case Event(swapOutResponse: SwapOutResponse, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(swapOutResponse)
-      context.system.eventStream.publish(swapOutResponse)
-      stay
-
-    case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-      if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
-        sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
+      case Event(err: wire.Error, d: ConnectedData) =>
+        // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
+        d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
+          case Some(channel) => channel forward err
+          case None => () // let's not create a ping-pong of error messages here
+        }
         stay
-      } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(d.remoteInit.features, Wumbo)) {
-        sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
+
+      case Event(payToOpenRequest: PayToOpenRequest, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(payToOpenRequest)
+        paymentHandler forward payToOpenRequest
         stay
-      } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
-        sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
+
+      case Event(_: SendSwapInRequest, d: ConnectedData) =>
+        d.peerConnection ! SwapInRequest(nodeParams.chainHash)
         stay
-      } else {
-        val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
-        c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
-        val temporaryChannelId = randomBytes32
-        val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-        val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-        //TODO: hack! if push_msat > 0 then this is a pay2open
-        val channelVersion = if (c.pushMsat > 0.msat) ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE else ChannelVersion.STANDARD
-        val localParams1 = if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) localParams.copy(channelReserve = 0.sat) else localParams
-        log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams1")
-        channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams1, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelVersion)
-        stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
-      }
+
+      case Event(s: SwapInResponse, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(s)
+        context.system.eventStream.publish(s)
+        stay
+
+      case Event(s: SwapInPending, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(s)
+        context.system.eventStream.publish(s)
+        stay
+
+      case Event(s: SwapInConfirmed, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(s)
+        context.system.eventStream.publish(s)
+        stay
+
+      case Event(s: SendSwapOutRequest, d: ConnectedData) =>
+        d.peerConnection ! SwapOutRequest(nodeParams.chainHash, s.amountSatoshis, s.bitcoinAddress, s.feeratePerKw)
+        stay
+
+      case Event(swapOutRequest: SwapOutRequest, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(swapOutRequest)
+        paymentHandler forward swapOutRequest
+        stay
+
+      case Event(swapOutResponse: SwapOutResponse, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(swapOutResponse)
+        context.system.eventStream.publish(swapOutResponse)
+        stay
+
+      case Event(c: Peer.OpenChannel, d: ConnectedData) =>
+        if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(nodeParams.features, Wumbo)) {
+          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
+          stay
+        } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !Features.hasFeature(d.remoteInit.features, Wumbo)) {
+          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
+          stay
+        } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
+          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
+          stay
+        } else {
+          val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
+          c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
+          val temporaryChannelId = randomBytes32
+          val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
+          val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+          //TODO: hack! if push_msat > 0 then this is a pay2open
+          val channelVersion = if (c.pushMsat > 0.msat) ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE else ChannelVersion.STANDARD
+          val localParams1 = if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) localParams.copy(channelReserve = 0.sat) else localParams
+          log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams1")
+          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams1, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelVersion)
+          stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+        }
 
       case Event(msg: wire.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
@@ -203,43 +202,43 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, switchboard: Act
             stay
         }
 
-    case Event(msg: wire.ChannelReestablish, d: ConnectedData) =>
-      d.peerConnection ! TransportHandler.ReadAck(msg)
-      d.channels.get(FinalChannelId(msg.channelId)) match {
-        case Some(channel) =>
-          channel forward msg
-          stay
-        case None =>
-          msg.channelData match {
-            case Some(channelData) =>
-              Try(Helpers.decrypt(nodeParams.privateKey.value, channelData)) match {
-                case Success(state) =>
-                  log.warning(s"restoring channelId=${msg.channelId}")
-                  nodeParams.db.channels.addOrUpdateChannel(state)
-                  val channel = spawnChannel(nodeParams, origin_opt = None)
-                  channel ! INPUT_RESTORED(state)
-                  channel ! INPUT_RECONNECTED(d.peerConnection, d.localInit, d.remoteInit)
-                  channel forward msg
-                  stay using d.copy(channels = d.channels + (FinalChannelId(state.channelId) -> channel))
-                case Failure(t) =>
-                  log.error(t, s"failed to restore channelId=${msg.channelId} ")
-                  replyUnknownChannel(d.peerConnection, msg.channelId)
-                  d.peerConnection ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
-                  stay
-              }
+      case Event(msg: wire.ChannelReestablish, d: ConnectedData) =>
+        d.peerConnection ! TransportHandler.ReadAck(msg)
+        d.channels.get(FinalChannelId(msg.channelId)) match {
+          case Some(channel) =>
+            channel forward msg
+            stay
+          case None =>
+            msg.channelData match {
+              case Some(channelData) =>
+                Try(Helpers.decrypt(nodeParams.privateKey.value, channelData)) match {
+                  case Success(state) =>
+                    log.warning(s"restoring channelId=${msg.channelId}")
+                    nodeParams.db.channels.addOrUpdateChannel(state)
+                    val channel = spawnChannel(nodeParams, origin_opt = None)
+                    channel ! INPUT_RESTORED(state)
+                    channel ! INPUT_RECONNECTED(d.peerConnection, d.localInit, d.remoteInit)
+                    channel forward msg
+                    stay using d.copy(channels = d.channels + (FinalChannelId(state.channelId) -> channel))
+                  case Failure(t) =>
+                    log.error(t, s"failed to restore channelId=${msg.channelId} ")
+                    replyUnknownChannel(d.peerConnection, msg.channelId)
+                    d.peerConnection ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
+                    stay
+                }
 
-            case None =>
-              replyUnknownChannel(d.peerConnection, msg.channelId)
-              stay
-          }
-      }
+              case None =>
+                replyUnknownChannel(d.peerConnection, msg.channelId)
+                stay
+            }
+        }
 
-    case Event(msg: wire.HasChannelId, d: ConnectedData) =>
-      d.channels.get(FinalChannelId(msg.channelId)) match {
-        case Some(channel) => channel forward msg
-        case None => replyUnknownChannel(d.peerConnection, msg.channelId)
-      }
-      stay
+      case Event(msg: wire.HasChannelId, d: ConnectedData) =>
+        d.channels.get(FinalChannelId(msg.channelId)) match {
+          case Some(channel) => channel forward msg
+          case None => replyUnknownChannel(d.peerConnection, msg.channelId)
+        }
+        stay
 
       case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
