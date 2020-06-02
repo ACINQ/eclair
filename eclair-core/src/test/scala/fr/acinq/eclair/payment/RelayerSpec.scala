@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPa
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
-import fr.acinq.eclair.router.Router.{ChannelHop, GetNetworkStats, GetNetworkStatsResponse, NodeHop, TickComputeNetworkStats}
+import fr.acinq.eclair.router.Router.{ChannelHop, Ignore, NodeHop}
 import fr.acinq.eclair.router.{Announcements, _}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
 import fr.acinq.eclair.wire._
@@ -177,9 +177,13 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     sender.send(relayer, ForwardAdd(add_ab2))
 
     // A multi-part payment FSM should start to relay the payment.
-    router.expectMsg(GetNetworkStats)
-    router.send(router.lastSender, GetNetworkStatsResponse(None))
-    router.expectMsg(TickComputeNetworkStats)
+    val routeRequest1 = router.expectMsgType[Router.RouteRequest]
+    assert(routeRequest1.source === b)
+    assert(routeRequest1.target === c)
+    assert(routeRequest1.amount === finalAmount)
+    assert(routeRequest1.allowMultiPart)
+    assert(routeRequest1.ignore === Ignore.empty)
+    router.send(router.lastSender, Router.RouteResponse(Router.Route(finalAmount, ChannelHop(b, c, channelUpdate_bc) :: Nil) :: Nil))
 
     // first try
     val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
@@ -191,6 +195,10 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcValueTooHighInFlight(channelId_bc, UInt64(1000000000L), 1516977616L msat), origin1, Some(channelUpdate_bc), originalCommand = Some(fwd1.message))))
 
     // second try
+    val routeRequest2 = router.expectMsgType[Router.RouteRequest]
+    assert(routeRequest2.ignore.channels.map(_.shortChannelId) === Set(channelUpdate_bc.shortChannelId))
+    router.send(router.lastSender, Router.RouteResponse(Router.Route(finalAmount, ChannelHop(b, c, channelUpdate_bc) :: Nil) :: Nil))
+
     val fwd2 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd2.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd2.message.upstream.asInstanceOf[Upstream.TrampolineRelayed].adds === Seq(add_ab1, add_ab2))
@@ -527,7 +535,10 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab2 = UpdateAddHtlc(channelId_ab, 565, cmd2.amount, cmd2.paymentHash, cmd2.cltvExpiry, cmd2.onion)
     sender.send(relayer, ForwardAdd(add_ab1))
     sender.send(relayer, ForwardAdd(add_ab2))
-    router.expectMsg(GetNetworkStats) // A multi-part payment FSM is started to relay the payment downstream.
+
+    // A multi-part payment FSM is started to relay the payment downstream.
+    val routeRequest = router.expectMsgType[Router.RouteRequest]
+    assert(routeRequest.allowMultiPart)
 
     // We simulate a fake htlc fulfill for the downstream channel.
     val payFSM = TestProbe()
