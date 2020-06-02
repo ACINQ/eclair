@@ -379,6 +379,29 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
+  test("payment failed (Update in last attempt)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+
+    val request = SendPayment(d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 1)
+    sender.send(paymentFSM, request)
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d))
+    routerForwarder.forward(routerFixture.router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _, _) = paymentFSM.stateData
+    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+
+    // the node replies with a temporary failure containing the same update as the one we already have (likely a balance issue)
+    val failure = TemporaryChannelFailure(update_bc)
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
+    // we should temporarily exclude that channel
+    routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c)))
+    routerForwarder.expectMsg(update_bc)
+
+    // this was a single attempt payment
+    sender.expectMsgType[PaymentFailed]
+  }
+
   test("payment failed (Update in assisted route)") { routerFixture =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
@@ -421,6 +444,32 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd2, _, _, _, _, _) = paymentFSM.stateData
     register.expectMsg(ForwardShortId(channelId_ab, cmd2))
     assert(cmd2.cltvExpiry > cmd1.cltvExpiry)
+  }
+
+  test("payment failed (Update disabled in assisted route)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+
+    // we build an assisted route for channel cd
+    val assistedRoutes = Seq(Seq(ExtraHop(c, channelId_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta)))
+    val request = SendPayment(d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 1, assistedRoutes = assistedRoutes)
+    sender.send(paymentFSM, request)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
+
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d).copy(assistedRoutes = assistedRoutes))
+    routerForwarder.forward(routerFixture.router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _, _) = paymentFSM.stateData
+    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+
+    // we disable the channel
+    val channelUpdate_cd_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(42), update_cd.htlcMinimumMsat, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.htlcMaximumMsat.get, enable = false)
+    val failure = ChannelDisabled(channelUpdate_cd_disabled.messageFlags, channelUpdate_cd_disabled.channelFlags, channelUpdate_cd_disabled)
+    val failureOnion = Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(sharedSecrets1(1)._1, failure), sharedSecrets1.head._1)
+    sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))
+
+    routerForwarder.expectMsg(channelUpdate_cd_disabled)
+    routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_cd.shortChannelId, c, d)))
   }
 
   def testPermanentFailure(router: ActorRef, failure: FailureMessage): Unit = {
