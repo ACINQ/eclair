@@ -17,16 +17,14 @@
 package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
 import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
-import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb.version
-import fr.acinq.eclair.wire.ChannelCodecs.txCodec
+import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
+import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Codec
 import scodec.bits.BitVector
-import scodec.codecs.{constant, listOfN, provide, uint16}
 
 import scala.util.Random
 
@@ -105,9 +103,9 @@ class SqliteWalletDbSpec extends AnyFunSuite {
   }
 
   test("read old persistent data") {
-    import scodec.codecs._
     import SqliteWalletDb._
     import fr.acinq.eclair.wire.ChannelCodecs._
+    import scodec.codecs._
 
     val oldPersistentDataCodec: Codec[PersistentData] = (
       ("version" | constant(BitVector.fromInt(version))) ::
@@ -119,7 +117,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
         ("history" | historyCodec) ::
         ("proofs" | proofsCodec) ::
         ("pendingTransactions" | listOfN(uint16, txCodec)) ::
-        ("locks" |  setCodec(txCodec))).as[PersistentData]
+        ("locks" | setCodec(txCodec))).as[PersistentData]
 
     for (i <- 0 until 50) {
       val data = randomPersistentData
