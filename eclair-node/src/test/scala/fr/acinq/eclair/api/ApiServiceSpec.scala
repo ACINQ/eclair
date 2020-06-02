@@ -198,9 +198,10 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'close' method should accept channelIds and shortChannelIds") {
     val shortChannelIdSerialized = "42000x27x3"
     val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
-    val response = Map[ChannelIdentifier, ChannelCommandResponse](
-      Left(ByteVector32.fromValidHex(channelId)) -> ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId)),
-      Right(ShortChannelId(shortChannelIdSerialized)) -> ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId.reverse))
+    val response = Map[ChannelIdentifier, Either[Throwable, ChannelCommandResponse]](
+      Left(ByteVector32.fromValidHex(channelId)) -> Right(ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId))),
+      Left(ByteVector32.fromValidHex(channelId).reverse) -> Left(new RuntimeException("channel not found")),
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId.reverse)))
     )
 
     val eclair = mock[Eclair]
