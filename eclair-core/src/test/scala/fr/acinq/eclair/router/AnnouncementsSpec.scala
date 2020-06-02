@@ -21,14 +21,14 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 /**
  * Created by PM on 31/05/2016.
  */
 
-class AnnouncementsSpec extends FunSuite {
+class AnnouncementsSpec extends AnyFunSuite {
 
   test("check nodeId1/nodeId2 lexical ordering") {
     val node1 = PublicKey(hex"027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")
@@ -40,8 +40,8 @@ class AnnouncementsSpec extends FunSuite {
 
   ignore("create valid signed channel announcement") {
     val (node_a, node_b, bitcoin_a, bitcoin_b) = (randomKey, randomKey, randomKey, randomKey)
-    val (node_a_sig, bitcoin_a_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_a, node_b.publicKey, bitcoin_a, bitcoin_b.publicKey, ByteVector.empty)
-    val (node_b_sig, bitcoin_b_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_b, node_a.publicKey, bitcoin_b, bitcoin_a.publicKey, ByteVector.empty)
+    val (node_a_sig, bitcoin_a_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_a, node_b.publicKey, bitcoin_a, bitcoin_b.publicKey, Features.empty)
+    val (node_b_sig, bitcoin_b_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_b, node_a.publicKey, bitcoin_b, bitcoin_a.publicKey, Features.empty)
     val ann = makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_a.publicKey, node_b.publicKey, bitcoin_a.publicKey, bitcoin_b.publicKey, node_a_sig, node_b_sig, bitcoin_a_sig, bitcoin_b_sig)
     assert(checkSigs(ann))
     assert(checkSigs(ann.copy(nodeId1 = randomKey.publicKey)) === false)
@@ -49,13 +49,13 @@ class AnnouncementsSpec extends FunSuite {
 
   ignore("create valid signed node announcement") {
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, Alice.nodeParams.features)
-    assert(Features.hasFeature(ann.features, Features.VariableLengthOnion))
+    assert(ann.features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Optional)))
     assert(checkSig(ann))
     assert(checkSig(ann.copy(timestamp = 153)) === false)
   }
 
   ignore("create valid signed channel update announcement") {
-    val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey.publicKey, ShortChannelId(45561L), Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimum, Alice.nodeParams.feeBase, Alice.nodeParams.feeProportionalMillionth, MilliSatoshi(500000000L))
+    val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey.publicKey, ShortChannelId(45561L), Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimum, Alice.nodeParams.feeBase, Alice.nodeParams.feeProportionalMillionth, 500000000 msat)
     assert(checkSig(ann, Alice.nodeParams.nodeId))
     assert(checkSig(ann, randomKey.publicKey) === false)
   }

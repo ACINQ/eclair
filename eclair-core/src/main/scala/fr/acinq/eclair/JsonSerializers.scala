@@ -4,6 +4,7 @@ import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.eclair.Features.OptionDataLossProtect
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
@@ -27,6 +28,17 @@ object JsonSerializers {
   implicit val bytevector64ReadWriter: ReadWriter[ByteVector64] = readwriter[String].bimap[ByteVector64](_.bytes.toHex, s => ByteVector64.fromValidHex(s))
   implicit val uint64ReadWriter: ReadWriter[UInt64] = readwriter[String].bimap[UInt64](_.toString, s => UInt64(s.toLong))
   implicit val channelVersionReadWriter: ReadWriter[ChannelVersion] = readwriter[String].bimap[ChannelVersion](_.bits.toBin, s => ChannelVersion(BitVector.fromValidBin(s)))
+  implicit val featureReadWriter: ReadWriter[Feature] = readwriter[String].bimap[Feature](
+    _.rfcName,
+    s => Features.knownFeatures.find(_.rfcName == s).getOrElse(OptionDataLossProtect)
+  )
+  implicit val feartureSupportReadWriter: ReadWriter[FeatureSupport] = readwriter[String].bimap(
+    _.toString,
+    s => if (s == "mandatory") FeatureSupport.Mandatory else FeatureSupport.Optional
+  )
+  implicit val activatedFeaturesReadWriter: ReadWriter[ActivatedFeature] = macroRW
+  implicit val unknownFeaturesReadWriter: ReadWriter[UnknownFeature] = macroRW
+  implicit val featuresReadWriter: ReadWriter[Features] = macroRW
   implicit val localParamsReadWriter: ReadWriter[LocalParams] = macroRW
   implicit val remoteParamsReadWriter: ReadWriter[RemoteParams] = macroRW
   implicit val onionRoutingPacketReadWriter: ReadWriter[OnionRoutingPacket] = macroRW
@@ -84,7 +96,7 @@ object JsonSerializers {
   implicit val channelVersionTlvWriter: ReadWriter[ChannelVersionTlv] = macroRW
   implicit val openChannelTlvWriter: ReadWriter[OpenChannelTlv] = macroRW
   implicit val acceptChannelTlvWriter: ReadWriter[AcceptChannelTlv] = macroRW
-  implicit val initReadWriter: ReadWriter[Init] = readwriter[ByteVector].bimap[Init](_.features, s => Init(s))
+  implicit val initReadWriter: ReadWriter[Init] = readwriter[Features].bimap[Init](_.features, s => Init(s))
   implicit val openChannelReadWriter: ReadWriter[OpenChannel] = macroRW
   implicit val acceptChannelReadWriter: ReadWriter[AcceptChannel] = macroRW
   implicit val fundingCreatedReadWriter: ReadWriter[FundingCreated] = macroRW

@@ -19,9 +19,9 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class CommitmentSpecSpec extends FunSuite {
+class CommitmentSpecSpec extends AnyFunSuite {
   test("add, fulfill and fail htlcs from the sender side") {
     val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = 1000, toLocal = 5000000 msat, toRemote = 0 msat)
     val R = randomBytes32

@@ -21,16 +21,16 @@ import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Upstream}
 import fr.acinq.eclair.payment.PaymentPacketSpec.makeCommitments
 import fr.acinq.eclair.payment.relay.ChannelRelayer.{RelayFailure, RelaySuccess, relayOrFail, selectPreferredChannel}
-import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
+import fr.acinq.eclair.payment.relay.Relayer.{NodeChannels, OutgoingChannel}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.RelayLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, randomBytes32, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.mutable
 
-class ChannelSelectionSpec extends FunSuite {
+class ChannelSelectionSpec extends AnyFunSuite {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 

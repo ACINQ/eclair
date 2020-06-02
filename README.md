@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
-**Eclair** (French for Lightning) is a Scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON API is also available.
+**Eclair** (French for Lightning) is a Scala implementation of the Lightning Network.
 
 This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning) and [lnd](https://github.com/LightningNetwork/lnd).
 
@@ -24,10 +24,6 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 
 Please see the latest [release note](https://github.com/ACINQ/eclair/releases) for detailed information on BOLT compliance.
 
-## Overview
-
-![Eclair Demo](.readme/screen-1.png)
-
 ## JSON API
 
 Eclair offers a feature rich HTTP API that enables application developers to easily integrate.
@@ -36,7 +32,7 @@ For more information please visit the [API documentation website](https://acinq.
 
 ## Documentation
 
-Please visit our [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
+Please visit our [docs](./docs) and [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
 node, connect to other nodes, open channels, send and receive payments and more advanced scenario.
 
 You will find detailed guides and frequently asked questions there.
@@ -45,7 +41,7 @@ You will find detailed guides and frequently asked questions there.
 
 ### Configuring Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.17.1 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.18.1 or 0.19.1. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 Eclair will use any BTC it finds in the default Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet. You can have multiple Bitcoin Core wallets but make sure that the default one is always available.
@@ -66,26 +62,17 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 
 ### Installing Eclair
 
-Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive. We provide 2 different packages, which internally use the same core libraries:
-
-* eclair-node, which is a headless application that you can run on servers and desktops, and control from the command line
-* eclair-node-gui, which also includes a JavaFX GUI
+Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive.
 
 To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Other runtimes also work but we don't recommend using them.
 
-Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and depending on whether or not you want a GUI run the following command:
-
-* with GUI:
-
-```shell
-eclair-node-gui-<version>-<commit_id>/bin/eclair-node-gui.sh
-```
-
-* without GUI:
+Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and run the following command:
 
 ```shell
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
+
+You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
 
 ### Configuring Eclair
 
@@ -113,7 +100,6 @@ name                         | description                                      
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
  eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                                        | "tcp://127.0.0.1:29000"
  eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                                           | "tcp://127.0.0.1:29000"
- eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, bits, mbtc, btc)     | btc
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
 
@@ -128,7 +114,6 @@ Some advanced parameters can be changed with java environment variables. Most us
 name                  | description                                | default value
 ----------------------|--------------------------------------------|--------------
 eclair.datadir        | Path to the data directory                 | ~/.eclair
-eclair.headless       | Run eclair without a GUI                   |
 eclair.printToConsole | Log to stdout (in addition to eclair.log)  |
 
 For example, to specify a different data directory you would run the following command:

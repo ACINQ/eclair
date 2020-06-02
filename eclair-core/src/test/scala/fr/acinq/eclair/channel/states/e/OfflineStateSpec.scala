@@ -22,7 +22,7 @@ import akka.actor.Status
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.TestConstants.{Alice, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
@@ -31,7 +31,8 @@ import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestKitBaseClass, randomBytes32}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
@@ -40,7 +41,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 
@@ -94,7 +95,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
       TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
       aliceCommitments.localCommit.index)
-
 
     // a didn't receive any update or sig
     val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
@@ -208,7 +208,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-
   }
 
   test("discover that we have a revoked commitment") { f =>
@@ -262,7 +261,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
   }
 
   test("discover that they have a more recent commit than the one we know") { f =>
@@ -314,7 +312,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
   }
 
   test("counterparty lies about having a more recent commitment") { f =>
@@ -511,6 +508,40 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, CurrentFeerates(highFeerate))
     alice2blockchain.expectNoMsg()
     alice2bob.expectNoMsg()
+  }
+
+  test("handle feerate changes while offline (update at reconnection)") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+    val networkFeeratePerKw = 2 * localFeeratePerKw
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
+
+    // Alice ignores feerate changes while offline
+    alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(networkFeerate)
+    sender.send(alice, CurrentFeerates(networkFeerate))
+    alice2blockchain.expectNoMsg()
+    alice2bob.expectNoMsg()
+
+    // then we reconnect them; Alice should send the feerate changes to Bob
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    // note that we don't forward the channel_reestablish so that only alice reaches NORMAL state, it facilitates the test below
+    bob2alice.forward(alice)
+
+    alice2bob.expectMsgType[FundingLocked] // since the channel's commitment hasn't been updated, we re-send funding_locked
+    alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
   }
 
   test("handle feerate changes while offline (fundee scenario)") { f =>

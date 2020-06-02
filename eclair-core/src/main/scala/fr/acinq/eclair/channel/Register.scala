@@ -66,11 +66,11 @@ class Register extends Actor with ActorLogging {
       val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(ShortChannelId(0L))
       context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId, peers)
 
-    case 'channels => sender ! channels
+    case Symbol("channels") => sender ! channels
 
-    case 'shortIds => sender ! shortIds
+    case Symbol("shortIds") => sender ! shortIds
 
-    case 'channelsTo => sender ! channelsTo
+    case Symbol("channelsTo") => sender ! channelsTo
 
     case fwd@Forward(channelId, msg) =>
       channels.get(channelId) match {

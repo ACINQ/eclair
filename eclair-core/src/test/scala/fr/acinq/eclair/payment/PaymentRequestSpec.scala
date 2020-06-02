@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
 import scodec.codecs.bits
@@ -32,7 +32,7 @@ import scodec.codecs.bits
  * Created by fabrice on 15/05/17.
  */
 
-class PaymentRequestSpec extends FunSuite {
+class PaymentRequestSpec extends AnyFunSuite {
 
   val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
   val pub = priv.publicKey
@@ -380,23 +380,23 @@ class PaymentRequestSpec extends FunSuite {
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
 
     val featureBits = Map(
-      Features(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00010100001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      Features(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      Features(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      Features(bin"          0000110000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"               00010100001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"          0000110000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      Features(bin"          0000100000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      Features(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      Features(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      Features(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      Features(bin"00000010000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      Features(bin"00001000000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false)
+      PaymentRequestFeatures(bin"          0000100000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"00000010000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"00001000000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false)
     )
 
     for ((features, res) <- featureBits) {
@@ -419,14 +419,14 @@ class PaymentRequestSpec extends FunSuite {
     )
 
     for ((bitmask, featureBytes) <- testCases) {
-      assert(Features(bitmask).toByteVector === featureBytes)
+      assert(PaymentRequestFeatures(bitmask).toByteVector === featureBytes)
     }
   }
 
   test("payment secret") {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(pr.paymentSecret.isDefined)
-    assert(pr.features === Features(PaymentSecret.optional, VariableLengthOnion.optional))
+    assert(pr.features === PaymentRequestFeatures(PaymentSecret.optional, VariableLengthOnion.optional))
     assert(!pr.features.requirePaymentSecret)
 
     val pr1 = PaymentRequest.read(PaymentRequest.write(pr))
@@ -453,11 +453,11 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
     assert(!pr.features.allowTrampoline)
 
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(Features(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 

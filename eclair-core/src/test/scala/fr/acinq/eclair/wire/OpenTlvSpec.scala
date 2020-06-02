@@ -18,11 +18,11 @@ package fr.acinq.eclair.wire
 
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.wire.OpenChannelTlv.ChannelVersionTlv
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.{Attempt, DecodeResult}
 import scodec.bits._
 
-class OpenTlvSpec extends FunSuite {
+class OpenTlvSpec extends AnyFunSuite {
 
   test("channel version tlv") {
 

@@ -32,8 +32,9 @@ import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestkitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -42,7 +43,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
   type FixtureParam = SetupFixture
 

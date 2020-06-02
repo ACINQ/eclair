@@ -21,6 +21,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ShortChannelId, serializationResult}
@@ -57,7 +58,7 @@ object Sync {
     // the first_timestamp field to the current date/time and timestamp_range to the maximum value
     // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
     // that (i.e. the whole routing table)
-    val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = Platform.currentTime.milliseconds.toSeconds, timestampRange = Int.MaxValue)
+    val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = System.currentTimeMillis.milliseconds.toSeconds, timestampRange = Int.MaxValue)
     s.to ! filter
 
     // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
@@ -68,6 +69,7 @@ object Sync {
   def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(q)
+    Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
     Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
         log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
@@ -77,11 +79,13 @@ object Sync {
         val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
           split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
         }
-
+        Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
         Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
           chunks.foreach { chunk =>
             val reply = buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
             origin.peerConnection ! reply
+            Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
+            Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
           }
         }
       }
@@ -92,9 +96,11 @@ object Sync {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(r)
 
+    Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.numberOfBlocks)
+    Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.shortChannelIds.array.size)
+
     Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("reply-channel-range").start(), finishSpan = true) {
-
         @tailrec
         def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
           ids match {
@@ -109,7 +115,6 @@ object Sync {
 
         val timestamps_opt = r.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
         val checksums_opt = r.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
-
         val shortChannelIdAndFlags = Kamon.runWithSpan(Kamon.spanBuilder("compute-flags").start(), finishSpan = true) {
           loop(r.shortChannelIds.array, timestamps_opt, checksums_opt)
         }
@@ -121,6 +126,8 @@ object Sync {
             (c1, u1)
         }
         log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", r.shortChannelIds.array.size, channelCount, updatesCount, r.shortChannelIds.encoding)
+        Metrics.ReplyChannelRange.NewChannelAnnouncements.withoutTags().record(channelCount)
+        Metrics.ReplyChannelRange.NewChannelUpdates.withoutTags().record(updatesCount)
 
         def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
           // always encode empty lists as UNCOMPRESSED
@@ -151,15 +158,13 @@ object Sync {
     }
   }
 
-  def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
+  def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(q)
 
     Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
       Kamon.runWithSpan(Kamon.spanBuilder("query-short-channel-ids").start(), finishSpan = true) {
-
         val flags = q.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
-
         var channelCount = 0
         var updateCount = 0
         var nodeCount = 0
@@ -180,6 +185,9 @@ object Sync {
             origin.peerConnection ! na
           }
         )
+        Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
+        Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
+        Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
         log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
         origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
       }
@@ -428,11 +436,12 @@ object Sync {
         if (it.hasNext) {
           val id = it.next()
           val currentHeight = currentChunk.head.blockHeight
-          if (id.blockHeight == currentHeight)
+          if (id.blockHeight == currentHeight) {
             loop(id :: currentChunk, acc) // same height => always add to the current chunk
-          else if (currentChunk.size < channelRangeChunkSize) // different height but we're under the size target => add to the current chunk
-          loop(id :: currentChunk, acc) // different height and over the size target => start a new chunk
-          else {
+          } else if (currentChunk.size < channelRangeChunkSize) {
+            loop(id :: currentChunk, acc) // different height but we're under the size target => add to the current chunk
+          } else {
+            // different height and over the size target => start a new chunk
             // we always prepend because it's more efficient so we have to reverse the current chunk
             // for the first chunk, we make sure that we start at the request first block
             // for the next chunks we start at the end of the range covered by the last chunk

@@ -22,9 +22,9 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.Router.Hop
-
-import scala.compat.Platform
+import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop}
+import fr.acinq.eclair.wire.Node
 
 /**
  * Created by PM on 01/02/2017.
@@ -67,14 +67,14 @@ object PaymentSent {
    * @param route       payment route used.
    * @param timestamp   absolute time in milli-seconds since UNIX epoch when the payment was fulfilled.
    */
-  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: Long = Platform.currentTime) {
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: Long = System.currentTimeMillis) {
     require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
     val amountWithFees: MilliSatoshi = amount + feesPaid
   }
 
 }
 
-case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: Long = System.currentTimeMillis) extends PaymentEvent
 
 sealed trait PaymentRelayed extends PaymentEvent {
   val amountIn: MilliSatoshi
@@ -82,9 +82,9 @@ sealed trait PaymentRelayed extends PaymentEvent {
   val timestamp: Long
 }
 
-case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentRelayed
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = System.currentTimeMillis) extends PaymentRelayed
 
-case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, timestamp: Long = Platform.currentTime) extends PaymentRelayed {
+case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, timestamp: Long = System.currentTimeMillis) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
 }
@@ -106,16 +106,18 @@ case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived
 
 object PaymentReceived {
 
-  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: Long = Platform.currentTime)
+  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: Long = System.currentTimeMillis)
 
 }
 
-case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: Long = Platform.currentTime) extends PaymentEvent
+case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: Long = System.currentTimeMillis) extends PaymentEvent
 
-sealed trait PaymentFailure
+sealed trait PaymentFailure {
+  def route: Seq[Hop]
+}
 
 /** A failure happened locally, preventing the payment from being sent (e.g. no route found). */
-case class LocalFailure(t: Throwable) extends PaymentFailure
+case class LocalFailure(route: Seq[Hop], t: Throwable) extends PaymentFailure
 
 /** A remote node failed the payment and we were able to decrypt the onion failure packet. */
 case class RemoteFailure(route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
@@ -142,10 +144,10 @@ object PaymentFailure {
    */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures.map {
-      case LocalFailure(AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
+      case LocalFailure(hops, AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(hops, t) // we're interested in the error which caused the add-htlc to fail
       case other => other
     } match {
-      case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures
+      case previousFailures :+ LocalFailure(_, RouteNotFound) if previousFailures.nonEmpty => previousFailures
       case other => other
     }
   }
@@ -158,5 +160,45 @@ object PaymentFailure {
     failures
       .collectFirst { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
       .isDefined
+
+  /** Update the set of nodes and channels to ignore in retries depending on the failure we received. */
+  def updateIgnored(failure: PaymentFailure, ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]): (Set[PublicKey], Set[ChannelDesc]) = failure match {
+    case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, _)) if nodeId == hops.last.nextNodeId =>
+      // The failure came from the final recipient: the payment should be aborted without penalizing anyone in the route.
+      (ignoreNodes, ignoreChannels)
+    case RemoteFailure(_, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
+      (ignoreNodes + nodeId, ignoreChannels)
+    case RemoteFailure(_, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
+      if (Announcements.checkSig(failureMessage.update, nodeId)) {
+        // We were using an outdated channel update, we should retry with the new one and nobody should be penalized.
+        (ignoreNodes, ignoreChannels)
+      } else {
+        // This node is fishy, it gave us a bad signature, so let's filter it out.
+        (ignoreNodes + nodeId, ignoreChannels)
+      }
+    case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
+      // Let's ignore the channel outgoing from nodeId.
+      hops.collectFirst {
+        case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+      } match {
+        case Some(faultyChannel) => (ignoreNodes, ignoreChannels + faultyChannel)
+        case None => (ignoreNodes, ignoreChannels)
+      }
+    case UnreadableRemoteFailure(hops) =>
+      // We don't know which node is sending garbage, let's blacklist all nodes except the one we are directly connected to and the final recipient.
+      val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
+      (ignoreNodes ++ blacklist, ignoreChannels)
+    case LocalFailure(hops, _) => hops.headOption match {
+      case Some(hop: ChannelHop) =>
+        val faultyChannel = ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+        (ignoreNodes, ignoreChannels + faultyChannel)
+      case _ => (ignoreNodes, ignoreChannels)
+    }
+  }
+
+  /** Update the set of nodes and channels to ignore in retries depending on the failures we received. */
+  def updateIgnored(failures: Seq[PaymentFailure], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]): (Set[PublicKey], Set[ChannelDesc]) = {
+    failures.foldLeft((ignoreNodes, ignoreChannels)) { case ((nodes, channels), failure) => updateIgnored(failure, nodes, channels) }
+  }
 
 }

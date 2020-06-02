@@ -33,19 +33,20 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
-import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdate
+import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
-import org.scalatest.{Outcome, ParallelTestExecution, fixture}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Success
 
-class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with IdiomaticMockito with ParallelTestExecution {
+class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
 
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
@@ -173,13 +174,13 @@ class EclairImplSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteL
     var channels = scala.collection.immutable.SortedMap.empty[ShortChannelId, PublicChannel]
 
     List(
-      (ann_ab, makeUpdate(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(13))),
-      (ann_ae, makeUpdate(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))),
-      (ann_bc, makeUpdate(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
-      (ann_cd, makeUpdate(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
-      (ann_ec, makeUpdate(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
-    ).foreach { case (ann, (desc, update)) =>
-      channels = channels + (desc.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = 0)), None))
+      (ann_ab, makeUpdateShort(ShortChannelId(1L), a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(13))),
+      (ann_ae, makeUpdateShort(ShortChannelId(4L), a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12))),
+      (ann_bc, makeUpdateShort(ShortChannelId(2L), b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
+      (ann_cd, makeUpdateShort(ShortChannelId(3L), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
+      (ann_ec, makeUpdateShort(ShortChannelId(7L), e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
+    ).foreach { case (ann, update) =>
+      channels = channels + (update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = 0)), None, None))
     }
 
     val mockNetworkDb = mock[NetworkDb](withSettings.lenient()) // on Android listNodes() and removeNode() are not used

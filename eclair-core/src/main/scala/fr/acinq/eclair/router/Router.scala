@@ -33,6 +33,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import kamon.context.Context
@@ -47,14 +48,16 @@ import scala.util.Try
  */
 class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
 
-  import ExecutionContext.Implicits.global
   import Router._
+
+  import ExecutionContext.Implicits.global
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
 
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
+  context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
   setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
@@ -87,6 +90,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   when(NORMAL) {
 
     case Event(SyncProgress(progress), d: Data) =>
+      Metrics.SyncProgress.withoutTags().update(100 * progress)
       if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
         log.info("initial routing sync done: computing network statistics")
         self ! TickComputeNetworkStats
@@ -120,24 +124,24 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
-    case Event('nodes, d) =>
+    case Event(Symbol("nodes"), d) =>
       sender ! d.nodes.values
       stay
 
-    case Event('channels, d) =>
+    case Event(Symbol("channels"), d) =>
       sender ! d.channels.values.map(_.ann)
       stay
 
-    case Event('channelsMap, d) =>
+    case Event(Symbol("channelsMap"), d) =>
       sender ! d.channels
       stay
 
-    case Event('updates, d) =>
+    case Event(Symbol("updates"), d) =>
       val updates: Iterable[ChannelUpdate] = d.channels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt) ++ d.privateChannels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt)
       sender ! updates
       stay
 
-    case Event('data, d) =>
+    case Event(Symbol("data"), d) =>
       sender ! d
       stay
 
@@ -169,16 +173,19 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
 
     case Event(u: ChannelUpdate, d: Data) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(LocalGossip), u)
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Set(RemoteGossip(peerConnection, remoteNodeId)), u)
+      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) =>
       stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
+
+    case Event(e: AvailableBalanceChanged, d: Data) =>
+      stay using Validation.handleAvailableBalanceChanged(d, e)
 
     case Event(s: SendChannelQuery, d) =>
       stay using Sync.handleSendChannelQuery(d, s)
@@ -191,7 +198,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
-      Sync.handleQueryShortChannelIds(d.nodes, d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+      Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
@@ -238,24 +245,42 @@ object Router {
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
-  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
+  case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) {
     update_1_opt.foreach(u => assert(Announcements.isNode1(u.channelFlags)))
     update_2_opt.foreach(u => assert(!Announcements.isNode1(u.channelFlags)))
 
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) ann.nodeId1 else ann.nodeId2
-
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-
+    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+    def updateBalances(commitments: Commitments): PublicChannel = if (commitments.localParams.nodeId == ann.nodeId1) {
+      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
+    } else {
+      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
+    }
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
+      case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
+      case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
+    }
   }
-  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate]) {
+  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
+    val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (Announcements.isNode1(u.channelFlags)) nodeId1 else nodeId2
-
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
-
+    def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) Some(meta.balance1) else Some(meta.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
+    def updateBalances(commitments: Commitments): PrivateChannel = if (commitments.localParams.nodeId == nodeId1) {
+      copy(meta = ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive))
+    } else {
+      copy(meta = ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend))
+    }
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PrivateChannel = update match {
+      case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
+      case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
+    }
   }
   // @formatter:on
 
@@ -305,20 +330,34 @@ object Router {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios])
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios]) {
+    def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
+      // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
+      maxFeeBase.max(amount * maxFeePct)
+    }
+  }
 
   case class RouteRequest(source: PublicKey,
                           target: PublicKey,
                           amount: MilliSatoshi,
+                          maxFee: MilliSatoshi,
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                           ignoreNodes: Set[PublicKey] = Set.empty,
                           ignoreChannels: Set[ChannelDesc] = Set.empty,
                           routeParams: Option[RouteParams] = None)
 
-  case class FinalizeRoute(hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
+  case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
-  case class RouteResponse(hops: Seq[ChannelHop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], allowEmpty: Boolean = false) {
+  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], allowEmpty: Boolean = false) {
     require(allowEmpty || hops.nonEmpty, "route cannot be empty")
+    val length = hops.length
+
+    /** This method retrieves the channel update that we used when we built the route. */
+    def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
+  }
+
+  case class RouteResponse(routes: Seq[Route]) {
+    require(routes.nonEmpty, "routes cannot be empty")
   }
 
   // @formatter:off
@@ -359,8 +398,10 @@ object Router {
     case class ChannelClosed(ann: ChannelAnnouncement) extends Rejected
     case class Stale(ann: ChannelUpdate) extends Rejected
     case class NoRelatedChannel(ann: ChannelUpdate) extends Rejected
+    case class RelatedChannelPruned(ann: ChannelUpdate) extends Rejected
   }
 
+  case class RemoteChannelUpdate(channelUpdate: ChannelUpdate, origins: Set[GossipOrigin])
   case class Stash(updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   // @formatter:on
@@ -393,6 +434,11 @@ object Router {
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     // the least significant bit tells us if it is node1 or node2
     if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
+  }
+
+  def getDesc(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
+    // the least significant bit tells us if it is node1 or node2
+    if (Announcements.isNode1(u.channelFlags)) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
   }
 
   def isRelatedTo(c: ChannelAnnouncement, nodeId: PublicKey) = nodeId == c.nodeId1 || nodeId == c.nodeId2

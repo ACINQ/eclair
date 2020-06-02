@@ -27,12 +27,11 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
-class SqlitePaymentsDbSpec extends FunSuite {
+class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   import SqlitePaymentsDbSpec._
 
@@ -212,7 +211,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     postMigrationDb.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300))
 
     assert(postMigrationDb.listOutgoingPayments(1, 2000) === Seq(ps1, ps2, ps3, ps4, ps5, ps6))
-    assert(postMigrationDb.listIncomingPayments(1, Platform.currentTime) === Seq(pr1, pr2, pr3))
+    assert(postMigrationDb.listIncomingPayments(1, System.currentTimeMillis) === Seq(pr1, pr2, pr3))
     assert(postMigrationDb.listExpiredIncomingPayments(1, 2000) === Seq(pr2))
   }
 
@@ -245,7 +244,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     using(connection.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, completed_at, failures) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, ps1.id.toString)
       statement.setString(2, ps1.parentId.toString)
-      statement.setString(3, ps1.externalId.get.toString)
+      statement.setString(3, ps1.externalId.get)
       statement.setBytes(4, ps1.paymentHash.toArray)
       statement.setLong(5, ps1.amount.toLong)
       statement.setBytes(6, ps1.recipientNodeId.value.toArray)
@@ -258,7 +257,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     using(connection.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, amount_msat, target_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, ps2.id.toString)
       statement.setString(2, ps2.parentId.toString)
-      statement.setString(3, ps2.externalId.get.toString)
+      statement.setString(3, ps2.externalId.get)
       statement.setBytes(4, ps2.paymentHash.toArray)
       statement.setLong(5, ps2.amount.toLong)
       statement.setBytes(6, ps2.recipientNodeId.value.toArray)
@@ -328,8 +327,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
 
     val paidInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32, alicePriv, "invoice #5")
     val paidInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32, bobPriv, "invoice #6", expirySeconds = Some(60))
-    val receivedAt1 = Platform.currentTime + 1
-    val receivedAt2 = Platform.currentTime + 2
+    val receivedAt1 = System.currentTimeMillis + 1
+    val receivedAt2 = System.currentTimeMillis + 2
     val payment1 = IncomingPayment(paidInvoice1, randomBytes32, PaymentType.Standard, paidInvoice1.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(561 msat, receivedAt2))
     val payment2 = IncomingPayment(paidInvoice2, randomBytes32, PaymentType.Standard, paidInvoice2.timestamp.seconds.toMillis, IncomingPaymentStatus.Received(1111 msat, receivedAt2))
 
@@ -344,7 +343,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     assert(db.getIncomingPayment(expiredInvoice2.paymentHash) === Some(expiredPayment2))
     assert(db.getIncomingPayment(paidInvoice1.paymentHash) === Some(payment1.copy(status = IncomingPaymentStatus.Pending)))
 
-    val now = Platform.currentTime
+    val now = System.currentTimeMillis
     assert(db.listIncomingPayments(0, now) === Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
     assert(db.listExpiredIncomingPayments(0, now) === Seq(expiredPayment1, expiredPayment2))
     assert(db.listReceivedIncomingPayments(0, now) === Nil)
@@ -369,7 +368,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     val s1 = OutgoingPayment(UUID.randomUUID(), parentId, None, paymentHash1, PaymentType.Standard, 123 msat, 600 msat, dave, 100, Some(i1), OutgoingPaymentStatus.Pending)
     val s2 = OutgoingPayment(UUID.randomUUID(), parentId, Some("1"), paymentHash1, PaymentType.SwapOut, 456 msat, 600 msat, dave, 200, None, OutgoingPaymentStatus.Pending)
 
-    assert(db.listOutgoingPayments(0, Platform.currentTime).isEmpty)
+    assert(db.listOutgoingPayments(0, System.currentTimeMillis).isEmpty)
     db.addOutgoingPayment(s1)
     db.addOutgoingPayment(s2)
 
@@ -394,8 +393,8 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310))
     val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310))
     assert(db.getOutgoingPayment(s3.id) === Some(ss3))
-    db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(new RuntimeException("woops")), RemoteFailure(Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
-    val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", Nil), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320))
+    db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
+    val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42))))), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320))
     assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
     // can't update again once it's in a final state

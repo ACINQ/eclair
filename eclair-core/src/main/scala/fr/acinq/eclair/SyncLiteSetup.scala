@@ -50,8 +50,7 @@ class SyncLiteSetup(datadir: File,
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
 
-  val appConfig = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val config = appConfig.getConfig("eclair")
+  val config = system.settings.config.getConfig("eclair")
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(randomBytes32, NodeParams.makeChainHash(chain))
   val database = db match {
@@ -101,7 +100,7 @@ class SyncLiteSetup(datadir: File,
     val pSyncDone = Promise[Boolean]()
     system.actorOf(Props(new SyncListener(pSyncDone)))
     // connect to the provided node with a sync global feature flag
-    val peer = system.actorOf(Peer.props(nodeParams, syncNodeURI.nodeId, watcher, router, relayer, null, null, null), "peer")
+    val peer = system.actorOf(Peer.props(nodeParams, syncNodeURI.nodeId, watcher, relayer, null, null), "peer")
     peer ! Peer.Init(storedChannels = Set.empty)
     peer ! Peer.Connect(syncNodeURI)
     pSyncDone.future

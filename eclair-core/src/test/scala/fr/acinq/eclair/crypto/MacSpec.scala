@@ -17,14 +17,14 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
 /**
   * Created by t-bast on 04/07/19.
   */
 
-class MacSpec extends FunSuite {
+class MacSpec extends AnyFunSuite {
 
   test("HMAC-256 mac/verify") {
     val keys = Seq(

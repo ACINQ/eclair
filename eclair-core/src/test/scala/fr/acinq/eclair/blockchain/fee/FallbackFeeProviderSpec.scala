@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.Random
 
 
-class FallbackFeeProviderSpec extends FunSuite {
+class FallbackFeeProviderSpec extends AnyFunSuite {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 

@@ -24,7 +24,7 @@ import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.Try
@@ -47,7 +47,7 @@ sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
-case class Init(features: ByteVector, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
+case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
 }
 
@@ -169,7 +169,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeSignature2: ByteVector64,
                                bitcoinSignature1: ByteVector64,
                                bitcoinSignature2: ByteVector64,
-                               features: ByteVector,
+                               features: Features,
                                chainHash: ByteVector32,
                                shortChannelId: ShortChannelId,
                                nodeId1: PublicKey,
@@ -213,7 +213,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 
 
 case class NodeAnnouncement(signature: ByteVector64,
-                            features: ByteVector,
+                            features: Features,
                             timestamp: Long,
                             nodeId: PublicKey,
                             rgbColor: Color,

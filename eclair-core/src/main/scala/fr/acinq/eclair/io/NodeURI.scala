@@ -31,12 +31,12 @@ object NodeURI {
   val DEFAULT_PORT = 9735
 
   /**
-    * Extracts the PublicKey and InetAddress from a string URI (format pubkey@host:port). Port is optional, default is 9735.
-    *
-    * @param uri uri of a node, as a String
-    * @throws IllegalArgumentException if the uri is not valid and can not be read
-    * @return a NodeURI
-    */
+   * Extracts the PublicKey and InetAddress from a string URI (format pubkey@host:port). Port is optional, default is 9735.
+   *
+   * @param uri uri of a node, as a String
+   * @throws IllegalArgumentException if the uri is not valid and can not be read
+   * @return a NodeURI
+   */
   @throws[IllegalArgumentException]
   def parse(uri: String): NodeURI = {
     uri.split("@") match {
