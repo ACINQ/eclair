@@ -65,7 +65,7 @@ object LegacyChannelCodecs {
       ("htlcBasepoint" | publicKey) ::
       ("features" | combinedFeaturesCodec)).as[RemoteParams]
 
-  private val  htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool)
+  val  htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool)
     .typecase(true, updateAddHtlcCodec.as[IncomingHtlc])
     .typecase(false, updateAddHtlcCodec.as[OutgoingHtlc])
 
@@ -162,14 +162,14 @@ object LegacyChannelCodecs {
       ("amountOut" | millisatoshi)).as[Origin.Relayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
-  private val  UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+  val  UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
   private val  trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
     listOfN(uint16, bytes32 ~ int64) ::
       ("sender" | provide(Option.empty[ActorRef]))
     ).as[Origin.TrampolineRelayed]
 
-  private val  originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
+  val  originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x03, localCodec) // backward compatible
     .typecase(0x01, provide(Origin.Local(UNKNOWN_UUID, None)))
     .typecase(0x02, relayedCodec)
