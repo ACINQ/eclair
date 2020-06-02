@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire
 
 import java.net.InetSocketAddress
+import java.sql.DriverManager
 import java.util.UUID
 
 import akka.actor.ActorSystem
@@ -27,12 +28,14 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Deterministi
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed, TrampolineRelayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
+import fr.acinq.eclair.wire.legacy.LegacyChannelCodecs
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -41,7 +44,6 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Random
@@ -102,7 +104,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
-    val withGlobalFeaturesDecoded = localParamsCodec.decode(withGlobalFeatures.bits).require.value
+    val withGlobalFeaturesDecoded = LegacyChannelCodecs.localParamsCodec.decode(withGlobalFeatures.bits).require.value
     assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
   }
 
@@ -164,6 +166,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     )
     val remaining = bin"0000000" // 7 bits remainder because the direction is encoded with 1 bit and we are dealing with bytes
 
+    import LegacyChannelCodecs.htlcCodec
+
     val DecodeResult(h1, r1) = htlcCodec.decode(encodedHtlc1.toBitVector).require
     val DecodeResult(h2, r2) = htlcCodec.decode(encodedHtlc2.toBitVector).require
 
@@ -208,6 +212,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
   test("encode/decode origin") {
     val id = UUID.randomUUID()
+    import LegacyChannelCodecs.originCodec
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
     assert(originCodec.decodeValue(hex"0001 0123456789abcdef0123456789abcdef".bits).require === Local(UNKNOWN_UUID, None))
     val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
@@ -242,8 +247,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
   test("basic serialization test (NORMAL)") {
     val data = normal
-    val bin = ChannelCodecs.DATA_NORMAL_Codec.encode(data).require
-    val check = ChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
+    val bin = LegacyChannelCodecs.DATA_NORMAL_Codec.encode(data).require
+    val check = LegacyChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
     assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
     assert(data === check)
   }
@@ -289,7 +294,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format, with version=0 and type=8
-    assert(bin_new.startsWith(hex"000008"))
+    assert(bin_new.startsWith(hex"010020"))
     // now let's decode it again
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -303,8 +308,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val u2 = hex"A94A853FCDE515F89259E03D10368B1A600B3BF78F6BD5C968469C0816F45EFF7878714DF26B580D5A304334E46816D5AC37B098EBC46C1CE47E37504D052DD643497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D1149290001009000000000000003E8000003E800000001".bits
 
     // check that we decode correct length, and that we just take a peek without actually consuming data
-    assert(noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
-    assert(noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
+    assert(LegacyChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
+    assert(LegacyChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
   }
 
   test("backward compatibility DATA_NORMAL_COMPAT_03_Codec (roundtrip)") {
@@ -332,7 +337,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
       // make sure that encoding used the new 0x10 codec
-      assert(newbin.startsWith(hex"000010"))
+      assert(newbin.startsWith(hex"010022"))
       // make sure that roundtrip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
@@ -385,6 +390,26 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
+    }
+  }
+
+  test("nonreg length-delimited codecs") {
+    val sqlite = DriverManager.getConnection("jdbc:sqlite::resource:eclair.sqlite.bak")
+    using(sqlite.createStatement) { statement =>
+      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
+      while (rs.next()) {
+        val data0 = BitVector(rs.getBytes("data"))
+        assert(data0.startsWith(bin"00000000"))
+        ChannelCodecs.stateDataCodec.decode(data0) match {
+          case Attempt.Successful(DecodeResult(channel0, _)) =>
+            val data1 = ChannelCodecs.stateDataCodec.encode(channel0).require
+            assert(data1.startsWith(bin"00000001")) // correct version prefix
+            assert(data1.size % 8 == 0) // aligned
+            val channel1 = ChannelCodecs.stateDataCodec.decode(data1).require.value
+            assert(channel0 === channel1)
+          case Attempt.Failure(_) => ()
+        }
+      }
     }
   }
 }
