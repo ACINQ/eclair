@@ -639,7 +639,8 @@ eclair-cli close --channelId<span class="o">=</span>&lt;channel&gt;
 <pre class="highlight shell tab-shell"><code>ok
 </code></pre>
 <p>Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the <em>funding_signed</em> message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
+If you specified a scriptPubKey then the closing transaction will spend to that address. The endpoint supports receiving multiple channel id(s) or short channel
+id(s), to close multiple channel you can use the parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
 <h3 id='http-request-7'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/close</code></p>
 <h3 id='parameters-6'>Parameters</h3>
@@ -664,6 +665,18 @@ If you specified a scriptPubKey then the closing transaction will spend to that 
 <td>ShortChannelId (String)</td>
 </tr>
 <tr>
+<td>channelIds</td>
+<td>List of channelIds to close</td>
+<td>Yes</td>
+<td>CSV or JSON list of channelId</td>
+</tr>
+<tr>
+<td>shortChannelIds</td>
+<td>List of shortChannelIds to close</td>
+<td>Yes</td>
+<td>CSV or JSON list of shortChannelId</td>
+</tr>
+<tr>
 <td>scriptPubKey</td>
 <td>A serialized scriptPubKey that you want to use to close the channel</td>
 <td>Yes</td>
@@ -681,7 +694,8 @@ eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
 <pre class="highlight shell tab-shell"><code>ok
 </code></pre>
 <p>Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
-transaction id. Note that you must specify at least a <em>channelId</em> <strong>or</strong> <em>shortChannelId</em>.</p>
+transaction id. The endpoint supports receiving multiple channel id(s) or short channel id(s), to close multiple channel you can use the 
+parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
 <h3 id='http-request-8'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/forceclose</code></p>
 <h3 id='parameters-7'>Parameters</h3>
@@ -705,6 +719,18 @@ transaction id. Note that you must specify at least a <em>channelId</em> <strong
 <td>Yes</td>
 <td>ShortChannelId (String)</td>
 </tr>
+<tr>
+<td>channelIds</td>
+<td>List of channelIds to force-close</td>
+<td>Yes</td>
+<td>CSV or JSON list of channelId</td>
+</tr>
+<tr>
+<td>shortChannelIds</td>
+<td>List of shortChannelIds to force-close</td>
+<td>Yes</td>
+<td>CSV or JSON list of shortChannelId</td>
+</tr>
 </tbody></table>
 <h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>UpdateRelayFee</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
      -F <span class="nv">feeBaseMsat</span><span class="o">=</span>&lt;feebase&gt; -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>&lt;feeproportional&gt; <span class="se">\</span>
@@ -721,7 +747,9 @@ eclair-cli updaterelayfee <span class="se">\</span>
 </blockquote>
 <pre class="highlight shell tab-shell"><code>ok
 </code></pre>
-<p>Updates the fee policy for the specified <em>channelId</em>, a new update for this channel will be broadcasted to the network.</p>
+<p>Updates the fee policy for the specified <em>channelId</em>, a new update for this channel will be broadcasted to the network.
+The endpoint supports receiving multiple channel id(s) or short channel id(s), to update multiple channel you can use the 
+parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
 <h3 id='http-request-9'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/updaterelayfee</code></p>
 <h3 id='parameters-8'>Parameters</h3>
@@ -744,6 +772,18 @@ eclair-cli updaterelayfee <span class="se">\</span>
 <td>The shortChannelId of the channel you want to update</td>
 <td>Yes</td>
 <td>ShortChannelId (String)</td>
+</tr>
+<tr>
+<td>channelIds</td>
+<td>List of channelIds to update</td>
+<td>Yes</td>
+<td>CSV or JSON list of channelId</td>
+</tr>
+<tr>
+<td>shortChannelIds</td>
+<td>List of shortChannelIds to update</td>
+<td>Yes</td>
+<td>CSV or JSON list of shortChannelId</td>
 </tr>
 <tr>
 <td>feeBaseMsat</td>
