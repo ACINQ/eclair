@@ -27,8 +27,13 @@ object Monitoring {
     val PaymentParts = Kamon.histogram("payment.parts", "Number of HTLCs per payment (MPP)")
     val PaymentFailed = Kamon.counter("payment.failed", "Number of failed payment")
     val PaymentError = Kamon.counter("payment.error", "Non-fatal errors encountered during payment attempts")
+    val PaymentAttempt = Kamon.histogram("payment.attempt", "Number of attempts before a payment succeeds")
     val SentPaymentDuration = Kamon.timer("payment.duration.sent", "Outgoing payment duration")
     val ReceivedPaymentDuration = Kamon.timer("payment.duration.received", "Incoming payment duration")
+
+    // The goal of this metric is to measure whether retrying MPP payments on failing channels yields useful results.
+    // Once enough data has been collected, we will update the MultiPartPaymentLifecycle logic accordingly.
+    val RetryFailedChannelsResult = Kamon.counter("payment.mpp.retry-failed-channels-result")
 
     def recordPaymentRelayFailed(failureType: String, relayType: String): Unit =
       Metrics.PaymentFailed
