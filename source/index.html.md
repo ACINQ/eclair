@@ -235,7 +235,8 @@ ok
 ```
 
 Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the _funding_signed_ message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address. Note that you must specify at least a _channelId_ **or** _shortChannelId_.
+If you specified a scriptPubKey then the closing transaction will spend to that address. The endpoint supports receiving multiple channel id(s) or short channel
+id(s), to close multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -247,6 +248,8 @@ Parameter      | Description                                                    
 -------------- | ------------------------------------------------------------------- | -------- | ---------------------------
 channelId      | The channelId of the channel you want to close                      | No       | 32-bytes-HexString (String)
 shortChannelId | The shortChannelId of the channel you want to close                 | Yes      | ShortChannelId (String)
+channelIds     | List of channelIds to close                                         | Yes      | CSV or JSON list of channelId
+shortChannelIds| List of shortChannelIds to close                                    | Yes      | CSV or JSON list of shortChannelId
 scriptPubKey   | A serialized scriptPubKey that you want to use to close the channel | Yes      | HexString (String)
 
 ## ForceClose
@@ -265,7 +268,8 @@ ok
 ```
 
 Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
-transaction id. Note that you must specify at least a _channelId_ **or** _shortChannelId_.
+transaction id. The endpoint supports receiving multiple channel id(s) or short channel id(s), to close multiple channel you can use the 
+parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -277,6 +281,9 @@ Parameter      | Description                                         | Optional 
 -------------- | --------------------------------------------------- | -------- | ---------------------------
 channelId      | The channelId of the channel you want to close      | No       | 32-bytes-HexString (String)
 shortChannelId | The shortChannelId of the channel you want to close | Yes      | ShortChannelId (String)
+channelIds     | List of channelIds to force-close                   | Yes      | CSV or JSON list of channelId
+shortChannelIds| List of shortChannelIds to force-close              | Yes      | CSV or JSON list of shortChannelId
+
 
 # UpdateRelayFee
 
@@ -301,6 +308,8 @@ ok
 ```
 
 Updates the fee policy for the specified _channelId_, a new update for this channel will be broadcasted to the network.
+The endpoint supports receiving multiple channel id(s) or short channel id(s), to update multiple channel you can use the 
+parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -312,6 +321,8 @@ Parameter                 | Description                                         
 ------------------------- | ---------------------------------------------------- | -------- | ---------------------------
 channelId                 | The channelId of the channel you want to update      | No       | 32-bytes-HexString (String)
 shortChannelId            | The shortChannelId of the channel you want to update | Yes      | ShortChannelId (String)
+channelIds                | List of channelIds to update                         | Yes      | CSV or JSON list of channelId
+shortChannelIds           | List of shortChannelIds to update                    | Yes      | CSV or JSON list of shortChannelId
 feeBaseMsat               | The new base fee to use                              | No       | Millisatoshi (Integer)
 feeProportionalMillionths | The new proportional fee to use                      | No       | Integer
 
