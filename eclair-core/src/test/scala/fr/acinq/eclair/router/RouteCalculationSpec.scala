@@ -455,10 +455,10 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val amount = 90000 sat // below RoutingHeuristics.CAPACITY_CHANNEL_LOW
     val assistedChannels = toAssistedChannels(extraHops, e, amount.toMilliSatoshi)
 
-    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, 100050.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 100200.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 100400.sat.toMilliSatoshi))
-    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 101416.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop4.shortChannelId) === AssistedChannel(extraHop4, e, 180050.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop3.shortChannelId) === AssistedChannel(extraHop3, d, 180200.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop2.shortChannelId) === AssistedChannel(extraHop2, c, 180400.sat.toMilliSatoshi))
+    assert(assistedChannels(extraHop1.shortChannelId) === AssistedChannel(extraHop1, b, 182216.sat.toMilliSatoshi))
   }
 
   test("blacklist routes") {
