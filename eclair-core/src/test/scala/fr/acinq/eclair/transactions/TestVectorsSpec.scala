@@ -18,6 +18,8 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.channel.ChannelVersion.USE_STATIC_REMOTEKEY_BIT
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
@@ -29,12 +31,14 @@ import scodec.bits._
 
 import scala.io.Source
 
-class TestVectorsSpec extends AnyFunSuite with Logging {
+trait TestVectorsSpec extends AnyFunSuite with Logging {
 
+  def filename: String
+  def channelVersion: ChannelVersion
   val results = collection.mutable.HashMap.empty[String, Map[String, String]]
   val current = collection.mutable.HashMap.empty[String, String]
   var name = ""
-  Source.fromInputStream(classOf[TestVectorsSpec].getResourceAsStream("/bolt3-tx-test-vectors.txt")).getLines().toArray.map(s => s.dropWhile(_.isWhitespace)).map(line => {
+  Source.fromInputStream(classOf[TestVectorsSpec].getResourceAsStream(filename)).getLines().toArray.map(s => s.dropWhile(_.isWhitespace)).map(line => {
     if (line.startsWith("name: ")) {
       val Array(_, n) = line.split(": ")
       if (!name.isEmpty) results.put(name, current.toMap)
@@ -77,33 +81,14 @@ class TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_pubkey = funding_privkey.publicKey
     val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
-    val payment_privkey = payment_basepoint_secret
+    val payment_privkey = channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) match {
+      case true => payment_basepoint_secret
+      case false => Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
+    }
     val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
   }
-
-  /*
-   <!-- We derive the test vector values as per Key Derivation, though it's not
-      required for this test.  They're included here for completeness and
-    in case someone wants to reproduce the test vectors themselves:
-
-  INTERNAL: remote_funding_privkey: 1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e130101
-  INTERNAL: local_payment_basepoint_secret: 111111111111111111111111111111111111111111111111111111111111111101
-  INTERNAL: local_revocation_basepoint_secret: 222222222222222222222222222222222222222222222222222222222222222201
-  INTERNAL: local_delayed_payment_basepoint_secret: 333333333333333333333333333333333333333333333333333333333333333301
-  INTERNAL: remote_payment_basepoint_secret: 444444444444444444444444444444444444444444444444444444444444444401
-  x_local_per_commitment_secret: 1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010001
-  # From local_revocation_basepoint_secret
-  INTERNAL: local_revocation_basepoint: 02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27
-  # From local_delayed_payment_basepoint_secret
-  INTERNAL: local_delayed_payment_basepoint: 023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1
-  INTERNAL: local_per_commitment_point: 025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486
-  INTERNAL: remote_secretkey: 839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01
-  # From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
-  INTERNAL: local_delayed_secretkey: adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01
-  -->
-  */
 
   object Remote {
     val commitTxNumber = 42
@@ -116,7 +101,10 @@ class TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
-    val payment_privkey = payment_basepoint_secret
+    val payment_privkey = channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) match {
+      case true => payment_basepoint_secret
+      case false => Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
+    }
   }
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
@@ -514,4 +502,15 @@ class TestVectorsSpec extends AnyFunSuite with Logging {
     assert(htlcTxs(1).tx == Transaction.read(results(name)("output htlc_timeout_tx 1")))
     assert(htlcTxs(2).tx == Transaction.read(results(name)("output htlc_timeout_tx 2")))
   }
+}
+
+class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
+  override def filename: String = "/bolt3-tx-test-vectors-default-commitment-format.txt"
+  override def channelVersion: ChannelVersion = ChannelVersion.STANDARD
+}
+
+
+class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
+  override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
+  override def channelVersion: ChannelVersion = ChannelVersion.USE_STATIC_REMOTEKEY
 }
