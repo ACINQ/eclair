@@ -54,6 +54,14 @@ class FeaturesSpec extends AnyFunSuite {
     assert(Features(hex"0200").hasFeature(VariableLengthOnion, Some(FeatureSupport.Optional)))
   }
 
+  test("'option_static_remotekey' feature") {
+    assert(Features(hex"1000").hasFeature(StaticRemoteKey))
+    assert(Features(hex"1000").hasFeature(StaticRemoteKey, Some(Mandatory)))
+    assert(Features(hex"2000").hasFeature(StaticRemoteKey))
+    assert(Features(hex"2000").hasFeature(StaticRemoteKey, Some(Optional)))
+  }
+
+
   test("features dependencies") {
     val testCases = Map(
       bin"                        " -> true,
