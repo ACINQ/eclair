@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.legacy.LegacyChannelCodecs
 import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi}
 import grizzled.slf4j.Logging
 
@@ -43,7 +42,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement): Int = {
-      statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${LegacyChannelCodecs.UNKNOWN_UUID.toString}' NOT NULL")
+      val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+      statement.executeUpdate(s"ALTER TABLE sent ADD id BLOB DEFAULT '${ZERO_UUID.toString}' NOT NULL")
     }
 
     def migration23(statement: Statement): Int = {
