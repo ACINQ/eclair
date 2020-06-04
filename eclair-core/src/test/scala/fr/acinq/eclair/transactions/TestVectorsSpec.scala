@@ -83,7 +83,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
     val payment_privkey = channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) match {
       case true => payment_basepoint_secret
-      case false => Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
+      case false => htlc_privkey
     }
     val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
@@ -103,7 +103,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
     val payment_privkey = channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) match {
       case true => payment_basepoint_secret
-      case false => Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
+      case false => htlc_privkey
     }
   }
 
