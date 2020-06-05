@@ -67,7 +67,7 @@ object ChannelCodecs extends Logging {
    */
   val boolean: Codec[Boolean] = bool(8)
 
-  private val localParamsCodec: Codec[LocalParams] = (
+  val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("channelPath" | keyPathCodec) ::
       ("dustLimit" | satoshi) ::
@@ -299,9 +299,9 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
-  private object Legacy {
+  object Legacy {
 
-    private val localParamsCodec: Codec[LocalParams] = (
+    val localParamsCodec: Codec[LocalParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
@@ -318,14 +318,14 @@ object ChannelCodecs extends Logging {
       .typecase(true, updateAddHtlcCodec.as[IncomingHtlc])
       .typecase(false, updateAddHtlcCodec.as[OutgoingHtlc])
 
-    private val commitmentSpecCodec: Codec[CommitmentSpec] = (
+    val commitmentSpecCodec: Codec[CommitmentSpec] = (
       ("htlcs" | setCodec(htlcCodec)) ::
         ("feeratePerKw" | uint32) ::
         ("toLocal" | millisatoshi) ::
         ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
     // this is a backward compatible codec (we used to store the sig as DER encoded), now we store it as 64-bytes
-    private val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
+    val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
       (value: ByteVector64) => bytes(64).encode(value),
       (wire: BitVector) => bytes.decode(wire).map(_.map {
         case bin64 if bin64.size == 64 => ByteVector64(bin64)
@@ -333,39 +333,39 @@ object ChannelCodecs extends Logging {
       })
     )
 
-    private val htlcTxAndSigsCodec: Codec[HtlcTxAndSigs] = (
+    val htlcTxAndSigsCodec: Codec[HtlcTxAndSigs] = (
       ("txinfo" | txWithInputInfoCodec) ::
         ("localSig" | variableSizeBytes(uint16, sig64OrDERCodec)) :: // we store as variable length for historical purposes (we used to store as DER encoded)
         ("remoteSig" | variableSizeBytes(uint16, sig64OrDERCodec))).as[HtlcTxAndSigs]
 
-    private val publishableTxsCodec: Codec[PublishableTxs] = (
+    val publishableTxsCodec: Codec[PublishableTxs] = (
       ("commitTx" | (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]) ::
         ("htlcTxsAndSigs" | listOfN(uint16, htlcTxAndSigsCodec))).as[PublishableTxs]
 
-    private val localCommitCodec: Codec[LocalCommit] = (
+    val localCommitCodec: Codec[LocalCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("publishableTxs" | publishableTxsCodec)).as[LocalCommit]
 
-    private val remoteCommitCodec: Codec[RemoteCommit] = (
+    val remoteCommitCodec: Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("txid" | bytes32) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
-    private val updateMessageCodec: Codec[UpdateMessage] = lightningMessageCodec.narrow(f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g)
+    val updateMessageCodec: Codec[UpdateMessage] = lightningMessageCodec.narrow(f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g)
 
-    private val localChangesCodec: Codec[LocalChanges] = (
+    val localChangesCodec: Codec[LocalChanges] = (
       ("proposed" | listOfN(uint16, updateMessageCodec)) ::
         ("signed" | listOfN(uint16, updateMessageCodec)) ::
         ("acked" | listOfN(uint16, updateMessageCodec))).as[LocalChanges]
 
-    private val remoteChangesCodec: Codec[RemoteChanges] = (
+    val remoteChangesCodec: Codec[RemoteChanges] = (
       ("proposed" | listOfN(uint16, updateMessageCodec)) ::
         ("acked" | listOfN(uint16, updateMessageCodec)) ::
         ("signed" | listOfN(uint16, updateMessageCodec))).as[RemoteChanges]
 
-    private val waitingForRevocationCodec: Codec[WaitingForRevocation] = (
+    val waitingForRevocationCodec: Codec[WaitingForRevocation] = (
       ("nextRemoteCommit" | remoteCommitCodec) ::
         ("sent" | commitSigCodec) ::
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
@@ -380,14 +380,14 @@ object ChannelCodecs extends Logging {
       .typecase(0x02, relayedCodec)
       .typecase(0x04, trampolineRelayedCodec)
 
-    private val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
+    val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
 
-    private val originsMapCodec: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
+    val originsMapCodec: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
       (map: Map[Long, Origin]) => originsListCodec.encode(map.toList),
       (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
     )
 
-    private val commitmentsCodec: Codec[Commitments] = (
+    val commitmentsCodec: Codec[Commitments] = (
       ("channelVersion" | channelVersionCodec) ::
         ("localParams" | localParamsCodec) ::
         ("remoteParams" | remoteParamsCodec) ::
@@ -404,11 +404,11 @@ object ChannelCodecs extends Logging {
         ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
         ("channelId" | bytes32)).as[Commitments]
 
-    private val closingTxProposedCodec: Codec[ClosingTxProposed] = (
+    val closingTxProposedCodec: Codec[ClosingTxProposed] = (
       ("unsignedTx" | txCodec) ::
         ("localClosingSigned" | closingSignedCodec)).as[ClosingTxProposed]
 
-    private val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
+    val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainDelayedOutputTx" | optional(bool, txCodec)) ::
         ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
@@ -416,14 +416,14 @@ object ChannelCodecs extends Logging {
         ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
         ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
-    private val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
+    val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool, txCodec)) ::
         ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
         ("spent" | spentMapCodec)).as[RemoteCommitPublished]
 
-    private val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
+    val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool, txCodec)) ::
         ("mainPenaltyTx" | optional(bool, txCodec)) ::
@@ -454,12 +454,12 @@ object ChannelCodecs extends Logging {
     // All channel_announcement's written prior to supporting unknown trailing fields had the same fixed size, because
     // those are the announcements that *we* created and we always used an empty features field, which was the only
     // variable-length field.
-    private val noUnknownFieldsChannelAnnouncementSizeCodec: Codec[Int] = provide(430)
+    val noUnknownFieldsChannelAnnouncementSizeCodec: Codec[Int] = provide(430)
 
     // We used to ignore unknown trailing fields, and assume that channel_update size was known. This is not true anymore,
     // so we need to tell the codec where to stop, otherwise all the remaining part of the data will be decoded as unknown
     // fields. Fortunately, we can easily tell what size the channel_update will be.
-    private val noUnknownFieldsChannelUpdateSizeCodec: Codec[Int] = peek( // we need to take a peek at a specific byte to know what size the message will be, and then rollback to read the full message
+    val noUnknownFieldsChannelUpdateSizeCodec: Codec[Int] = peek( // we need to take a peek at a specific byte to know what size the message will be, and then rollback to read the full message
       ignore(8 * (64 + 32 + 8 + 4)) ~> // we skip the first fields: signature + chain_hash + short_channel_id + timestamp
         byte // this is the messageFlags byte
     )
