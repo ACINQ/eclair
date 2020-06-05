@@ -393,13 +393,20 @@ object Graph {
       def addEdge(edge: GraphEdge): DirectedGraph = {
         val vertexIn = edge.desc.a
         val vertexOut = edge.desc.b
+        val toAdd = if (edge.capacity <= 0.sat) {
+          val estimatedCapacity = edge.update.htlcMaximumMsat.map(_.truncateToSatoshi + 1.sat)
+            .getOrElse(RoutingHeuristics.CAPACITY_CHANNEL_HIGH.truncateToSatoshi)
+          edge.copy(capacity = estimatedCapacity)
+        } else {
+          edge
+        }
 
         // the graph is allowed to have multiple edges between the same vertices but only one per channel
-        if (containsEdge(edge.desc)) {
-          removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
+        if (containsEdge(toAdd.desc)) {
+          removeEdge(toAdd.desc).addEdge(toAdd) // the recursive call will have the original params
         } else {
           val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
+          DirectedGraph(withVertices.vertices.updated(vertexOut, toAdd +: withVertices.vertices(vertexOut)))
         }
       }
 
