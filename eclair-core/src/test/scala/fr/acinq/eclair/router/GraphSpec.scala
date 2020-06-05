@@ -18,6 +18,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId}
@@ -107,6 +108,16 @@ class GraphSpec extends AnyFunSuite {
     assert(graph.edgesOf(c).size === 1)
     assert(graph.getIncomingEdgesOf(c).size === 2)
     assert(graph.edgeSet().size === 6)
+  }
+
+  test("add edge without capacity") {
+    val edgeAB = makeEdge(1L, a, b, 0 msat, 0)
+    val edgeBC = makeEdge(2L, b, c, 0 msat, 0, capacity = 0 sat, maxHtlc = Some(10010 msat))
+    val edgeCD = makeEdge(3L, c, d, 0 msat, 0, capacity = 0 sat, maxHtlc = None)
+
+    val graph = DirectedGraph(edgeAB).addEdge(edgeBC).addEdge(edgeCD)
+    assert(graph.edgesOf(b).map(_.capacity) === Seq(11 sat))
+    assert(graph.edgesOf(c).map(_.capacity) === Seq(RoutingHeuristics.CAPACITY_CHANNEL_HIGH.truncateToSatoshi))
   }
 
   test("containsEdge should return true if the graph contains that edge, false otherwise") {
