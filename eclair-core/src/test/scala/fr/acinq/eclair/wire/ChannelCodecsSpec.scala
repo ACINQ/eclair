@@ -391,7 +391,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     }
   }
 
-  ignore("nonreg fuzzy migration") {
+  test("nonreg fuzzy migration") {
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File("data_gen.sqlite")}")
 
     val res = sqlite.createStatement().executeQuery("SELECT * FROM data")
