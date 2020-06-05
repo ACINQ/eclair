@@ -393,14 +393,7 @@ object Graph {
       def addEdge(edge: GraphEdge): DirectedGraph = {
         val vertexIn = edge.desc.a
         val vertexOut = edge.desc.b
-        val toAdd = if (edge.capacity <= 0.sat) {
-          val estimatedCapacity = edge.update.htlcMaximumMsat.map(_.truncateToSatoshi + 1.sat)
-            .getOrElse(RoutingHeuristics.CAPACITY_CHANNEL_HIGH.truncateToSatoshi)
-          edge.copy(capacity = estimatedCapacity)
-        } else {
-          edge
-        }
-
+        val toAdd = edge.copy(capacity = DirectedGraph.getCapacity(edge.capacity, edge.update))
         // the graph is allowed to have multiple edges between the same vertices but only one per channel
         if (containsEdge(toAdd.desc)) {
           removeEdge(toAdd.desc).addEdge(toAdd) // the recursive call will have the original params
@@ -551,7 +544,7 @@ object Graph {
         }
 
         def addDescToMap(desc: ChannelDesc, u: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi]): Unit = {
-          mutableMap.put(desc.b, GraphEdge(desc, u, capacity, balance_opt) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
+          mutableMap.put(desc.b, GraphEdge(desc, u, getCapacity(capacity, u), balance_opt) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
           mutableMap.get(desc.a) match {
             case None => mutableMap += desc.a -> List.empty[GraphEdge]
             case _ =>
@@ -562,6 +555,15 @@ object Graph {
       }
 
       def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.a, graphEdge.desc.b, graphEdge.update)
+
+      /** We need a strictly positive capacity, otherwise path-finding will ignore the edge. */
+      def getCapacity(capacity: Satoshi, update: ChannelUpdate): Satoshi = {
+        if (capacity > 0.sat) {
+          capacity
+        } else {
+          update.htlcMaximumMsat.map(_.truncateToSatoshi + 1.sat).getOrElse(RoutingHeuristics.CAPACITY_CHANNEL_HIGH.truncateToSatoshi)
+        }
+      }
     }
 
   }
