@@ -82,28 +82,29 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
   }
 
-  //  test("encode/decode localparams") {
-  //    val o = LocalParams(
-  //      nodeId = randomKey.publicKey,
-  //      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-  //      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-  //      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-  //      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-  //      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-  //      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-  //      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-  //      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-  //      isFunder = Random.nextBoolean(),
-  //      features = TestConstants.Alice.nodeParams.features)
-  //    val encoded = localParamsCodec.encode(o).require
-  //    val decoded = localParamsCodec.decode(encoded).require
-  //    assert(o === decoded.value)
-  //
-  //    // Backwards-compatibility: decode localparams with global features.
-  //    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
-  //    val withGlobalFeaturesDecoded = localParamsCodec.decode(withGlobalFeatures.bits).require.value
-  //    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
-  //  }
+  test("encode/decode localparams legacy") {
+    val codec = Legacy.localParamsCodec
+    val o = LocalParams(
+      nodeId = randomKey.publicKey,
+      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
+      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
+      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
+      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+      isFunder = Random.nextBoolean(),
+      features = TestConstants.Alice.nodeParams.features)
+    val encoded = codec.encode(o).require
+    val decoded = codec.decode(encoded).require
+    assert(o === decoded.value)
+
+    // Backwards-compatibility: decode localparams with global features.
+    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
+    val withGlobalFeaturesDecoded = codec.decode(withGlobalFeatures.bits).require.value
+    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
+  }
 
   test("encode/decode remoteparams") {
     val o = RemoteParams(
@@ -300,16 +301,16 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(data_new === data_new2)
   }
 
-  //  test("tell channel_update length") {
-  //    // with option_channel_htlc_max (136 bytes)
-  //    val u1 = hex"81D6DE1B150A0EAD83B214C879BD55FB3EE82E54F3F38DF601B692B481DFFBBF66582C018B271FBEBF17B0F72FAD1E1B78EF19232621AA2D8055B51D94C5A39543497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D117A190100009000000000000003E8000003E80000000100000003E8000000".bits
-  //    // without option_channel_htlc_max (128 bytes)
-  //    val u2 = hex"A94A853FCDE515F89259E03D10368B1A600B3BF78F6BD5C968469C0816F45EFF7878714DF26B580D5A304334E46816D5AC37B098EBC46C1CE47E37504D052DD643497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D1149290001009000000000000003E8000003E800000001".bits
-  //
-  //    // check that we decode correct length, and that we just take a peek without actually consuming data
-  //    assert(ChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
-  //    assert(ChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
-  //  }
+  test("tell channel_update length") {
+    // with option_channel_htlc_max (136 bytes)
+    val u1 = hex"81D6DE1B150A0EAD83B214C879BD55FB3EE82E54F3F38DF601B692B481DFFBBF66582C018B271FBEBF17B0F72FAD1E1B78EF19232621AA2D8055B51D94C5A39543497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D117A190100009000000000000003E8000003E80000000100000003E8000000".bits
+    // without option_channel_htlc_max (128 bytes)
+    val u2 = hex"A94A853FCDE515F89259E03D10368B1A600B3BF78F6BD5C968469C0816F45EFF7878714DF26B580D5A304334E46816D5AC37B098EBC46C1CE47E37504D052DD643497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D1149290001009000000000000003E8000003E800000001".bits
+
+    // check that we decode correct length, and that we just take a peek without actually consuming data
+    assert(Legacy.noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
+    assert(Legacy.noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
+  }
 
   test("backward compatibility DATA_NORMAL_COMPAT_03_Codec (roundtrip)") {
     val oldbins = List(
