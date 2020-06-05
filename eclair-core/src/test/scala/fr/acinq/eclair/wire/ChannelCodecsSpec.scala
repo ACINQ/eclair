@@ -16,9 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import java.io.{ByteArrayInputStream, File, ObjectInputStream}
 import java.net.InetSocketAddress
-import java.sql.DriverManager
 import java.util.UUID
 
 import akka.actor.ActorSystem
@@ -35,7 +33,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
+import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer}
@@ -84,28 +82,28 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
   }
 
-//  test("encode/decode localparams") {
-//    val o = LocalParams(
-//      nodeId = randomKey.publicKey,
-//      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-//      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-//      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-//      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-//      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-//      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-//      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-//      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-//      isFunder = Random.nextBoolean(),
-//      features = TestConstants.Alice.nodeParams.features)
-//    val encoded = localParamsCodec.encode(o).require
-//    val decoded = localParamsCodec.decode(encoded).require
-//    assert(o === decoded.value)
-//
-//    // Backwards-compatibility: decode localparams with global features.
-//    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
-//    val withGlobalFeaturesDecoded = localParamsCodec.decode(withGlobalFeatures.bits).require.value
-//    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
-//  }
+  //  test("encode/decode localparams") {
+  //    val o = LocalParams(
+  //      nodeId = randomKey.publicKey,
+  //      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
+  //      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
+  //      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
+  //      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+  //      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
+  //      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
+  //      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
+  //      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+  //      isFunder = Random.nextBoolean(),
+  //      features = TestConstants.Alice.nodeParams.features)
+  //    val encoded = localParamsCodec.encode(o).require
+  //    val decoded = localParamsCodec.decode(encoded).require
+  //    assert(o === decoded.value)
+  //
+  //    // Backwards-compatibility: decode localparams with global features.
+  //    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
+  //    val withGlobalFeaturesDecoded = localParamsCodec.decode(withGlobalFeatures.bits).require.value
+  //    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
+  //  }
 
   test("encode/decode remoteparams") {
     val o = RemoteParams(
@@ -391,26 +389,6 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
-    }
-  }
-
-  test("nonreg fuzzy migration") {
-    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File("data_gen.sqlite")}")
-
-    val res = sqlite.createStatement().executeQuery("SELECT * FROM data")
-    while (res.next()) {
-      val scodec = ByteVector(res.getBytes(1)).bits
-      val java = res.getBytes(2)
-      val d_scodec = ChannelCodecs.stateDataCodec.decode(scodec).require.value
-      val bis = new ByteArrayInputStream(java)
-      val ois = new ObjectInputStream(bis)
-      val d_java = ois.readObject().asInstanceOf[HasCommitments]
-      assert(d_scodec == d_java)
-      val scodec2 = ChannelCodecs.stateDataCodec.encode(d_scodec).require
-      assert(scodec != scodec2)
-      assert(scodec2.size % 8 == 0)
-      val d_scodec2 = ChannelCodecs.stateDataCodec.decode(scodec2).require.value
-      assert(d_scodec2 == d_java)
     }
   }
 }
