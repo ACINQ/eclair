@@ -99,20 +99,20 @@ trait Service extends ExtraDirectives with Logging {
               path("updaterelayfee") {
                 withChannelIdentifier { channelIdentifier =>
                   formFields("feeBaseMsat".as[Option[MilliSatoshi]](millisatoshiUnmarshaller), "feeProportionalMillionths".as[Option[Long]]) { (feeBase, feeProportional) =>
-                    complete(eclairApi.updateRelayFee(channelIdentifier, feeBase.get, feeProportional.get))
+                    complete(eclairApi.updateRelayFee(channelIdentifier :: Nil, feeBase.get, feeProportional.get))
                   }
                 }
               } ~
               path("close") {
                 withChannelIdentifier { channelIdentifier =>
                   formFields("scriptPubKey".as[Option[ByteVector]](binaryDataUnmarshaller)) { scriptPubKey_opt =>
-                    complete(eclairApi.close(channelIdentifier, scriptPubKey_opt))
+                    complete(eclairApi.close(channelIdentifier :: Nil, scriptPubKey_opt))
                   }
                 }
               } ~
               path("forceclose") {
                 withChannelIdentifier { channelIdentifier =>
-                  complete(eclairApi.forceClose(channelIdentifier))
+                  complete(eclairApi.forceClose(channelIdentifier :: Nil))
                 }
               } ~
               path("peers") {

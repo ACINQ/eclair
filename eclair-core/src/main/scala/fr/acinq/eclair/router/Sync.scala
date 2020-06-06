@@ -69,27 +69,7 @@ object Sync {
   def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(q)
-    Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
-    Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
-      Kamon.runWithSpan(Kamon.spanBuilder("query-channel-range").start(), finishSpan = true) {
-        log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
-        // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-        val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlockNum, q.numberOfBlocks, _))
-        log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
-        val chunks = Kamon.runWithSpan(Kamon.spanBuilder("split-channel-ids").start(), finishSpan = true) {
-          split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
-        }
-        Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
-        Kamon.runWithSpan(Kamon.spanBuilder("compute-timestamps-checksums").start(), finishSpan = true) {
-          chunks.foreach { chunk =>
-            val reply = buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
-            origin.peerConnection ! reply
-            Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
-            Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
-          }
-        }
-      }
-    }
+    // On Android we ignore queries
   }
 
   def handleReplyChannelRange(d: Data, routerConf: RouterConf, origin: RemoteGossip, r: ReplyChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
@@ -161,37 +141,7 @@ object Sync {
   def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(q)
-
-    Kamon.runWithContextEntry(remoteNodeIdKey, origin.nodeId.toString) {
-      Kamon.runWithSpan(Kamon.spanBuilder("query-short-channel-ids").start(), finishSpan = true) {
-        val flags = q.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
-        var channelCount = 0
-        var updateCount = 0
-        var nodeCount = 0
-
-        processChannelQuery(nodes, channels)(
-          q.shortChannelIds.array,
-          flags,
-          ca => {
-            channelCount = channelCount + 1
-            origin.peerConnection ! ca
-          },
-          cu => {
-            updateCount = updateCount + 1
-            origin.peerConnection ! cu
-          },
-          na => {
-            nodeCount = nodeCount + 1
-            origin.peerConnection ! na
-          }
-        )
-        Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
-        Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
-        Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
-        log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
-        origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
-      }
-    }
+    // On Android we ignore queries (and won't send back ReplyShortChannelIdsEnd)
   }
 
   def handleReplyShortChannelIdsEnd(d: Data, origin: RemoteGossip, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {

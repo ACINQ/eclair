@@ -18,8 +18,7 @@ package fr.acinq.eclair
 
 import java.util.UUID
 
-import akka.actor.ActorSystem
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
@@ -233,20 +232,33 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    eclair.forceClose(Left(ByteVector32.Zeroes))
+    eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
     register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_FORCECLOSE))
 
-    eclair.forceClose(Right(ShortChannelId("568749x2597x0")))
+    eclair.forceClose(Right(ShortChannelId("568749x2597x0")) :: Nil)
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
 
-    eclair.close(Left(ByteVector32.Zeroes), None)
+    eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId("568749x2597x0")) :: Nil)
+    register.expectMsgAllOf(
+      Register.Forward(ByteVector32.Zeroes, CMD_FORCECLOSE),
+      Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE)
+    )
+
+    eclair.close(Left(ByteVector32.Zeroes) :: Nil, None)
     register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_CLOSE(None)))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")), None)
+    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, None)
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(None)))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")), Some(ByteVector.empty))
+    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, Some(ByteVector.empty))
     register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(Some(ByteVector.empty))))
+
+    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Left(ByteVector32.One) :: Right(ShortChannelId("568749x2597x1")) :: Nil, None)
+    register.expectMsgAllOf(
+      Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(None)),
+      Register.Forward(ByteVector32.One, CMD_CLOSE(None)),
+      Register.ForwardShortId(ShortChannelId("568749x2597x1"), CMD_CLOSE(None))
+    )
   }
 
   test("receive should have an optional fallback address and use millisatoshi") { f =>
