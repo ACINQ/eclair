@@ -24,8 +24,9 @@ import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi}
-import fr.acinq.eclair.Features.Wumbo
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi, Script}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo, canUseFeature}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
@@ -157,13 +158,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
         stay
       } else {
-        val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
+        //TODO: hack! if push_msat > 0 then this is a pay2open
+        var channelVersion = ChannelVersion.STANDARD
+        if (canUseFeature(d.localInit.features, d.remoteInit.features, StaticRemoteKey)) channelVersion = channelVersion | ChannelVersion.STATIC_REMOTEKEY
+        if (c.pushMsat > 0.msat) channelVersion = channelVersion | ChannelVersion.ZERO_RESERVE
+        val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis, origin_opt = Some(sender), channelVersion = channelVersion)
         c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
         val temporaryChannelId = randomBytes32
         val channelFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
         val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-        //TODO: hack! if push_msat > 0 then this is a pay2open
-        val channelVersion = if (c.pushMsat > 0.msat) ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE else ChannelVersion.STANDARD
         val localParams1 = if (channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT)) localParams.copy(channelReserve = 0.sat) else localParams
         log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams1")
         channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams1, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelVersion)
@@ -173,7 +176,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       case Event(msg: wire.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
-            val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
+            val channelVersion = canUseFeature(d.localInit.features, d.remoteInit.features, StaticRemoteKey) match {
+              case false => ChannelVersion.STANDARD
+              case true => ChannelVersion.STATIC_REMOTEKEY
+            }
+            val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelVersion)
             val temporaryChannelId = msg.temporaryChannelId
             log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
             channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit)
@@ -349,9 +356,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       s(e)
   }
 
-  def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
-    val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)
-    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingAmount)
+  def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef], channelVersion: ChannelVersion): (ActorRef, LocalParams) = {
+    val (finalScript, localPaymentBasepoint) = channelVersion match {
+      case v if v.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT) =>
+        val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
+        (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
+      case _ =>
+        (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash), None)
+    }
+    val localParams = makeChannelParams(nodeParams, finalScript, localPaymentBasepoint, funder, fundingAmount)
     val channel = spawnChannel(nodeParams, origin_opt)
     (channel, localParams)
   }
@@ -477,13 +490,13 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
     val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingAmount, fundingKeyPath)
+    makeChannelParams(nodeParams, defaultFinalScriptPubkey, localPaymentBasepoint, isFunder, fundingAmount, fundingKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: ByteVector, isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       fundingKeyPath,
@@ -493,8 +506,9 @@ object Peer {
       htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
+      defaultFinalScriptPubKey = defaultFinalScriptPubkey,
+      localPaymentBasepoint = localPaymentBasepoint,
       features = nodeParams.features)
   }
 }
