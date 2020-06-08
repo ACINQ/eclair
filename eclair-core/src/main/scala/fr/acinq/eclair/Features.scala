@@ -164,6 +164,11 @@ object Features {
     val mandatory = 10
   }
 
+  case object StaticRemoteKey extends Feature {
+    val rfcName = "option_static_remotekey"
+    val mandatory = 12
+  }
+
   case object PaymentSecret extends Feature {
     val rfcName = "payment_secret"
     val mandatory = 14
@@ -196,7 +201,8 @@ object Features {
     PaymentSecret,
     BasicMultiPartPayment,
     Wumbo,
-    TrampolinePayment
+    TrampolinePayment,
+    StaticRemoteKey
   )
 
   private val supportedMandatoryFeatures: Set[Feature] = Set(
@@ -235,6 +241,11 @@ object Features {
       case ActivatedFeature(_, Optional) => true
       case ActivatedFeature(feature, Mandatory) => supportedMandatoryFeatures.contains(feature)
     }
+  }
+
+  /** returns true if both have at least optional support */
+  def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {
+    localFeatures.hasFeature(feature) && remoteFeatures.hasFeature(feature)
   }
 
 }

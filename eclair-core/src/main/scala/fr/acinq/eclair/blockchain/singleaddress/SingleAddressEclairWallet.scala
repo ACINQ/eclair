@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.singleaddress
 
-import fr.acinq.bitcoin.{Satoshi, Transaction}
+import fr.acinq.bitcoin.{Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
 import scodec.bits.ByteVector
 
@@ -30,7 +30,9 @@ class SingleAddressEclairWallet(finalAddress: String) extends EclairWallet {
 
   override def getBalance: Future[Satoshi] = Future.successful(Satoshi(0))
 
-  override def getFinalAddress: Future[String] = Future.successful(finalAddress)
+  override def getReceiveAddress: Future[String] = Future.successful(finalAddress)
+
+  override def getReceivePubkey(receiveAddress: Option[String]): Future[Crypto.PublicKey] = ???
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Future.failed(???)
 

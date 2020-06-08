@@ -22,6 +22,7 @@ import java.util.UUID
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
@@ -92,6 +93,13 @@ class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
   null
 }, {
   case x: ShortChannelId => JString(x.toString)
+}))
+
+class ChannelIdentifierSerializer extends CustomKeySerializer[ChannelIdentifier](_ => ( {
+  null
+}, {
+  case Left(x: ByteVector32) => x.toHex
+  case Right(x: ShortChannelId) => x.toString
 }))
 
 class StateSerializer extends CustomSerializer[State](_ => ( {
@@ -270,6 +278,7 @@ object JsonSupport extends Json4sJacksonSupport {
     new CltvExpirySerializer +
     new CltvExpiryDeltaSerializer +
     new ShortChannelIdSerializer +
+    new ChannelIdentifierSerializer +
     new StateSerializer +
     new ShaChainSerializer +
     new PublicKeySerializer +

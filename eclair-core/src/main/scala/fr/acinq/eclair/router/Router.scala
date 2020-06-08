@@ -80,7 +80,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     // On Android we don't watch the funding tx outputs of public channels
 
     log.info(s"computing network stats...")
-    val stats = NetworkStats.computeStats(initChannels.values)
+    val stats = None // we don't use network stats on Android
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
@@ -101,7 +101,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay // ignored on Android
 
     case Event(GetNetworkStats, d: Data) =>
-      sender ! GetNetworkStatsResponse(d.stats)
+      sender ! GetNetworkStatsResponse(None) // we don't use network stats on Android
       stay
 
     case Event(TickBroadcast, d) =>
