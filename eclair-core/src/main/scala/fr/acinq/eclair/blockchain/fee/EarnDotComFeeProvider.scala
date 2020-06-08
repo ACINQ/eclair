@@ -44,6 +44,8 @@ class EarnDotComFeeProvider(readTimeOut: Duration)(implicit http: SttpBackend[Fu
         .send()
       feeRanges = parseFeeRanges(json.unsafeBody)
     } yield extractFeerates(feeRanges)
+
+  override def getName: String = "EarnDotCom"
 }
 
 object EarnDotComFeeProvider {

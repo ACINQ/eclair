@@ -34,6 +34,8 @@ class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: Exe
       _ = append(rate)
     } yield SmoothFeeProvider.smooth(queue)
   }
+
+  override def getName: String = provider.getName
 }
 
 object SmoothFeeProvider {
