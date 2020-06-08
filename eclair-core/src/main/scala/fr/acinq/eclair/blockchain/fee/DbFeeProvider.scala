@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,24 +18,31 @@ package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.eclair.db.FeeratesDb
 
-import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
- * This provider first tries to retrieve the feerates from the a database acting as a cache.
- *
- * If no provider already exists for this provider's name, or if the feerates age exceeds the provided max age,
- * then the provider's actual `getFeeRates` future is called ; subsequent result is saved to the database.
+ * This wrapper retrieves the feerates from the a database for a given provider the first time it's used, then fallbacks
+ * to the wrapped provider's actual `getFeeRates` future.
  */
-class DbFeeProvider(db: FeeratesDb, provider: FeeProvider, maxAgeMillis: Long = 1.day.toMillis)(implicit ec: ExecutionContext) extends FeeProvider {
+class DbFeeProvider(db: FeeratesDb, provider: FeeProvider)(implicit ec: ExecutionContext) extends FeeProvider {
 
-  override def getFeerates: Future[FeeratesPerKB] = db.getFeerates(provider.getName) match {
-    case Some((feeratesInDb, timestamp)) if System.currentTimeMillis() - timestamp <= maxAgeMillis =>
-      Future.successful(feeratesInDb)
-    case _ => provider.getFeerates.flatMap { f =>
-      db.addOrUpdateFeerates(provider.getName, f)
-      Future.successful(f)
+  /** This boolean represents the state of this provider */
+  private var isFirstCall = true
+
+  /** This method should use the database once, and then fallback to the wrapped provider. */
+  override def getFeerates: Future[FeeratesPerKB] = if (isFirstCall) {
+    db.getFeerates(provider.getName) match {
+      case Some(feeratesInDb) =>
+        isFirstCall = false
+        Future.successful(feeratesInDb)
+      case _ => provider.getFeerates.flatMap { f =>
+        isFirstCall = false
+        db.addOrUpdateFeerates(provider.getName, f)
+        Future.successful(f)
+      }
     }
+  } else {
+    provider.getFeerates
   }
 
   override def getName: String = provider.getName

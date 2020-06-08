@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import java.io.Closeable
 
-import fr.acinq.eclair.blockchain.fee.{FeeratesPerKB, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKB
 
 /**
  * This database stores the fee rates retrieved by a [[fr.acinq.eclair.blockchain.fee.FeeProvider]].
@@ -28,10 +28,10 @@ import fr.acinq.eclair.blockchain.fee.{FeeratesPerKB, FeeratesPerKw}
  */
 trait FeeratesDb extends Closeable {
 
-  /** Insert or update the feerates retrieved by a provider represented as an arbitrary String. Also save the timestamp of this update in database. */
+  /** Insert or update the feerates retrieved by a provider represented as an arbitrary String. */
   def addOrUpdateFeerates(providerName: String, feeratesPerKB: FeeratesPerKB): Unit
 
-  /** Return a feerate for a given provider, if it exists, along with the timestamp of this feerate. */
-  def getFeerates(providerName: String): Option[(FeeratesPerKB, Long)]
+  /** Return a feerate for a given provider, if it exists. */
+  def getFeerates(providerName: String): Option[FeeratesPerKB]
 
 }

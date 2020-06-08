@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import java.sql.Connection
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKB
 import fr.acinq.eclair.db.FeeratesDb
 
-import scala.collection.immutable.Queue
 
 class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb {
 
@@ -73,7 +72,7 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb {
     }
   }
 
-  override def getFeerates(providerName: String): Option[(FeeratesPerKB, Long)] = {
+  override def getFeerates(providerName: String): Option[FeeratesPerKB] = {
     using(sqlite.prepareStatement("SELECT rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, timestamp FROM feerates_per_kb WHERE provider_name=?")) { statement =>
       statement.setString(1, providerName)
       val rs = statement.executeQuery()
@@ -85,8 +84,7 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb {
           blocks_12 = rs.getLong("rate_blocks_12"),
           blocks_36 = rs.getLong("rate_blocks_36"),
           blocks_72 = rs.getLong("rate_blocks_72"),
-          blocks_144 = rs.getLong("rate_blocks_144")),
-          rs.getLong("timestamp"))
+          blocks_144 = rs.getLong("rate_blocks_144")))
       } else {
         None
       }
