@@ -71,8 +71,6 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, relayer: ActorR
       r.trampolineAttempts match {
         case Nil =>
           sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(Nil, TrampolineFeesMissing) :: Nil)
-        case _ if !r.paymentRequest.features.allowTrampoline && r.paymentRequest.amount.isEmpty =>
-          sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(Nil, TrampolineLegacyAmountLessInvoice) :: Nil)
         case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
           if (!r.paymentRequest.features.allowTrampoline && r.paymentRequest.amount.isEmpty) {
             // Phoenix special case: we allow paying an amountless payment request over trampoline. It's ok because user has been warned in Phoenix.
