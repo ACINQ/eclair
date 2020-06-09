@@ -311,21 +311,23 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       val updated = relayedTo.map(channelId => (channelId, relayedByChannelId.getOrElse(channelId, Nil) :+ e)).toMap
       relayedByChannelId ++ updated
     }
-    networkFees.map {
-      case (channelId, networkFee) =>
-        val r = relayed.getOrElse(channelId, Nil)
-        val paymentCount = r.length
-        if (paymentCount == 0) {
-          Stats(channelId, 0 sat, 0, 0 sat, networkFee)
-        } else {
-          val avgPaymentAmount = r.map(_.amountOut).sum / paymentCount
-          val relayFee = r.map {
-            case c: ChannelPaymentRelayed => c.amountIn - c.amountOut
-            case t: TrampolinePaymentRelayed => (t.amountIn - t.amountOut) * t.outgoing.count(_.channelId == channelId) / t.outgoing.length
-          }.sum
-          Stats(channelId, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
-        }
-    }.toSeq
+    // Channels opened by our peers won't have any entry in the network_fees table, but we still want to compute stats for them.
+    val allChannels = networkFees.keySet ++ relayed.keySet
+    allChannels.map(channelId => {
+      val networkFee = networkFees.getOrElse(channelId, 0 sat)
+      val r = relayed.getOrElse(channelId, Nil)
+      val paymentCount = r.length
+      if (paymentCount == 0) {
+        Stats(channelId, 0 sat, 0, 0 sat, networkFee)
+      } else {
+        val avgPaymentAmount = r.map(_.amountOut).sum / paymentCount
+        val relayFee = r.map {
+          case c: ChannelPaymentRelayed => c.amountIn - c.amountOut
+          case t: TrampolinePaymentRelayed => (t.amountIn - t.amountOut) * t.outgoing.count(_.channelId == channelId) / t.outgoing.length
+        }.sum
+        Stats(channelId, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
+      }
+    }).toSeq
   }
 
   // used by mobile apps
