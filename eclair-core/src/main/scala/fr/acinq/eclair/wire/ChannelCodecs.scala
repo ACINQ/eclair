@@ -58,14 +58,7 @@ object ChannelCodecs extends Logging {
       ("path" | keyPathCodec) ::
       ("parent" | int64)).as[ExtendedPrivateKey]
 
-  val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
-    discriminator = discriminated[ChannelVersion].by(byte)
-      .typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion])
-    // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
-    ,
-    fallback = provide(ChannelVersion.ZEROES) // README: DO NOT CHANGE THIS !! old channels don't have a channel version
-    // field and don't support additional features which is why all bits are set to 0.
-  )
+  val channelVersionCodec: Codec[ChannelVersion] = bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion]
 
   /**
    * byte-aligned boolean codec
@@ -292,6 +285,15 @@ object ChannelCodecs extends Logging {
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
   object Legacy {
+
+    val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
+      discriminator = discriminated[ChannelVersion].by(byte)
+        .typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion])
+      // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
+      ,
+      fallback = provide(ChannelVersion.ZEROES) // README: DO NOT CHANGE THIS !! old channels don't have a channel version
+      // field and don't support additional features which is why all bits are set to 0.
+    )
 
     def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = (
       ("nodeId" | publicKey) ::
