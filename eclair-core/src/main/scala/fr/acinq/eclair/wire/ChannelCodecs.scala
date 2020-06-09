@@ -26,7 +26,6 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.ChannelCodecs.{localParamsCodec, waitingForRevocationCodec}
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
@@ -44,7 +43,11 @@ object ChannelCodecs extends Logging {
   /**
    * All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
    */
-  def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytes(uint16, codec)
+  def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
+
+  def mapCodec[K, V](keyCodec: Codec[K], valueCodec: Codec[V]): Codec[Map[K, V]] = listOfN(uint16, keyCodec ~ valueCodec).xmap(_.toMap, _.toList)
+
+  def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
@@ -79,7 +82,7 @@ object ChannelCodecs extends Logging {
       ("toSelfDelay" | cltvExpiryDelta) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool8) ::
-      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
+      ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
       ("localPaymentBasepoint" | optional(provide(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams]
 
@@ -102,11 +105,6 @@ object ChannelCodecs extends Logging {
     .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
     .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
 
-  def setCodec[T](codec: Codec[T]): Codec[Set[T]] = Codec[Set[T]](
-    (elems: Set[T]) => listOfN(uint16, codec).encode(elems.toList),
-    (wire: BitVector) => listOfN(uint16, codec).decode(wire).map(_.map(_.toSet))
-  )
-
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
       ("feeratePerKw" | uint32) ::
@@ -122,7 +120,7 @@ object ChannelCodecs extends Logging {
   val inputInfoCodec: Codec[InputInfo] = (
     ("outPoint" | outPointCodec) ::
       ("txOut" | txOutCodec) ::
-      ("redeemScript" | varsizebinarydata)).as[InputInfo]
+      ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
 
   val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
     .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
@@ -195,19 +193,9 @@ object ChannelCodecs extends Logging {
     .typecase(0x03, localCodec)
     .typecase(0x04, trampolineRelayedCodec)
 
-  val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
+  val originsMapCodec: Codec[Map[Long, Origin]] = mapCodec(int64, originCodec)
 
-  val originsMapCodec: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
-    (map: Map[Long, Origin]) => originsListCodec.encode(map.toList),
-    (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
-  )
-
-  val spentListCodec: Codec[List[(OutPoint, ByteVector32)]] = listOfN(uint16, outPointCodec ~ bytes32)
-
-  val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = Codec[Map[OutPoint, ByteVector32]](
-    (map: Map[OutPoint, ByteVector32]) => spentListCodec.encode(map.toList),
-    (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
-  )
+  val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
 
   val commitmentsCodec: Codec[Commitments] = (
     ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
@@ -329,6 +317,29 @@ object ChannelCodecs extends Logging {
         ("toLocal" | millisatoshi) ::
         ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
+    val outPointCodec: Codec[OutPoint] = variableSizeBytes(uint16, bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
+
+    val txOutCodec: Codec[TxOut] = variableSizeBytes(uint16, bytes.xmap(d => TxOut.read(d.toArray), d => TxOut.write(d)))
+
+    val txCodec: Codec[Transaction] = variableSizeBytes(uint16, bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
+
+    val inputInfoCodec: Codec[InputInfo] = (
+      ("outPoint" | outPointCodec) ::
+        ("txOut" | txOutCodec) ::
+        ("redeemScript" | varsizebinarydata)).as[InputInfo]
+
+    val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
+      .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
+      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32)).as[HtlcSuccessTx])
+      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcTimeoutTx])
+      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
+      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
+      .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
+      .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimDelayedOutputTx])
+      .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
+      .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
+      .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])
+
     // this is a backward compatible codec (we used to store the sig as DER encoded), now we store it as 64-bytes
     val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
       (value: ByteVector64) => bytes(64).encode(value),
@@ -390,6 +401,13 @@ object ChannelCodecs extends Logging {
     val originsMapCodec: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
       (map: Map[Long, Origin]) => originsListCodec.encode(map.toList),
       (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
+    )
+
+    val spentListCodec: Codec[List[(OutPoint, ByteVector32)]] = listOfN(uint16, outPointCodec ~ bytes32)
+
+    val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = Codec[Map[OutPoint, ByteVector32]](
+      (map: Map[OutPoint, ByteVector32]) => spentListCodec.encode(map.toList),
+      (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
     )
 
     val commitmentsCodec: Codec[Commitments] = (
