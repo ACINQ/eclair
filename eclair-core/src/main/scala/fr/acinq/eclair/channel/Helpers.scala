@@ -45,6 +45,37 @@ import scala.util.{Failure, Success, Try}
 object Helpers {
 
   /**
+   * When we receive the preimage for an HTLC and want to fulfill it but the upstream peer stops responding, we want to
+   * avoid letting its HTLC-timeout transaction become enforceable on-chain (otherwise there is a race condition between
+   * our HTLC-success and their HTLC-timeout).
+   * We will close the channel when the HTLC-timeout will happen in less than N blocks, where we scale N linearly depending
+   * on the total amount at risk (there may be multiple HTLCs in that state).
+   *
+   * @param min           if incoming HTLCs expire in less than `min`, we close the channel regardless of the amount at risk.
+   * @param max           incoming HTLCs that expire in more than `max` are ignored.
+   * @param deltaPerBlock linear scaling factor for the safety window.
+   */
+  case class FulfillSafetyBeforeTimeout(min: CltvExpiryDelta, max: CltvExpiryDelta, deltaPerBlock: MilliSatoshi) {
+    require(min >= CltvExpiryDelta(3), "at least 3 blocks are necessary to enforce a fulfill safety window")
+    require(min <= max, "fulfill safety minimum must be lower than maximum")
+
+    /**
+     * @param htlcsAtRisk all htlcs in a given channel that expire soon, for which we know the preimage but couldn't
+     *                    remove from the commitment (most likely because our remote is malicious or unresponsive).
+     * @return true if the funds at risk are too great and we should close the channel to safely redeem HTLCs on-chain.
+     */
+    def shouldClose(blockHeight: Long, htlcsAtRisk: Set[UpdateAddHtlc]): Boolean = {
+      htlcsAtRisk.toSeq.filter(_.cltvExpiry.toLong <= blockHeight + max.toInt).sortBy(_.cltvExpiry).foldLeft((0 msat, false)) {
+        case ((amountAtRisk, true), _) => (amountAtRisk, true)
+        case ((amountAtRisk, false), htlc) =>
+          val amount2 = amountAtRisk + htlc.amountMsat
+          val shouldClose = deltaPerBlock * (htlc.cltvExpiry.toLong - blockHeight - min.toInt).max(0) < amount2
+          (amount2, shouldClose)
+      }._2
+    }
+  }
+
+  /**
    * Depending on the state, returns the current temporaryChannelId or channelId
    *
    * @return the long identifier of the channel
@@ -346,7 +377,6 @@ object Helpers {
         false
     }
   }
-
 
   object Closing {
 

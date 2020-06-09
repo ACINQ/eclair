@@ -426,8 +426,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // We simulate a pending fulfill on that HTLC but not relayed.
     // When it is close to expiring upstream, we should close the channel.
+    assert(bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeout.min.toInt < 9 && 9 < bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeout.max.toInt)
     sender.send(commandBuffer, CommandBuffer.CommandSend(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
+    sender.send(bob, CurrentBlockCount(htlc.cltvExpiry.toLong - 9))
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -461,7 +462,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // We simulate a pending failure on that HTLC.
     // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
     sender.send(commandBuffer, CommandBuffer.CommandSend(htlc.channelId, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0)))))
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeout.min).toLong))
 
     bob2blockchain.expectNoMsg(250 millis)
     alice2blockchain.expectNoMsg(250 millis)

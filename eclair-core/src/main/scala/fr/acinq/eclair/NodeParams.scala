@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.Helpers.FulfillSafetyBeforeTimeout
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.router.Router.RouterConf
@@ -54,7 +55,7 @@ case class NodeParams(keyManager: KeyManager,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: CltvExpiryDelta,
-                      fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
+                      fulfillSafetyBeforeTimeout: FulfillSafetyBeforeTimeout,
                       htlcMinimum: MilliSatoshi,
                       toRemoteDelayBlocks: CltvExpiryDelta,
                       maxToLocalDelayBlocks: CltvExpiryDelta,
@@ -140,7 +141,9 @@ object NodeParams {
       "update-fee_min-diff-ratio" -> "on-chain-fees.update-fee-min-diff-ratio",
       // v0.3.3
       "global-features" -> "features",
-      "local-features" -> "features"
+      "local-features" -> "features",
+      // v0.4.1
+      "fulfill-safety-before-timeout-blocks" -> "fulfill-safety-before-timeout",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -177,8 +180,11 @@ object NodeParams {
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
     val expiryDeltaBlocks = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
-    val fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
-    require(fulfillSafetyBeforeTimeoutBlocks < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks")
+    val fulfillSafetyBeforeTimeout = FulfillSafetyBeforeTimeout(
+      CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout.min-blocks")),
+      CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout.max-blocks")),
+      config.getLong("fulfill-safety-before-timeout.delta-per-block-mbtc").mbtc.toMilliSatoshi
+    )
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
@@ -250,7 +256,7 @@ object NodeParams {
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = expiryDeltaBlocks,
-      fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
+      fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
       htlcMinimum = htlcMinimum,
       toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
