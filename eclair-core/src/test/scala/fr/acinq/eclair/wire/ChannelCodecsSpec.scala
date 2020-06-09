@@ -39,7 +39,7 @@ import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
-import scodec.{Attempt, DecodeResult}
+import scodec.{Attempt, Codec, DecodeResult}
 
 import scala.concurrent.duration._
 import scala.io.Source
@@ -85,8 +85,13 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
   }
 
-  test("encode/decode localparams legacy") {
-    val codec = localParamsCodec(ChannelVersion.ZEROES)
+  test("encode/decode localparams") {
+    def roundtrip(localParams: LocalParams, codec: Codec[LocalParams]) = {
+      val encoded = codec.encode(localParams).require
+      val decoded = codec.decode(encoded).require
+      assert(localParams === decoded.value)
+    }
+
     val o = LocalParams(
       nodeId = randomKey.publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
@@ -96,37 +101,23 @@ class ChannelCodecsSpec extends AnyFunSuite {
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       staticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
-      features = TestConstants.Alice.nodeParams.features)
-    val encoded = codec.encode(o).require
-    val decoded = codec.decode(encoded).require.value
-    assert(decoded.staticPaymentBasepoint.isEmpty)
-    assert(o === decoded)
+      features = Features(randomBytes(256)))
+    val o1 = o.copy(staticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
 
+    roundtrip(o, Legacy.localParamsCodec(ChannelVersion.ZEROES))
+    roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
+    roundtrip(o1, Legacy.localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
+    roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
+  }
+
+  test("backward compatibility local params with global features") {
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
     val withGlobalFeaturesDecoded = Legacy.localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
     assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
-
-    val o1 = LocalParams(
-      nodeId = randomKey.publicKey,
-      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      staticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
-      isFunder = Random.nextBoolean(),
-      features = Features(randomBytes(256)))
-    val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
-    val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require.value
-    assert(decoded1.staticPaymentBasepoint.isDefined)
-    assert(o1 === decoded1)
   }
 
   test("encode/decode remoteparams") {
@@ -233,15 +224,13 @@ class ChannelCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode origin") {
-    val codec = Legacy.originCodec
     val id = UUID.randomUUID()
-    assert(codec.decodeValue(codec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
+    assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
     val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
-    assert(codec.decodeValue(hex"0001 0123456789abcdef0123456789abcdef".bits).require === Local(ZERO_UUID, None))
     val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
-    assert(codec.decodeValue(codec.encode(relayed).require).require === relayed)
+    assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
     val trampolineRelayed = TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None)
-    assert(codec.decodeValue(codec.encode(trampolineRelayed).require).require === trampolineRelayed)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayed).require).require === trampolineRelayed)
   }
 
   test("encode/decode map of origins") {
@@ -316,7 +305,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(System.currentTimeMillis.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
-    // data should now be encoded under the new format, with version=0 and type=8
+    // data should now be encoded under the new format
     assert(bin_new.startsWith(hex"010020"))
     // now let's decode it again
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
@@ -359,7 +348,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
-      // make sure that encoding used the new 0x10 codec
+      // make sure that encoding used the new codec
       assert(newbin.startsWith(hex"010022"))
       // make sure that roundtrip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
