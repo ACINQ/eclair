@@ -22,9 +22,10 @@ import java.util.concurrent.atomic.AtomicLong
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.channel.Helpers.FulfillSafetyBeforeTimeout
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -91,7 +92,7 @@ object TestConstants {
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = CltvExpiryDelta(144),
-      fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
+      fulfillSafetyBeforeTimeout = FulfillSafetyBeforeTimeout(CltvExpiryDelta(6), CltvExpiryDelta(12), 10000000 msat),
       htlcMinimum = 0 msat,
       minDepthBlocks = 3,
       toRemoteDelayBlocks = CltvExpiryDelta(144),
@@ -173,7 +174,7 @@ object TestConstants {
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = CltvExpiryDelta(144),
-      fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
+      fulfillSafetyBeforeTimeout = FulfillSafetyBeforeTimeout(CltvExpiryDelta(6), CltvExpiryDelta(12), 10000000 msat),
       htlcMinimum = 1000 msat,
       minDepthBlocks = 3,
       toRemoteDelayBlocks = CltvExpiryDelta(144),

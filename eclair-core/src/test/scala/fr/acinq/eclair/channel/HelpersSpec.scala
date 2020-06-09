@@ -17,13 +17,13 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{Btc, Transaction}
-import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
-import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel.Helpers.{Closing, FulfillSafetyBeforeTimeout}
+import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 class HelpersSpec extends AnyFunSuite {
@@ -45,6 +45,59 @@ class HelpersSpec extends AnyFunSuite {
     Helpers.nextChannelUpdateRefresh((System.currentTimeMillis.milliseconds - 9.days).toSeconds).toSeconds should equal(24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh((System.currentTimeMillis.milliseconds - 3.days).toSeconds).toSeconds should equal(7 * 24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh(System.currentTimeMillis.milliseconds.toSeconds).toSeconds should equal(10 * 24 * 3600L +- 100)
+  }
+
+  test("verify fulfill safety before upstream timeout") {
+    val channelId = randomBytes32
+    val defaultConf = FulfillSafetyBeforeTimeout(CltvExpiryDelta(6), CltvExpiryDelta(12), 10000 msat)
+
+    {
+      // Single, small HTLC.
+      val htlcs = Set(UpdateAddHtlc(channelId, 3, 5000 msat, randomBytes32, CltvExpiry(115), TestConstants.emptyOnionPacket))
+      Seq(105, 106, 107, 108).foreach(block => assert(!defaultConf.shouldClose(block, htlcs)))
+      Seq(109, 110, 111, 112, 113, 114, 115).foreach(block => assert(defaultConf.shouldClose(block, htlcs)))
+    }
+    {
+      // Multiple small HTLCs.
+      val htlcs = Set(
+        UpdateAddHtlc(channelId, 3, 3000 msat, randomBytes32, CltvExpiry(115), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 5, 2000 msat, randomBytes32, CltvExpiry(115), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 6, 1000 msat, randomBytes32, CltvExpiry(116), TestConstants.emptyOnionPacket),
+      )
+      Seq(105, 106, 107, 108).foreach(block => assert(!defaultConf.shouldClose(block, htlcs)))
+      Seq(109, 110, 111, 112, 113, 114, 115, 116).foreach(block => assert(defaultConf.shouldClose(block, htlcs)))
+    }
+    {
+      // Single-value configuration.
+      val conf = defaultConf.copy(min = CltvExpiryDelta(6), max = CltvExpiryDelta(6))
+      val htlcs = Set(
+        UpdateAddHtlc(channelId, 3, 3000 msat, randomBytes32, CltvExpiry(115), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 5, 2000 msat, randomBytes32, CltvExpiry(116), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 6, 1000 msat, randomBytes32, CltvExpiry(117), TestConstants.emptyOnionPacket),
+      )
+      Seq(105, 106, 107, 108).foreach(block => assert(!conf.shouldClose(block, htlcs)))
+      Seq(109, 110, 111, 112, 113, 114, 115, 116).foreach(block => assert(conf.shouldClose(block, htlcs)))
+    }
+    {
+      // Multiple HTLCs in fulfill window.
+      val htlcs = Set(
+        UpdateAddHtlc(channelId, 3, 4000 msat, randomBytes32, CltvExpiry(119), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 5, 17000 msat, randomBytes32, CltvExpiry(119), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 9, 11000 msat, randomBytes32, CltvExpiry(120), TestConstants.emptyOnionPacket),
+      )
+      Seq(105, 106, 107, 108, 109, 110).foreach(block => assert(!defaultConf.shouldClose(block, htlcs)))
+      Seq(111, 112, 113, 114, 115, 116, 117, 118, 119, 120).foreach(block => assert(defaultConf.shouldClose(block, htlcs)))
+    }
+    {
+      // HTLCs outside of fulfill window.
+      val htlcs = Set(
+        UpdateAddHtlc(channelId, 3, 9000 msat, randomBytes32, CltvExpiry(120), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 5, 8000 msat, randomBytes32, CltvExpiry(121), TestConstants.emptyOnionPacket),
+        UpdateAddHtlc(channelId, 9, 500000 msat, randomBytes32, CltvExpiry(150), TestConstants.emptyOnionPacket),
+      )
+      Seq(112, 113).foreach(block => assert(!defaultConf.shouldClose(block, htlcs)))
+      Seq(114, 115).foreach(block => assert(defaultConf.shouldClose(block, htlcs)))
+    }
   }
 
   test("tell closing type") {

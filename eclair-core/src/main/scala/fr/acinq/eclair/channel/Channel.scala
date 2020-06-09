@@ -36,7 +36,6 @@ import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
-import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
@@ -810,7 +809,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
       handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-      else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
+        else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
         handleCommandError(InvalidFinalScript(d.channelId), c)
       else {
         val shutdown = Shutdown(d.channelId, localScriptPubKey)
@@ -1921,26 +1920,21 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def handleNewBlock(c: CurrentBlockCount, d: HasCommitments) = {
     val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockCount)
-    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeoutBlocks)
+    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeout.max)
     if (timedOutOutgoing.nonEmpty) {
       // Downstream timed out.
       handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))
     } else if (almostTimedOutIncoming.nonEmpty) {
-      // Upstream is close to timing out.
+      // Upstream is close to timing out, we need to test if we have funds at risk: htlcs for which we know the preimage
+      // that are still in our commitment (upstream will try to timeout on-chain).
       val relayedFulfills = d.commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
-      val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
-      if (offendingRelayedHtlcs.nonEmpty) {
-        handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))
+      // There might also be pending fulfill commands that we haven't relayed yet.
+      val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case CMD_FULFILL_HTLC(id, _, _) => id }.toSet
+      val htlcsAtRisk = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id) || pendingRelayFulfills.contains(htlc.id))
+      if (nodeParams.fulfillSafetyBeforeTimeout.shouldClose(c.blockCount, htlcsAtRisk)) {
+        handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, htlcsAtRisk), d, Some(c))
       } else {
-        // There might be pending fulfill commands that we haven't relayed yet.
-        // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
-        val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case CMD_FULFILL_HTLC(id, r, _) => id }
-        val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
-        if (offendingPendingRelayFulfills.nonEmpty) {
-          handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
-        } else {
-          stay
-        }
+        stay
       }
     } else {
       stay
