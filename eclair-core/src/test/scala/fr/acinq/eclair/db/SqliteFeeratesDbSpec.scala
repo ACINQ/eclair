@@ -41,7 +41,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
       blocks_72 = 50000,
       blocks_144 = 20000)
 
-    db.addOrUpdateFeerates("foobar", feerate)
-    assert(db.getFeerates("foobar").get == feerate)
+    db.addOrUpdateFeerates(feerate)
+    assert(db.getFeerates().get == feerate)
   }
 }

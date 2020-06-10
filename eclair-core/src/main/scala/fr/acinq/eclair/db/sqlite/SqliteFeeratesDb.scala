@@ -36,16 +36,14 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb {
         statement.executeUpdate(
           """
             |CREATE TABLE IF NOT EXISTS feerates_per_kb (
-            |provider_name TEXT NOT NULL PRIMARY KEY,
             |rate_block_1 INTEGER NOT NULL, rate_blocks_2 INTEGER NOT NULL, rate_blocks_6 INTEGER NOT NULL, rate_blocks_12 INTEGER NOT NULL, rate_blocks_36 INTEGER NOT NULL, rate_blocks_72 INTEGER NOT NULL, rate_blocks_144 INTEGER NOT NULL,
             |timestamp INTEGER NOT NULL)""".stripMargin)
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
   }
 
-  override def addOrUpdateFeerates(providerName: String, feeratesPerKB: FeeratesPerKB): Unit = {
-    require(!providerName.isBlank, s"feerates provider name must not be empty")
-    using(sqlite.prepareStatement("UPDATE feerates_per_kb SET rate_block_1=?, rate_blocks_2=?, rate_blocks_6=?, rate_blocks_12=?, rate_blocks_36=?, rate_blocks_72=?, rate_blocks_144=?, timestamp=? WHERE provider_name=?")) { update =>
+  override def addOrUpdateFeerates(feeratesPerKB: FeeratesPerKB): Unit = {
+    using(sqlite.prepareStatement("UPDATE feerates_per_kb SET rate_block_1=?, rate_blocks_2=?, rate_blocks_6=?, rate_blocks_12=?, rate_blocks_36=?, rate_blocks_72=?, rate_blocks_144=?, timestamp=?")) { update =>
       update.setLong(1, feeratesPerKB.block_1)
       update.setLong(2, feeratesPerKB.blocks_2)
       update.setLong(3, feeratesPerKB.blocks_6)
@@ -54,27 +52,24 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb {
       update.setLong(6, feeratesPerKB.blocks_72)
       update.setLong(7, feeratesPerKB.blocks_144)
       update.setLong(8, System.currentTimeMillis())
-      update.setString(9, providerName)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO feerates_per_kb VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { insert =>
-          insert.setString(1, providerName)
-          insert.setLong(2, feeratesPerKB.block_1)
-          insert.setLong(3, feeratesPerKB.blocks_2)
-          insert.setLong(4, feeratesPerKB.blocks_6)
-          insert.setLong(5, feeratesPerKB.blocks_12)
-          insert.setLong(6, feeratesPerKB.blocks_36)
-          insert.setLong(7, feeratesPerKB.blocks_72)
-          insert.setLong(8, feeratesPerKB.blocks_144)
-          insert.setLong(9, System.currentTimeMillis())
+        using(sqlite.prepareStatement("INSERT INTO feerates_per_kb VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { insert =>
+          insert.setLong(1, feeratesPerKB.block_1)
+          insert.setLong(2, feeratesPerKB.blocks_2)
+          insert.setLong(3, feeratesPerKB.blocks_6)
+          insert.setLong(4, feeratesPerKB.blocks_12)
+          insert.setLong(5, feeratesPerKB.blocks_36)
+          insert.setLong(6, feeratesPerKB.blocks_72)
+          insert.setLong(7, feeratesPerKB.blocks_144)
+          insert.setLong(8, System.currentTimeMillis())
           insert.executeUpdate()
         }
       }
     }
   }
 
-  override def getFeerates(providerName: String): Option[FeeratesPerKB] = {
-    using(sqlite.prepareStatement("SELECT rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, timestamp FROM feerates_per_kb WHERE provider_name=?")) { statement =>
-      statement.setString(1, providerName)
+  override def getFeerates(): Option[FeeratesPerKB] = {
+    using(sqlite.prepareStatement("SELECT rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144 FROM feerates_per_kb")) { statement =>
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(FeeratesPerKB(

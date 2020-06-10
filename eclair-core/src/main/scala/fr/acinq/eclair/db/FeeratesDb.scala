@@ -22,16 +22,13 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKB
 
 /**
  * This database stores the fee rates retrieved by a [[fr.acinq.eclair.blockchain.fee.FeeProvider]].
- *
- * It links a provider (represented as an arbitrary String) with a fee rates per kb (see [[fr.acinq.eclair.blockchain.fee.FeeratesPerKB]]).
- * Fee rates per kw is computed from the fee rates per kb.
  */
 trait FeeratesDb extends Closeable {
 
-  /** Insert or update the feerates retrieved by a provider represented as an arbitrary String. */
-  def addOrUpdateFeerates(providerName: String, feeratesPerKB: FeeratesPerKB): Unit
+  /** Insert or update the feerates into the feerates database. */
+  def addOrUpdateFeerates(feeratesPerKB: FeeratesPerKB): Unit
 
-  /** Return a feerate for a given provider, if it exists. */
-  def getFeerates(providerName: String): Option[FeeratesPerKB]
+  /** Return the (optional) feerates from the feerates database. */
+  def getFeerates(): Option[FeeratesPerKB]
 
 }

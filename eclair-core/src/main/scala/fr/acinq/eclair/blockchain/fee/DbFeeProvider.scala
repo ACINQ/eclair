@@ -20,31 +20,14 @@ import fr.acinq.eclair.db.FeeratesDb
 
 import scala.concurrent.{ExecutionContext, Future}
 
-/**
- * This wrapper retrieves the feerates from the database for a given provider the first time it's used, then fallbacks
- * to the wrapped provider's actual `getFeeRates` future.
- */
+
 class DbFeeProvider(db: FeeratesDb, provider: FeeProvider)(implicit ec: ExecutionContext) extends FeeProvider {
 
-  /** This boolean represents the state of this provider */
-  private var isFirstCall = true
-
-  /** This method should use the database once, and then fallback to the wrapped provider. */
-  override def getFeerates: Future[FeeratesPerKB] = if (isFirstCall) {
-    db.getFeerates(provider.getName) match {
-      case Some(feeratesInDb) =>
-        isFirstCall = false
-        Future.successful(feeratesInDb)
-      case _ => provider.getFeerates.flatMap { f =>
-        isFirstCall = false
-        db.addOrUpdateFeerates(provider.getName, f)
-        Future.successful(f)
-      }
+  /** This method retrieves feerates from the provider, and store results in the database */
+  override def getFeerates: Future[FeeratesPerKB] =
+    provider.getFeerates map { feerates =>
+      db.addOrUpdateFeerates(feerates)
+      feerates
     }
-  } else {
-    provider.getFeerates
-  }
-
-  override def getName: String = provider.getName
 
 }

@@ -29,33 +29,14 @@ import scala.concurrent.{Await, Future}
 class DbFeeProviderSpec extends AnyFunSuite {
 
   val feerates1: FeeratesPerKB = FeeratesPerKB(100, 200, 300, 400, 500, 600, 700)
-  val feerates2: FeeratesPerKB = FeeratesPerKB(200, 300, 400, 500, 600, 700, 800)
 
-  test("get feerates from db on first call only") {
-    // init db
+  test("db fee provider saves feerates in database") {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteFeeratesDb(sqlite)
-    db.addOrUpdateFeerates("foo", feerates1)
+    val provider = new DbFeeProvider(db, new ConstantFeeProvider(feerates1))
 
-    val provider = new DbFeeProvider(db, new ConstantFeeProvider(feerates2) {
-      override def getName: String = "foo"
-    })
-
+    assert(db.getFeerates().isEmpty)
     assert(Await.result(provider.getFeerates, Timeout(30 seconds).duration) == feerates1)
-    assert(Await.result(provider.getFeerates, Timeout(30 seconds).duration) == feerates2)
-  }
-
-  test("fallback when feerates db is empty") {
-    // init db
-    val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteFeeratesDb(sqlite)
-    val provider = new DbFeeProvider(db, new ConstantFeeProvider(feerates1) {
-      override def getName: String = "foo"
-    })
-
-    // first db empty, then should be filled with the result from the provider
-    assert(db.getFeerates("foo").isEmpty)
-    assert(Await.result(provider.getFeerates, Timeout(30 seconds).duration) == feerates1)
-    assert(db.getFeerates("foo").get == feerates1)
+    assert(db.getFeerates().get == feerates1)
   }
 }

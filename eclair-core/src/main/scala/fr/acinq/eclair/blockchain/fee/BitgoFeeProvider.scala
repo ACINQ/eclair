@@ -46,7 +46,6 @@ class BitgoFeeProvider(chainHash: ByteVector32, readTimeOut: Duration)(implicit 
       feeRanges = parseFeeRanges(res.unsafeBody)
     } yield extractFeerates(feeRanges)
 
-  override def getName: String = "Bitgo"
 }
 
 object BitgoFeeProvider {

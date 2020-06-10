@@ -25,5 +25,4 @@ class ConstantFeeProvider(feerates: FeeratesPerKB) extends FeeProvider {
 
   override def getFeerates: Future[FeeratesPerKB] = Future.successful(feerates)
 
-  override def getName: String = "ConstantFeeProvider"
 }
