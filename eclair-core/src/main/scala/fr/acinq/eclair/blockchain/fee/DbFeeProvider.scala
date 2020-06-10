@@ -21,7 +21,7 @@ import fr.acinq.eclair.db.FeeratesDb
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
- * This wrapper retrieves the feerates from the a database for a given provider the first time it's used, then fallbacks
+ * This wrapper retrieves the feerates from the database for a given provider the first time it's used, then fallbacks
  * to the wrapped provider's actual `getFeeRates` future.
  */
 class DbFeeProvider(db: FeeratesDb, provider: FeeProvider)(implicit ec: ExecutionContext) extends FeeProvider {
