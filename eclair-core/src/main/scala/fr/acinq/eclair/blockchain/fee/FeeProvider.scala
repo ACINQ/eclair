@@ -24,6 +24,7 @@ import scala.concurrent.Future
  * Created by PM on 09/07/2017.
  */
 trait FeeProvider {
+  def getName: String = toString
   def getFeerates: Future[FeeratesPerKB]
 }
 
