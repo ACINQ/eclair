@@ -29,6 +29,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
+import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router.{Hop, NodeHop, Route, RouteParams}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
@@ -81,16 +82,28 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
 
     case pf: PaymentFailed => pending.get(pf.id).foreach(pp => {
       val decryptedFailures = pf.failures.collect { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(_, f)) => f }
-      val canRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
-      pp.remainingAttempts match {
-        case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts if canRetry =>
-          log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
-          sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta)
-          context become main(pending + (pf.id -> pp.copy(remainingAttempts = remainingAttempts)))
-        case _ =>
-          pp.sender ! pf
-          context.system.eventStream.publish(pf)
-          context become main(pending - pf.id)
+      val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
+      if (shouldRetry) {
+        pp.remainingAttempts match {
+          case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
+            log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
+            sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta)
+            context become main(pending + (pf.id -> pp.copy(remainingAttempts = remainingAttempts)))
+          case Nil =>
+            log.info("trampoline node couldn't find a route after all retries")
+            val trampolineRoute = Seq(
+              NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
+              NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
+            )
+            val localFailure = pf.copy(failures = Seq(LocalFailure(trampolineRoute, RouteNotFound)))
+            pp.sender ! localFailure
+            context.system.eventStream.publish(localFailure)
+            context become main(pending - pf.id)
+        }
+      } else {
+        pp.sender ! pf
+        context.system.eventStream.publish(pf)
+        context become main(pending - pf.id)
       }
     })
 
