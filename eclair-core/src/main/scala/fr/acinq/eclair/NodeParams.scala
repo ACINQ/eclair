@@ -131,6 +131,15 @@ object NodeParams {
     }
   }
 
+  def chainFromHash(chainHash: ByteVector32): String = {
+    chainHash match {
+      case Block.LivenetGenesisBlock.hash => "mainnet"
+      case Block.TestnetGenesisBlock.hash => "testnet"
+      case Block.RegtestGenesisBlock.hash => "regtest"
+      case invalid => throw new RuntimeException(s"invalid chainHash '${invalid.toHex}'")
+    }
+  }
+
   def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
