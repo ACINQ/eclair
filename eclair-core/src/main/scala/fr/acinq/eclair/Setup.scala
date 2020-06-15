@@ -279,7 +279,7 @@ class Setup(datadir: File,
           implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
-      _ = wallet.getFinalAddress.map(address => logger.info(s"initial wallet address=$address"))
+      _ = wallet.getReceiveAddress.map(address => logger.info(s"initial wallet address=$address"))
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
       backupHandler = if (config.getBoolean("enable-db-backup")) {

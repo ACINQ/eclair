@@ -38,13 +38,12 @@ import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, SendPaymentRequest}
 import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
-import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
+import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import scodec.bits.HexStringSyntax
 
 import scala.concurrent.duration._
 
@@ -487,38 +486,36 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment succeeded to a channel with fees=0") { routerFixture =>
-    import fr.acinq.eclair.randomKey
     import routerFixture._
 
-    // the network will be a --(1)--> b ---(2)--> c --(3)--> d  and e --(4)--> f (we are a) and b -> g has fees=0
-    //                                 \
-    //                                  \--(5)--> g
-    val (priv_g, priv_funding_g) = (randomKey, randomKey)
-    val (g, funding_g) = (priv_g.publicKey, priv_funding_g.publicKey)
-    val ann_g = makeNodeAnnouncement(priv_g, "node-G", Color(-30, 10, -50), Nil, TestConstants.Bob.nodeParams.features)
-    val channelId_bg = ShortChannelId(420000, 5, 0)
-    val chan_bg = channelAnnouncement(channelId_bg, priv_b, priv_g, priv_funding_b, priv_funding_g)
-    val channelUpdate_bg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, g, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
-    val channelUpdate_gb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, b, channelId_bg, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
-    assert(Router.getDesc(channelUpdate_bg, chan_bg) === ChannelDesc(chan_bg.shortChannelId, priv_b.publicKey, priv_g.publicKey))
+    // the network will be a --(1)--> b ---(2)--> c --(3)--> d
+    //                     |          |
+    //                     |          +---(100)---+
+    //                     |                      | and b -> h has fees = 0
+    //                     +---(5)--> g ---(6)--> h
+    // and e --(4)--> f (we are a)
+    val channelId_bh = ShortChannelId(420000, 100, 0)
+    val chan_bh = channelAnnouncement(channelId_bh, priv_b, priv_h, priv_funding_b, priv_funding_h)
+    val channelUpdate_bh = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, h, channelId_bh, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 0 msat, feeProportionalMillionths = 0, htlcMaximumMsat = 500000000 msat)
+    val channelUpdate_hb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, b, channelId_bh, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
+    assert(Router.getDesc(channelUpdate_bh, chan_bh) === ChannelDesc(channelId_bh, priv_b.publicKey, priv_h.publicKey))
     val peerConnection = TestProbe()
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bg)
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann_g)
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bg)
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_gb)
-    watcher.expectMsg(ValidateRequest(chan_bg))
-    watcher.send(router, ValidateResult(chan_bg, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_g)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bh)
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bh)
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_hb)
+    watcher.expectMsg(ValidateRequest(chan_bh))
+    watcher.send(router, ValidateResult(chan_bh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchSpentBasic]
 
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    // we send a payment to G
-    val request = SendPayment(g, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 5)
+    // we send a payment to H
+    val request = SendPayment(h, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 5)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsgType[RouteRequest]
 
-    // the route will be A -> B -> G where B -> G has a channel_update with fees=0
+    // the route will be A -> B -> H where B -> H has a channel_update with fees=0
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     routerForwarder.forward(router)
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -528,9 +525,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val PaymentSent(_, _, paymentOK.paymentPreimage, finalAmount, _, PartialPayment(_, request.finalPayload.amount, fee, ByteVector32.Zeroes, _, _) :: Nil) = eventListener.expectMsgType[PaymentSent]
     assert(finalAmount === defaultAmountMsat)
 
-    // during the route computation the fees were treated as if they were 1msat but when sending the onion we actually put zero
     // NB: A -> B doesn't pay fees because it's our direct neighbor
-    // NB: B -> G doesn't asks for fees at all
+    // NB: B -> H doesn't asks for fees at all
     assert(fee === 0.msat)
     assert(paymentOK.recipientAmount === request.finalPayload.amount)
   }

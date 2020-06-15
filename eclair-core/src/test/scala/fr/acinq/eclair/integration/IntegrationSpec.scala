@@ -50,7 +50,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.{State => _}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel, RouteParams, NORMAL => _, State => _}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire._
@@ -62,7 +62,6 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -120,13 +119,18 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     "eclair.max-funding-satoshis" -> 500000000
   ).asJava))
 
+  val withStaticRemoteKey = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
+    s"eclair.features.${StaticRemoteKey.rfcName}" -> "optional"
+  ).asJava))
+
+
   implicit val formats = DefaultFormats
 
-  override def beforeAll(): Unit = {
+  override def beforeAll: Unit = {
     startBitcoind()
   }
 
-  override def afterAll(): Unit = {
+  override def afterAll: Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
     logger.info(s"stopping bitcoind")
     stopBitcoind()
@@ -157,7 +161,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     nodes = nodes + (name -> kit)
   }
 
-  def javaProps(props: Seq[(String, String)]) = {
+  def javaProps(props: Seq[(String, String)]): Properties = {
     val properties = new Properties()
     props.foreach(p => properties.setProperty(p._1, p._2))
     properties
@@ -166,7 +170,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   test("starting eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0).asJava).withFallback(commonFeatures).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15).asJava).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true, "eclair.max-payment-attempts" -> 15).asJava).withFallback(withStaticRemoteKey).withFallback(withWumbo).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(commonConfig))
     instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085).asJava).withFallback(withWumbo).withFallback(commonConfig))
@@ -174,7 +178,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088).asJava).withFallback(commonConfig))
     instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089).asJava).withFallback(commonConfig))
-    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
+    instantiateEclairNode("F6", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F6", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)) // supports optional option_static_remotekey
+    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 141, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overriden in tests
     val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").commandBuffer))
@@ -204,7 +209,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     //      /       \
     // A---B ------- C ==== D
     //      \       / \
-    //       '--E--'   F{1,2,3,4,5}
+    //       '--E--'   F{1,2,3,4,5,6}
 
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -221,17 +226,18 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     connect(nodes("C"), nodes("F3"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("F4"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("F5"), 5000000 sat, 0 msat)
+    connect(nodes("C"), nodes("F6"), 5000000 sat, 0 msat)
     connect(nodes("B"), nodes("G"), 16000000 sat, 0 msat)
     connect(nodes("G"), nodes("C"), 16000000 sat, 0 msat)
 
-    val numberOfChannels = 13
+    val numberOfChannels = 14
     val channelEndpointsCount = 2 * numberOfChannels
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({
       val watches = nodes.values.foldLeft(Set.empty[Watch]) {
         case (watches, setup) =>
-          sender.send(setup.watcher, 'watches)
+          sender.send(setup.watcher, Symbol("watches"))
           watches ++ sender.expectMsgType[Set[Watch]]
       }
       watches.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
@@ -253,15 +259,15 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     subset.foreach {
       case (_, setup) =>
         awaitCond({
-          sender.send(setup.router, 'nodes)
+          sender.send(setup.router, Symbol("nodes"))
           sender.expectMsgType[Iterable[NodeAnnouncement]](20 seconds).size == nodes
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          sender.send(setup.router, 'channels)
+          sender.send(setup.router, Symbol("channels"))
           sender.expectMsgType[Iterable[ChannelAnnouncement]](20 seconds).size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          sender.send(setup.router, 'updates)
+          sender.send(setup.router, Symbol("updates"))
           sender.expectMsgType[Iterable[ChannelUpdate]](20 seconds).size == updates
         }, max = 60 seconds, interval = 1 second)
     }
@@ -273,8 +279,19 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
-    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)).toMap, 10, 12, 26)
-    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)).toMap, 10, 12, 24)
+    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)).toMap, 11, 13, 28)
+    awaitAnnouncements(nodes.filterKeys(key => !List("A", "B").contains(key)).toMap, 11, 13, 26)
+  }
+
+  test("wait for channels balance") {
+    // Channels balance should now be available in the router
+    val sender = TestProbe()
+    val nodeId = nodes("C").nodeParams.nodeId
+    sender.send(nodes("C").router, Router.GetRoutingState)
+    val routingState = sender.expectMsgType[Router.RoutingState]
+    val publicChannels = routingState.channels.filter(pc => Set(pc.ann.nodeId1, pc.ann.nodeId2).contains(nodeId))
+    assert(publicChannels.nonEmpty)
+    publicChannels.foreach(pc => assert(pc.meta_opt.map(m => m.balance1 > 0.msat || m.balance2 > 0.msat) === Some(true), pc))
   }
 
   test("open a wumbo channel and wait for longer than the default min_depth") {
@@ -295,7 +312,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 2)
 
     // get the channelId
-    sender.send(fundee.register, 'channels)
+    sender.send(fundee.register, Symbol("channels"))
     val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
     sender.send(fundeeChannel, CMD_GETSTATEDATA)
     val channelId = sender.expectMsgType[HasCommitments].channelId
@@ -354,7 +371,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       fundeeState == NORMAL && funderState == NORMAL
     })
 
-    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 10, 13, 28)
+    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 11, 14, 30)
   }
 
   test("send an HTLC A->D") {
@@ -374,7 +391,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
-    sender.send(nodes("B").router, 'channels)
+    sender.send(nodes("B").router, Symbol("channels"))
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
     sender.send(nodes("B").register, ForwardShortId(shortIdBC, CMD_GETINFO))
@@ -399,7 +416,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     awaitCond({
       // in the meantime, the router will have updated its state
-      sender.send(nodes("A").router, 'channelsMap)
+      sender.send(nodes("A").router, Symbol("channelsMap"))
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
       val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId))
       u_opt.contains(channelUpdateBC)
@@ -415,7 +432,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
     assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks)
     awaitCond({
-      sender.send(nodes("A").router, 'channelsMap)
+      sender.send(nodes("A").router, Symbol("channelsMap"))
       val u = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId)).get
       u.cltvExpiryDelta == nodes("B").nodeParams.expiryDeltaBlocks
     }, max = 30 seconds, interval = 1 second)
@@ -838,6 +855,70 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
   }
 
+  test("send payments and close the channel C -> F6 with option_static_remotekey") {
+    // initially all the balance is on C side and F6 doesn't have an output
+    val sender = TestProbe()
+    sender.send(nodes("F6").register, 'channelsTo)
+    // retrieve the channelId of C <--> F6
+    val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
+
+    sender.send(nodes("F6").register, Forward(channelId, CMD_GETSTATEDATA))
+    val initialStateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val initialCommitmentIndex = initialStateDataF6.commitments.localCommit.index
+
+    // the 'to remote' address is a simple P2WPKH spending to the remote payment basepoint
+    val toRemoteAddress = Script.pay2wpkh(initialStateDataF6.commitments.remoteParams.paymentBasepoint)
+
+    // toRemote output of C as seen by F6
+    val Some(toRemoteOutC) = initialStateDataF6.commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+
+    // let's make a payment to advance the commit index
+    val amountMsat = 4200000.msat
+    sender.send(nodes("F6").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    // then we make the actual payment
+    sender.send(nodes("C").paymentInitiator, SendPaymentRequest(amountMsat, pr.paymentHash, nodes("F6").nodeParams.nodeId, maxAttempts = 1))
+    val paymentId = sender.expectMsgType[UUID](5 seconds)
+    val ps = sender.expectMsgType[PaymentSent](5 seconds)
+    assert(ps.id == paymentId)
+
+    sender.send(nodes("F6").register, Forward(channelId, CMD_GETSTATEDATA))
+    val stateDataF6 = sender.expectMsgType[DATA_NORMAL]
+    val commitmentIndex = stateDataF6.commitments.localCommit.index
+    val commitTx = stateDataF6.commitments.localCommit.publishableTxs.commitTx.tx
+    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+
+    // there is a new commitment index in the channel state
+    assert(commitmentIndex == initialCommitmentIndex + 1)
+
+    // script pubkeys of toRemote output remained the same across commitments
+    assert(toRemoteOutCNew.publicKeyScript == toRemoteOutC.publicKeyScript)
+    assert(toRemoteOutCNew.amount < toRemoteOutC.amount)
+
+    // now let's force close the channel and check the toRemote is what we had at the beginning
+    sender.send(nodes("F6").register, Forward(channelId, CMD_FORCECLOSE))
+    sender.expectMsg(ChannelCommandResponse.Ok)
+    // we then wait for C to detect the unilateral close and go to CLOSING state
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSING
+    }, max = 20 seconds, interval = 1 second)
+
+    sender.send(bitcoincli, BitcoinReq("getrawtransaction", commitTx.txid.toHex))
+    val JString(rawTx) = sender.expectMsgType[JValue](10 seconds)
+
+    // the unilateral close contains the static toRemote output
+    assert(Transaction.read(rawTx).txOut.exists(_.publicKeyScript == toRemoteOutC.publicKeyScript))
+
+    // bury the unilateral close in a block, since there are no outputs to claim the channel can go to CLOSED state
+    generateBlocks(bitcoincli, 2)
+    awaitCond({
+      sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSED
+    }, max = 20 seconds, interval = 1 second)
+  }
+
   /**
    * We currently use p2pkh script Helpers.getFinalScriptPubKey
    */
@@ -881,7 +962,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
-    sender.send(nodes("F1").switchboard, 'peers)
+    sender.send(nodes("F1").switchboard, Symbol("peers"))
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Peer.Disconnect(nodes("C").nodeParams.nodeId)
@@ -962,7 +1043,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // we then kill the connection between C and F
-    sender.send(nodes("F2").switchboard, 'peers)
+    sender.send(nodes("F2").switchboard, Symbol("peers"))
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Disconnect(nodes("C").nodeParams.nodeId)
@@ -1001,7 +1082,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 9, 11, 24)
+    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 9,  11, 24)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -1274,8 +1355,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       sender.expectMsg(GossipDecision.Accepted(ann))
     }
     awaitCond({
-      sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 8 // 8 remaining channels because  D->F{1-5} have disappeared
+      sender.send(nodes("D").router, Symbol("channels"))
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 8 // 8 remaining channels because  D->F{1-6} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
 
@@ -1295,6 +1376,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     logger.info(s"F3 -> ${nodes("F3").nodeParams.nodeId}")
     logger.info(s"F4 -> ${nodes("F4").nodeParams.nodeId}")
     logger.info(s"F5 -> ${nodes("F5").nodeParams.nodeId}")
+    logger.info(s"F6 -> ${nodes("F6").nodeParams.nodeId}")
     logger.info(s"G -> ${nodes("G").nodeParams.nodeId}")
 
     val channels1 = sender.expectMsgType[Relayer.OutgoingChannels]
