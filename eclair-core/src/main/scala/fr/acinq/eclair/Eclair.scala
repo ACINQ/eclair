@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import java.lang.management.ManagementFactory
 import java.util.UUID
 
 import akka.actor.ActorRef
@@ -43,7 +44,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 
-case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress], instanceId: String)
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -334,7 +335,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,
       blockHeight = appKit.nodeParams.currentBlockHeight.toInt,
-      publicAddresses = appKit.nodeParams.publicAddresses)
+      publicAddresses = appKit.nodeParams.publicAddresses,
+      instanceId = appKit.nodeParams.instanceId.toString)
   )
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
