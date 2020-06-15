@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -90,7 +90,13 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     future.map(_.forall(b => b))
   }
 
-  override def getBalance: Future[Satoshi] = rpcClient.invoke("getbalance") collect { case JDecimal(balance) => Satoshi(balance.bigDecimal.scaleByPowerOfTen(8).longValue) }
+  override def getBalance: Future[OnChainBalance] = rpcClient.invoke("getbalances").map(json => {
+    def toSatoshi(v: BigDecimal): Satoshi = Satoshi(v.bigDecimal.scaleByPowerOfTen(8).longValue)
+
+    val JDecimal(confirmed) = json \ "mine" \ "trusted"
+    val JDecimal(unconfirmed) = json \ "mine" \ "untrusted_pending"
+    OnChainBalance(toSatoshi(confirmed), toSatoshi(unconfirmed))
+  })
 
   override def getReceiveAddress: Future[String] = for {
     JString(address) <- rpcClient.invoke("getnewaddress")
@@ -139,7 +145,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       logger.warn(s"txid=${tx.txid} error=$e")
       bitcoinClient.getTransaction(tx.txid).transformWith {
         case Success(_) => Future.successful(true) // tx is in the mempool, we consider that it was published
-        case Failure(_) => rollback(tx).transform { case _ => Success(false) } // we use transform here because we want to return false in all cases even if rollback fails
+        case Failure(_) => rollback(tx).transform(_ => Success(false)) // we use transform here because we want to return false in all cases even if rollback fails
       }
   }
 

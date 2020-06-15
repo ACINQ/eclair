@@ -24,6 +24,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
+import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -88,7 +89,7 @@ trait Eclair {
 
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
-  def newAddress(): Future[String]
+  def newAddress()(implicit timeout: Timeout): Future[String]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -123,6 +124,9 @@ trait Eclair {
   def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
+
+  def onChainBalance()(implicit timeout: Timeout): Future[OnChainBalance]
+
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -207,9 +211,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
   }
 
-  override def newAddress(): Future[String] = {
+  override def newAddress()(implicit timeout: Timeout): Future[String] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.getReceiveAddress
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def onChainBalance()(implicit timeout: Timeout): Future[OnChainBalance] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.getBalance
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
