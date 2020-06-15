@@ -33,6 +33,8 @@ object PgUtils extends JdbcUtils with Logging {
 
   val LockTimeout = 5 seconds
 
+  val TransactionIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
+
   object LockType extends Enumeration {
     type LockType = Value
 
@@ -98,6 +100,8 @@ object PgUtils extends JdbcUtils with Logging {
   def inTransaction[T](connection: Connection)(f: Connection => T): T = {
     val autoCommit = connection.getAutoCommit
     connection.setAutoCommit(false)
+    val isolationLevel = connection.getTransactionIsolation
+    connection.setTransactionIsolation(TransactionIsolationLevel)
     try {
       val res = f(connection)
       connection.commit()
@@ -108,6 +112,7 @@ object PgUtils extends JdbcUtils with Logging {
         throw ex
     } finally {
       connection.setAutoCommit(autoCommit)
+      connection.setTransactionIsolation(isolationLevel)
     }
   }
 
