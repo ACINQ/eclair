@@ -2,9 +2,9 @@
 
 By default Eclair stores its data on the machine's local file system (typically in `~/.eclair` directory) using SQLite.
 
-Also it supports PostgreSQL as a database backend. Eclair was tested with PostgreSQL version 10.6 and higher. 
+It also supports PostgreSQL version 10.6 and higher as a database backend. 
 
-To enable PostgreSQL support set `driver` parameter to `postgres`:
+To enable PostgreSQL support set the `driver` parameter to `postgres`:
 
 ```
 eclair.db.driver = postgres
@@ -23,7 +23,7 @@ eclair.db.postgres.password = "mypassword"
 ```
 
 Eclair uses Hikari connection pool (https://github.com/brettwooldridge/HikariCP) which has a lot of configuration 
-parameters. Some of them can be set in Eclair config file. The most important is `pool.max-size`, that defines the maximum 
+parameters. Some of them can be set in Eclair config file. The most important is `pool.max-size`, it defines the maximum 
 allowed number of simultaneous connections to the database. 
 
 A good rule of thumb is to set `pool.max-size` to the CPU core count times 2. 
@@ -41,7 +41,7 @@ eclair.db.postgres.pool {
 ### Locking settings
  
 Running multiple Eclair processes connected to the same database can lead to data corruption and loss of funds. 
-That's why Eclair supports database locking mechanisms to prevent multiple Eclair instances access to one database together. 
+That's why Eclair supports database locking mechanisms to prevent multiple Eclair instances from accessing one database together. 
 
 Use `postgres.lock-type` parameter to set the locking schemes.
 
@@ -58,7 +58,7 @@ eclair.db.postgres.lock-type = "none" // Default: "lease"
 
 There are two main configuration parameters for the lease locking scheme: `lease.interval` and `lease.renew-interval`.
 `lease.interval` defines lease validity time. During the lease time no other node can acquire the lock, except the lease holder.
-After that time the lease is assumed expired, any node can acquire the lock. This is so that only one node can update the database 
+After that time the lease is assumed expired, any node can acquire the lease. So that only one node can update the database 
 at a time. Eclair extends the lease every `lease.renew-interval` until terminated.  
 
 ```
@@ -77,7 +77,7 @@ by PostgreSQL.
 
 For nodes with infrequent channel updates its easier to use `pg_dump` to perform the task. 
 
-It's important to stop the node to prevent any channel updates while backup/restore operation is in progress. It makes
+It's important to stop the node to prevent any channel updates while a backup/restore operation is in progress. It makes
 sense to backup the database after each channel update, to prevent restoring an outdated channel's state and consequently 
 losing the funds associated with that channel.
 
@@ -85,7 +85,7 @@ For more information about backup refer to the official PostgreSQL documentation
 
 #### Replication
 
-For busier nodes it's not practical to use `pg_dump`. Fortunately, PostgreSQL provides built-in database replication which makes the backup/restore process more seamless.
+For busier nodes it isn't practical to use `pg_dump`. Fortunately, PostgreSQL provides built-in database replication which makes the backup/restore process more seamless.
 
 To set up database replication you need to create a main database, that accepts all changes from the node, and a replica database. 
 Once replication is configured, the main database will automatically send all the changes to the replica. 
@@ -93,7 +93,7 @@ In case of failure of the main database, the node can be simply reconfigured to 
 
 PostgreSQL supports [different types of replication](https://www.postgresql.org/docs/current/different-replication-solutions.html). 
 The most suitable type for an Eclair node is [synchronous streaming replication](https://www.postgresql.org/docs/current/warm-standby.html#SYNCHRONOUS-REPLICATION), 
-because it provides a very important feature, that helps to keep the replicated channel's state up to date:  
+because it provides a very important feature, that helps keep the replicated channel's state up to date:  
 
 > When requesting synchronous replication, each commit of a write transaction will wait until confirmation is received that the commit has been written to the write-ahead log on disk of both the primary and standby server.  
 
