@@ -171,7 +171,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'getinfo' response should include this node ID") {
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.getInfoResponse()(any[Timeout]) returns Future.successful(GetInfoResponse(
+    eclair.getInfo()(any[Timeout]) returns Future.successful(GetInfoResponse(
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = Color(0.toByte, 1.toByte, 2.toByte).toString,
       features = Features(Set(ActivatedFeature(OptionDataLossProtect, Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
@@ -190,7 +190,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val resp = entityAs[String]
         assert(resp.contains(aliceNodeId.toString))
-        eclair.getInfoResponse()(any[Timeout]).wasCalled(once)
+        eclair.getInfo()(any[Timeout]).wasCalled(once)
         matchTestJson("getinfo", resp)
       }
   }

@@ -127,7 +127,7 @@ trait Service extends ExtraDirectives with Logging {
                   authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
                     post {
                       path("getinfo") {
-                        complete(eclairApi.getInfoResponse())
+                        complete(eclairApi.getInfo())
                       } ~
                         path("connect") {
                           formFields("uri".as[NodeURI]) { uri =>

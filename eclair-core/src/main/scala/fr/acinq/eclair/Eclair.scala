@@ -124,7 +124,7 @@ trait Eclair {
 
   def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]]
 
-  def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
+  def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
 
@@ -355,7 +355,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     Future.foldLeft(commands)(Map.empty[ApiTypes.ChannelIdentifier, Either[Throwable, T]])(_ + _)
   }
 
-  override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
+  override def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(
       version = Kit.getVersionLong,
       color = appKit.nodeParams.color.toString,
