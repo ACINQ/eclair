@@ -23,7 +23,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse, WalletTransaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
@@ -370,6 +370,12 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(false)
     // let's confirm tx2
     generateBlocks(bitcoincli, 1)
+    wallet.listTransactions(25, 0).pipeTo(sender.ref)
+    val Some(tx) = sender.expectMsgType[List[WalletTransaction]].collectFirst { case tx if tx.address == address => tx }
+    assert(tx.amount < 0.sat)
+    assert(tx.fees < 0.sat)
+    assert(tx.confirmations === 1)
+    assert(tx.txid === tx2.txid)
     // this time tx1 has been double spent
     wallet.doubleSpent(tx1).pipeTo(sender.ref)
     sender.expectMsg(true)

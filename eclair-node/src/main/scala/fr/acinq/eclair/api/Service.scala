@@ -288,6 +288,11 @@ trait Service extends ExtraDirectives with Logging {
                         } ~
                         path("getnewaddress") {
                           complete(eclairApi.newAddress())
+                        } ~
+                        path("listtransactions") {
+                          formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
+                            complete(eclairApi.listTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
+                          }
                         }
                     } ~ get {
                       path("ws") {

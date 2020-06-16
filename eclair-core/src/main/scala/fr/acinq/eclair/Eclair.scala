@@ -26,6 +26,7 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -127,6 +128,8 @@ trait Eclair {
 
   def onChainBalance()(implicit timeout: Timeout): Future[OnChainBalance]
 
+  def listTransactions(count: Int, skip: Int)(implicit timeout: Timeout): Future[Iterable[WalletTransaction]]
+
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -221,6 +224,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def onChainBalance()(implicit timeout: Timeout): Future[OnChainBalance] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.getBalance
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def listTransactions(count: Int, skip: Int)(implicit timeout: Timeout): Future[Iterable[WalletTransaction]] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.listTransactions(count, skip)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

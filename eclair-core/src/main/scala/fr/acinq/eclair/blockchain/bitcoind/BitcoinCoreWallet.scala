@@ -44,7 +44,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
-      FundTransactionResponse(Transaction.read(hex), changepos.intValue, Satoshi(fee.bigDecimal.scaleByPowerOfTen(8).longValue))
+      FundTransactionResponse(Transaction.read(hex), changepos.intValue, toSatoshi(fee))
     })
   }
 
@@ -64,6 +64,28 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = bitcoinClient.publishTransaction(tx)
+
+  def listTransactions(count: Int, skip: Int): Future[List[WalletTransaction]] = rpcClient.invoke("listtransactions", "*", count, skip).map({
+    case JArray(txs) => txs.map(tx => {
+      val JString(address) = tx \ "address"
+      val JDecimal(amount) = tx \ "amount"
+      // fee is optional and only included for sent transactions
+      val fee = tx \ "fee" match {
+        case JDecimal(fee) => toSatoshi(fee)
+        case _ => Satoshi(0)
+      }
+      val JInt(confirmations) = tx \ "confirmations"
+      // while transactions are still in the mempool, block hash will no be included
+      val blockHash = tx \ "blockhash" match {
+        case JString(blockHash) => ByteVector32.fromValidHex(blockHash)
+        case _ => ByteVector32.Zeroes
+      }
+      val JString(txid) = tx \ "txid"
+      val JInt(timestamp) = tx \ "time"
+      WalletTransaction(address, toSatoshi(amount), fee, blockHash, confirmations.toLong, ByteVector32.fromValidHex(txid), timestamp.toLong)
+    }).reverse
+    case _ => Nil
+  })
 
   /**
    *
@@ -91,8 +113,6 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   }
 
   override def getBalance: Future[OnChainBalance] = rpcClient.invoke("getbalances").map(json => {
-    def toSatoshi(v: BigDecimal): Satoshi = Satoshi(v.bigDecimal.scaleByPowerOfTen(8).longValue)
-
     val JDecimal(confirmed) = json \ "mine" \ "trusted"
     val JDecimal(unconfirmed) = json \ "mine" \ "untrusted_pending"
     OnChainBalance(toSatoshi(confirmed), toSatoshi(unconfirmed))
@@ -180,8 +200,11 @@ object BitcoinCoreWallet {
   // @formatter:off
   case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
   case class Utxo(txid: ByteVector32, vout: Long)
+  case class WalletTransaction(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Satoshi)
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
   // @formatter:on
+
+  private def toSatoshi(amount: BigDecimal): Satoshi = Satoshi(amount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
 }
