@@ -65,7 +65,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = bitcoinClient.publishTransaction(tx)
 
-  def listTransactions(count: Int, skip: Int): Future[List[WalletTransaction]] = rpcClient.invoke("listtransactions", "*", count, skip).map({
+  def listTransactions(count: Int, skip: Int): Future[List[WalletTransaction]] = rpcClient.invoke("listtransactions", "*", count, skip).map {
     case JArray(txs) => txs.map(tx => {
       val JString(address) = tx \ "address"
       val JDecimal(amount) = tx \ "amount"
@@ -85,7 +85,21 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       WalletTransaction(address, toSatoshi(amount), fee, blockHash, confirmations.toLong, ByteVector32.fromValidHex(txid), timestamp.toLong)
     }).reverse
     case _ => Nil
-  })
+  }
+
+  def sendToAddress(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
+    rpcClient.invoke(
+      "sendtoaddress",
+      address,
+      amount.toBtc.toBigDecimal,
+      "sent via eclair",
+      "",
+      false, // subtractfeefromamount
+      true, // replaceable
+      confirmationTarget).collect {
+      case JString(txid) => ByteVector32.fromValidHex(txid)
+    }
+  }
 
   /**
    *

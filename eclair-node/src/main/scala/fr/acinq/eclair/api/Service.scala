@@ -233,6 +233,11 @@ trait Service extends ExtraDirectives with Logging {
                               complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
                           }
                         } ~
+                        path("sendonchain") {
+                          formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) { (address, amount, confirmationTarget) =>
+                            complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
+                          }
+                        } ~
                         path("getsentinfo") {
                           formFields("id".as[UUID]) { id =>
                             complete(eclairApi.sentInfo(Left(id)))

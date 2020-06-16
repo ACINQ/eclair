@@ -395,8 +395,36 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
     wallet.getReceivePubkey(receiveAddress = Some(address)).pipeTo(sender.ref)
     val receiveKey = sender.expectMsgType[PublicKey]
-
     assert(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash) === Script.pay2wpkh(receiveKey))
+  }
+
+  test("send and list transactions") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val sender = TestProbe()
+
+    val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
+    val amount = 150.mbtc.toSatoshi
+    wallet.sendToAddress(address, amount, 3).pipeTo(sender.ref)
+    val txid = sender.expectMsgType[ByteVector32]
+
+    wallet.listTransactions(25, 0).pipeTo(sender.ref)
+    val Some(tx1) = sender.expectMsgType[List[WalletTransaction]].collectFirst { case tx if tx.txid == txid => tx }
+    assert(tx1.address === address)
+    assert(tx1.amount === -amount)
+    assert(tx1.confirmations === 0)
+
+    generateBlocks(bitcoincli, 1)
+    wallet.listTransactions(25, 0).pipeTo(sender.ref)
+    val Some(tx2) = sender.expectMsgType[List[WalletTransaction]].collectFirst { case tx if tx.txid == txid => tx }
+    assert(tx2.address === address)
+    assert(tx2.amount === -amount)
+    assert(tx2.fees < 0.sat)
+    assert(tx2.confirmations === 1)
   }
 
 }

@@ -98,6 +98,8 @@ trait Eclair {
 
   def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
+  def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long)(implicit timeout: Timeout): Future[ByteVector32]
+
   def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
   def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: Seq[PublicKey], trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
@@ -231,6 +233,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def listTransactions(count: Int, skip: Int)(implicit timeout: Timeout): Future[Iterable[WalletTransaction]] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.listTransactions(count, skip)
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long)(implicit timeout: Timeout): Future[ByteVector32] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.sendToAddress(address, amount, confirmationTarget)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
