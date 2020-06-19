@@ -127,7 +127,7 @@ trait Service extends ExtraDirectives with Logging {
                   authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
                     post {
                       path("getinfo") {
-                        complete(eclairApi.getInfoResponse())
+                        complete(eclairApi.getInfo())
                       } ~
                         path("connect") {
                           formFields("uri".as[NodeURI]) { uri =>
@@ -233,6 +233,11 @@ trait Service extends ExtraDirectives with Logging {
                               complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
                           }
                         } ~
+                        path("sendonchain") {
+                          formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) { (address, amount, confirmationTarget) =>
+                            complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
+                          }
+                        } ~
                         path("getsentinfo") {
                           formFields("id".as[UUID]) { id =>
                             complete(eclairApi.sentInfo(Left(id)))
@@ -283,8 +288,16 @@ trait Service extends ExtraDirectives with Logging {
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
                         } ~
+                        path("onchainbalance") {
+                          complete(eclairApi.onChainBalance())
+                        } ~
                         path("getnewaddress") {
                           complete(eclairApi.newAddress())
+                        } ~
+                        path("onchaintransactions") {
+                          formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
+                            complete(eclairApi.onChainTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
+                          }
                         }
                     } ~ get {
                       path("ws") {
