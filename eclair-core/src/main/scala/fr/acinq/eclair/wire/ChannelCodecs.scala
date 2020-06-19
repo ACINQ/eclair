@@ -71,7 +71,7 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("localPaymentBasepoint" | optional(provide(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)), publicKey)) ::
+      ("localPaymentBasepoint" | optional(provide(channelVersion.hasStaticRemotekey), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
