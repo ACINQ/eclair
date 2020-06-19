@@ -90,7 +90,7 @@ trait Eclair {
 
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
-  def newAddress()(implicit timeout: Timeout): Future[String]
+  def newAddress(): Future[String]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -98,7 +98,7 @@ trait Eclair {
 
   def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
-  def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long)(implicit timeout: Timeout): Future[ByteVector32]
+  def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
 
   def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
@@ -128,9 +128,9 @@ trait Eclair {
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
 
-  def onChainBalance()(implicit timeout: Timeout): Future[OnChainBalance]
+  def onChainBalance(): Future[OnChainBalance]
 
-  def listTransactions(count: Int, skip: Int)(implicit timeout: Timeout): Future[Iterable[WalletTransaction]]
+  def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
 }
 
@@ -216,28 +216,28 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
   }
 
-  override def newAddress()(implicit timeout: Timeout): Future[String] = {
+  override def newAddress(): Future[String] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.getReceiveAddress
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
-  override def onChainBalance()(implicit timeout: Timeout): Future[OnChainBalance] = {
+  override def onChainBalance(): Future[OnChainBalance] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.getBalance
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
-  override def listTransactions(count: Int, skip: Int)(implicit timeout: Timeout): Future[Iterable[WalletTransaction]] = {
+  override def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.listTransactions(count, skip)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
-  override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long)(implicit timeout: Timeout): Future[ByteVector32] = {
+  override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.sendToAddress(address, amount, confirmationTarget)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))

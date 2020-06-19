@@ -288,15 +288,15 @@ trait Service extends ExtraDirectives with Logging {
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
                         } ~
-                        path("onchainbalances") {
+                        path("onchainbalance") {
                           complete(eclairApi.onChainBalance())
                         } ~
                         path("getnewaddress") {
                           complete(eclairApi.newAddress())
                         } ~
-                        path("listtransactions") {
+                        path("onchaintransactions") {
                           formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
-                            complete(eclairApi.listTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
+                            complete(eclairApi.onChainTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
                           }
                         }
                     } ~ get {

@@ -63,14 +63,14 @@ and COMMAND is one of the available commands:
   === Payment ===
     - getnewaddress
     - usablebalances
-    - onchainbalances
+    - onchainbalance
     - payinvoice
     - sendtonode
     - sendtoroute
     - sendonchain
     - getsentinfo
     - getreceivedinfo
-    - listtransactions
+    - onchaintransactions
 
 Examples
 --------
