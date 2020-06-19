@@ -635,7 +635,7 @@ object Helpers {
       }.toSeq.flatten
 
       channelVersion match {
-        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+        case v if v.hasStaticRemotekey =>
           RemoteCommitPublished(
             commitTx = tx,
             claimMainOutputTx = None,
@@ -718,7 +718,7 @@ object Helpers {
 
           // first we will claim our main output right away
           val mainTx = channelVersion match {
-            case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+            case v if v.hasStaticRemotekey =>
               log.info(s"channel uses option_static_remotekey, not claiming our p2wpkh output")
               None
             case _ => generateTx("claim-p2wpkh-output") {

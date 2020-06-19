@@ -285,7 +285,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef], channelVersion: ChannelVersion): (ActorRef, LocalParams) = {
     val (finalScript, localPaymentBasepoint) = channelVersion match {
-      case v if v.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT) =>
+      case v if v.hasStaticRemotekey =>
         val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
         (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
       case _ =>

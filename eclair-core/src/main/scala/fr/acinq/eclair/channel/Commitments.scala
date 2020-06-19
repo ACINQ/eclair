@@ -64,7 +64,7 @@ case class Commitments(channelVersion: ChannelVersion,
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
 
-  require(!channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) || (channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) && localParams.staticPaymentBasepoint.isDefined), s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
+  require(!channelVersion.hasStaticRemotekey || (channelVersion.hasStaticRemotekey && localParams.staticPaymentBasepoint.isDefined), s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -605,7 +605,7 @@ object Commitments {
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val remotePaymentPubkey = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => remoteParams.paymentBasepoint
+      case v if v.hasStaticRemotekey => remoteParams.paymentBasepoint
       case _ => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     }
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
@@ -626,7 +626,7 @@ object Commitments {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
     val localPaymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
     val localPaymentPubkey = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localPaymentBasepoint
+      case v if v.hasStaticRemotekey => localPaymentBasepoint
       case _ => Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
     }
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
