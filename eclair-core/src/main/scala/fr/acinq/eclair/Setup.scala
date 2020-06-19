@@ -89,7 +89,7 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val keyManager = new LocalKeyManager(seed, NodeParams.hashFromChain(chain))
 
   val database = db match {
     case Some(d) => d

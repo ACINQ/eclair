@@ -122,23 +122,15 @@ object NodeParams {
     }
   }
 
-  def makeChainHash(chain: String): ByteVector32 = {
-    chain match {
-      case "regtest" => Block.RegtestGenesisBlock.hash
-      case "testnet" => Block.TestnetGenesisBlock.hash
-      case "mainnet" => Block.LivenetGenesisBlock.hash
-      case invalid => throw new RuntimeException(s"invalid chain '$invalid'")
-    }
-  }
+  private val chain2Hash: Map[String, ByteVector32] = Map(
+    "regtest" -> Block.RegtestGenesisBlock.hash,
+    "testnet" -> Block.TestnetGenesisBlock.hash,
+    "mainnet" -> Block.LivenetGenesisBlock.hash
+  )
 
-  def chainFromHash(chainHash: ByteVector32): String = {
-    chainHash match {
-      case Block.LivenetGenesisBlock.hash => "mainnet"
-      case Block.TestnetGenesisBlock.hash => "testnet"
-      case Block.RegtestGenesisBlock.hash => "regtest"
-      case invalid => throw new RuntimeException(s"invalid chainHash '${invalid.toHex}'")
-    }
-  }
+  def hashFromChain(chain: String): ByteVector32 = chain2Hash.getOrElse(chain, throw new RuntimeException(s"invalid chain '$chain'"))
+
+  def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
   def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
     // check configuration for keys that have been renamed
@@ -160,7 +152,7 @@ object NodeParams {
     require(!isFeatureByteVector, "configuration key 'features' have moved from bytevector to human readable (ex: 'feature-name' = optional/mandatory)")
 
     val chain = config.getString("chain")
-    val chainHash = makeChainHash(chain)
+    val chainHash = hashFromChain(chain)
 
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
