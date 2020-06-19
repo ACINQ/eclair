@@ -229,7 +229,7 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
-                             localPaymentBasepoint: Option[PublicKey],
+                             staticPaymentBasepoint: Option[PublicKey],
                              features: Features)
 
 final case class RemoteParams(nodeId: PublicKey,
