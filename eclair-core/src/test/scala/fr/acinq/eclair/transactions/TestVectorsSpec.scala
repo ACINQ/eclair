@@ -81,10 +81,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_pubkey = funding_privkey.publicKey
     val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
-    val payment_privkey = channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) match {
-      case true => payment_basepoint_secret
-      case false => htlc_privkey
-    }
+    val payment_privkey = if (channelVersion.hasStaticRemotekey) payment_basepoint_secret else htlc_privkey
     val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
@@ -101,10 +98,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
-    val payment_privkey = channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) match {
-      case true => payment_basepoint_secret
-      case false => htlc_privkey
-    }
+    val payment_privkey = if (channelVersion.hasStaticRemotekey) payment_basepoint_secret else htlc_privkey
   }
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
@@ -512,5 +506,5 @@ class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
 
 class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
   override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
-  override def channelVersion: ChannelVersion = ChannelVersion.USE_STATIC_REMOTEKEY
+  override def channelVersion: ChannelVersion = ChannelVersion.STATIC_REMOTEKEY
 }

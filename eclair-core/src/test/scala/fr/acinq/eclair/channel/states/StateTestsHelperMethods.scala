@@ -84,8 +84,8 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams) = if(tags.contains("static_remotekey")) {
-      (Alice.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))),
-       Bob.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), localPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))))
+      (Alice.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))),
+       Bob.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))))
     } else {
       (Alice.channelParams, Bob.channelParams)
     }

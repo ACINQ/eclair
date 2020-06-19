@@ -185,10 +185,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = fundingPubKey,
         revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-        paymentBasepoint = channelVersion match {
-          case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-          case _ => keyManager.paymentPoint(channelKeyPath).publicKey
-        },
+        paymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
         delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
@@ -319,10 +316,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
             fundingPubkey = fundingPubkey,
             revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-            paymentBasepoint = channelVersion match {
-              case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-              case _ => keyManager.paymentPoint(channelKeyPath).publicKey
-            },
+            paymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
@@ -2105,7 +2099,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
     log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
     d.commitments.channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+      case v if v.hasStaticRemotekey =>
         val remoteCommitPublished = RemoteCommitPublished(commitTx, None, List.empty, List.empty, Map.empty)
         val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSince = now, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
         goto(CLOSING) using nextData storing() // we don't need to claim our main output in the remote commit because it already spends to our wallet address
