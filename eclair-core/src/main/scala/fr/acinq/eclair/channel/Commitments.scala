@@ -604,10 +604,7 @@ object Commitments {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val remotePaymentPubkey = channelVersion match {
-      case v if v.hasStaticRemotekey => remoteParams.paymentBasepoint
-      case _ => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-    }
+    val remotePaymentPubkey = if (channelVersion.hasStaticRemotekey) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
     val localPaymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
@@ -625,10 +622,7 @@ object Commitments {
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
     val localPaymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-    val localPaymentPubkey = channelVersion match {
-      case v if v.hasStaticRemotekey => localPaymentBasepoint
-      case _ => Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
-    }
+    val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
