@@ -1258,6 +1258,20 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
   }
 
+  test("calculate multipart route to remote node (single path)") {
+    val (amount, maxFee) = (100000 msat, 500 msat)
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(500000 msat)),
+      makeEdge(2L, b, c, 10 msat, 30, minHtlc = 1 msat, capacity = 150 sat),
+      makeEdge(3L, c, d, 15 msat, 50, minHtlc = 1 msat, capacity = 150 sat),
+    ))
+
+    val Success(routes) = findMultiPartRoute(g, a, d, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    checkRouteAmounts(routes, amount, maxFee)
+    assert(routes.length === 1, "payment shouldn't be split when we have one path with enough capacity")
+    assert(routes2Ids(routes) === Set(Seq(1L, 2L, 3L)))
+  }
+
   test("calculate multipart route to remote node (single local channel)") {
     //       +--- C ---+
     //       |         |
