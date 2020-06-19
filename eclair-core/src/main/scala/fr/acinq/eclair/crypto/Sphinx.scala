@@ -18,6 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, Onion, OnionCodecs}
 import grizzled.slf4j.Logging
@@ -88,11 +89,13 @@ object Sphinx extends Logging {
       case 0 =>
         // The 1.0 BOLT spec used 65-bytes frames inside the onion payload.
         // The first byte of the frame (called `realm`) is set to 0x00, followed by 32 bytes of per-hop data, followed by a 32-bytes mac.
+        Metrics.OnionPayloadFormat.withTag(Tags.LegacyOnion, value = true).increment()
         65
       case _ =>
         // The 1.1 BOLT spec changed the frame format to use variable-length per-hop payloads.
         // The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
         // Since messages are always smaller than 65535 bytes, this varint will either be 1 or 3 bytes long.
+        Metrics.OnionPayloadFormat.withTag(Tags.LegacyOnion, value = false).increment()
         MacLength + OnionCodecs.payloadLengthDecoder.decode(payload.bits).require.value.toInt
     }
   }
