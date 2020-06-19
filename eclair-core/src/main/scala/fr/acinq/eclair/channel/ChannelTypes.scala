@@ -214,7 +214,8 @@ final case class DATA_CLOSING(commitments: Commitments,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  def spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
