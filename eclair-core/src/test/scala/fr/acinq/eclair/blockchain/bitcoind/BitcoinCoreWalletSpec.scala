@@ -407,6 +407,11 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val wallet = new BitcoinCoreWallet(bitcoinClient)
     val sender = TestProbe()
 
+    wallet.getBalance.pipeTo(sender.ref)
+    val initialBalance = sender.expectMsgType[OnChainBalance]
+    assert(initialBalance.unconfirmed === 0.sat)
+    assert(initialBalance.confirmed > 50.btc.toSatoshi)
+
     val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
     val amount = 150.mbtc.toSatoshi
     wallet.sendToAddress(address, amount, 3).pipeTo(sender.ref)
@@ -416,7 +421,12 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val Some(tx1) = sender.expectMsgType[List[WalletTransaction]].collectFirst { case tx if tx.txid == txid => tx }
     assert(tx1.address === address)
     assert(tx1.amount === -amount)
+    assert(tx1.fees < 0.sat)
     assert(tx1.confirmations === 0)
+
+    wallet.getBalance.pipeTo(sender.ref)
+    // NB: we use + because these amounts are already negative
+    sender.expectMsg(initialBalance.copy(confirmed = initialBalance.confirmed + tx1.amount + tx1.fees))
 
     generateBlocks(bitcoincli, 1)
     wallet.listTransactions(25, 0).pipeTo(sender.ref)
