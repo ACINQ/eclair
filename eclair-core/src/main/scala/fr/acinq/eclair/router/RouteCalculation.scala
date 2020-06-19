@@ -289,9 +289,10 @@ object RouteCalculation {
     }
   }
 
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams): Either[RouterException, Seq[Route]] = {
+  @tailrec
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
     if (amount == 0.msat) {
-      Right(Nil)
+      Right(selectedRoutes)
     } else if (paths.isEmpty) {
       Left(RouteNotFound)
     } else {
@@ -299,7 +300,7 @@ object RouteCalculation {
       val candidate = computeRouteMaxAmount(current.path, usedCapacity)
       if (candidate.amount < routeParams.mpp.minPartAmount.min(amount)) {
         // this route doesn't have enough capacity left: we remove it and continue.
-        split(amount, paths, usedCapacity, routeParams)
+        split(amount, paths, usedCapacity, routeParams, selectedRoutes)
       } else {
         val route = if (routeParams.randomize) {
           // randomly choose the amount to be between 20% and 100% of the available capacity.
@@ -314,7 +315,7 @@ object RouteCalculation {
         }
         updateUsedCapacity(route, usedCapacity)
         // NB: we re-enqueue the current path, it may still have capacity for a second HTLC.
-        split(amount - route.amount, paths.enqueue(current), usedCapacity, routeParams).map(routes => route +: routes)
+        split(amount - route.amount, paths.enqueue(current), usedCapacity, routeParams, route +: selectedRoutes)
       }
     }
   }
