@@ -179,7 +179,7 @@ object NodeParams {
 
     val expiryDeltaBlocks = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
     val fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
-    require(fulfillSafetyBeforeTimeoutBlocks < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks")
+    require(fulfillSafetyBeforeTimeoutBlocks * 2 < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")

@@ -77,8 +77,8 @@ case class Commitments(channelVersion: ChannelVersion,
   }
 
   /**
-   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
-   * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
+   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the preimage for those HTLCs,
+   * we need to get a remote signed updated commitment that removes those HTLCs.
    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
    * and our HTLC success in case of a force-close.
    */
