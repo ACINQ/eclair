@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentError
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.router.RouteNotFound
+import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, nodeFee, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome
@@ -56,16 +56,16 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     within(30 seconds) {
       val nodeParams = TestConstants.Bob.nodeParams
       val outgoingPayFSM = TestProbe()
-      val (relayer, router, commandBuffer, register, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
+      val (router, commandBuffer, register, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
       system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-      class TestNodeRelayer extends NodeRelayer(nodeParams, relayer.ref, router.ref, commandBuffer.ref, register.ref) {
+      class TestNodeRelayer extends NodeRelayer(nodeParams, router.ref, commandBuffer.ref, register.ref) {
         override def spawnOutgoingPayFSM(cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
           outgoingPayFSM.ref ! cfg
           outgoingPayFSM.ref
         }
       }
       val nodeRelayer = TestActorRef(new TestNodeRelayer().asInstanceOf[NodeRelayer])
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelayer, relayer, outgoingPayFSM, commandBuffer, eventListener)))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelayer, TestProbe(), outgoingPayFSM, commandBuffer, eventListener)))
     }
   }
 
@@ -219,7 +219,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
     outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
-    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(Nil, PaymentError.BalanceTooLow) :: Nil))
+    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
@@ -249,7 +249,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
     outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
-    val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: LocalFailure(Nil, RouteNotFound) :: Nil
+    val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: Nil
     outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, failures))
     incomingMultiPart.foreach(p => commandBuffer.expectMsg(CommandBuffer.CommandSend(p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectHtlcAmount(42 msat)), commit = true))))
     commandBuffer.expectNoMsg(100 millis)
@@ -329,8 +329,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     commandBuffer.expectNoMsg(100 millis)
   }
 
-  // TODO: re-activate this test once we have better MPP split to remote legacy recipients
-  ignore("relay to non-trampoline recipient supporting multi-part") { f =>
+  test("relay to non-trampoline recipient supporting multi-part") { f =>
     import f._
 
     // Receive an upstream multi-part payment.
@@ -378,7 +377,6 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayed(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendPayment]
-    assert(outgoingPayment.routePrefix === Nil)
     assert(outgoingPayment.finalPayload.amount === outgoingAmount)
     assert(outgoingPayment.finalPayload.expiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
