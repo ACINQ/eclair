@@ -293,7 +293,9 @@ object NodeParams {
         searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),
         searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
-        searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity")
+        searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity"),
+        mppMinPartAmount = Satoshi(config.getLong("router.path-finding.mpp.min-amount-satoshis")).toMilliSatoshi,
+        mppMaxParts = config.getInt("router.path-finding.mpp.max-parts")
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
