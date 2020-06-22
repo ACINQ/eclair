@@ -101,7 +101,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(s, c, failures, ignore)) =>
-      log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.hops.map(_.nextNodeId).mkString("->")} channels=${route.hops.map(_.lastUpdate.shortChannelId).mkString("->")}")
+      log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
       val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(cfg.upstream, paymentHash, route.hops, c.finalPayload)
       register ! Register.ForwardShortId(route.hops.head.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignore, route)
@@ -158,7 +158,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           onFailure(s, PaymentFailed(id, paymentHash, failures :+ failure))
           myStop()
         case Failure(t) =>
-          log.warning(s"cannot parse returned error: ${t.getMessage}, route=${route.hops.map(_.nextNodeId)}")
+          log.warning(s"cannot parse returned error: ${t.getMessage}, route=${route.printNodes()}")
           val failure = UnreadableRemoteFailure(cfg.fullRoute(route))
           retry(failure, data)
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
@@ -311,7 +311,7 @@ object PaymentLifecycle {
    * @param finalPayload onion payload for the target node.
    */
   case class SendPaymentToRoute(route: Either[Seq[PublicKey], Route], finalPayload: FinalPayload, assistedRoutes: Seq[Seq[ExtraHop]] = Nil) {
-    require(route.fold(_.nonEmpty, _.hops.nonEmpty), s"payment route must not be empty")
+    require(route.fold(_.nonEmpty, _.hops.nonEmpty), "payment route must not be empty")
 
     val targetNodeId = route.fold(_.last, _.hops.last.nextNodeId)
 

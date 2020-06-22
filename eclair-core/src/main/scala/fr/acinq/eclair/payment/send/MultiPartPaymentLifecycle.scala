@@ -54,7 +54,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   val id = cfg.id
   val paymentHash = cfg.paymentHash
   val start = System.currentTimeMillis
-  var retriedFailedChannels = false
+  private var retriedFailedChannels = false
 
   private val span = Kamon.spanBuilder("multi-part-payment")
     .tag(Tags.ParentId, cfg.parentId.toString)
@@ -100,14 +100,15 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(Status.Failure(t), d: PaymentProgress) =>
       log.warning("router error: {}", t.getMessage)
       if (d.ignore.channels.nonEmpty) {
+        // If no route can be found, we will retry once with the channels that we previously ignored.
         // Channels are mostly ignored for temporary reasons, likely because they didn't have enough balance to forward
         // the payment. When we're retrying an MPP split, it may make sense to retry those ignored channels because with
         // a different split, they may have enough balance to forward the payment.
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
-        retriedFailedChannels = true
         log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d).copy(ignore = d.ignore.emptyChannels())
+        retriedFailedChannels = true
         stay using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
       } else {
         val failure = LocalFailure(Nil, t)

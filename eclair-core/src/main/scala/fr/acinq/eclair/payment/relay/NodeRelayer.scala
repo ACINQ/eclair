@@ -157,6 +157,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: Actor
     val paymentId = UUID.randomUUID()
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
+    // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     payloadOut.invoiceFeatures match {
       case Some(features) =>
         val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
