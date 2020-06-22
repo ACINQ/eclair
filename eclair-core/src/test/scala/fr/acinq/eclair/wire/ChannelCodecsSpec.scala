@@ -33,6 +33,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
+import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization

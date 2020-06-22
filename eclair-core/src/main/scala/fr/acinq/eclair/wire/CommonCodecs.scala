@@ -99,6 +99,10 @@ object CommonCodecs {
 
   val varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
 
+  def mapCodec[K, V](keyCodec: Codec[K], valueCodec: Codec[V]): Codec[Map[K, V]] = listOfN(uint16, keyCodec ~ valueCodec).xmap(_.toMap, _.toList)
+
+  def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
+
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))

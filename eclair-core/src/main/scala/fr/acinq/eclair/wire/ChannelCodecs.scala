@@ -16,11 +16,9 @@
 
 package fr.acinq.eclair.wire
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin
@@ -29,11 +27,8 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-
-import scala.concurrent.duration._
 
 /**
  * Created by PM on 02/06/2017.
@@ -44,10 +39,6 @@ object ChannelCodecs extends Logging {
    * All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
    */
   def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
-
-  def mapCodec[K, V](keyCodec: Codec[K], valueCodec: Codec[V]): Codec[Map[K, V]] = listOfN(uint16, keyCodec ~ valueCodec).xmap(_.toMap, _.toList)
-
-  def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
   val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
