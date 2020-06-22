@@ -69,7 +69,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    class TestPaymentInitiator extends PaymentInitiator(nodeParams, TestProbe().ref, TestProbe().ref, TestProbe().ref) {
+    class TestPaymentInitiator extends PaymentInitiator(nodeParams, TestProbe().ref, TestProbe().ref) {
       // @formatter:off
       override def spawnPaymentFsm(cfg: SendPaymentConfig): ActorRef = {
         payFsm.ref ! cfg
@@ -116,7 +116,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, SendPaymentToRouteRequest(finalAmount, finalAmount, None, None, pr, Channel.MIN_CLTV_EXPIRY_DELTA, Seq(a, b, c), None, 0 msat, CltvExpiryDelta(0), Nil))
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, Nil))
-    payFsm.expectMsg(SendPaymentToRoute(Seq(a, b, c), FinalLegacyPayload(finalAmount, Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1))))
+    payFsm.expectMsg(SendPaymentToRoute(Left(Seq(a, b, c)), FinalLegacyPayload(finalAmount, Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1))))
   }
 
   test("forward legacy payment") { f =>
@@ -162,7 +162,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, Nil))
     val msg = payFsm.expectMsgType[SendPaymentToRoute]
-    assert(msg.hops === Seq(a, b, c))
+    assert(msg.route === Left(Seq(a, b, c)))
     assert(msg.finalPayload.amount === finalAmount / 2)
     assert(msg.finalPayload.paymentSecret === pr.paymentSecret)
     assert(msg.finalPayload.totalAmount === finalAmount)
@@ -326,7 +326,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(payment.trampolineSecret.nonEmpty)
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, Seq(NodeHop(b, c, CltvExpiryDelta(0), 0 msat))))
     val msg = payFsm.expectMsgType[SendPaymentToRoute]
-    assert(msg.hops === Seq(a, b))
+    assert(msg.route === Left(Seq(a, b)))
     assert(msg.finalPayload.amount === finalAmount + trampolineFees)
     assert(msg.finalPayload.paymentSecret === payment.trampolineSecret)
     assert(msg.finalPayload.totalAmount === finalAmount + trampolineFees)

@@ -24,4 +24,6 @@ class RouterException(message: String) extends RuntimeException(message)
 
 object RouteNotFound extends RouterException("route not found")
 
+object BalanceTooLow extends RouterException("balance too low")
+
 object CannotRouteToSelf extends RouterException("cannot route to self")
