@@ -97,12 +97,12 @@ class ChannelCodecsSpec extends AnyFunSuite {
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-      localPaymentBasepoint = None,
+      staticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       features = TestConstants.Alice.nodeParams.features)
     val encoded = localParamsCodec(ChannelVersion.ZEROES).encode(o).require
     val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require.value
-    assert(decoded.localPaymentBasepoint.isEmpty)
+    assert(decoded.staticPaymentBasepoint.isEmpty)
     assert(o === decoded)
 
     // Backwards-compatibility: decode localparams with global features.
@@ -120,12 +120,12 @@ class ChannelCodecsSpec extends AnyFunSuite {
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      localPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
+      staticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
       isFunder = Random.nextBoolean(),
       features = Features(randomBytes(256)))
     val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
     val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require.value
-    assert(decoded1.localPaymentBasepoint.isDefined)
+    assert(decoded1.staticPaymentBasepoint.isDefined)
     assert(o1 === decoded1)
   }
 
@@ -424,7 +424,7 @@ object ChannelCodecsSpec {
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
-    localPaymentBasepoint = None,
+    staticPaymentBasepoint = None,
     isFunder = true,
     features = Features.empty)
 
