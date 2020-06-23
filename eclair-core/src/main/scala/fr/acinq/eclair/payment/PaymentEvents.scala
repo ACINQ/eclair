@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop}
+import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
 import fr.acinq.eclair.wire.Node
 
 /**
@@ -162,43 +162,43 @@ object PaymentFailure {
       .isDefined
 
   /** Update the set of nodes and channels to ignore in retries depending on the failure we received. */
-  def updateIgnored(failure: PaymentFailure, ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]): (Set[PublicKey], Set[ChannelDesc]) = failure match {
+  def updateIgnored(failure: PaymentFailure, ignore: Ignore): Ignore = failure match {
     case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, _)) if nodeId == hops.last.nextNodeId =>
       // The failure came from the final recipient: the payment should be aborted without penalizing anyone in the route.
-      (ignoreNodes, ignoreChannels)
+      ignore
     case RemoteFailure(_, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
-      (ignoreNodes + nodeId, ignoreChannels)
+      ignore + nodeId
     case RemoteFailure(_, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
       if (Announcements.checkSig(failureMessage.update, nodeId)) {
         // We were using an outdated channel update, we should retry with the new one and nobody should be penalized.
-        (ignoreNodes, ignoreChannels)
+        ignore
       } else {
         // This node is fishy, it gave us a bad signature, so let's filter it out.
-        (ignoreNodes + nodeId, ignoreChannels)
+        ignore + nodeId
       }
     case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       // Let's ignore the channel outgoing from nodeId.
       hops.collectFirst {
         case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
       } match {
-        case Some(faultyChannel) => (ignoreNodes, ignoreChannels + faultyChannel)
-        case None => (ignoreNodes, ignoreChannels)
+        case Some(faultyChannel) => ignore + faultyChannel
+        case None => ignore
       }
     case UnreadableRemoteFailure(hops) =>
       // We don't know which node is sending garbage, let's blacklist all nodes except the one we are directly connected to and the final recipient.
-      val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
-      (ignoreNodes ++ blacklist, ignoreChannels)
+      val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1).toSet
+      ignore ++ blacklist
     case LocalFailure(hops, _) => hops.headOption match {
       case Some(hop: ChannelHop) =>
         val faultyChannel = ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
-        (ignoreNodes, ignoreChannels + faultyChannel)
-      case _ => (ignoreNodes, ignoreChannels)
+        ignore + faultyChannel
+      case _ => ignore
     }
   }
 
   /** Update the set of nodes and channels to ignore in retries depending on the failures we received. */
-  def updateIgnored(failures: Seq[PaymentFailure], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc]): (Set[PublicKey], Set[ChannelDesc]) = {
-    failures.foldLeft((ignoreNodes, ignoreChannels)) { case ((nodes, channels), failure) => updateIgnored(failure, nodes, channels) }
+  def updateIgnored(failures: Seq[PaymentFailure], ignore: Ignore): Ignore = {
+    failures.foldLeft(ignore) { case (current, failure) => updateIgnored(failure, current) }
   }
 
 }
