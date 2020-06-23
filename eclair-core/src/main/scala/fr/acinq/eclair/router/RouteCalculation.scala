@@ -116,6 +116,11 @@ object RouteCalculation {
     }._2
   }
 
+  def toChannelDescs(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[ChannelDesc] = {
+    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
+    extraRoute.zip(nextNodeIds).map { case (hop, nextNodeId) => ChannelDesc(hop.shortChannelId, hop.nodeId, nextNodeId) }
+  }
+
   /** Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount. */
   private def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi + 1.sat
 
