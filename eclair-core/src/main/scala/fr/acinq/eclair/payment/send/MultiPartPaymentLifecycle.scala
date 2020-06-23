@@ -113,12 +113,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       } else {
         val failure = LocalFailure(Nil, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures :+ failure, d.pending.keySet)
+        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures :+ failure, d.pending.keySet))
       }
 
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
       if (isFinalRecipientFailure(pf, d)) {
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id)
+        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         stay using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures)
@@ -129,17 +129,17 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id)
+      gotoSucceededOrStop(PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
   }
 
   when(PAYMENT_IN_PROGRESS) {
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
       if (isFinalRecipientFailure(pf, d)) {
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id)
+        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else if (d.remainingAttempts == 0) {
         val failure = LocalFailure(Nil, PaymentError.RetryExhausted)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
-        goto(PAYMENT_ABORTED) using PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id)
+        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val stillPending = d.pending - pf.id
@@ -155,7 +155,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = true).record(d.request.maxAttempts - d.remainingAttempts)
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id)
+      gotoSucceededOrStop(PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
   }
 
   when(PAYMENT_ABORTED) {
@@ -173,9 +173,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentAborted) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       log.warning(s"payment recipient fulfilled incomplete multi-part payment (id=${ps.parts.head.id})")
-      goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id)
-
-    case Event(Stop, d: PaymentAborted) => myStop(d.sender, Left(PaymentFailed(id, paymentHash, d.failures)))
+      gotoSucceededOrStop(PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id))
 
     case Event(_: RouteResponse, _) => stay
     case Event(_: Status.Failure, _) => stay
@@ -203,22 +201,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         stay using d.copy(pending = pending)
       }
 
-    case Event(Stop, d: PaymentSucceeded) => myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
-
     case Event(_: RouteResponse, _) => stay
     case Event(_: Status.Failure, _) => stay
-  }
-
-  onTransition {
-    case _ -> PAYMENT_ABORTED => nextStateData match {
-      case d: PaymentAborted if d.pending.isEmpty => self ! Stop
-      case _ =>
-    }
-
-    case _ -> PAYMENT_SUCCEEDED => nextStateData match {
-      case d: PaymentSucceeded if d.pending.isEmpty => self ! Stop
-      case _ =>
-    }
   }
 
   def spawnChildPaymentFsm(childId: UUID): ActorRef = {
@@ -228,6 +212,20 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     }
     val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream)
     context.actorOf(PaymentLifecycle.props(nodeParams, childCfg, router, register))
+  }
+
+  private def gotoAbortedOrStop(d: PaymentAborted): State = {
+    if (d.pending.isEmpty) {
+      myStop(d.sender, Left(PaymentFailed(id, paymentHash, d.failures)))
+    } else
+      goto(PAYMENT_ABORTED) using d
+  }
+
+  private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
+    if (d.pending.isEmpty) {
+      myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+    } else
+      goto(PAYMENT_SUCCEEDED) using d
   }
 
   def myStop(origin: ActorRef, event: Either[PaymentFailed, PaymentSent]): State = {
@@ -304,8 +302,6 @@ object MultiPartPaymentLifecycle {
     def getRouteParams(nodeParams: NodeParams, randomize: Boolean): RouteParams =
       routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).copy(randomize = randomize)
   }
-
-  private case object Stop
 
   // @formatter:off
   sealed trait State
