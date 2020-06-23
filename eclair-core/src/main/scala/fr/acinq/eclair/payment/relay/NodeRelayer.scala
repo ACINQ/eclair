@@ -20,13 +20,13 @@ import java.util.UUID
 
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
@@ -108,18 +108,13 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: Actor
       case None => log.error("could not find pending incoming payment: payment will not be relayed: please investigate")
     }
 
-    case ff: Relayer.ForwardFulfill => ff.to match {
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) =>
-        paymentSender ! ff
-        val paymentHash = Crypto.sha256(ff.paymentPreimage)
-        pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
-          // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
-          log.debug("trampoline payment successfully relayed")
-          fulfillPayment(p.upstream, ff.paymentPreimage)
-          context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
-        })
-      case _ => log.error(s"unexpected non-trampoline fulfill: $ff")
-    }
+    case PreimageReceived(paymentHash, paymentPreimage) =>
+      log.debug("trampoline payment successfully relayed")
+      pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
+        // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
+        fulfillPayment(p.upstream, paymentPreimage)
+        context become main(pendingIncoming, pendingOutgoing + (paymentHash -> p.copy(fulfilledUpstream = true)))
+      })
 
     case PaymentSent(id, paymentHash, paymentPreimage, _, _, parts) =>
       // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.

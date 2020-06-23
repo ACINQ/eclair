@@ -222,6 +222,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   }
 
   private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
+    d.sender ! PreimageReceived(paymentHash, d.preimage)
     if (d.pending.isEmpty) {
       myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
     } else
@@ -302,6 +303,12 @@ object MultiPartPaymentLifecycle {
     def getRouteParams(nodeParams: NodeParams, randomize: Boolean): RouteParams =
       routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).copy(randomize = randomize)
   }
+
+  /**
+   * The payment FSM will wait for all child payments to settle before emitting payment events, but the preimage will be
+   * shared as soon as it's received to unblock other actors that may need it.
+   */
+  case class PreimageReceived(paymentHash: ByteVector32, paymentPreimage: ByteVector32)
 
   // @formatter:off
   sealed trait State
