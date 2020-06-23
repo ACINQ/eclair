@@ -44,6 +44,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendTrampolinePaymentRequest}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
@@ -562,6 +563,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     sender.send(nodes("B").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("D").nodeParams.nodeId, 5, paymentRequest = Some(pr)))
     val paymentId = sender.expectMsgType[UUID](30 seconds)
+    assert(sender.expectMsgType[PreimageReceived].paymentHash === pr.paymentHash)
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
     assert(paymentSent.id === paymentId, paymentSent)
     assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
@@ -628,6 +630,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     sender.send(nodes("D").paymentInitiator, SendPaymentRequest(amount, pr.paymentHash, nodes("C").nodeParams.nodeId, 3, paymentRequest = Some(pr)))
     val paymentId = sender.expectMsgType[UUID](30 seconds)
+    assert(sender.expectMsgType[PreimageReceived].paymentHash === pr.paymentHash)
     val paymentSent = sender.expectMsgType[PaymentSent](30 seconds)
     assert(paymentSent.id === paymentId, paymentSent)
     assert(paymentSent.paymentHash === pr.paymentHash, paymentSent)
@@ -810,6 +813,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val pr1 = sender.expectMsgType[PaymentRequest](15 seconds)
     sender.send(nodes("C").paymentInitiator, SendPaymentRequest(8000000000L msat, pr1.paymentHash, nodes("D").nodeParams.nodeId, 3, paymentRequest = Some(pr1)))
     sender.expectMsgType[UUID](30 seconds)
+    sender.expectMsgType[PreimageReceived](30 seconds)
     sender.expectMsgType[PaymentSent](30 seconds)
 
     // Now we try to send more than C's outgoing capacity to D.

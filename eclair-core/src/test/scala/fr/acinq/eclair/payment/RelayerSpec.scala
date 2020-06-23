@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPa
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.router.Router.{ChannelHop, Ignore, NodeHop}
 import fr.acinq.eclair.router.{Announcements, _}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
@@ -550,8 +551,9 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
     sender.send(relayer, forwardFulfill)
 
-    // the FSM responsible for the payment should receive the fulfill.
+    // the FSM responsible for the payment should receive the fulfill and emit a preimage event.
     payFSM.expectMsg(forwardFulfill)
+    system.actorSelection(relayer.path.child("node-relayer")).tell(PreimageReceived(paymentHash, preimage), payFSM.ref)
 
     // the payment should be immediately fulfilled upstream.
     val upstream1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
