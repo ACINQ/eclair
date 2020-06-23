@@ -39,6 +39,7 @@ trait ExtraDirectives extends Directives {
   val channelIdFormParam = "channelId".as[ByteVector32](sha256HashUnmarshaller)
   val channelIdsFormParam = "channelIds".as[List[ByteVector32]](sha256HashesUnmarshaller)
   val nodeIdFormParam = "nodeId".as[PublicKey]
+  val nodeIdsFormParam = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val paymentHashFormParam = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
   val fromFormParam = "from".as[Long]
   val toFormParam = "to".as[Long]
