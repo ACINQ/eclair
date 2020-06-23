@@ -169,7 +169,12 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("peers") {
-                          complete(eclairApi.peersInfo())
+                          complete(eclairApi.peers())
+                        } ~
+                        path("nodes") {
+                          formFields(nodeIdsFormParam.?) { nodeIds_opt =>
+                            complete(eclairApi.nodes(nodeIds_opt.map(_.toSet)))
+                          }
                         } ~
                         path("channels") {
                           formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
@@ -180,9 +185,6 @@ trait Service extends ExtraDirectives with Logging {
                           withChannelIdentifier { channel =>
                             complete(eclairApi.channelInfo(channel))
                           }
-                        } ~
-                        path("allnodes") {
-                          complete(eclairApi.allNodes())
                         } ~
                         path("allchannels") {
                           complete(eclairApi.allChannels())

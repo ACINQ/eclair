@@ -124,7 +124,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'peers' should ask the switchboard for current known peers") {
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.peersInfo()(any[Timeout]) returns Future.successful(List(
+    eclair.peers()(any[Timeout]) returns Future.successful(List(
       PeerInfo(
         nodeId = aliceNodeId,
         state = "CONNECTED",
@@ -143,7 +143,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val response = entityAs[String]
-        eclair.peersInfo()(any[Timeout]).wasCalled(once)
+        eclair.peers()(any[Timeout]).wasCalled(once)
         matchTestJson("peers", response)
       }
   }
