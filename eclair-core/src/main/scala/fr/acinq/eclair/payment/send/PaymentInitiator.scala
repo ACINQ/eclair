@@ -85,10 +85,10 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
       val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
       if (shouldRetry) {
         pp.remainingAttempts match {
-          case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
+          case (trampolineFees, trampolineExpiryDelta) :: remaining =>
             log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
             sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta)
-            context become main(pending + (pf.id -> pp.copy(remainingAttempts = remainingAttempts)))
+            context become main(pending + (pf.id -> pp.copy(remainingAttempts = remaining)))
           case Nil =>
             log.info("trampoline node couldn't find a route after all retries")
             val trampolineRoute = Seq(
