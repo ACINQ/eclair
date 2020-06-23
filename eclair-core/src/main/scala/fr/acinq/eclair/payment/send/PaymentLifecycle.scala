@@ -278,8 +278,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       // channel flags to indicate that it's disabled
       data.c.assistedRoutes.flatMap(r => RouteCalculation.toChannelDescs(r, data.c.targetNodeId))
         .find(_.shortChannelId == failure.update.shortChannelId)
-        .foreach(desc => router ! ExcludeChannel(desc))
-      data.c.assistedRoutes.map(_.filter(extraHop => extraHop.shortChannelId != failure.update.shortChannelId))
+        .foreach(desc => router ! ExcludeChannel(desc)) // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
+      data.c.assistedRoutes
     }
   }
 
