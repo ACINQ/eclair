@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.{Channel, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.router.Router.{Hop, NodeHop, Route, RouteParams}
@@ -93,6 +93,8 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
           context become main(pending - pf.id)
       }
     })
+
+    case _: PreimageReceived => // we received the preimage, but we wait for the PaymentSent event that will contain more data
 
     case ps: PaymentSent => pending.get(ps.id).foreach(pp => {
       pp.sender ! ps
