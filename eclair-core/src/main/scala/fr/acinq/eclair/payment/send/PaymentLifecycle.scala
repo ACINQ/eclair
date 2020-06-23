@@ -240,6 +240,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.sender, data.c, data.failures :+ failure, ignore1)
   }
 
+  /**
+   * Apply the channel update to our routing table.
+   *
+   * @return updated routing hints if applicable.
+   */
   private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[Seq[ExtraHop]] = {
     data.route.getChannelUpdateForNode(nodeId) match {
       case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
