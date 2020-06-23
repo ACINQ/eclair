@@ -149,6 +149,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           val failure = res match {
             case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
               log.info(s"received an error message from nodeId=$nodeId (failure=$failureMessage)")
+              failureMessage match {
+                case failureMessage: Update => handleUpdate(nodeId, failureMessage, data)
+                case _ =>
+              }
               RemoteFailure(cfg.fullRoute(route), e)
             case Failure(t) =>
               log.warning(s"cannot parse returned error: ${t.getMessage}")
@@ -168,37 +172,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           val ignore1 = if (Announcements.checkSig(failureMessage.update, nodeId)) {
-            route.getChannelUpdateForNode(nodeId) match {
-              case Some(u) if u.shortChannelId != failureMessage.update.shortChannelId =>
-                // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
-                log.info(s"received an update for a different channel than the one we asked: requested=${u.shortChannelId} actual=${failureMessage.update.shortChannelId} update=${failureMessage.update}")
-              case Some(u) if Announcements.areSame(u, failureMessage.update) =>
-                // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
-                // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
-                log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
-                val nextNodeId = route.hops.find(_.nodeId == nodeId).get.nextNodeId
-                router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
-              case Some(u) if PaymentFailure.hasAlreadyFailedOnce(nodeId, failures) =>
-                // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
-                log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=$u new=${failureMessage.update}")
-                val nextNodeId = route.hops.find(_.nodeId == nodeId).get.nextNodeId
-                router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
-              case Some(u) =>
-                log.info(s"got a new update for shortChannelId=${u.shortChannelId}: old=$u new=${failureMessage.update}")
-              case None =>
-                log.error(s"couldn't find a channel update for node=$nodeId, this should never happen")
-            }
-            // in any case, we forward the update to the router
-            router ! failureMessage.update
-            // we also update assisted routes, because they take precedence over the router's routing table
-            val assistedRoutes1 = c.assistedRoutes.map(_.map {
-              case extraHop: ExtraHop if extraHop.shortChannelId == failureMessage.update.shortChannelId => extraHop.copy(
-                cltvExpiryDelta = failureMessage.update.cltvExpiryDelta,
-                feeBase = failureMessage.update.feeBaseMsat,
-                feeProportionalMillionths = failureMessage.update.feeProportionalMillionths
-              )
-              case extraHop => extraHop
-            })
+            val assistedRoutes1 = handleUpdate(nodeId, failureMessage, data)
             // let's try again, router will have updated its state
             router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), assistedRoutes1, ignore, c.routeParams)
             ignore
@@ -264,6 +238,49 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
     router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, data.c.getMaxFee(nodeParams), data.c.assistedRoutes, ignore1, data.c.routeParams)
     goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.sender, data.c, data.failures :+ failure, ignore1)
+  }
+
+  private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[Seq[ExtraHop]] = {
+    data.route.getChannelUpdateForNode(nodeId) match {
+      case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
+        // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
+        log.info(s"received an update for a different channel than the one we asked: requested=${u.shortChannelId} actual=${failure.update.shortChannelId} update=${failure.update}")
+      case Some(u) if Announcements.areSame(u, failure.update) =>
+        // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
+        // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
+        log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
+        val nextNodeId = data.route.hops.find(_.nodeId == nodeId).get.nextNodeId
+        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
+      case Some(u) if PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures) =>
+        // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
+        log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=$u new=${failure.update}")
+        val nextNodeId = data.route.hops.find(_.nodeId == nodeId).get.nextNodeId
+        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
+      case Some(u) =>
+        log.info(s"got a new update for shortChannelId=${u.shortChannelId}: old=$u new=${failure.update}")
+      case None =>
+        log.error(s"couldn't find a channel update for node=$nodeId, this should never happen")
+    }
+    // in any case, we forward the update to the router: if the channel is disabled, the router will remove it from its routing table
+    router ! failure.update
+    // we return updated assisted routes: they take precedence over the router's routing table
+    if (Announcements.isEnabled(failure.update.channelFlags)) {
+      data.c.assistedRoutes.map(_.map {
+        case extraHop: ExtraHop if extraHop.shortChannelId == failure.update.shortChannelId => extraHop.copy(
+          cltvExpiryDelta = failure.update.cltvExpiryDelta,
+          feeBase = failure.update.feeBaseMsat,
+          feeProportionalMillionths = failure.update.feeProportionalMillionths
+        )
+        case extraHop => extraHop
+      })
+    } else {
+      // if the channel is disabled, we temporarily exclude it: this is necessary because the routing hint doesn't contain
+      // channel flags to indicate that it's disabled
+      data.c.assistedRoutes.flatMap(r => RouteCalculation.toChannelDescs(r, data.c.targetNodeId))
+        .find(_.shortChannelId == failure.update.shortChannelId)
+        .foreach(desc => router ! ExcludeChannel(desc))
+      data.c.assistedRoutes.map(_.filter(extraHop => extraHop.shortChannelId != failure.update.shortChannelId))
+    }
   }
 
   private def myStop(): State = {
