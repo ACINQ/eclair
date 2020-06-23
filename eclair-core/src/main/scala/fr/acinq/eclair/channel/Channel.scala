@@ -1450,15 +1450,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       remoteChannelReestablish.channelData match {
         case Some(channelData) =>
           Try(Helpers.decrypt(nodeParams.privateKey.value, channelData)) match {
-            case Success(state) =>
+            case Success(remoteBackupState) =>
               log.debug("successfully read channel data from remote")
-              if (
-                state.commitments.localCommit.index > d.commitments.localCommit.index ||
-                  state.commitments.remoteCommit.index > d.commitments.remoteCommit.index ||
-                  (state.commitments.remoteNextCommitInfo.isLeft && d.commitments.remoteNextCommitInfo.isRight)
-              ) {
+              if (remoteBackupState.commitments.isMoreRecent(d.commitments)) {
                 log.warning("they have a more recent commitment, using it instead")
-                handleReconnected(inputReconnected, state) storing()
+                handleReconnected(inputReconnected, remoteBackupState) storing()
               } else {
                 handleReconnected(inputReconnected, d)
               }

@@ -142,6 +142,12 @@ case class Commitments(channelVersion: ChannelVersion,
       }
     }
   }
+
+  def isMoreRecent(other: Commitments): Boolean = {
+    this.localCommit.index > other.localCommit.index ||
+      this.remoteCommit.index > other.remoteCommit.index ||
+      (this.remoteCommit.index == other.remoteCommit.index && this.remoteNextCommitInfo.isLeft && other.remoteNextCommitInfo.isRight)
+  }
 }
 
 object Commitments {

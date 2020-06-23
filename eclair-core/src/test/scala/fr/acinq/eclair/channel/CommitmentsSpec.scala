@@ -485,6 +485,45 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
   }
 
+  test("commitment ordering") { f =>
+    import f._
+
+    val fee = 1720000 msat // fee due to the additional htlc output
+    val funderFeeReserve = fee * 2 // extra reserve to handle future fee increase
+    val p = 42000000 msat // a->b payment
+
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+
+    val (_, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
+    val Success((ac1, add)) = sendAdd(ac0, cmdAdd, Local(UUID.randomUUID, None), currentBlockHeight)
+    val Success(bc1) = receiveAdd(bc0, add)
+    val Success((ac2, commit1)) = sendCommit(ac1, alice.underlyingActor.nodeParams.keyManager)
+    val Success((bc2, revocation1)) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
+    val Success((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Success((bc3, commit2)) = sendCommit(bc2, bob.underlyingActor.nodeParams.keyManager)
+    val Success((ac4, revocation2)) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.keyManager)
+    val Success((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val cmdFail = CMD_FAIL_HTLC(0, Right(IncorrectOrUnknownPaymentDetails(p, 42)))
+    val Success((bc5, fail)) = sendFail(bc4, cmdFail, bob.underlyingActor.nodeParams.privateKey)
+    val Success((ac5, _, _)) = receiveFail(ac4, fail)
+    val Success((bc6, commit3)) = sendCommit(bc5, bob.underlyingActor.nodeParams.keyManager)
+    val Success((ac6, revocation3)) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.keyManager)
+    val Success((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Success((ac7, commit4)) = sendCommit(ac6, alice.underlyingActor.nodeParams.keyManager)
+    val Success((bc8, revocation4)) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.keyManager)
+    val Success((ac8, _)) = receiveRevocation(ac7, revocation4)
+
+    def verifyOrder(l: List[Commitments]) =
+      for (_ <- 0 until 1000) {
+        val c1 = Random.shuffle(l).head
+        val c2 = Random.shuffle(l).head
+        assert(c1.isMoreRecent(c2) == l.indexOf(c1) > l.indexOf(c2), s"\n$c1\n$c2")
+      }
+
+    verifyOrder(List(ac0, ac2, ac3, ac4, ac6, ac7, ac8)) // we ignore ac1 and ac5 which contains unsigned changes
+    verifyOrder(List(bc0, bc2, bc3, bc4, bc6, bc7, bc8)) // we ignore bc1 and bc5 which contains unsigned changes
+  }
 }
 
 object CommitmentsSpec {
