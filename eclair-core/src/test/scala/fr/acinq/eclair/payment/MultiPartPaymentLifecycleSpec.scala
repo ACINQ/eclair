@@ -46,7 +46,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   import MultiPartPaymentLifecycleSpec._
 
-  case class FixtureParam(paymentId: UUID,
+  case class FixtureParam(cfg: SendPaymentConfig,
                           nodeParams: NodeParams,
                           payFsm: TestFSMRef[MultiPartPaymentLifecycle.State, MultiPartPaymentLifecycle.Data, MultiPartPaymentLifecycle],
                           router: TestProbe,
@@ -64,7 +64,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     }
     val paymentHandler = TestFSMRef(new TestMultiPartPaymentLifecycle().asInstanceOf[MultiPartPaymentLifecycle])
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    withFixture(test.toNoArgTest(FixtureParam(id, nodeParams, paymentHandler, router, sender, childPayFsm, eventListener)))
+    withFixture(test.toNoArgTest(FixtureParam(cfg, nodeParams, paymentHandler, router, sender, childPayFsm, eventListener)))
   }
 
   test("successful first attempt (single part)") { f =>
@@ -74,7 +74,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val payment = SendMultiPartPayment(randomBytes32, e, finalAmount, expiry, 1, routeParams = Some(routeParams.copy(randomize = true)))
     sender.send(payFsm, payment)
 
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, routeParams = Some(routeParams.copy(randomize = false)), allowMultiPart = true))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, routeParams = Some(routeParams.copy(randomize = false)), allowMultiPart = true, paymentConfig = Some(cfg)))
     assert(payFsm.stateName === WAIT_FOR_ROUTES)
 
     val singleRoute = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
@@ -100,7 +100,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val payment = SendMultiPartPayment(randomBytes32, e, 1200000 msat, expiry, 1, routeParams = Some(routeParams.copy(randomize = false)))
     sender.send(payFsm, payment)
 
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, 1200000 msat, maxFee, routeParams = Some(routeParams.copy(randomize = false)), allowMultiPart = true))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, e, 1200000 msat, maxFee, routeParams = Some(routeParams.copy(randomize = false)), allowMultiPart = true, paymentConfig = Some(cfg)))
     assert(payFsm.stateName === WAIT_FOR_ROUTES)
 
     val routes = Seq(
@@ -156,7 +156,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
     childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(failingRoute.hops, Sphinx.DecryptedFailurePacket(b, PermanentChannelFailure)))))
     // We retry ignoring the failing channel.
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, routeParams = Some(routeParams.copy(randomize = true)), allowMultiPart = true, ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_be, b, e)))))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, routeParams = Some(routeParams.copy(randomize = true)), allowMultiPart = true, ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_be, b, e))), paymentConfig = Some(cfg)))
     router.send(payFsm, RouteResponse(Seq(Route(400000 msat, hop_ac_1 :: hop_ce :: Nil), Route(600000 msat, hop_ad :: hop_de :: Nil))))
     childPayFsm.expectMsgType[SendPaymentToRoute]
     childPayFsm.expectMsgType[SendPaymentToRoute]
@@ -183,13 +183,13 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.send(payFsm, PaymentFailed(failedId1, paymentHash, Seq(RemoteFailure(failedRoute1.hops, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure)))))
 
     // When we retry, we ignore the failing node and we let the router know about the remaining pending route.
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, failedRoute1.amount, maxFee - failedRoute1.fee, ignore = Ignore(Set(b), Set.empty), pendingPayments = Seq(failedRoute2), allowMultiPart = true, routeParams = Some(routeParams.copy(randomize = true))))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, e, failedRoute1.amount, maxFee - failedRoute1.fee, ignore = Ignore(Set(b), Set.empty), pendingPayments = Seq(failedRoute2), allowMultiPart = true, routeParams = Some(routeParams.copy(randomize = true)), paymentConfig = Some(cfg)))
     // The second part fails while we're still waiting for new routes.
     childPayFsm.send(payFsm, PaymentFailed(failedId2, paymentHash, Seq(RemoteFailure(failedRoute2.hops, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure)))))
     // We receive a response to our first request, but it's now obsolete: we re-sent a new route request that takes into
     // account the latest failures.
     router.send(payFsm, RouteResponse(Seq(Route(failedRoute1.amount, hop_ac_1 :: hop_ce :: Nil))))
-    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, ignore = Ignore(Set(b), Set.empty), allowMultiPart = true, routeParams = Some(routeParams.copy(randomize = true))))
+    router.expectMsg(RouteRequest(nodeParams.nodeId, e, finalAmount, maxFee, ignore = Ignore(Set(b), Set.empty), allowMultiPart = true, routeParams = Some(routeParams.copy(randomize = true)), paymentConfig = Some(cfg)))
     awaitCond(payFsm.stateData.asInstanceOf[PaymentProgress].pending.isEmpty)
     childPayFsm.expectNoMsg(100 millis)
 
@@ -225,7 +225,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
       ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab_1, a, b))),
       pendingPayments = Seq(pendingRoute),
       allowMultiPart = true,
-      routeParams = Some(routeParams.copy(randomize = true)))
+      routeParams = Some(routeParams.copy(randomize = true)),
+      paymentConfig = Some(cfg))
     router.expectMsg(expectedRouteRequest)
     router.send(payFsm, Status.Failure(RouteNotFound))
     router.expectMsg(expectedRouteRequest.copy(ignore = Ignore.empty))
@@ -270,7 +271,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     router.send(payFsm, Status.Failure(RouteNotFound))
 
     val result = sender.expectMsgType[PaymentFailed]
-    assert(result.id === paymentId)
+    assert(result.id === cfg.id)
     assert(result.paymentHash === paymentHash)
     assert(result.failures === Seq(LocalFailure(Nil, RouteNotFound)))
 
@@ -347,10 +348,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(payFsm.stateName === PAYMENT_ABORTED)
 
     sender.watch(payFsm)
-    childPayFsm.send(payFsm, PaymentSent(paymentId, paymentHash, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(successId, successRoute.amount, successRoute.fee, randomBytes32, Some(successRoute.hops)))))
+    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentHash, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(successId, successRoute.amount, successRoute.fee, randomBytes32, Some(successRoute.hops)))))
     sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage))
     val result = sender.expectMsgType[PaymentSent]
-    assert(result.id === paymentId)
+    assert(result.id === cfg.id)
     assert(result.paymentHash === paymentHash)
     assert(result.paymentPreimage === paymentPreimage)
     assert(result.parts.length === 1 && result.parts.head.id === successId)
@@ -376,7 +377,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (childId, route) :: (failedId, failedRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
-    childPayFsm.send(payFsm, PaymentSent(paymentId, paymentHash, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(childId, route.amount, route.fee, randomBytes32, Some(route.hops)))))
+    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentHash, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(childId, route.amount, route.fee, randomBytes32, Some(route.hops)))))
     sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage))
     awaitCond(payFsm.stateName === PAYMENT_SUCCEEDED)
 
@@ -403,10 +404,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val partialPayments = pending.map {
       case (childId, route) => PaymentSent.PartialPayment(childId, route.amount, route.fee, randomBytes32, Some(route.hops))
     }
-    partialPayments.foreach(pp => childPayFsm.send(payFsm, PaymentSent(paymentId, paymentHash, paymentPreimage, finalAmount, e, Seq(pp))))
+    partialPayments.foreach(pp => childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentHash, paymentPreimage, finalAmount, e, Seq(pp))))
     sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage))
     val result = sender.expectMsgType[PaymentSent]
-    assert(result.id === paymentId)
+    assert(result.id === cfg.id)
     assert(result.paymentHash === paymentHash)
     assert(result.paymentPreimage === paymentPreimage)
     assert(result.parts.toSet === partialPayments.toSet)
@@ -437,7 +438,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     }
 
     val result = sender.expectMsgType[PaymentFailed]
-    assert(result.id === paymentId)
+    assert(result.id === cfg.id)
     assert(result.paymentHash === paymentHash)
     assert(result.failures.nonEmpty)
 

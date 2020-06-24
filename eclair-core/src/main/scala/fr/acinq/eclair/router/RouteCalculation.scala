@@ -17,9 +17,10 @@
 package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef, Status}
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -58,43 +59,48 @@ object RouteCalculation {
     d
   }
 
-  def handleRouteRequest(d: Data, routerConf: RouterConf, currentBlockHeight: Long, r: RouteRequest)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+  def handleRouteRequest(d: Data, routerConf: RouterConf, currentBlockHeight: Long, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    Logs.withMdc(log)(Logs.mdc(
+      category_opt = Some(LogCategory.PAYMENT),
+      parentPaymentId_opt = r.paymentConfig.map(_.parentId),
+      paymentId_opt = r.paymentConfig.map(_.id),
+      paymentHash_opt = r.paymentConfig.map(_.paymentHash))) {
+      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-    // we convert extra routing info provided in the payment request to fake channel_update
-    // it takes precedence over all other channel_updates we know
-    val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
-      .filterNot { case (_, ac) => ac.extraHop.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information
-      .toMap
-    val extraEdges = assistedChannels.values.map(ac =>
-      GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
-    ).toSet
-    val ignoredEdges = r.ignore.channels ++ d.excludedChannels
-    val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
-    val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
+      // we convert extra routing info provided in the payment request to fake channel_update
+      // it takes precedence over all other channel_updates we know
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
+        .filterNot { case (_, ac) => ac.extraHop.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information
+        .toMap
+      val extraEdges = assistedChannels.values.map(ac =>
+        GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
+      ).toSet
+      val ignoredEdges = r.ignore.channels ++ d.excludedChannels
+      val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
+      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-    log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
-    log.info("finding routes with randomize={} params={}", params.randomize, params)
-    val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
-    KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
-      val result = if (r.allowMultiPart) {
-        findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
-      } else {
-        findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
+      log.info("finding routes with randomize={} params={}", params.randomize, params)
+      val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
+      KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
+        val result = if (r.allowMultiPart) {
+          findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
+        } else {
+          findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+        }
+        result match {
+          case Success(routes) =>
+            Metrics.RouteResults.withTags(tags).record(routes.length)
+            routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
+            ctx.sender ! RouteResponse(routes)
+          case Failure(t) =>
+            val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
+            Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
+            ctx.sender ! Status.Failure(failure)
+        }
       }
-      result match {
-        case Success(routes) =>
-          Metrics.RouteResults.withTags(tags).record(routes.length)
-          routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
-          ctx.sender ! RouteResponse(routes)
-        case Failure(t) =>
-          val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
-          Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
-          ctx.sender ! Status.Failure(failure)
-      }
+      d
     }
-
-    d
   }
 
   private def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
