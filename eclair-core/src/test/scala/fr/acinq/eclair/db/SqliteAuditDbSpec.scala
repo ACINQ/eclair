@@ -29,7 +29,6 @@ import fr.acinq.eclair.wire.ChannelCodecs
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -90,7 +89,6 @@ class SqliteAuditDbSpec extends AnyFunSuite {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteAuditDb(sqlite)
 
-    val n1 = randomKey.publicKey
     val n2 = randomKey.publicKey
     val n3 = randomKey.publicKey
     val n4 = randomKey.publicKey
@@ -99,24 +97,30 @@ class SqliteAuditDbSpec extends AnyFunSuite {
     val c2 = randomBytes32
     val c3 = randomBytes32
     val c4 = randomBytes32
+    val c5 = randomBytes32
+    val c6 = randomBytes32
 
-    db.add(ChannelPaymentRelayed(46000 msat, 44000 msat, randomBytes32, randomBytes32, c1))
-    db.add(ChannelPaymentRelayed(41000 msat, 40000 msat, randomBytes32, randomBytes32, c1))
-    db.add(ChannelPaymentRelayed(43000 msat, 42000 msat, randomBytes32, randomBytes32, c1))
-    db.add(ChannelPaymentRelayed(42000 msat, 40000 msat, randomBytes32, randomBytes32, c2))
-    db.add(TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(25000 msat, randomBytes32)), Seq(PaymentRelayed.Part(20000 msat, c4))))
-    db.add(TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(46000 msat, randomBytes32)), Seq(PaymentRelayed.Part(16000 msat, c2), PaymentRelayed.Part(10000 msat, c4), PaymentRelayed.Part(14000 msat, c4))))
+    db.add(ChannelPaymentRelayed(46000 msat, 44000 msat, randomBytes32, c6, c1))
+    db.add(ChannelPaymentRelayed(41000 msat, 40000 msat, randomBytes32, c6, c1))
+    db.add(ChannelPaymentRelayed(43000 msat, 42000 msat, randomBytes32, c5, c1))
+    db.add(ChannelPaymentRelayed(42000 msat, 40000 msat, randomBytes32, c5, c2))
+    db.add(ChannelPaymentRelayed(45000 msat, 40000 msat, randomBytes32, c5, c6))
+    db.add(TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(25000 msat, c6)), Seq(PaymentRelayed.Part(20000 msat, c4))))
+    db.add(TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(46000 msat, c6)), Seq(PaymentRelayed.Part(16000 msat, c2), PaymentRelayed.Part(10000 msat, c4), PaymentRelayed.Part(14000 msat, c4))))
 
     db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), 200 sat, "funding"))
     db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), 300 sat, "mutual"))
     db.add(NetworkFeePaid(null, n3, c3, Transaction(0, Seq.empty, Seq.empty, 0), 400 sat, "funding"))
     db.add(NetworkFeePaid(null, n4, c4, Transaction(0, Seq.empty, Seq.empty, 0), 500 sat, "funding"))
 
-    assert(db.stats.toSet === Set(
+    // NB: we only count a relay fee for the outgoing channel, no the incoming one.
+    assert(db.stats(0, System.currentTimeMillis + 1).toSet === Set(
       Stats(channelId = c1, avgPaymentAmount = 42 sat, paymentCount = 3, relayFee = 4 sat, networkFee = 0 sat),
-      Stats(channelId = c2, avgPaymentAmount = 40 sat, paymentCount = 2, relayFee = 4 sat, networkFee = 500 sat),
+      Stats(channelId = c2, avgPaymentAmount = 28 sat, paymentCount = 2, relayFee = 4 sat, networkFee = 500 sat),
       Stats(channelId = c3, avgPaymentAmount = 0 sat, paymentCount = 0, relayFee = 0 sat, networkFee = 400 sat),
-      Stats(channelId = c4, avgPaymentAmount = 30 sat, paymentCount = 2, relayFee = 9 sat, networkFee = 500 sat)
+      Stats(channelId = c4, avgPaymentAmount = 22 sat, paymentCount = 2, relayFee = 9 sat, networkFee = 500 sat),
+      Stats(channelId = c5, avgPaymentAmount = 43 sat, paymentCount = 3, relayFee = 0 sat, networkFee = 0 sat),
+      Stats(channelId = c6, avgPaymentAmount = 39 sat, paymentCount = 5, relayFee = 5 sat, networkFee = 0 sat),
     ))
   }
 
@@ -148,7 +152,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
     })
     // Test starts here.
     val start = System.currentTimeMillis
-    assert(db.stats.nonEmpty)
+    assert(db.stats(0, start + 1).nonEmpty)
     val end = System.currentTimeMillis
     fail(s"took ${end - start}ms")
   }

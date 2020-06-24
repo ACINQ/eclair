@@ -283,7 +283,9 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("channelstats") {
-                          complete(eclairApi.channelStats())
+                          formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
+                            complete(eclairApi.channelStats(from_opt, to_opt))
+                          }
                         } ~
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
