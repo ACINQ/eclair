@@ -71,7 +71,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val maxFee = routeParams.getMaxFee(r.totalAmount)
       log.debug("sending {} with maximum fee {}", r.totalAmount, maxFee)
       val d = PaymentProgress(sender, r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
-      router ! createRouteRequest(nodeParams, r.totalAmount, maxFee, routeParams, d)
+      router ! createRouteRequest(nodeParams, r.totalAmount, maxFee, routeParams, d, cfg)
       goto(WAIT_FOR_ROUTES) using d
   }
 
@@ -93,7 +93,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         // remaining amount. In that case we discard these routes and send a new request to the router.
         log.info("discarding routes, another child payment failed so we need to recompute them (amount = {}, maximum fee = {})", toSend, maxFee)
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
-        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d)
+        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg)
         stay
       }
 
@@ -107,7 +107,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
         log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
-        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d).copy(ignore = d.ignore.emptyChannels())
+        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
         retriedFailedChannels = true
         stay using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
       } else {
@@ -147,7 +147,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
         val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures)
-        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1)
+        router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1, cfg)
         goto(WAIT_FOR_ROUTES) using d1
       }
 
@@ -369,7 +369,7 @@ object MultiPartPaymentLifecycle {
    */
   case class PaymentSucceeded(sender: ActorRef, request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID]) extends Data
 
-  private def createRouteRequest(nodeParams: NodeParams, toSend: MilliSatoshi, maxFee: MilliSatoshi, routeParams: RouteParams, d: PaymentProgress): RouteRequest =
+  private def createRouteRequest(nodeParams: NodeParams, toSend: MilliSatoshi, maxFee: MilliSatoshi, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest =
     RouteRequest(
       nodeParams.nodeId,
       d.request.targetNodeId,
@@ -379,7 +379,8 @@ object MultiPartPaymentLifecycle {
       d.ignore,
       Some(routeParams),
       allowMultiPart = true,
-      d.pending.values.toSeq)
+      d.pending.values.toSeq,
+      Some(cfg))
 
   private def createChildPayment(route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
     val finalPayload = Onion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
