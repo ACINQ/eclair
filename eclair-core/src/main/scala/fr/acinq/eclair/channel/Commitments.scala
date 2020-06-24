@@ -17,10 +17,10 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.eclair.channel.ChannelVersion._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
+import fr.acinq.eclair.channel.ChannelVersion._
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
@@ -453,6 +453,7 @@ object Commitments {
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(outgoing).map(_.id).mkString(","), spec.htlcs.collect(incoming).map(_.id).mkString(","), remoteCommitTx.tx)
+        Metrics.recordHtlcsInFlight(spec, remoteCommit.spec)
 
         // don't sign if they don't get paid
         val commitSig = CommitSig(
