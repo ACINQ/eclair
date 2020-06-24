@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.router.RouteNotFound
-import fr.acinq.eclair.router.Router.{Hop, NodeHop, Route, RouteParams}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, NodeParams, randomBytes32}
@@ -329,6 +329,8 @@ object PaymentInitiator {
     def fullRoute(route: Route): Seq[Hop] = route.hops ++ additionalHops
 
     def createPaymentSent(preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment]) = PaymentSent(parentId, paymentHash, preimage, recipientAmount, recipientNodeId, parts)
+
+    def paymentContext: PaymentContext = PaymentContext(id, parentId, paymentHash)
   }
 
 }
