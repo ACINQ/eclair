@@ -45,7 +45,7 @@ trait AuditDb extends Closeable {
 
   def listNetworkFees(from: Long, to: Long): Seq[NetworkFee]
 
-  def stats: Seq[Stats]
+  def stats(from: Long, to: Long): Seq[Stats]
 
 }
 
