@@ -31,6 +31,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
@@ -388,6 +389,9 @@ object Router {
     def empty: Ignore = Ignore(Set.empty, Set.empty)
   }
 
+  /**
+   * @param paymentConfig optional, provided for context and should only be used for logging purposes
+   */
   case class RouteRequest(source: PublicKey,
                           target: PublicKey,
                           amount: MilliSatoshi,
@@ -396,7 +400,8 @@ object Router {
                           ignore: Ignore = Ignore.empty,
                           routeParams: Option[RouteParams] = None,
                           allowMultiPart: Boolean = false,
-                          pendingPayments: Seq[Route] = Nil)
+                          pendingPayments: Seq[Route] = Nil,
+                          paymentConfig: Option[SendPaymentConfig] = None)
 
   case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
