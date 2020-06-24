@@ -389,6 +389,9 @@ object Router {
     def empty: Ignore = Ignore(Set.empty, Set.empty)
   }
 
+  /**
+   * @param paymentConfig optional, provided for context and should only be used for logging purposes
+   */
   case class RouteRequest(source: PublicKey,
                           target: PublicKey,
                           amount: MilliSatoshi,
