@@ -33,7 +33,7 @@ object Monitoring {
     val RemoteFeeratePerKw = Kamon.histogram("channels.remote-feerate-per-kw")
 
     def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
-      Seq(Tags.Directions.Incoming, Tags.Directions.Outgoing).foreach(direction => {
+      for (direction <- Tags.Directions.Incoming :: Tags.Directions.Outgoing :: Nil) {
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         val filter = if (direction == Tags.Directions.Incoming) DirectedHtlc.outgoing else DirectedHtlc.incoming
         // NB: we need the `toSeq` because otherwise duplicate amounts would be removed (since htlcs are sets)
@@ -44,7 +44,7 @@ object Monitoring {
         val (value, previousValue) = (htlcs.sum.truncateToSatoshi.toLong, previousHtlcs.sum.truncateToSatoshi.toLong)
         HtlcValueInFlight.withTag(Tags.Direction, direction).record(value)
         HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment(value - previousValue)
-      })
+      }
     }
   }
 
