@@ -469,9 +469,23 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("handle feerate changes while offline (funder scenario)") { f =>
     import f._
-    val sender = TestProbe()
+
+    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
+    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    testHandleFeerateFunder(f, shouldClose = true)
+  }
+
+  test("handle feerate changes while offline without HTLCs (funder scenario)") { f =>
+    testHandleFeerateFunder(f, shouldClose = false)
+  }
+
+  def testHandleFeerateFunder(f: FixtureParam, shouldClose: Boolean): Unit = {
+    import f._
 
     // we simulate a disconnection
+    val sender = TestProbe()
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
@@ -480,32 +494,44 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
 
-    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
-    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
+    // to ensure the network's feerate is 10% above our threshold).
+    val networkFeeratePerKw = (1.1 * currentFeeratePerKw / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow).toLong
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // alice is funder
-    sender.send(alice, CurrentFeerates(highFeerate))
-    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    sender.send(alice, CurrentFeerates(networkFeerate))
+    if (shouldClose) {
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    } else {
+      alice2blockchain.expectNoMsg()
+    }
   }
 
   test("handle feerate changes while offline (don't close on mismatch)", Tag("disable-offline-mismatch")) { f =>
     import f._
-    val sender = TestProbe()
+
+    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
+    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
 
     // we simulate a disconnection
+    val sender = TestProbe()
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
 
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
-    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
+    // to ensure the network's feerate is 10% above our threshold).
+    val networkFeeratePerKw = (1.1 * currentFeeratePerKw / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow).toLong
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
-    sender.send(alice, CurrentFeerates(highFeerate))
+    sender.send(alice, CurrentFeerates(networkFeerate))
     alice2blockchain.expectNoMsg()
     alice2bob.expectNoMsg()
   }
@@ -546,9 +572,23 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("handle feerate changes while offline (fundee scenario)") { f =>
     import f._
-    val sender = TestProbe()
+
+    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
+    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    testHandleFeerateFundee(f, shouldClose = true)
+  }
+
+  test("handle feerate changes while offline without HTLCs (fundee scenario)") { f =>
+    testHandleFeerateFundee(f, shouldClose = false)
+  }
+
+  def testHandleFeerateFundee(f: FixtureParam, shouldClose: Boolean): Unit = {
+    import f._
 
     // we simulate a disconnection
+    val sender = TestProbe()
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
@@ -557,13 +597,19 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
     val bobCommitTx = bobStateData.commitments.localCommit.publishableTxs.commitTx.tx
 
-    val localFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
-    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+    val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
+    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
+    // to ensure the network's feerate is 10% above our threshold).
+    val networkFeeratePerKw = (1.1 * currentFeeratePerKw / bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow).toLong
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // bob is fundee
-    sender.send(bob, CurrentFeerates(highFeerate))
-    bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+    sender.send(bob, CurrentFeerates(networkFeerate))
+    if (shouldClose) {
+      bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+    } else {
+      bob2blockchain.expectNoMsg()
+    }
   }
 
   test("re-send channel_update at reconnection for private channels") { f =>
