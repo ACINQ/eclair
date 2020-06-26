@@ -639,7 +639,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate), Some(c)), c)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      Commitments.sendAdd(d.commitments, c, origin(c), nodeParams.currentBlockHeight) match {
+      Commitments.sendAdd(d.commitments, c, origin(c), nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
         case Success((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
@@ -648,7 +648,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
-      Commitments.receiveAdd(d.commitments, add) match {
+      Commitments.receiveAdd(d.commitments, add, nodeParams.onChainFeeConf) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(add))
       }
@@ -720,7 +720,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_NORMAL) =>
-      Commitments.receiveFee(d.commitments, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, fee, nodeParams.onChainFeeConf.maxFeerateMismatch) match {
+      Commitments.receiveFee(d.commitments, fee, nodeParams.onChainFeeConf) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -1065,7 +1065,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
-      Commitments.receiveFee(d.commitments, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, fee, nodeParams.onChainFeeConf.maxFeerateMismatch) match {
+      Commitments.receiveFee(d.commitments, fee, nodeParams.onChainFeeConf) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
@@ -1785,13 +1785,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments) = {
     val networkFeeratePerKw = c.feeratesPerKw.feePerBlock(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
-    d.commitments.localParams.isFunder match {
-      case true if Helpers.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.updateFeeMinDiffRatio) =>
-        self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
-        stay
-      case false if Helpers.isFeeDiffTooHigh(networkFeeratePerKw, currentFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch) =>
-        handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d, Some(c))
-      case _ => stay
+    val shouldUpdateFee = d.commitments.localParams.isFunder &&
+      Helpers.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.updateFeeMinDiffRatio)
+    val shouldClose = !d.commitments.localParams.isFunder &&
+      Helpers.isFeeDiffTooHigh(networkFeeratePerKw, currentFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch) &&
+      d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
+    if (shouldUpdateFee) {
+      self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
+      stay
+    } else if (shouldClose) {
+      handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d, Some(c))
+    } else {
+      stay
     }
   }
 
@@ -1806,7 +1811,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val networkFeeratePerKw = c.feeratesPerKw.feePerBlock(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the network fees are too high we risk to not be able to confirm our current commitment
-    if (networkFeeratePerKw > currentFeeratePerKw && Helpers.isFeeDiffTooHigh(networkFeeratePerKw, currentFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) {
+    val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
+      Helpers.isFeeDiffTooHigh(networkFeeratePerKw, currentFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch) &&
+      d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
+    if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
         log.warning(s"closing OFFLINE ${d.channelId} due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
         handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))

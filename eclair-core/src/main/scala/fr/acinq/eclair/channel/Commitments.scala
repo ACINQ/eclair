@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateMismatch}
+import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
@@ -35,7 +35,9 @@ import scala.util.{Failure, Success, Try}
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
-case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
+case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage]) {
+  def all: List[UpdateMessage] = proposed ++ signed ++ acked
+}
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
 case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: ByteVector64, remoteSig: ByteVector64)
 case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
@@ -66,6 +68,10 @@ case class Commitments(channelVersion: ChannelVersion,
   require(!channelVersion.hasStaticRemotekey || (channelVersion.hasStaticRemotekey && localParams.staticPaymentBasepoint.isDefined), s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
+
+  def hasPendingOrProposedHtlcs: Boolean = !hasNoPendingHtlcs ||
+    localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
+    remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong
@@ -170,7 +176,7 @@ object Commitments {
    * @param cmd         add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
    */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long): Try[(Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long, feeConf: OnChainFeeConf): Try[(Commitments, UpdateAddHtlc)] = {
     // our counterparty needs a reasonable amount of time to pull the funds from downstream before we can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
     val minExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     if (cmd.cltvExpiry < minExpiry) {
@@ -186,6 +192,13 @@ object Commitments {
     val htlcMinimum = commitments.remoteParams.htlcMinimum.max(1 msat)
     if (cmd.amount < htlcMinimum) {
       return Failure(HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = cmd.amount))
+    }
+
+    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
+    // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
+    val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
+    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatch)) {
+      return Failure(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -229,7 +242,7 @@ object Commitments {
     Success(commitments1, add)
   }
 
-  def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Try[Commitments] = Try {
+  def receiveAdd(commitments: Commitments, add: UpdateAddHtlc, feeConf: OnChainFeeConf): Try[Commitments] = Try {
     if (add.id != commitments.remoteNextHtlcId) {
       throw UnexpectedHtlcId(commitments.channelId, expected = commitments.remoteNextHtlcId, actual = add.id)
     }
@@ -238,6 +251,13 @@ object Commitments {
     val htlcMinimum = commitments.localParams.htlcMinimum.max(1 msat)
     if (add.amountMsat < htlcMinimum) {
       throw HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = add.amountMsat)
+    }
+
+    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
+    // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
+    val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
+    if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatch)) {
+      throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw)
     }
 
     // let's compute the current commitment *as seen by us* including this change
@@ -389,16 +409,16 @@ object Commitments {
     }
   }
 
-  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: FeerateMismatch)(implicit log: LoggingAdapter): Try[Commitments] = {
+  def receiveFee(commitments: Commitments, fee: UpdateFee, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Try[Commitments] = {
     if (commitments.localParams.isFunder) {
       Failure(FundeeCannotSendUpdateFee(commitments.channelId))
     } else if (fee.feeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw) {
       Failure(FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
       Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw)
-      val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
+      val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toDouble / localFeeratePerKw)
-      if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, fee.feeratePerKw, maxFeerateMismatch)) {
+      if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, fee.feeratePerKw, feeConf.maxFeerateMismatch) && commitments.hasPendingOrProposedHtlcs) {
         Failure(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
       } else {
         // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature

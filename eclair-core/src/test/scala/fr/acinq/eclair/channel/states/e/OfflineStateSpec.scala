@@ -469,9 +469,23 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("handle feerate changes while offline (funder scenario)") { f =>
     import f._
-    val sender = TestProbe()
+
+    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
+    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    testHandleFeerateFunder(f, shouldClose = true)
+  }
+
+  test("handle feerate changes while offline without HTLCs (funder scenario)") { f =>
+    testHandleFeerateFunder(f, shouldClose = false)
+  }
+
+  def testHandleFeerateFunder(f: FixtureParam, shouldClose: Boolean): Unit = {
+    import f._
 
     // we simulate a disconnection
+    val sender = TestProbe()
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
@@ -488,14 +502,22 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice is funder
     sender.send(alice, CurrentFeerates(networkFeerate))
-    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    if (shouldClose) {
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    } else {
+      alice2blockchain.expectNoMsg()
+    }
   }
 
   test("handle feerate changes while offline (don't close on mismatch)", Tag("disable-offline-mismatch")) { f =>
     import f._
-    val sender = TestProbe()
+
+    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
+    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
 
     // we simulate a disconnection
+    val sender = TestProbe()
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
@@ -550,9 +572,23 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("handle feerate changes while offline (fundee scenario)") { f =>
     import f._
-    val sender = TestProbe()
+
+    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
+    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    testHandleFeerateFundee(f, shouldClose = true)
+  }
+
+  test("handle feerate changes while offline without HTLCs (fundee scenario)") { f =>
+    testHandleFeerateFundee(f, shouldClose = false)
+  }
+
+  def testHandleFeerateFundee(f: FixtureParam, shouldClose: Boolean): Unit = {
+    import f._
 
     // we simulate a disconnection
+    val sender = TestProbe()
     sender.send(alice, INPUT_DISCONNECTED)
     sender.send(bob, INPUT_DISCONNECTED)
     awaitCond(alice.stateName == OFFLINE)
@@ -569,7 +605,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // bob is fundee
     sender.send(bob, CurrentFeerates(networkFeerate))
-    bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+    if (shouldClose) {
+      bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+    } else {
+      bob2blockchain.expectNoMsg()
+    }
   }
 
   test("re-send channel_update at reconnection for private channels") { f =>
