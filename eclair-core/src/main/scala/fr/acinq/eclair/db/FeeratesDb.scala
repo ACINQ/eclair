@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,21 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.router
+package fr.acinq.eclair.db
+
+import java.io.Closeable
+
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKB
 
 /**
-  * Created by PM on 12/04/2017.
-  */
+ * This database stores the fee rates retrieved by a [[fr.acinq.eclair.blockchain.fee.FeeProvider]].
+ */
+trait FeeratesDb extends Closeable {
 
-class RouterException(message: String) extends RuntimeException(message)
+  /** Insert or update the feerates into the feerates database. */
+  def addOrUpdateFeerates(feeratesPerKB: FeeratesPerKB): Unit
 
-object RouteNotFound extends RouterException("route not found")
+  /** Return the (optional) feerates from the feerates database. */
+  def getFeerates(): Option[FeeratesPerKB]
 
-object BalanceTooLow extends RouterException("balance too low")
-
-object CannotRouteToSelf extends RouterException("cannot route to self")
+}

@@ -44,6 +44,7 @@ class EarnDotComFeeProvider(readTimeOut: Duration)(implicit http: SttpBackend[Fu
         .send()
       feeRanges = parseFeeRanges(json.unsafeBody)
     } yield extractFeerates(feeRanges)
+
 }
 
 object EarnDotComFeeProvider {

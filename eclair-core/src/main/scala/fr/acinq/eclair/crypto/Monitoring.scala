@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.router
+package fr.acinq.eclair.crypto
 
-/**
-  * Created by PM on 12/04/2017.
-  */
+import kamon.Kamon
 
-class RouterException(message: String) extends RuntimeException(message)
+object Monitoring {
 
-object RouteNotFound extends RouterException("route not found")
+  object Metrics {
+    val OnionPayloadFormat = Kamon.counter("crypto.sphinx.onion-payload-format")
+  }
 
-object BalanceTooLow extends RouterException("balance too low")
+  object Tags {
+    val LegacyOnion = "legacy"
+  }
 
-object CannotRouteToSelf extends RouterException("cannot route to self")
+}

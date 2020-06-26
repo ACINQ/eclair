@@ -127,7 +127,7 @@ trait Service extends ExtraDirectives with Logging {
                   authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator) { _ =>
                     post {
                       path("getinfo") {
-                        complete(eclairApi.getInfoResponse())
+                        complete(eclairApi.getInfo())
                       } ~
                         path("connect") {
                           formFields("uri".as[NodeURI]) { uri =>
@@ -169,7 +169,12 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("peers") {
-                          complete(eclairApi.peersInfo())
+                          complete(eclairApi.peers())
+                        } ~
+                        path("nodes") {
+                          formFields(nodeIdsFormParam.?) { nodeIds_opt =>
+                            complete(eclairApi.nodes(nodeIds_opt.map(_.toSet)))
+                          }
                         } ~
                         path("channels") {
                           formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
@@ -180,9 +185,6 @@ trait Service extends ExtraDirectives with Logging {
                           withChannelIdentifier { channel =>
                             complete(eclairApi.channelInfo(channel))
                           }
-                        } ~
-                        path("allnodes") {
-                          complete(eclairApi.allNodes())
                         } ~
                         path("allchannels") {
                           complete(eclairApi.allChannels())
@@ -231,6 +233,11 @@ trait Service extends ExtraDirectives with Logging {
                           formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?, "parentId".as[UUID].?, "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
                             (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) =>
                               complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
+                          }
+                        } ~
+                        path("sendonchain") {
+                          formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) { (address, amount, confirmationTarget) =>
+                            complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
                           }
                         } ~
                         path("getsentinfo") {
@@ -283,8 +290,16 @@ trait Service extends ExtraDirectives with Logging {
                         path("usablebalances") {
                           complete(eclairApi.usableBalances())
                         } ~
+                        path("onchainbalance") {
+                          complete(eclairApi.onChainBalance())
+                        } ~
                         path("getnewaddress") {
                           complete(eclairApi.newAddress())
+                        } ~
+                        path("onchaintransactions") {
+                          formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
+                            complete(eclairApi.onChainTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
+                          }
                         }
                     } ~ get {
                       path("ws") {

@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.ChannelCodecs
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -34,6 +33,8 @@ import scala.concurrent.duration._
 import scala.util.Random
 
 class SqliteAuditDbSpec extends AnyFunSuite {
+
+  val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>
@@ -46,7 +47,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.audit()
 
-      val e1 = PaymentSent(ChannelCodecs.UNKNOWN_UUID, randomBytes32, randomBytes32, 40000 msat, randomKey.publicKey, PaymentSent.PartialPayment(ChannelCodecs.UNKNOWN_UUID, 42000 msat, 1000 msat, randomBytes32, None) :: Nil)
+      val e1 = PaymentSent(ZERO_UUID, randomBytes32, randomBytes32, 40000 msat, randomKey.publicKey, PaymentSent.PartialPayment(ZERO_UUID, 42000 msat, 1000 msat, randomBytes32, None) :: Nil)
       val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32)
       val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32)
       val e2 = PaymentReceived(randomBytes32, pp2a :: pp2b :: Nil)
@@ -211,7 +212,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
         }
 
         // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
-        assert(migratedDb.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID)))))
+        assert(migratedDb.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID)))))
 
         val postMigrationDb = new SqliteAuditDb(connection)
 
@@ -224,7 +225,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
         postMigrationDb.add(e2)
 
         // the old record will have the UNKNOWN_UUID but the new ones will have their actual id
-        val expected = Seq(ps.copy(id = ChannelCodecs.UNKNOWN_UUID, parts = Seq(ps.parts.head.copy(id = ChannelCodecs.UNKNOWN_UUID))), ps1)
+        val expected = Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID))), ps1)
         assert(postMigrationDb.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === expected)
     }
   }

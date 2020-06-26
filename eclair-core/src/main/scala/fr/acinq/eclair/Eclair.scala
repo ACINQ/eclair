@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.lang.management.ManagementFactory
 import java.util.UUID
 
 import akka.actor.ActorRef
@@ -25,7 +24,9 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
+import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
@@ -44,7 +45,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 
-case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, blockHeight: Int, publicAddresses: Seq[NodeAddress], instanceId: String)
+case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress], instanceId: String)
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -85,7 +86,9 @@ trait Eclair {
 
   def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO]
 
-  def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
+  def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
+
+  def nodes(nodeIds_opt: Option[Set[PublicKey]] = None)(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
@@ -96,6 +99,8 @@ trait Eclair {
   def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
+
+  def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
 
   def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
@@ -115,15 +120,18 @@ trait Eclair {
 
   def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
-  def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
-
   def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]]
 
   def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]]
 
-  def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse]
+  def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse]
 
   def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]]
+
+  def onChainBalance(): Future[OnChainBalance]
+
+  def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
+
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -166,10 +174,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
     sendToChannels[ChannelCommandResponse](channels, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths))
   }
 
-  override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
+  override def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
     peers <- (appKit.switchboard ? Symbol("peers")).mapTo[Iterable[ActorRef]]
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
   } yield peerinfos
+
+  override def nodes(nodeIds_opt: Option[Set[PublicKey]])(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = {
+    (appKit.router ? Symbol("nodes"))
+      .mapTo[Iterable[NodeAnnouncement]]
+      .map(_.filter(n => nodeIds_opt.forall(_.contains(n.nodeId))))
+  }
 
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = toRemoteNode_opt match {
     case Some(pk) => for {
@@ -185,8 +199,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO] = {
     sendToChannel[RES_GETINFO](channel, CMD_GETINFO)
   }
-
-  override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? Symbol("nodes")).mapTo[Iterable[NodeAnnouncement]]
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
     (appKit.router ? Symbol("channels")).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
@@ -211,6 +223,27 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def newAddress(): Future[String] = {
     appKit.wallet match {
       case w: BitcoinCoreWallet => w.getReceiveAddress
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def onChainBalance(): Future[OnChainBalance] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.getBalance
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.listTransactions(count, skip)
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
+    appKit.wallet match {
+      case w: BitcoinCoreWallet => w.sendToAddress(address, amount, confirmationTarget)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
@@ -326,7 +359,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     Future.foldLeft(commands)(Map.empty[ApiTypes.ChannelIdentifier, Either[Throwable, T]])(_ + _)
   }
 
-  override def getInfoResponse()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
+  override def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(
     GetInfoResponse(
       version = Kit.getVersionLong,
       color = appKit.nodeParams.color.toString,
@@ -334,6 +367,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       nodeId = appKit.nodeParams.nodeId,
       alias = appKit.nodeParams.alias,
       chainHash = appKit.nodeParams.chainHash,
+      network = NodeParams.chainFromHash(appKit.nodeParams.chainHash),
       blockHeight = appKit.nodeParams.currentBlockHeight.toInt,
       publicAddresses = appKit.nodeParams.publicAddresses,
       instanceId = appKit.nodeParams.instanceId.toString)

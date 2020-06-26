@@ -124,7 +124,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'peers' should ask the switchboard for current known peers") {
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.peersInfo()(any[Timeout]) returns Future.successful(List(
+    eclair.peers()(any[Timeout]) returns Future.successful(List(
       PeerInfo(
         nodeId = aliceNodeId,
         state = "CONNECTED",
@@ -143,7 +143,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val response = entityAs[String]
-        eclair.peersInfo()(any[Timeout]).wasCalled(once)
+        eclair.peers()(any[Timeout]).wasCalled(once)
         matchTestJson("peers", response)
       }
   }
@@ -171,13 +171,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'getinfo' response should include this node ID") {
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.getInfoResponse()(any[Timeout]) returns Future.successful(GetInfoResponse(
+    eclair.getInfo()(any[Timeout]) returns Future.successful(GetInfoResponse(
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = Color(0.toByte, 1.toByte, 2.toByte).toString,
       features = Features(Set(ActivatedFeature(OptionDataLossProtect, Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
       nodeId = aliceNodeId,
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+      network = "regtest",
       blockHeight = 9999,
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       instanceId = "01234567-0123-4567-89ab-0123456789ab"
@@ -191,7 +192,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val resp = entityAs[String]
         assert(resp.contains(aliceNodeId.toString))
-        eclair.getInfoResponse()(any[Timeout]).wasCalled(once)
+        eclair.getInfo()(any[Timeout]).wasCalled(once)
         matchTestJson("getinfo", resp)
       }
   }

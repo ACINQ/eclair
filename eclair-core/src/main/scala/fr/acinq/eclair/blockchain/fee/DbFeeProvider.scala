@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,20 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.router
+package fr.acinq.eclair.blockchain.fee
 
-/**
-  * Created by PM on 12/04/2017.
-  */
+import fr.acinq.eclair.db.FeeratesDb
 
-class RouterException(message: String) extends RuntimeException(message)
+import scala.concurrent.{ExecutionContext, Future}
 
-object RouteNotFound extends RouterException("route not found")
 
-object BalanceTooLow extends RouterException("balance too low")
+class DbFeeProvider(db: FeeratesDb, provider: FeeProvider)(implicit ec: ExecutionContext) extends FeeProvider {
 
-object CannotRouteToSelf extends RouterException("cannot route to self")
+  /** This method retrieves feerates from the provider, and store results in the database */
+  override def getFeerates: Future[FeeratesPerKB] =
+    provider.getFeerates map { feerates =>
+      db.addOrUpdateFeerates(feerates)
+      feerates
+    }
+
+}
