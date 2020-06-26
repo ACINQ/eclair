@@ -22,9 +22,9 @@ import java.util.concurrent.atomic.AtomicLong
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -84,7 +84,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = 1.5,
+        maxFeerateMismatch = FeerateMismatch(0.5, 8.0),
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
@@ -170,7 +170,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = 1.0,
+        maxFeerateMismatch = FeerateMismatch(0.75, 1.5),
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),

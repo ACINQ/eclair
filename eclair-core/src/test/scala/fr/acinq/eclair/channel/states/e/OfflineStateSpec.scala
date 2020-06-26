@@ -480,12 +480,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
 
-    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
-    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
+    // to ensure the network's feerate is 10% above our threshold).
+    val networkFeeratePerKw = (1.1 * currentFeeratePerKw / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow).toLong
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // alice is funder
-    sender.send(alice, CurrentFeerates(highFeerate))
+    sender.send(alice, CurrentFeerates(networkFeerate))
     alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
   }
 
@@ -500,12 +502,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(bob.stateName == OFFLINE)
 
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val localFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
-    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
+    // to ensure the network's feerate is 10% above our threshold).
+    val networkFeeratePerKw = (1.1 * currentFeeratePerKw / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow).toLong
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
-    sender.send(alice, CurrentFeerates(highFeerate))
+    sender.send(alice, CurrentFeerates(networkFeerate))
     alice2blockchain.expectNoMsg()
     alice2bob.expectNoMsg()
   }
@@ -557,12 +561,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
     val bobCommitTx = bobStateData.commitments.localCommit.publishableTxs.commitTx.tx
 
-    val localFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
-    val tooHighFeeratePerKw = ((bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch + 6) * localFeeratePerKw).toLong
-    val highFeerate = FeeratesPerKw.single(tooHighFeeratePerKw)
+    val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
+    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
+    // to ensure the network's feerate is 10% above our threshold).
+    val networkFeeratePerKw = (1.1 * currentFeeratePerKw / bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow).toLong
+    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // bob is fundee
-    sender.send(bob, CurrentFeerates(highFeerate))
+    sender.send(bob, CurrentFeerates(networkFeerate))
     bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
   }
 
