@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.crypto.LocalKeyManager
@@ -94,6 +94,7 @@ object TestConstants {
       fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
       htlcMinimum = 0 msat,
       minDepthBlocks = 3,
+      minDelayBlocks = CltvExpiryDelta(144),
       toRemoteDelayBlocks = CltvExpiryDelta(144),
       maxToLocalDelayBlocks = CltvExpiryDelta(1000),
       feeBase = 546000 msat,
@@ -146,7 +147,7 @@ object TestConstants {
       nodeParams,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       None,
-      true,
+      isFunder = true,
       fundingSatoshis
     ).copy(
       channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
@@ -180,6 +181,7 @@ object TestConstants {
       fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
       htlcMinimum = 1000 msat,
       minDepthBlocks = 3,
+      minDelayBlocks = CltvExpiryDelta(144),
       toRemoteDelayBlocks = CltvExpiryDelta(144),
       maxToLocalDelayBlocks = CltvExpiryDelta(1000),
       feeBase = 546000 msat,
@@ -232,7 +234,7 @@ object TestConstants {
       nodeParams,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       None,
-      false,
+      isFunder = false,
       fundingSatoshis).copy(
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )

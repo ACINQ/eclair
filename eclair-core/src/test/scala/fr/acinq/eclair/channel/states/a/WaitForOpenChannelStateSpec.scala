@@ -27,7 +27,7 @@ import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -135,7 +135,17 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val delayTooHigh = CltvExpiryDelta(10000)
     bob ! open.copy(toSelfDelay = delayTooHigh)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage))
+    assert(error === Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Bob.nodeParams.maxToLocalDelayBlocks).getMessage))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (to_self_delay too low)") { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val delayTooLow = CltvExpiryDelta(72)
+    bob ! open.copy(toSelfDelay = delayTooLow)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error === Error(open.temporaryChannelId, ToSelfDelayTooLow(open.temporaryChannelId, delayTooLow, Bob.nodeParams.minDelayBlocks).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -173,7 +183,6 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     assert(error === Error(open.temporaryChannelId, "remote fee rate is too small: remoteFeeratePerKw=252"))
     awaitCond(bob.stateName == CLOSED)
   }
-
 
   test("recv OpenChannel (reserve below dust)") { f =>
     import f._

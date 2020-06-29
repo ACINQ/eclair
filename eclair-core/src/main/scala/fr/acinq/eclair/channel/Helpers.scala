@@ -31,7 +31,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
-import fr.acinq.eclair.channel.ChannelVersion.USE_STATIC_REMOTEKEY_BIT
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
@@ -112,6 +111,11 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > Channel.MAX_TO_SELF_DELAY || open.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
 
+    // BOLT #2: The sending node SHOULD set to_self_delay sufficient to ensure the sender can irreversibly spend a commitment
+    // transaction output, in case of misbehavior by the receiver. Since we will use the proposed to_self_delay in our accept_channel
+    // message, we want to enforce a minimum value.
+    if (open.toSelfDelay < nodeParams.minDelayBlocks) throw ToSelfDelayTooLow(open.temporaryChannelId, open.toSelfDelay, nodeParams.minDelayBlocks)
+
     // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
     if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
 
@@ -158,6 +162,11 @@ object Helpers {
     // if minimum_depth is unreasonably large:
     // MAY reject the channel.
     if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
+
+    // BOLT #2: The sending node SHOULD set to_self_delay sufficient to ensure the sender can irreversibly spend a commitment
+    // transaction output, in case of misbehavior by the receiver.
+    val minSelfDelay = (open.toSelfDelay :: accept.toSelfDelay :: Nil).min
+    if (minSelfDelay < nodeParams.minDelayBlocks) throw ToSelfDelayTooLow(open.temporaryChannelId, minSelfDelay, nodeParams.minDelayBlocks)
 
     // if channel_reserve_satoshis is less than dust_limit_satoshis within the open_channel message:
     //  MUST reject the channel.
@@ -645,9 +654,9 @@ object Helpers {
           )
         case _ =>
           claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
-          claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
-          claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
-        )
+            claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+            claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+          )
       }
     }
 

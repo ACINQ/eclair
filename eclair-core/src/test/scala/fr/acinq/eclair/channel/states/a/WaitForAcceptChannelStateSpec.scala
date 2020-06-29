@@ -29,7 +29,7 @@ import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.concurrent.{Future, Promise}
@@ -66,7 +66,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      val fundingAmount = if(test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
+      val fundingAmount = if (test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
@@ -79,6 +79,8 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
+    // Bob sets to_self_delay to the same value we proposed in open_channel.
+    assert(accept.toSelfDelay === Alice.nodeParams.toRemoteDelayBlocks)
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
     assert(accept.tlvStream === TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
     bob2alice.forward(alice)
@@ -114,6 +116,16 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(toSelfDelay = delayTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage))
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv AcceptChannel (to_self_delay too low)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val delayTooLow = CltvExpiryDelta(72)
+    alice ! accept.copy(toSelfDelay = delayTooLow)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, ToSelfDelayTooLow(accept.temporaryChannelId, delayTooLow, Alice.nodeParams.minDelayBlocks).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -160,7 +172,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("high-max-funding-size"))  { f =>
+  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("high-max-funding-size")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
