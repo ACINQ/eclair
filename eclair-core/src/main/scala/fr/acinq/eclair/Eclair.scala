@@ -110,7 +110,7 @@ trait Eclair {
 
   def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
-  def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]]
+  def channelStats(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[Stats]]
 
   def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]]
 
@@ -321,7 +321,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
     Future(appKit.nodeParams.db.audit.listNetworkFees(filter.from, filter.to))
   }
 
-  override def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
+  override def channelStats(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[Stats]] = {
+    val filter = getDefaultTimestampFilters(from_opt, to_opt)
+    Future(appKit.nodeParams.db.audit.stats(filter.from, filter.to))
+  }
 
   override def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]] = (appKit.router ? GetNetworkStats).mapTo[GetNetworkStatsResponse].map(_.stats)
 
