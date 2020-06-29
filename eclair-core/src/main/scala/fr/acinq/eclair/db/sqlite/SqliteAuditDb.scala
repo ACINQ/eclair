@@ -302,21 +302,21 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { case (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }
-    case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi)
+    case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
     val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { case (previous, e) =>
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
         case c: ChannelPaymentRelayed => Map(
-          c.fromChannelId -> (Relayed(c.amountIn, 0 msat) +: previous.getOrElse(c.fromChannelId, Nil)),
-          c.toChannelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut) +: previous.getOrElse(c.toChannelId, Nil)),
+          c.fromChannelId -> (Relayed(c.amountIn, 0 msat, "IN") +: previous.getOrElse(c.fromChannelId, Nil)),
+          c.toChannelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut, "OUT") +: previous.getOrElse(c.toChannelId, Nil)),
         )
         case t: TrampolinePaymentRelayed =>
           // We ensure a trampoline payment is counted only once per channel and per direction (if multiple HTLCs were
           // sent from/to the same channel, we group them).
-          val in = t.incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat)) }.toSeq
+          val in = t.incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
           val out = t.outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
             val fee = (t.amountIn - t.amountOut) * parts.length / t.outgoing.length // we split the fee among outgoing channels
-            (channelId, Relayed(parts.map(_.amount).sum, fee))
+            (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
           }.toSeq
           (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
       }
@@ -324,18 +324,20 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
     // Channels opened by our peers won't have any entry in the network_fees table, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
-    allChannels.map(channelId => {
+    allChannels.toSeq.flatMap(channelId => {
       val networkFee = networkFees.getOrElse(channelId, 0 sat)
-      val r = relayed.getOrElse(channelId, Nil)
-      val paymentCount = r.length
-      if (paymentCount == 0) {
-        Stats(channelId, 0 sat, 0, 0 sat, networkFee)
-      } else {
-        val avgPaymentAmount = r.map(_.amount).sum / paymentCount
-        val relayFee = r.map(_.fee).sum
-        Stats(channelId, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
+      val (in, out) = relayed.getOrElse(channelId, Nil).partition(_.direction == "IN")
+      ((in, "IN") :: (out, "OUT") :: Nil).map { case (r, direction) =>
+        val paymentCount = r.length
+        if (paymentCount == 0) {
+          Stats(channelId, direction, 0 sat, 0, 0 sat, networkFee)
+        } else {
+          val avgPaymentAmount = r.map(_.amount).sum / paymentCount
+          val relayFee = r.map(_.fee).sum
+          Stats(channelId, direction, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
+        }
       }
-    }).toSeq
+    })
   }
 
   // used by mobile apps
