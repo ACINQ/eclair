@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, TestKitBaseClass, randomBytes32}
@@ -99,7 +99,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
           relayerA.expectMsgType[ForwardFulfill]
           crossSign(bob, alice, bob2alice, alice2bob)
           // bob confirms that it has forwarded the fulfill to alice
-          relayerB.expectMsgType[CommandBuffer.CommandAck]
+          awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(htlc.channelId).isEmpty)
           val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
           bobCommitTx1 :: bobCommitTx2 :: Nil
         }).flatten

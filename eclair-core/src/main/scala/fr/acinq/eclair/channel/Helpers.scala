@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import akka.actor.{ActorContext, ActorRef}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
@@ -24,14 +25,13 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
-import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.{ChannelsDb, PendingRelayDb}
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
-import fr.acinq.eclair.channel.ChannelVersion.USE_STATIC_REMOTEKEY_BIT
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
@@ -43,6 +43,33 @@ import scala.util.{Failure, Success, Try}
  */
 
 object Helpers {
+
+  /**
+   * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
+   * in a database because we don't want to lose preimages, or to forget to fail
+   * incoming htlcs, which would lead to unwanted channel closings.
+   */
+  def safeSend(register: ActorRef, db: PendingRelayDb, channelId: ByteVector32, cmd: Command with HasHtlcId)(implicit ctx: ActorContext): Unit = {
+    register ! Register.Forward(channelId, cmd)
+    // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
+    db.addPendingRelay(channelId, cmd)
+  }
+
+  def ackPendingFailsAndFulfills(db: PendingRelayDb, updates: List[UpdateMessage])(implicit log: LoggingAdapter): Unit = updates.collect {
+    case u: UpdateFulfillHtlc =>
+      log.debug(s"fulfill acked for htlcId=${u.id}")
+      db.removePendingRelay(u.channelId, u.id)
+    case u: UpdateFailHtlc =>
+      log.debug(s"fail acked for htlcId=${u.id}")
+      db.removePendingRelay(u.channelId, u.id)
+    case u: UpdateFailMalformedHtlc =>
+      log.debug(s"fail-malformed acked for htlcId=${u.id}")
+      db.removePendingRelay(u.channelId, u.id)
+  }
+
+  def getPendingFailsAndFulfills(db: PendingRelayDb, channelId: ByteVector32)(implicit  log: LoggingAdapter): Seq[Command with HasHtlcId] = {
+    db.listPendingRelay(channelId)
+  }
 
   /**
    * Depending on the state, returns the current temporaryChannelId or channelId

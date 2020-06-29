@@ -181,7 +181,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 141, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overridden in tests
-    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").commandBuffer))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").register))
     nodes("C").paymentHandler ! paymentHandlerC
   }
 
@@ -1221,8 +1221,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val forwardHandlerF = TestProbe()
     nodes("F5").paymentHandler ! new ForwardHandler(forwardHandlerF.ref)
     // this is the actual payment handler that we will forward requests to
-    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").commandBuffer))
-    val paymentHandlerF = nodes("F5").system.actorOf(PaymentHandler.props(nodes("F5").nodeParams, nodes("F5").commandBuffer))
+    val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").register))
+    val paymentHandlerF = nodes("F5").system.actorOf(PaymentHandler.props(nodes("F5").nodeParams, nodes("F5").register))
     // first we make sure we are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)

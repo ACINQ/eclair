@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin, PostRestartHtlcCleaner, Relayer}
+import fr.acinq.eclair.payment.relay.{Origin, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
@@ -49,19 +49,19 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
   import PostRestartHtlcCleanerSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, commandBuffer: TestProbe, sender: TestProbe, eventListener: TestProbe) {
+  case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(): ActorRef = {
-      system.actorOf(Relayer.props(nodeParams, TestProbe().ref, TestProbe().ref, commandBuffer.ref, TestProbe().ref))
+      system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
     }
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(30 seconds) {
       val nodeParams = TestConstants.Bob.nodeParams
-      val commandBuffer = TestProbe()
+      val register = TestProbe()
       val eventListener = TestProbe()
       system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, commandBuffer, TestProbe(), eventListener)))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, register, TestProbe(), eventListener)))
     }
   }
 
@@ -110,7 +110,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val channel = TestProbe()
     f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
+    register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
@@ -172,7 +172,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val channel = TestProbe()
     f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
+    register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
@@ -219,7 +219,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupLocalPayments(nodeParams)
     val relayer = createRelayer()
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
 
     sender.send(relayer, testCase.fails(1))
     eventListener.expectNoMsg(100 millis)
@@ -240,7 +240,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     assert(e2.paymentHash === paymentHash1)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
 
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
   }
 
   test("handle a local payment htlc-fulfill") { f =>
@@ -248,7 +248,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupLocalPayments(nodeParams)
     val relayer = f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
 
     sender.send(relayer, testCase.fulfills(1))
     eventListener.expectNoMsg(100 millis)
@@ -276,7 +276,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     assert(e2.recipientAmount === 561.msat)
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
 
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
   }
 
   test("ignore htlcs in closing downstream channels that have already been settled upstream") { f =>
@@ -284,9 +284,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments(nodeParams)
     val initialized = Promise[Done]()
-    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer.ref, Some(initialized)))
+    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref, Some(initialized)))
     awaitCond(initialized.isCompleted)
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
 
     val probe = TestProbe()
     probe.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
@@ -390,7 +390,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     nodeParams.db.channels.addOrUpdateChannel(data_downstream)
 
     val relayer = f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
+    register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     val (channel_upstream_1, channel_upstream_2, channel_upstream_3) = (TestProbe(), TestProbe(), TestProbe())
     system.eventStream.publish(ChannelStateChanged(channel_upstream_1.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_1))
@@ -406,9 +406,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // Payment 2 should fulfill once we receive the preimage.
     val origin_2 = Origin.TrampolineRelayed(upstream_2.adds.map(add => (add.channelId, add.id)).toList, None)
     sender.send(relayer, Relayer.ForwardOnChainFulfill(preimage2, origin_2, htlc_2_2))
-    commandBuffer.expectMsgAllOf(
-      CommandBuffer.CommandSend(channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
-      CommandBuffer.CommandSend(channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
+    register.expectMsgAllOf(
+      Register.Forward(channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
+      Register.Forward(channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
     )
 
     // Payment 3 should not be failed: we are still waiting for on-chain confirmation.
@@ -420,28 +420,28 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments(nodeParams)
     val relayer = f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
 
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
-    val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FAIL_HTLC]] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FAIL_HTLC]] :: Nil
+    val fails = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+      case (channelId, htlcId) => Register.Forward(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
-    commandBuffer.expectNoMsg(100 millis) // a duplicate failure should be ignored
+    register.expectNoMsg(100 millis) // a duplicate failure should be ignored
 
     sender.send(relayer, buildForwardOnChainFail(testCase.downstream_2_1, testCase.upstream_2))
     sender.send(relayer, buildForwardFail(testCase.downstream_2_2, testCase.upstream_2))
-    commandBuffer.expectNoMsg(100 millis) // there is still a third downstream payment pending
+    register.expectNoMsg(100 millis) // there is still a third downstream payment pending
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
-    commandBuffer.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+    register.expectMsg(testCase.upstream_2.origins.map {
+      case (channelId, htlcId) => Register.Forward(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.head)
 
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
   }
 
@@ -450,27 +450,27 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments(nodeParams)
     val relayer = f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
 
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
-    val fails = commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FULFILL_HTLC]] :: commandBuffer.expectMsgType[CommandBuffer.CommandSend[CMD_FULFILL_HTLC]] :: Nil
+    val fails = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
+      case (channelId, htlcId) => Register.Forward(channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
-    commandBuffer.expectNoMsg(100 millis) // a duplicate fulfill should be ignored
+    register.expectNoMsg(100 millis) // a duplicate fulfill should be ignored
 
     // This payment has 3 downstream HTLCs, but we should fulfill upstream as soon as we receive the preimage.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_1, testCase.upstream_2, preimage2))
-    commandBuffer.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+    register.expectMsg(testCase.upstream_2.origins.map {
+      case (channelId, htlcId) => Register.Forward(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_3, testCase.upstream_2, preimage2))
-    commandBuffer.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
+    register.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
     eventListener.expectNoMsg(100 millis)
   }
 
@@ -479,17 +479,17 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments(nodeParams)
     val relayer = f.createRelayer()
-    commandBuffer.expectNoMsg(100 millis)
+    register.expectNoMsg(100 millis)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_1, testCase.upstream_2))
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
-    commandBuffer.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+    register.expectMsg(testCase.upstream_2.origins.map {
+      case (channelId, htlcId) => Register.Forward(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
-    commandBuffer.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
+    register.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
     eventListener.expectNoMsg(100 millis)
   }
 

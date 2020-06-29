@@ -20,11 +20,10 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse, Helpers}
 import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPaymentsDb, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
@@ -36,7 +35,7 @@ import scala.util.{Failure, Success, Try}
  *
  * Created by PM on 17/06/2016.
  */
-class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBuffer: ActorRef) extends ReceiveHandler {
+class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingPaymentsDb) extends ReceiveHandler {
 
   import MultiPartHandler._
 
@@ -82,7 +81,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
           case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
             case Some(cmdFail) =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
-              commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
+              Helpers.safeSend(register, nodeParams.db.pendingRelay, p.add.channelId, cmdFail)
             case None =>
               log.info("received payment for amount={} totalAmount={}", p.add.amountMsat, p.payload.totalAmount)
               pendingPayments.get(p.add.paymentHash) match {
@@ -97,7 +96,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
           case None =>
             Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
             val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
-            commandBuffer ! CommandBuffer.CommandSend(p.add.channelId, cmdFail)
+            Helpers.safeSend(register, nodeParams.db.pendingRelay, p.add.channelId, cmdFail)
         }
       }
 
@@ -107,7 +106,7 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         log.warning("payment with paidAmount={} failed ({})", parts.map(_.amount).sum, failure)
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
         parts.collect {
-          case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+          case p: MultiPartPaymentFSM.HtlcPart => Helpers.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
         }
         pendingPayments = pendingPayments - paymentHash
       }
@@ -127,13 +126,13 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         failure match {
           case Some(failure) => p match {
-            case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
+            case p: MultiPartPaymentFSM.HtlcPart => Helpers.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
           }
           case None => p match {
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
             // expensive code path by fetching the preimage from DB.
             case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
-              commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
+              Helpers.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
               val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
               db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
               ctx.system.eventStream.publish(received)
@@ -150,15 +149,13 @@ class MultiPartHandler(nodeParams: NodeParams, db: IncomingPaymentsDb, commandBu
         })
         db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
         parts.collect {
-          case p: MultiPartPaymentFSM.HtlcPart => commandBuffer ! CommandBuffer.CommandSend(p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
+          case p: MultiPartPaymentFSM.HtlcPart => Helpers.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
         }
         postFulfill(received)
         ctx.system.eventStream.publish(received)
       }
 
     case GetPendingPayments => ctx.sender ! PendingPayments(pendingPayments.keySet)
-
-    case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
     case ChannelCommandResponse.Ok => // ignoring responses from channels
   }
