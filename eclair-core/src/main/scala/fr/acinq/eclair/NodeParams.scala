@@ -43,6 +43,7 @@ import scala.jdk.CollectionConverters._
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
+                      instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
@@ -84,8 +85,7 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
-                      enableTrampolinePayment: Boolean,
-                      instanceId: UUID) {
+                      enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 
@@ -235,6 +235,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
+      instanceId = instanceId,
       blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
@@ -301,8 +302,7 @@ object NodeParams {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
-      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
-      instanceId = instanceId
+      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }
 }
