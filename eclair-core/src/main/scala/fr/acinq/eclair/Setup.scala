@@ -97,7 +97,7 @@ class Setup(datadir: File,
 
   logger.info(s"instanceid=$instanceId")
 
-  val database = initDatabase(config.getConfig("db"), instanceId)
+  val databases = Databases.init(config.getConfig("db"), instanceId, datadir, chaindir, db)
 
   /**
    * This counter holds the current blockchain height.
@@ -126,7 +126,7 @@ class Setup(datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), database, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -371,37 +371,6 @@ class Setup(datadir: File,
     }
   }
 
-  private def initDatabase(dbConfig: Config, instanceId: UUID): Databases = {
-    db match {
-      case Some(d) => d
-      case None =>
-        dbConfig.getString("driver") match {
-          case "sqlite" => Databases.sqliteJDBC(chaindir)
-          case "postgres" =>
-            val pg = Databases.setupPgDatabases(dbConfig, instanceId, datadir, { ex =>
-              logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
-              sys.exit(-2)
-            })
-            if (LockType(dbConfig.getString("postgres.lock-type")) == LockType.LEASE) {
-              val dbLockLeaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
-              val dbLockLeaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
-              if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)
-                throw new RuntimeException("Invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
-              system.scheduler.schedule(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval) {
-                try {
-                  pg.obtainExclusiveLock()
-                } catch {
-                  case e: Throwable =>
-                    logger.error("fatal error: Cannot obtain the database lease.\n", e)
-                    sys.exit(-1)
-                }
-              }
-            }
-            pg
-          case driver => throw new RuntimeException(s"Unknown database driver `$driver`")
-        }
-    }
-  }
 }
 
 // @formatter:off

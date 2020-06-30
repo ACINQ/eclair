@@ -21,6 +21,7 @@ import java.nio.file._
 import java.sql.{Connection, DriverManager}
 import java.util.UUID
 
+import akka.actor.ActorSystem
 import com.typesafe.config.Config
 import fr.acinq.eclair.db.pg.PgUtils.LockType.LockType
 import fr.acinq.eclair.db.pg.PgUtils._
@@ -52,6 +53,41 @@ object Databases extends Logging {
 
   trait CanBackup { this: Databases =>
     def backup(file: File): Unit
+  }
+
+  def init(dbConfig: Config, instanceId: UUID, datadir: File, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
+    db match {
+      case Some(d) => d
+      case None =>
+        dbConfig.getString("driver") match {
+          case "sqlite" => Databases.sqliteJDBC(chaindir)
+          case "postgres" =>
+            val pg = Databases.setupPgDatabases(dbConfig, instanceId, datadir, { ex =>
+              logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
+              sys.exit(-2)
+            })
+            if (LockType(dbConfig.getString("postgres.lock-type")) == LockType.LEASE) {
+              val dbLockLeaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
+              val dbLockLeaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
+              if (dbLockLeaseInterval <= dbLockLeaseRenewInterval)
+                throw new RuntimeException("Invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
+              import system.dispatcher
+              system.scheduler.scheduleWithFixedDelay(dbLockLeaseRenewInterval, dbLockLeaseRenewInterval)(new Runnable {
+                override def run(): Unit = {
+                  try {
+                    pg.obtainExclusiveLock()
+                  } catch {
+                    case e: Throwable =>
+                      logger.error("fatal error: Cannot obtain the database lease.\n", e)
+                      sys.exit(-1)
+                  }
+                }
+              })
+            }
+            pg
+          case driver => throw new RuntimeException(s"Unknown database driver `$driver`")
+        }
+    }
   }
 
   /**
@@ -97,7 +133,7 @@ object Databases extends Logging {
     implicit val lock: DatabaseLock = lockType match {
       case LockType.NONE => NoLock
       case LockType.LEASE => LeaseLock(instanceId, databaseLeaseInterval, lockExceptionHandler)
-      case x@_ => throw new RuntimeException(s"Unknown postgres lock type: `$lockType`")
+      case _ => throw new RuntimeException(s"Unknown postgres lock type: `$lockType`")
     }
 
     import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
