@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
@@ -42,6 +43,7 @@ import scala.jdk.CollectionConverters._
  * Created by PM on 26/02/2017.
  */
 case class NodeParams(keyManager: KeyManager,
+                      instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
@@ -132,7 +134,7 @@ object NodeParams {
 
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
-  def makeNodeParams(config: Config, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -233,6 +235,7 @@ object NodeParams {
 
     NodeParams(
       keyManager = keyManager,
+      instanceId = instanceId,
       blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
