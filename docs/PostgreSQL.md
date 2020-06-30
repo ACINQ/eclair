@@ -63,7 +63,7 @@ at a time. Eclair extends the lease every `lease.renew-interval` until terminate
 
 ```
 eclair.db.postgres.lease {
-    interval = 30 seconds        // Deafult: 5 minutes
+    interval = 30 seconds        // Default: 5 minutes
     renew-interval =  10 seconds // Default: 1 minute
 }
 ```
