@@ -198,7 +198,7 @@ object TestConstants {
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
-      instanceId = UUID.fromString("01234567-0123-4567-89ab-0123456789ab")
+      instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     )
 
     def channelParams = Peer.makeChannelParams(
@@ -285,7 +285,7 @@ object TestConstants {
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
-      instanceId = UUID.fromString("01234567-0123-4567-89ab-0123456789ab")
+      instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     )
 
     def channelParams = Peer.makeChannelParams(

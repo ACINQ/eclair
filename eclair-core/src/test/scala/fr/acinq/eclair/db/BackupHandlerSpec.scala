@@ -20,8 +20,7 @@ import java.io.File
 import java.sql.DriverManager
 import java.util.UUID
 
-import akka.actor.ActorSystem
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestProbe
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.CanBackup
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
