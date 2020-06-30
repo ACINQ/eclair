@@ -67,7 +67,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       watcher.ref,
       paymentHandler.ref,
       register.ref,
-      commandBuffer.ref,
       relayer.ref,
       router.ref,
       switchboard.ref,

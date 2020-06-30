@@ -36,7 +36,7 @@ import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, nodeFee}
  * The Channel Relayer is used to relay a single upstream HTLC to a downstream channel.
  * It selects the best channel to use to relay and retries using other channels in case a local failure happens.
  */
-class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorRef, commandBuffer: ActorRef) extends Actor with DiagnosticActorLogging {
+class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
 
   import ChannelRelayer._
 
@@ -49,7 +49,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
         case RelayFailure(cmdFail) =>
           Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
-          commandBuffer ! CommandBuffer.CommandSend(r.add.channelId, cmdFail)
+          Helpers.safeSend(register, nodeParams.db.pendingRelay, r.add.channelId, cmdFail)
         case RelaySuccess(selectedShortChannelId, cmdAdd) =>
           log.info(s"forwarding htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=$selectedShortChannelId")
           register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
@@ -59,7 +59,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-      commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFail)
+      Helpers.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
 
     case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
       case Origin.Relayed(originChannelId, originHtlcId, _, _) => addFailed.originalCommand match {
@@ -71,12 +71,10 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
           val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
           Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #$originHtlcId from channelId=$originChannelId reason=${cmdFail.reason}")
-          commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmdFail)
+          Helpers.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmdFail)
       }
       case _ => throw new IllegalArgumentException(s"channel relayer received unexpected failure: $addFailed")
     }
-
-    case ack: CommandBuffer.CommandAck => commandBuffer forward ack
 
     case ChannelCommandResponse.Ok => // ignoring responses from channels
   }
@@ -94,7 +92,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
 
 object ChannelRelayer {
 
-  def props(nodeParams: NodeParams, relayer: ActorRef, register: ActorRef, commandBuffer: ActorRef) = Props(classOf[ChannelRelayer], nodeParams, relayer, register, commandBuffer)
+  def props(nodeParams: NodeParams, relayer: ActorRef, register: ActorRef) = Props(new ChannelRelayer(nodeParams, relayer, register))
 
   case class RelayHtlc(r: IncomingPacket.ChannelRelayPacket, previousFailures: Seq[AddHtlcFailed], channelUpdates: ChannelUpdates, node2channels: NodeChannels)
 

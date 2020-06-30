@@ -27,7 +27,6 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.payment.relay.CommandBuffer
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire._
@@ -404,11 +403,80 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(!Announcements.isEnabled(update.channelUpdate.channelFlags))
   }
 
+  test("replay pending commands when going back to NORMAL") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // We simulate a pending fulfill
+    bob.underlyingActor.nodeParams.db.pendingRelay.addPendingRelay(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.forward(alice)
+
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+  }
+
+  test("replay pending commands when going back to SHUTDOWN") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+    // We initiate a mutual close
+    sender.send(alice, CMD_CLOSE(None))
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // We simulate a pending fulfill
+    bob.underlyingActor.nodeParams.db.pendingRelay.addPendingRelay(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.forward(alice)
+
+    // peers re-exchange shutdown messages
+    alice2bob.expectMsgType[Shutdown]
+    bob2alice.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.forward(alice)
+
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+  }
+
   test("pending non-relayed fulfill htlcs will timeout upstream") { f =>
     import f._
     val sender = TestProbe()
-    val register = TestProbe()
-    val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -426,7 +494,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // We simulate a pending fulfill on that HTLC but not relayed.
     // When it is close to expiring upstream, we should close the channel.
-    sender.send(commandBuffer, CommandBuffer.CommandSend(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true)))
+    bob.underlyingActor.nodeParams.db.pendingRelay.addPendingRelay(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
@@ -448,8 +516,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("pending non-relayed fail htlcs will timeout upstream") { f =>
     import f._
     val sender = TestProbe()
-    val register = TestProbe()
-    val commandBuffer = TestActorRef(new CommandBuffer(bob.underlyingActor.nodeParams, register.ref))
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -460,7 +526,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // We simulate a pending failure on that HTLC.
     // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
-    sender.send(commandBuffer, CommandBuffer.CommandSend(htlc.channelId, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0)))))
+    sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0))))
     sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
 
     bob2blockchain.expectNoMsg(250 millis)
