@@ -28,7 +28,6 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import com.typesafe.config.Config
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
@@ -42,9 +41,8 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.db.Databases.CanBackup
-import fr.acinq.eclair.db.pg.PgUtils.LockType
-import fr.acinq.eclair.db.{BackupHandler, Databases}
+import fr.acinq.eclair.db.Databases.FileBackup
+import fr.acinq.eclair.db.{Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Server, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
@@ -285,9 +283,9 @@ class Setup(datadir: File,
 
       backupHandler = if (config.getBoolean("enable-db-backup")) {
         nodeParams.db match {
-          case canBackup: CanBackup => system.actorOf(SimpleSupervisor.props(
-            BackupHandler.props(
-              canBackup,
+          case fileBackup: FileBackup => system.actorOf(SimpleSupervisor.props(
+            FileBackupHandler.props(
+              fileBackup,
               new File(chaindir, "eclair.sqlite.bak"),
               if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None),
             "backuphandler", SupervisorStrategy.Resume))

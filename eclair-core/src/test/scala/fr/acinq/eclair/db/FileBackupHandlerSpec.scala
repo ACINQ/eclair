@@ -22,13 +22,13 @@ import java.util.UUID
 
 import akka.testkit.TestProbe
 import fr.acinq.eclair.channel.ChannelPersisted
-import fr.acinq.eclair.db.Databases.CanBackup
+import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecsSpec
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-class BackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
+class FileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("process backups") {
     val db = TestConstants.inMemoryDb()
@@ -40,7 +40,7 @@ class BackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
 
-    val handler = system.actorOf(BackupHandler.props(db.asInstanceOf[CanBackup], dest, None))
+    val handler = system.actorOf(FileBackupHandler.props(db.asInstanceOf[FileBackup], dest, None))
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[BackupEvent])
 

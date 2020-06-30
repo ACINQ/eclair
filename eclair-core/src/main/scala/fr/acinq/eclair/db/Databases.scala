@@ -51,8 +51,8 @@ trait Databases {
 
 object Databases extends Logging {
 
-  trait CanBackup { this: Databases =>
-    def backup(file: File): Unit
+  trait FileBackup { this: Databases =>
+    def backup(backupFile: File): Unit
   }
 
   def init(dbConfig: Config, instanceId: UUID, datadir: File, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
@@ -162,7 +162,7 @@ object Databases extends Logging {
     databases
   }
 
-  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases with CanBackup {
+  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases with FileBackup {
     override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
@@ -170,17 +170,13 @@ object Databases extends Logging {
     override val payments = new SqlitePaymentsDb(eclairJdbc)
     override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
     override def backup(backupFile: File): Unit = {
-      val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
 
       SqliteUtils.using(eclairJdbc.createStatement()) {
         statement => {
-          statement.executeUpdate(s"backup to ${tmpFile.getAbsolutePath}")
+          statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
         }
       }
 
-      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
-      // as the temporary file
-      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 
     override def obtainExclusiveLock(): Unit = ()
