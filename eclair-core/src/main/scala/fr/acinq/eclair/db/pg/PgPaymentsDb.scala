@@ -22,6 +22,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
 import fr.acinq.eclair.db.{HopSummary, _}
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
@@ -68,7 +69,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
   }
 
-  override def addOutgoingPayment(sent: OutgoingPayment): Unit = {
+  override def addOutgoingPayment(sent: OutgoingPayment): Unit = withMetrics("payments/add-outgoing") {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
@@ -87,7 +88,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
   }
 
-  override def updateOutgoingPayment(paymentResult: PaymentSent): Unit =
+  override def updateOutgoingPayment(paymentResult: PaymentSent): Unit = withMetrics("payments/update-outgoing-sent") {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         paymentResult.parts.foreach(p => {
@@ -101,8 +102,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         if (statement.executeBatch().contains(0)) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as succeeded but already in final status (id=${paymentResult.id})")
       }
     }
+  }
 
-  override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit =
+  override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit = withMetrics("payments/update-outgoing-failed") {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE sent_payments SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         statement.setLong(1, paymentResult.timestamp)
@@ -111,6 +113,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as failed but already in final status (id=${paymentResult.id})")
       }
     }
+  }
 
   private def parseOutgoingPayment(rs: ResultSet): OutgoingPayment = {
     val status = buildOutgoingPaymentStatus(
@@ -160,7 +163,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
   }
 
-  override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] =
+  override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = withMetrics("payments/get-outgoing") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
         statement.setString(1, id.toString)
@@ -172,8 +175,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         }
       }
     }
+  }
 
-  override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] =
+  override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-parent-id") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
         statement.setString(1, parentId.toString)
@@ -185,8 +189,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] =
+  override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-payment-hash") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
         statement.setString(1, paymentHash.toHex)
@@ -198,8 +203,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] =
+  override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-timestamp") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
@@ -212,8 +218,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit =
+  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming") {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
@@ -225,8 +232,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         statement.executeUpdate()
       }
     }
+  }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit =
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit = withMetrics("payments/receive-incoming") {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
         update.setLong(1, amount.toLong)
@@ -238,6 +246,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         }
       }
     }
+  }
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
     val paymentRequest = rs.getString("payment_request")
@@ -257,7 +266,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
   }
 
-  override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] =
+  override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = withMetrics("payments/get-incoming") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
         statement.setString(1, paymentHash.toHex)
@@ -269,8 +278,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         }
       }
     }
+  }
 
-  override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
+  override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
@@ -283,8 +293,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
+  override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
@@ -297,8 +308,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
+  override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-pending") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
@@ -312,8 +324,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] =
+  override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
@@ -327,8 +340,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
         q
       }
     }
+  }
 
-  override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = {
+  override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = withMetrics("payments/list-overview") {
     // This query is an UNION of the ``sent_payments`` and ``received_payments`` table
     // - missing fields set to NULL when needed.
     // - only retrieve incoming payments that did receive funds.
