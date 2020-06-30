@@ -84,7 +84,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = FeerateMismatch(0.5, 8.0),
+        maxFeerateMismatch = FeerateTolerance(0.5, 8.0),
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
@@ -170,7 +170,7 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = FeerateMismatch(0.75, 1.5),
+        maxFeerateMismatch = FeerateTolerance(0.75, 1.5),
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),

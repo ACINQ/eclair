@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateMismatch}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
@@ -192,7 +192,7 @@ object Helpers {
    * difference exceeds a given ratio (updateFeeMinDiffRatio).
    */
   def shouldUpdateFee(currentFeeratePerKw: Long, nextFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
-    Math.abs((currentFeeratePerKw - nextFeeratePerKw).toDouble / currentFeeratePerKw) > updateFeeMinDiffRatio
+    currentFeeratePerKw == 0 || Math.abs((currentFeeratePerKw - nextFeeratePerKw).toDouble / currentFeeratePerKw) > updateFeeMinDiffRatio
 
   /**
    * @param referenceFeePerKw  reference fee rate per kiloweight
@@ -200,7 +200,7 @@ object Helpers {
    * @param maxFeerateMismatch maximum fee rate mismatch tolerated
    * @return true if the difference between proposed and reference fee rates is too high.
    */
-  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatch: FeerateMismatch): Boolean =
+  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatch: FeerateTolerance): Boolean =
     currentFeePerKw < referenceFeePerKw * maxFeerateMismatch.ratioLow || referenceFeePerKw * maxFeerateMismatch.ratioHigh < currentFeePerKw
 
   /**

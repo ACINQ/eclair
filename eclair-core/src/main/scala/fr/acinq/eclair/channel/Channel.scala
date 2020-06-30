@@ -808,14 +808,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c@CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
-      if (d.localShutdown.isDefined)
+      if (d.localShutdown.isDefined) {
         handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
-      else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
-      // TODO: simplistic behavior, we could also sign-then-close
-      handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-        else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
+      } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) {
+        // TODO: simplistic behavior, we could also sign-then-close
+        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
+      } else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey)) {
         handleCommandError(InvalidFinalScript(d.channelId), c)
-      else {
+      } else {
         val shutdown = Shutdown(d.channelId, localScriptPubKey)
         handleCommandSuccess(sender, d.copy(localShutdown = Some(shutdown))) storing() sending shutdown
       }
@@ -1816,10 +1816,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
-        log.warning(s"closing OFFLINE ${d.channelId} due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
+        log.warning(s"closing OFFLINE channel due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
         handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
       } else {
-        log.warning(s"channel ${d.channelId} is OFFLINE but its fee mismatch is over the threshold: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
+        log.warning(s"channel is OFFLINE but its fee mismatch is over the threshold: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
         stay
       }
     } else {

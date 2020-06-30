@@ -21,7 +21,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{DeterministicWallet, Satoshi, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
-import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeerateMismatch, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -44,7 +44,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  val feeConfNoMismatch = OnChainFeeConf(FeeTargets(6, 2, 2, 6), new TestFeeEstimator, FeerateMismatch(0.00001, 100000.0), closeOnOfflineMismatch = false, 1.0)
+  val feeConfNoMismatch = OnChainFeeConf(FeeTargets(6, 2, 2, 6), new TestFeeEstimator, FeerateTolerance(0.00001, 100000.0), closeOnOfflineMismatch = false, 1.0)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()

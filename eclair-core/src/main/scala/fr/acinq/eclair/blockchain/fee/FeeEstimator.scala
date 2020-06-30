@@ -26,6 +26,6 @@ trait FeeEstimator {
 
 case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
 
-case class FeerateMismatch(ratioLow: Double, ratioHigh: Double)
+case class FeerateTolerance(ratioLow: Double, ratioHigh: Double)
 
-case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, maxFeerateMismatch: FeerateMismatch, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double)
+case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, maxFeerateMismatch: FeerateTolerance, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double)
