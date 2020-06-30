@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.db
 
+import fr.acinq.eclair.KamonExt
 import kamon.Kamon
 
 object Monitoring {
@@ -23,6 +24,18 @@ object Monitoring {
   object Metrics {
     val BackupCompleted = Kamon.counter("db.backup.completed")
     val BackupDuration = Kamon.timer("db.backup.duration")
+
+    val DbOperation = Kamon.counter("db.operation.execute")
+    val DbOperationDuration = Kamon.timer("db.operation.duration")
+
+    def withMetrics[T](name: String)(operation: => T): T = KamonExt.time(DbOperationDuration.withTag(Tags.DbOperation, name)) {
+      DbOperation.withTag(Tags.DbOperation, name).increment()
+      operation
+    }
+  }
+
+  object Tags {
+    val DbOperation = "operation"
   }
 
 }
