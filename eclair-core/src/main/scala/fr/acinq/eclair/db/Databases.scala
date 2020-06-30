@@ -45,14 +45,16 @@ trait Databases {
   val payments: PaymentsDb
 
   val pendingRelay: PendingRelayDb
-
-  def obtainExclusiveLock(): Unit
 }
 
 object Databases extends Logging {
 
   trait FileBackup { this: Databases =>
     def backup(backupFile: File): Unit
+  }
+
+  trait ExclusiveLock { this: Databases =>
+    def obtainExclusiveLock(): Unit
   }
 
   def init(dbConfig: Config, instanceId: UUID, datadir: File, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
@@ -125,7 +127,7 @@ object Databases extends Logging {
                    instanceId: UUID,
                    databaseLeaseInterval: FiniteDuration,
                    lockExceptionHandler: LockExceptionHandler = { _ => () },
-                   lockType: LockType = LockType.NONE, datadir: File): Databases = {
+                   lockType: LockType = LockType.NONE, datadir: File): Databases with ExclusiveLock = {
     val url = s"jdbc:postgresql://${host}:${port}/${database}"
 
     checkIfDatabaseUrlIsUnchanged(url, datadir)
@@ -149,7 +151,7 @@ object Databases extends Logging {
 
     implicit val ds: DataSource = new HikariDataSource(config)
 
-    val databases: Databases = new Databases {
+    val databases = new Databases with ExclusiveLock {
       override val network = new PgNetworkDb
       override val audit = new PgAuditDb
       override val channels = new PgChannelsDb
@@ -178,11 +180,9 @@ object Databases extends Logging {
       }
 
     }
-
-    override def obtainExclusiveLock(): Unit = ()
   }
 
-  def setupPgDatabases(dbConfig: Config, instanceId: UUID, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases = {
+  def setupPgDatabases(dbConfig: Config, instanceId: UUID, datadir: File, lockExceptionHandler: LockExceptionHandler): Databases with ExclusiveLock = {
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
     val port = dbConfig.getInt("postgres.port")
