@@ -219,6 +219,7 @@ object ChannelRelayer {
       case (_: ExpiryTooBig, _) => ExpiryTooFar
       case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+      case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
       case (_: ChannelUnavailable, None) => PermanentChannelFailure
       case _ => TemporaryNodeFailure
