@@ -21,6 +21,7 @@ import java.nio.file.{Files, StandardCopyOption}
 
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
+import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.Monitoring.Metrics
@@ -55,21 +56,18 @@ class FileBackupHandler private(databases: FileBackup, backupFile: File, backupS
 
   def receive: Receive = {
     case persisted: ChannelPersisted =>
-      val start = System.currentTimeMillis()
-      val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
-      databases.backup(tmpFile)
+      KamonExt.time(Metrics.FileBackupDuration.withoutTags()) {
+        val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
+        databases.backup(tmpFile)
 
-      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
-      // as the temporary file
-      Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-      val end = System.currentTimeMillis()
+        // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
+        // as the temporary file
+        Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
 
-      // publish a notification that we have updated our backup
-      context.system.eventStream.publish(BackupCompleted)
-      Metrics.FileBackupCompleted.withoutTags().increment()
-      Metrics.FileBackupDuration.withoutTags().record(end - start)
-
-      log.debug(s"database backup triggered by channelId=${persisted.channelId} took ${end - start}ms")
+        // publish a notification that we have updated our backup
+        context.system.eventStream.publish(BackupCompleted)
+        Metrics.FileBackupCompleted.withoutTags().increment()
+      }
 
       backupScript_opt.foreach(backupScript => {
         Try {
