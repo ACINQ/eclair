@@ -1760,7 +1760,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Nil =>
           log.debug("nothing to replay")
         case cmds =>
-          log.info(s"replaying ${cmds.size} unacked fulfills/fails")
+          log.info("replaying {} unacked fulfills/fails", cmds.size)
           cmds.foreach(self ! _) // they all have commit = false
       }
     case SYNCING -> (NORMAL | SHUTDOWN) =>
