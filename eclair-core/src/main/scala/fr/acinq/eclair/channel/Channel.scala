@@ -1757,7 +1757,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   onTransition {
     case _ -> CLOSING =>
       PendingRelayDb.getPendingFailsAndFulfills(nodeParams.db.pendingRelay, nextStateData.asInstanceOf[HasCommitments].channelId) match {
-        case Nil => ()
+        case Nil =>
+          log.debug("nothing to replay")
         case cmds =>
           log.info(s"replaying ${cmds.size} unacked fulfills/fails")
           cmds.foreach(self ! _) // they all have commit = false
@@ -1766,7 +1767,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       PendingRelayDb.getPendingFailsAndFulfills(nodeParams.db.pendingRelay, nextStateData.asInstanceOf[HasCommitments].channelId) match {
         case Nil =>
           log.debug("nothing to replay")
-          ()
         case cmds =>
           log.info("replaying {} unacked fulfills/fails", cmds.size)
           cmds.foreach(self ! _) // they all have commit = false
