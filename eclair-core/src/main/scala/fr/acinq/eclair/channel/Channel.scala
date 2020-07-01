@@ -654,8 +654,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
         case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          nodeParams.db.pendingRelay.removePendingRelay(d.channelId, c.id)
+          // we acknowledge the command right away in case of failure
+          Helpers.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
           handleCommandError(cause, c)
       }
 
@@ -675,8 +675,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          nodeParams.db.pendingRelay.removePendingRelay(d.channelId, c.id)
+          // we acknowledge the command right away in case of failure
+          Helpers.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
           handleCommandError(cause, c)
       }
 
@@ -687,8 +687,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          nodeParams.db.pendingRelay.removePendingRelay(d.channelId, c.id)
+          // we acknowledge the command right away in case of failure
+          Helpers.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
           handleCommandError(cause, c)
       }
 
@@ -1001,8 +1001,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
         case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          nodeParams.db.pendingRelay.removePendingRelay(d.channelId, c.id)
+          // we acknowledge the command right away in case of failure
+          Helpers.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
           handleCommandError(cause, c)
       }
 
@@ -1021,8 +1021,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          nodeParams.db.pendingRelay.removePendingRelay(d.channelId, c.id)
+          // we acknowledge the command right away in case of failure
+          Helpers.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
           handleCommandError(cause, c)
       }
 
@@ -1032,8 +1032,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
-          // we can clean up the command right away in case of failure
-          nodeParams.db.pendingRelay.removePendingRelay(d.channelId, c.id)
+          // we acknowledge the command right away in case of failure
+          Helpers.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
           handleCommandError(cause, c)
       }
 

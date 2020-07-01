@@ -55,6 +55,10 @@ object Helpers {
     db.addPendingRelay(channelId, cmd)
   }
 
+  def ackCommand(db: PendingRelayDb, channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
+    db.removePendingRelay(channelId, cmd.id)
+  }
+
   def ackPendingFailsAndFulfills(db: PendingRelayDb, updates: List[UpdateMessage])(implicit log: LoggingAdapter): Unit = updates.collect {
     case u: UpdateFulfillHtlc =>
       log.debug(s"fulfill acked for htlcId=${u.id}")
