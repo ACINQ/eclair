@@ -1209,6 +1209,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32)) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   private def testUpdateFulfillHtlc(f: FixtureParam) = {
@@ -1329,6 +1330,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC") { f =>
@@ -1373,6 +1375,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   private def testUpdateFailHtlc(f: FixtureParam) = {
