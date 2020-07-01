@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import akka.actor.{ActorContext, ActorRef}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
@@ -24,7 +25,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
-import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.{ChannelsDb, PendingRelayDb}
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._

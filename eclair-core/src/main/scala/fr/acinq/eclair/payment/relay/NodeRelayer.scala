@@ -23,6 +23,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
@@ -46,7 +47,7 @@ import scala.collection.immutable.Queue
  * It aggregates incoming HTLCs (in case multi-part was used upstream) and then forwards the requested amount (using the
  * router to find a route to the remote node and potentially splitting the payment using multi-part).
  */
-class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
+class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
 
   import NodeRelayer._
 
@@ -135,9 +136,6 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: Actor
         rejectPayment(p.upstream, translateError(failures, p.nextPayload.outgoingNodeId))
       })
       context become main(pendingIncoming, pendingOutgoing - paymentHash)
-
-    case ack: CommandBuffer.CommandAck => commandBuffer forward ack
-
   }
 
   def spawnOutgoingPayFSM(cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
@@ -179,7 +177,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: Actor
 
   private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
   }
 
   private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage]): Unit = {
@@ -189,7 +187,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: Actor
 
   private def fulfillPayment(upstream: Upstream.TrampolineRelayed, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    commandBuffer ! CommandBuffer.CommandSend(add.channelId, cmdFulfill)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFulfill)
   })
 
   override def mdc(currentMessage: Any): MDC = {
@@ -209,7 +207,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: Actor
 
 object NodeRelayer {
 
-  def props(nodeParams: NodeParams, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) = Props(new NodeRelayer(nodeParams, router, commandBuffer, register))
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef) = Props(new NodeRelayer(nodeParams, router, register))
 
   /**
    * We start by aggregating an incoming HTLC set. Once we received the whole set, we will compute a route to the next
