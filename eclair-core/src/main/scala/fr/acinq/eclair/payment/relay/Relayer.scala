@@ -25,6 +25,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
@@ -132,7 +133,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         case Right(r: IncomingPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
-            Helpers.safeSend(register, nodeParams.db.pendingRelay, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
+            PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           } else {
             nodeRelayer forward r
           }
@@ -140,11 +141,11 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
-          Helpers.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
+          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
           val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
-          Helpers.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
+          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
     case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
@@ -160,7 +161,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
       case Origin.Local(_, Some(sender)) => sender ! ff
       case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
         val cmd = CMD_FULFILL_HTLC(originHtlcId, ff.paymentPreimage, commit = true)
-        Helpers.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
+        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
         context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
       case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
       case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
@@ -176,7 +177,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           case ForwardRemoteFailMalformed(fail, _, _) => CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
           case _: ForwardOnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
         }
-        Helpers.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
+        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
       case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
       case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
     }

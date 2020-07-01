@@ -21,6 +21,7 @@ import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.IncomingPacket
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelUpdates, NodeChannels, OutgoingChannel}
@@ -49,7 +50,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
         case RelayFailure(cmdFail) =>
           Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
-          Helpers.safeSend(register, nodeParams.db.pendingRelay, r.add.channelId, cmdFail)
+          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, r.add.channelId, cmdFail)
         case RelaySuccess(selectedShortChannelId, cmdAdd) =>
           log.info(s"forwarding htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=$selectedShortChannelId")
           register ! Register.ForwardShortId(selectedShortChannelId, cmdAdd)
@@ -59,7 +60,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-      Helpers.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
+      PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
 
     case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
       case Origin.Relayed(originChannelId, originHtlcId, _, _) => addFailed.originalCommand match {
@@ -71,7 +72,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
           val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
           Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #$originHtlcId from channelId=$originChannelId reason=${cmdFail.reason}")
-          Helpers.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmdFail)
+          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmdFail)
       }
       case _ => throw new IllegalArgumentException(s"channel relayer received unexpected failure: $addFailed")
     }

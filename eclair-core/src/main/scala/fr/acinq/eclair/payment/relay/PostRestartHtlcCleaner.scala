@@ -30,9 +30,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{Features, LongToBtcAmount, NodeParams}
-import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.Promise
 import scala.util.Try
 
@@ -159,7 +157,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
             log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${origins.length} HTLCs upstream")
             origins.foreach { case (channelId, htlcId) =>
               Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = true).increment()
-              Helpers.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
+              PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
             }
           }
           val relayedOut1 = relayedOut diff Set((fulfilledHtlc.channelId, fulfilledHtlc.id))
@@ -208,7 +206,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  Helpers.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+                  PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
                 }
               case _: Origin.Relayed =>
                 Metrics.Unhandled.withTag(Metrics.Hint, origin.getClass.getSimpleName).increment()

@@ -22,7 +22,8 @@ import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Helpers, Upstream}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
@@ -176,7 +177,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
 
   private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    Helpers.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
   }
 
   private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage]): Unit = {
@@ -186,7 +187,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
 
   private def fulfillPayment(upstream: Upstream.TrampolineRelayed, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    Helpers.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFulfill)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFulfill)
   })
 
   override def mdc(currentMessage: Any): MDC = {
