@@ -29,10 +29,10 @@ trait ReceiveHandler {
 /**
  * Generic payment handler that delegates handling of incoming messages to a list of handlers.
  */
-class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Actor with DiagnosticActorLogging {
+class PaymentHandler(nodeParams: NodeParams, register: ActorRef) extends Actor with DiagnosticActorLogging {
 
   // we do this instead of sending it to ourselves, otherwise there is no guarantee that this would be the first processed message
-  private val defaultHandler = new MultiPartHandler(nodeParams, nodeParams.db.payments, commandBuffer)
+  private val defaultHandler = new MultiPartHandler(nodeParams, register, nodeParams.db.payments)
 
   override def receive: Receive = normal(defaultHandler.handle(context, log))
 
@@ -47,5 +47,5 @@ class PaymentHandler(nodeParams: NodeParams, commandBuffer: ActorRef) extends Ac
 }
 
 object PaymentHandler {
-  def props(nodeParams: NodeParams, commandBuffer: ActorRef): Props = Props(new PaymentHandler(nodeParams, commandBuffer))
+  def props(nodeParams: NodeParams, register: ActorRef): Props = Props(new PaymentHandler(nodeParams, register))
 }
