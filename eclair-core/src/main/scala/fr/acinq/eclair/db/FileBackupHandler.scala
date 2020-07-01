@@ -22,6 +22,7 @@ import java.nio.file.{Files, StandardCopyOption}
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
 import fr.acinq.eclair.channel.ChannelPersisted
+import fr.acinq.eclair.db.Databases.FileBackup
 
 import scala.sys.process.Process
 import scala.util.{Failure, Success, Try}
@@ -46,7 +47,7 @@ import scala.util.{Failure, Success, Try}
   *
   * Constructor is private so users will have to use BackupHandler.props() which always specific a custom mailbox
   */
-class BackupHandler private(databases: Databases, backupFile: File, backupScript_opt: Option[String]) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
+class FileBackupHandler private(databases: FileBackup, backupFile: File, backupScript_opt: Option[String]) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
 
   // we listen to ChannelPersisted events, which will trigger a backup
   context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
@@ -56,6 +57,7 @@ class BackupHandler private(databases: Databases, backupFile: File, backupScript
       val start = System.currentTimeMillis()
       val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
       databases.backup(tmpFile)
+
       // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
       // as the temporary file
       Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
@@ -83,8 +85,8 @@ sealed trait BackupEvent
 // this notification is sent when we have completed our backup process (our backup file is ready to be used)
 case object BackupCompleted extends BackupEvent
 
-object BackupHandler {
+object FileBackupHandler {
   // using this method is the only way to create a BackupHandler actor
   // we make sure that it uses a custom bounded mailbox, and a custom pinned dispatcher (i.e our actor will have its own thread pool with 1 single thread)
-  def props(databases: Databases, backupFile: File, backupScript_opt: Option[String]) = Props(new BackupHandler(databases, backupFile, backupScript_opt)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
+  def props(databases: FileBackup, backupFile: File, backupScript_opt: Option[String]) = Props(new FileBackupHandler(databases, backupFile, backupScript_opt)).withMailbox("eclair.backup-mailbox").withDispatcher("eclair.backup-dispatcher")
 }
