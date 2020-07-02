@@ -117,6 +117,7 @@ case class Commitments(channelVersion: ChannelVersion,
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
         val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
+        // we take that htlc output into account in the fee buffer at a x2 feerate increase
         val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
         val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
         (balanceNoFees - amountToReserve1).max(0 msat)
@@ -146,6 +147,7 @@ case class Commitments(channelVersion: ChannelVersion,
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
         val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
+        // we take that htlc output into account in the fee buffer at a x2 feerate increase
         val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
         val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
         (balanceNoFees - amountToReserve1).max(0 msat)
