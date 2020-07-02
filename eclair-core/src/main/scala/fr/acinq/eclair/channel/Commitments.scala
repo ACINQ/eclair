@@ -110,14 +110,16 @@ case class Commitments(channelVersion: ChannelVersion,
       // the funder needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
       // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
       val funderFeeBuffer = commitTxFeeMsat(remoteParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
-      if (balanceNoFees - commitFees.max(funderFeeBuffer) < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
+      val amountToReserve = commitFees.max(funderFeeBuffer)
+      if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees.max(funderFeeBuffer)).max(0 msat)
+        (balanceNoFees - amountToReserve).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
         val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
         val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
-        (balanceNoFees - commitFees1.max(funderFeeBuffer1)).max(0 msat)
+        val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
+        (balanceNoFees - amountToReserve1).max(0 msat)
       }
     } else {
       // The fundee doesn't pay on-chain fees.
@@ -137,14 +139,16 @@ case class Commitments(channelVersion: ChannelVersion,
       // we expect the funder to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
       // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
       val funderFeeBuffer = commitTxFeeMsat(localParams.dustLimit, reduced.copy(feeratePerKw = 2 * reduced.feeratePerKw)) + htlcOutputFee(2 * reduced.feeratePerKw)
-      if (balanceNoFees - commitFees.max(funderFeeBuffer) < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
+      val amountToReserve = commitFees.max(funderFeeBuffer)
+      if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localParams.dustLimit, reduced)) {
         // htlc will be trimmed
-        (balanceNoFees - commitFees.max(funderFeeBuffer)).max(0 msat)
+        (balanceNoFees - amountToReserve).max(0 msat)
       } else {
         // htlc will have an output in the commitment tx, so there will be additional fees.
         val commitFees1 = commitFees + htlcOutputFee(reduced.feeratePerKw)
         val funderFeeBuffer1 = funderFeeBuffer + htlcOutputFee(2 * reduced.feeratePerKw)
-        (balanceNoFees - commitFees1.max(funderFeeBuffer1)).max(0 msat)
+        val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
+        (balanceNoFees - amountToReserve1).max(0 msat)
       }
     }
   }
