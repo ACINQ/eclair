@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
@@ -48,7 +49,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
     }
   }
 
-  override def addOrUpdateChannel(state: HasCommitments): Unit = {
+  override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel") {
     withLock { pg =>
       val data = stateDataCodec.encode(state).require.toByteArray
       using(pg.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
@@ -65,7 +66,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
     }
   }
 
-  override def removeChannel(channelId: ByteVector32): Unit = {
+  override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel") {
     withLock { pg =>
       using(pg.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -84,7 +85,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
     }
   }
 
-  override def listLocalChannels(): Seq[HasCommitments] = {
+  override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels") {
     withLock { pg =>
       using(pg.createStatement) { statement =>
         val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=FALSE")
@@ -93,7 +94,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
     }
   }
 
-  override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
+  override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info") {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -105,7 +106,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
     }
   }
 
-  override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
+  override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = withMetrics("channels/list-htlc-infos") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
         statement.setString(1, channelId.toHex)

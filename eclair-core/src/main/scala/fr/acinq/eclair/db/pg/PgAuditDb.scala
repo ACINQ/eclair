@@ -21,6 +21,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi}
@@ -64,7 +65,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: ChannelLifecycleEvent): Unit =
+  override def add(e: ChannelLifecycleEvent): Unit = withMetrics("audit/add-channel-lifecycle") {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, e.channelId.toHex)
@@ -77,8 +78,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate()
       }
     }
+  }
 
-  override def add(e: PaymentSent): Unit =
+  override def add(e: PaymentSent): Unit = withMetrics("audit/add-payment-sent") {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
@@ -97,8 +99,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeBatch()
       }
     }
+  }
 
-  override def add(e: PaymentReceived): Unit =
+  override def add(e: PaymentReceived): Unit = withMetrics("audit/add-payment-received") {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
@@ -111,8 +114,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeBatch()
       }
     }
+  }
 
-  override def add(e: PaymentRelayed): Unit =
+  override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed") {
     inTransaction { pg =>
       val payments = e match {
         case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
@@ -134,8 +138,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         }
       }
     }
+  }
 
-  override def add(e: NetworkFeePaid): Unit =
+  override def add(e: NetworkFeePaid): Unit = withMetrics("audit/add-network-fee") {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, e.channelId.toHex)
@@ -147,8 +152,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate()
       }
     }
+  }
 
-  override def add(e: ChannelErrorOccurred): Unit =
+  override def add(e: ChannelErrorOccurred): Unit = withMetrics("audit/add-channel-error") {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         val (errorName, errorMessage) = e.error match {
@@ -164,6 +170,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate()
       }
     }
+  }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
     inTransaction { pg =>

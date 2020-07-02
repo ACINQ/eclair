@@ -19,6 +19,7 @@ package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{Command, HasHtlcId}
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
@@ -43,7 +44,7 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pend
     }
   }
 
-  override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
+  override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = withMetrics("pending-relay/add") {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -54,7 +55,7 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pend
     }
   }
 
-  override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = {
+  override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove") {
     withLock { pg =>
       using(pg.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -64,7 +65,7 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pend
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = {
+  override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = withMetrics("pending-relay/list-channel") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -74,7 +75,7 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pend
     }
   }
 
-  override def listPendingRelay(): Set[(ByteVector32, Long)] = {
+  override def listPendingRelay(): Set[(ByteVector32, Long)] = withMetrics("pending-relay/list") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
         val rs = statement.executeQuery()
