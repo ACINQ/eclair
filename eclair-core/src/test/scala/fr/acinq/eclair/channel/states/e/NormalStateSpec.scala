@@ -206,7 +206,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(MilliSatoshi(Int.MaxValue), randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(Int.MaxValue), missing = 1379883 sat, reserve = 20000 sat, fees = 8960 sat)
+    val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(Int.MaxValue), missing = 1388843 sat, reserve = 20000 sat, fees = 8960 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -226,23 +226,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)") { f =>
     import f._
     val sender = TestProbe()
-    addHtlc(767600000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(758640000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend === 0.msat)
 
     // actual test begins
     // at this point alice has the minimal amount to sustain a channel
-    // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first two HTLCs should be allowed
-    sender.send(bob, CMD_ADD_HTLC(12000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first HTLCs should be allowed
+    for (_ <- 1 to 7) {
+      sender.send(bob, CMD_ADD_HTLC(12000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+      sender.expectMsg(ChannelCommandResponse.Ok)
+    }
 
-    sender.send(bob, CMD_ADD_HTLC(12500000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
-    sender.expectMsg(ChannelCommandResponse.Ok)
-
-    // but this one will dip alice below her reserve: we must wait for the two previous HTLCs to settle before sending any more
+    // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
     val failedAdd = CMD_ADD_HTLC(11000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, failedAdd)
-    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 1720 sat, 10000 sat, 14120 sat)
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 1360 sat, 10000 sat, 22720 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), failedAdd.paymentHash, error, Origin.Local(failedAdd.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(failedAdd))))
   }
 
@@ -256,7 +255,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(alice, CMD_ADD_HTLC(200000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[UpdateAddHtlc]
-    sender.send(alice, CMD_ADD_HTLC(64160000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(51760000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
     sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[UpdateAddHtlc]
     val add = CMD_ADD_HTLC(1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
@@ -278,7 +277,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[UpdateAddHtlc]
     val add = CMD_ADD_HTLC(500000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = InsufficientFunds(channelId(alice), amount = 500000000 msat, missing = 335840 sat, reserve = 20000 sat, fees = 12400 sat)
+    val error = InsufficientFunds(channelId(alice), amount = 500000000 msat, missing = 348240 sat, reserve = 20000 sat, fees = 12400 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -340,7 +339,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // this is over channel-capacity
     val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis.toMilliSatoshi * 2 / 3, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add2)
-    val error = InsufficientFunds(channelId(alice), add2.amount, 567453 sat, 20000 sat, 10680 sat)
+    val error = InsufficientFunds(channelId(alice), add2.amount, 578133 sat, 20000 sat, 10680 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
   }
