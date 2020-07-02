@@ -450,15 +450,17 @@ object PaymentRequest {
       case _ => 'm'
     }
 
-    def decode(input: String): Option[MilliSatoshi] =
-      input match {
-        case "" => None
-        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 10 milli-satoshis
-        case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
-        case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
-        case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
-        case a => Some(MilliSatoshi(a.toLong * 100000000000L))
+    def decode(input: String): Option[MilliSatoshi] = {
+      val amount = input match {
+        case "" => 0.msat
+        case a if a.last == 'p' => (a.dropRight(1).toLong / 10L).msat // 1 pico-bitcoin == 10 milli-satoshis
+        case a if a.last == 'n' => (a.dropRight(1).toLong * 100L).msat
+        case a if a.last == 'u' => (a.dropRight(1).toLong * 100000L).msat
+        case a if a.last == 'm' => (a.dropRight(1).toLong * 100000000L).msat
+        case a => (a.toLong * 100000000000L).msat
       }
+      if (amount > 0.msat) Some(amount) else None
+    }
 
     def encode(amount: Option[MilliSatoshi]): String = {
       amount match {
