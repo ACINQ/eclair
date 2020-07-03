@@ -192,6 +192,11 @@ object Features {
     val mandatory = 50
   }
 
+  case object KeySend extends Feature {
+    val rfcName = "keysend"
+    val mandatory = 54
+  }
+
   val knownFeatures: Set[Feature] = Set(
     OptionDataLossProtect,
     InitialRoutingSync,
@@ -202,7 +207,8 @@ object Features {
     BasicMultiPartPayment,
     Wumbo,
     TrampolinePayment,
-    StaticRemoteKey
+    StaticRemoteKey,
+    KeySend
   )
 
   private val supportedMandatoryFeatures: Set[Feature] = Set(
@@ -212,7 +218,8 @@ object Features {
     ChannelRangeQueriesExtended,
     PaymentSecret,
     BasicMultiPartPayment,
-    Wumbo
+    Wumbo,
+    KeySend
   )
 
   // Features may depend on other features, as specified in Bolt 9.
