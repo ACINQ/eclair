@@ -47,17 +47,51 @@ eclair-cli getinfo
 
 ```json
 {
-   "version":"1.0.0-SNAPSHOT-e3f1ec0",
-   "nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-   "alias":"ACINQ",
-   "color":"#000102",
-   "features":"0a8a",
-   "chainHash":"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-   "blockHeight":123456,
-   "publicAddresses":[
-      "34.239.230.56:9735",
-      "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"
-   ]
+  "version": "0.4.1-SNAPSHOT-adf4da6",
+  "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+  "alias": "ACINQ",
+  "color": "#000102",
+  "features": {
+    "activated": [
+      {
+        "name": "basic_mpp",
+        "support": "optional"
+      },
+      {
+        "name": "initial_routing_sync",
+        "support": "optional"
+      },
+      {
+        "name": "option_data_loss_protect",
+        "support": "optional"
+      },
+      {
+        "name": "gossip_queries_ex",
+        "support": "optional"
+      },
+      {
+        "name": "payment_secret",
+        "support": "optional"
+      },
+      {
+        "name": "var_onion_optin",
+        "support": "optional"
+      },
+      {
+        "name": "gossip_queries",
+        "support": "optional"
+      }
+    ],
+    "unknown": []
+  },
+  "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+  "network": "regtest",
+  "blockHeight": 123456,
+  "publicAddresses": [
+    "34.239.230.56:9735",
+    "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"
+  ],
+  "instanceId": "53e081ac-989b-4c35-ab0c-07f86457156d"
 }
 ```
 
@@ -231,12 +265,14 @@ eclair-cli close --channelId=<channel>
 > The above command returns:
 
 ```shell
-ok
+{
+  "<channel>": "ok"
+}
 ```
 
-Initiates a cooperative close for a give channel that belongs to this eclair node, the API returns once the _funding_signed_ message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address. The endpoint supports receiving multiple channel id(s) or short channel
-id(s), to close multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
+Initiates a cooperative close for given channels that belong to this eclair node, the API returns once the _funding_signed_ message has been negotiated.
+If you specified a scriptPubKey then the closing transaction will spend to that address.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -264,12 +300,14 @@ eclair-cli forceclose --channelId=<channel>
 > The above command returns:
 
 ```shell
-ok
+{
+  "<channel>": "ok"
+}
 ```
 
-Initiates an unilateral close for a give channel that belongs to this eclair node, once the commitment has been broadcasted the API returns its
-transaction id. The endpoint supports receiving multiple channel id(s) or short channel id(s), to close multiple channel you can use the 
-parameters `channelIds` or `shortChannelIds` below.
+Initiates an unilateral close for given channels that belong to this eclair node, once the commitment has been broadcasted the API returns its
+transaction id.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -283,7 +321,6 @@ channelId      | The channelId of the channel you want to close      | No       
 shortChannelId | The shortChannelId of the channel you want to close | Yes      | ShortChannelId (String)
 channelIds     | List of channelIds to force-close                   | Yes      | CSV or JSON list of channelId
 shortChannelIds| List of shortChannelIds to force-close              | Yes      | CSV or JSON list of shortChannelId
-
 
 # UpdateRelayFee
 
@@ -304,12 +341,13 @@ eclair-cli updaterelayfee \
 > The above command returns:
 
 ```shell
-ok
+{
+  "<channel>": "ok"
+}
 ```
 
 Updates the fee policy for the specified _channelId_, a new update for this channel will be broadcasted to the network.
-The endpoint supports receiving multiple channel id(s) or short channel id(s), to update multiple channel you can use the 
-parameters `channelIds` or `shortChannelIds` below.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -377,72 +415,127 @@ eclair-cli channels
 ```json
 [
   {
-    "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    "channelId": "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
+    "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+    "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
     "state": "NORMAL",
     "data": {
       "commitments": {
+        "channelVersion": "00000000000000000000000000000001",
         "localParams": {
-          "nodeId": "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
-          "channelKeyPath": {
+          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+          "fundingKeyPath": {
             "path": [
-              698411009,
-              4289979314,
-              8627192,
-              3309856639
+              2285452814,
+              3138980649,
+              3800551753,
+              1747192007,
+              941051304,
+              3416368401,
+              48609846,
+              1910237561,
+              2147483649
             ]
           },
           "dustLimit": 546,
-          "maxHtlcValueInFlight": 5000000000,
-          "channelReserve": 2300,
+          "maxHtlcValueInFlightMsat": 5000000000,
+          "channelReserve": 3000,
           "htlcMinimum": 1,
-          "toSelfDelay": 144,
+          "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
           "isFunder": true,
-          "defaultFinalScriptPubKey": "a9148852d917c2f8cdf3eacea8015c35bfe57e98eede87",
-          "globalFeatures": "",
-          "localFeatures": "82"
+          "defaultFinalScriptPubKey": "a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087",
+          "features": {
+            "activated": [
+              {
+                "name": "gossip_queries_ex",
+                "support": "optional"
+              },
+              {
+                "name": "initial_routing_sync",
+                "support": "optional"
+              },
+              {
+                "name": "option_data_loss_protect",
+                "support": "optional"
+              },
+              {
+                "name": "var_onion_optin",
+                "support": "optional"
+              },
+              {
+                "name": "gossip_queries",
+                "support": "optional"
+              }
+            ],
+            "unknown": []
+          }
         },
         "remoteParams": {
-          "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
           "dustLimit": 546,
-          "maxHtlcValueInFlight": 5000000000,
-          "channelReserve": 2300,
+          "maxHtlcValueInFlightMsat": 5000000000,
+          "channelReserve": 3000,
           "htlcMinimum": 1,
-          "toSelfDelay": 144,
+          "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
-          "fundingPubKey": "030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1c7b09c94",
-          "revocationBasepoint": "02a5a32c4dc63d0bb98a8fac8a57fd9d494b1ac843b87db3863d76b7c4bebd9026",
-          "paymentBasepoint": "0304db8d9e0a46788e14f19a0be20e33eb198dc7e652f50de53e835a7d82f9a0f7",
-          "delayedPaymentBasepoint": "03a5c1e85d9c21f21e8e0d15a44bc7240b7d3ec4469b042e4724a9a36293792351",
-          "htlcBasepoint": "037bb6e277a1ab4d242a6e7969bad81055999946f2e7f87daac90c309680c14104",
-          "globalFeatures": "",
-          "localFeatures": "8a"
+          "fundingPubKey": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
+          "revocationBasepoint": "028743ddd812e0e8d09a1a097df5a203e30ab355e430cf8e167216a65376aea793",
+          "paymentBasepoint": "02ebc5bd154facc6ce58e77f649a05faa7b33e45d08defbd3fc3eb07aa7e20835c",
+          "delayedPaymentBasepoint": "026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5",
+          "htlcBasepoint": "037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf",
+          "features": {
+            "activated": [
+              {
+                "name": "gossip_queries_ex",
+                "support": "optional"
+              },
+              {
+                "name": "initial_routing_sync",
+                "support": "optional"
+              },
+              {
+                "name": "option_data_loss_protect",
+                "support": "optional"
+              },
+              {
+                "name": "var_onion_optin",
+                "support": "optional"
+              },
+              {
+                "name": "gossip_queries",
+                "support": "optional"
+              }
+            ],
+            "unknown": []
+          }
         },
         "channelFlags": 1,
         "localCommit": {
-          "index": 181,
+          "index": 6,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 2382,
-            "toLocal": 227599428,
-            "toRemote": 2400572
+            "feeratePerKw": 45000,
+            "toLocal": 58800001,
+            "toRemote": 241199999
           },
           "publishableTxs": {
-            "commitTx": "0200000000010156d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e0000000000ea5719800260090000000000001600148109e081865b9bc47082ebfc52fe17de92ec4fe25372030000000000220020b3e40418334e76872523d3a5cc98ae9a50399408bfe111890be710652c51937b04004830450221008894cb338bf8c7064d5bb8c08099deae980d204c4c888af2c85d6c35e3db6010022057de8f44ea1fec571461ef6517baa25d649edd583e675b2a9a80478eff635b0e01483045022100eecf61753bffeb1ba617c3085fb34fb15e9130c2b8eaf030c40d8bf9e4e7f36e0220197aebae5873b0a64a03c36d00c5108761d4f0b07f730803b3981978c672ee2d01475221030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1a7b09c942103647d13a308e012100c9e4a9512065f2c3048f8f0160c665952a8f4f077798a5d52ae2a261420",
+            "commitTx": {
+              "txid": "0a5a81642268b5638bca8c830ab17bf7343950a46393f6b6858a188354652fc6",
+              "tx": "02000000000101d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04a01000000007b71b280026c66000000000000220020fb1e4938481309e95e663e06d1ecec23438976519399e9b574fd98ca3d32721d2fae0300000000001600142aca6f33e9f92e56a9586e696181d30979d15b27040047304402201ddb65ce52c0123d058661ee3aa6532561edb93f946402e2eb2b73fb5b8d637c02201d408be674b0afdf3696babb48caf1a0c1fe8f55c694cbfa9d3176066f94a65d01483045022100a4c180c4a68a11d5c45ae9f0abeabbb2f3573350eed05a23315172e402ccf196022077c8533b36c5b4a2413d4e8d13e1ad9d5658701f1ed2ff78c878e56179d841d801475221021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d21032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b352aee3212f20"
+            },
             "htlcTxsAndSigs": []
           }
         },
         "remoteCommit": {
-          "index": 181,
+          "index": 6,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 2382,
-            "toLocal": 2400572,
-            "toRemote": 227599428
+            "feeratePerKw": 45000,
+            "toLocal": 241199999,
+            "toRemote": 58800001
           },
-          "txid": "b11f1947175ce1fc05a1f60378f5cec6345d9acb04763d526c762a2c18892bf8",
-          "remotePerCommitmentPoint": "03128d3be2764bf853e19732135f6f2c8b348b1317051c8ea704b25468bbf373db"
+          "txid": "28c188f2e3f6e0ba59a94995af87214d880050974a0b7baac3a6aaacdd7dba6a",
+          "remotePerCommitmentPoint": "02742c1545be4a25b13c916a4622df61deb4efc21d8fa7e7776a487c696f6f1afc"
         },
         "localChanges": {
           "proposed": [],
@@ -454,44 +547,49 @@ eclair-cli channels
           "acked": [],
           "signed": []
         },
-        "localNextHtlcId": 82,
-        "remoteNextHtlcId": 1,
+        "localNextHtlcId": 3,
+        "remoteNextHtlcId": 0,
         "originChannels": {},
-        "remoteNextCommitInfo": "03a8ce1a067e9f0467f8d34f7d6ac25f90b31518bd3ce724f0a8448f2b8a745c92",
+        "remoteNextCommitInfo": "0337ceb9aa292177e416092adadfb1990aa16ae8be5c8108aa6e671384a7cd6b28",
         "commitInput": {
-          "outPoint": "0e7d63ce98dbaccd9c3061509e93b45adbeaf10997c4708213804da0edd6d756:0",
-          "amountSatoshis": 230000
+          "outPoint": "4af05ababd810486f773b71b896a8d3970fc238e7875bb737c870d02ac1febd4:1",
+          "amountSatoshis": 300000
         },
         "remotePerCommitmentSecrets": null,
-        "channelId": "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
+        "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"
       },
-      "shortChannelId": "565779x2711x0",
+      "shortChannelId": "538x4x1",
       "buried": true,
       "channelAnnouncement": {
-        "nodeSignature1": "304502210085c10f513c26cfe195ff52bce9e309b6fc3f351194a3de64efc25e299bbca1b802207fcba062c4e14f5b49889a5a220a1a189958a484cf2ee51445fea9359e25e44401",
-        "nodeSignature2": "30440220791753edd31a391806fdfa02c45560a54aa548fd1d3d8f3b05ca04420fe19dce0220109be60b94346dfb52d9f52187f890e9f04ef701a232ccdbcd99d4c05dabb90b01",
-        "bitcoinSignature1": "3045022100a27439d43ba6907cd135a3349ce48dd864f5189b3d42937911fe282fafd703cb0220614388e3e06a7f228c25452e9425d4357bd0363fde9838bed575711bf5e8f4fe01",
-        "bitcoinSignature2": "3045022100c8ec9d01fed71d91dc5161b06b4913b79c628c5d19d0c44cecf463a67d3fc0a5022051bd86094a17de9de0cf925ab62d58f39322d0363cb9be0aa7a28fd33a0854a301",
-        "features": "",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "565779x2711x0",
-        "nodeId1": "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
-        "nodeId2": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-        "bitcoinKey1": "03647d13a308e012100c9e4a9512065f2c3048f8f0160c665952a8f4f077798a5d",
-        "bitcoinKey2": "030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1c7b09c94"
+        "nodeSignature1": "4088e1b1e0ae77285434603359a797f779d2e12644957a89457bb9ab59899e324ecf4bb06379ad93fa6a3a31dfe050217dc3753fc56ddecbe020e5ca9f506db2",
+        "nodeSignature2": "8fa198fb50fd509e248ba7acd165243aef1ea20834f6857750cd4d919cf777dc3d871f1cbc7e4979aa01d748bd547d85f4d8d6ad23c9383700c0c8a9ca62f5c8",
+        "bitcoinSignature1": "aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c",
+        "bitcoinSignature2": "4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625",
+        "features": {
+          "activated": [],
+          "unknown": []
+        },
+        "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        "shortChannelId": "538x4x1",
+        "nodeId1": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+        "nodeId2": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+        "bitcoinKey1": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
+        "bitcoinKey2": "032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b3",
+        "unknownFields": ""
       },
       "channelUpdate": {
-        "signature": "3045022100eef406f8282b1115d4122f0e18c3b280378ef5fe1b827dd50fee627deeed986e0220629839a7425185d053d958037ee3817ba67fe6c74ead3ddc4ddb6fb3b5934f1001",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "565779x2711x0",
-        "timestamp": 1553521796,
+        "signature": "f331625e39043b243c86cbe53615ba8ed87f85ae088f145c061562bf9961617c4e85b132610a01a55eb0ca84e90fcc8510f9781a5c387f13a1d1569b211b1e73",
+        "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        "shortChannelId": "538x4x1",
+        "timestamp": 1593698172,
         "messageFlags": 1,
-        "channelFlags": 0,
+        "channelFlags": 1,
         "cltvExpiryDelta": 144,
         "htlcMinimumMsat": 1,
         "feeBaseMsat": 1000,
         "feeProportionalMillionths": 100,
-        "htlcMaximumMsat": 230000000
+        "htlcMaximumMsat": 300000000,
+        "unknownFields": ""
       }
     }
   }
@@ -523,72 +621,127 @@ eclair-cli channel --channelId=<channel>
 
 ```json
   {
-    "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    "channelId": "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
+    "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+    "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
     "state": "NORMAL",
     "data": {
       "commitments": {
+        "channelVersion": "00000000000000000000000000000001",
         "localParams": {
-          "nodeId": "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
-          "channelKeyPath": {
+          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+          "fundingKeyPath": {
             "path": [
-              698411009,
-              4289979314,
-              8627192,
-              3309856639
+              2285452814,
+              3138980649,
+              3800551753,
+              1747192007,
+              941051304,
+              3416368401,
+              48609846,
+              1910237561,
+              2147483649
             ]
           },
           "dustLimit": 546,
-          "maxHtlcValueInFlight": 5000000000,
-          "channelReserve": 2300,
+          "maxHtlcValueInFlightMsat": 5000000000,
+          "channelReserve": 3000,
           "htlcMinimum": 1,
-          "toSelfDelay": 144,
+          "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
           "isFunder": true,
-          "defaultFinalScriptPubKey": "a9148852d917c2f8cdf3eacea8015c35bfe57e98eede87",
-          "globalFeatures": "",
-          "localFeatures": "82"
+          "defaultFinalScriptPubKey": "a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087",
+          "features": {
+            "activated": [
+              {
+                "name": "gossip_queries_ex",
+                "support": "optional"
+              },
+              {
+                "name": "initial_routing_sync",
+                "support": "optional"
+              },
+              {
+                "name": "option_data_loss_protect",
+                "support": "optional"
+              },
+              {
+                "name": "var_onion_optin",
+                "support": "optional"
+              },
+              {
+                "name": "gossip_queries",
+                "support": "optional"
+              }
+            ],
+            "unknown": []
+          }
         },
         "remoteParams": {
-          "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
           "dustLimit": 546,
-          "maxHtlcValueInFlight": 5000000000,
-          "channelReserve": 2300,
+          "maxHtlcValueInFlightMsat": 5000000000,
+          "channelReserve": 3000,
           "htlcMinimum": 1,
-          "toSelfDelay": 144,
+          "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
-          "fundingPubKey": "030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1c7b09c94",
-          "revocationBasepoint": "02a5a32c4dc63d0bb98a8fac8a57fd9d494b1ac843b87db3863d76b7c4bebd9026",
-          "paymentBasepoint": "0304db8d9e0a46788e14f19a0be20e33eb198dc7e652f50de53e835a7d82f9a0f7",
-          "delayedPaymentBasepoint": "03a5c1e85d9c21f21e8e0d15a44bc7240b7d3ec4469b042e4724a9a36293792351",
-          "htlcBasepoint": "037bb6e277a1ab4d242a6e7969bad81055999946f2e7f87daac90c309680c14104",
-          "globalFeatures": "",
-          "localFeatures": "8a"
+          "fundingPubKey": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
+          "revocationBasepoint": "028743ddd812e0e8d09a1a097df5a203e30ab355e430cf8e167216a65376aea793",
+          "paymentBasepoint": "02ebc5bd154facc6ce58e77f649a05faa7b33e45d08defbd3fc3eb07aa7e20835c",
+          "delayedPaymentBasepoint": "026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5",
+          "htlcBasepoint": "037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf",
+          "features": {
+            "activated": [
+              {
+                "name": "gossip_queries_ex",
+                "support": "optional"
+              },
+              {
+                "name": "initial_routing_sync",
+                "support": "optional"
+              },
+              {
+                "name": "option_data_loss_protect",
+                "support": "optional"
+              },
+              {
+                "name": "var_onion_optin",
+                "support": "optional"
+              },
+              {
+                "name": "gossip_queries",
+                "support": "optional"
+              }
+            ],
+            "unknown": []
+          }
         },
         "channelFlags": 1,
         "localCommit": {
-          "index": 181,
+          "index": 6,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 2382,
-            "toLocal": 227599428,
-            "toRemote": 2400572
+            "feeratePerKw": 45000,
+            "toLocal": 58800001,
+            "toRemote": 241199999
           },
           "publishableTxs": {
-            "commitTx": "0200000000010156d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e0000000000ea5719800260090000000000001600148109e081865b9bc47082ebfc52fe17de92ec4fe25372030000000000220020b3e40418334e76872523d3a5cc98ae9a50399408bfe111890be710652c51937b04004830450221008894cb338bf8c7064d5bb8c08099deae980d204c4c888af2c85d6c35e3db6010022057de8f44ea1fec571461ef6517baa25d649edd583e675b2a9a80478eff635b0e01483045022100eecf61753bffeb1ba617c3085fb34fb15e9130c2b8eaf030c40d8bf9e4e7f36e0220197aebae5873b0a64a03c36d00c5108761d4f0b07f730803b3981978c672ee2d01475221030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1a7b09c942103647d13a308e012100c9e4a9512065f2c3048f8f0160c665952a8f4f077798a5d52ae2a261420",
+            "commitTx": {
+              "txid": "0a5a81642268b5638bca8c830ab17bf7343950a46393f6b6858a188354652fc6",
+              "tx": "02000000000101d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04a01000000007b71b280026c66000000000000220020fb1e4938481309e95e663e06d1ecec23438976519399e9b574fd98ca3d32721d2fae0300000000001600142aca6f33e9f92e56a9586e696181d30979d15b27040047304402201ddb65ce52c0123d058661ee3aa6532561edb93f946402e2eb2b73fb5b8d637c02201d408be674b0afdf3696babb48caf1a0c1fe8f55c694cbfa9d3176066f94a65d01483045022100a4c180c4a68a11d5c45ae9f0abeabbb2f3573350eed05a23315172e402ccf196022077c8533b36c5b4a2413d4e8d13e1ad9d5658701f1ed2ff78c878e56179d841d801475221021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d21032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b352aee3212f20"
+            },
             "htlcTxsAndSigs": []
           }
         },
         "remoteCommit": {
-          "index": 181,
+          "index": 6,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 2382,
-            "toLocal": 2400572,
-            "toRemote": 227599428
+            "feeratePerKw": 45000,
+            "toLocal": 241199999,
+            "toRemote": 58800001
           },
-          "txid": "b11f1947175ce1fc05a1f60378f5cec6345d9acb04763d526c762a2c18892bf8",
-          "remotePerCommitmentPoint": "03128d3be2764bf853e19732135f6f2c8b348b1317051c8ea704b25468bbf373db"
+          "txid": "28c188f2e3f6e0ba59a94995af87214d880050974a0b7baac3a6aaacdd7dba6a",
+          "remotePerCommitmentPoint": "02742c1545be4a25b13c916a4622df61deb4efc21d8fa7e7776a487c696f6f1afc"
         },
         "localChanges": {
           "proposed": [],
@@ -600,48 +753,52 @@ eclair-cli channel --channelId=<channel>
           "acked": [],
           "signed": []
         },
-        "localNextHtlcId": 82,
-        "remoteNextHtlcId": 1,
+        "localNextHtlcId": 3,
+        "remoteNextHtlcId": 0,
         "originChannels": {},
-        "remoteNextCommitInfo": "03a8ce1a067e9f0467f8d34f7d6ac25f90b31518bd3ce724f0a8448f2b8a745c92",
+        "remoteNextCommitInfo": "0337ceb9aa292177e416092adadfb1990aa16ae8be5c8108aa6e671384a7cd6b28",
         "commitInput": {
-          "outPoint": "0e7d63ce98dbaccd9c3061509e93b45adbeaf10997c4708213804da0edd6d756:0",
-          "amountSatoshis": 230000
+          "outPoint": "4af05ababd810486f773b71b896a8d3970fc238e7875bb737c870d02ac1febd4:1",
+          "amountSatoshis": 300000
         },
         "remotePerCommitmentSecrets": null,
-        "channelId": "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
+        "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"
       },
-      "shortChannelId": "565779x2711x0",
+      "shortChannelId": "538x4x1",
       "buried": true,
       "channelAnnouncement": {
-        "nodeSignature1": "304502210085c10f513c26cfe195ff52bce9e309b6fc3f351194a3de64efc25e299bbca1b802207fcba062c4e14f5b49889a5a220a1a189958a484cf2ee51445fea9359e25e44401",
-        "nodeSignature2": "30440220791753edd31a391806fdfa02c45560a54aa548fd1d3d8f3b05ca04420fe19dce0220109be60b94346dfb52d9f52187f890e9f04ef701a232ccdbcd99d4c05dabb90b01",
-        "bitcoinSignature1": "3045022100a27439d43ba6907cd135a3349ce48dd864f5189b3d42937911fe282fafd703cb0220614388e3e06a7f228c25452e9425d4357bd0363fde9838bed575711bf5e8f4fe01",
-        "bitcoinSignature2": "3045022100c8ec9d01fed71d91dc5161b06b4913b79c628c5d19d0c44cecf463a67d3fc0a5022051bd86094a17de9de0cf925ab62d58f39322d0363cb9be0aa7a28fd33a0854a301",
-        "features": "",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "565779x2711x0",
-        "nodeId1": "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
-        "nodeId2": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-        "bitcoinKey1": "03647d13a308e012100c9e4a9512065f2c3048f8f0160c665952a8f4f077798a5d",
-        "bitcoinKey2": "030110991e6e23961f4c013fa70f76317bc75cf38df33ff7b448b510d1c7b09c94"
+        "nodeSignature1": "4088e1b1e0ae77285434603359a797f779d2e12644957a89457bb9ab59899e324ecf4bb06379ad93fa6a3a31dfe050217dc3753fc56ddecbe020e5ca9f506db2",
+        "nodeSignature2": "8fa198fb50fd509e248ba7acd165243aef1ea20834f6857750cd4d919cf777dc3d871f1cbc7e4979aa01d748bd547d85f4d8d6ad23c9383700c0c8a9ca62f5c8",
+        "bitcoinSignature1": "aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c",
+        "bitcoinSignature2": "4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625",
+        "features": {
+          "activated": [],
+          "unknown": []
+        },
+        "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        "shortChannelId": "538x4x1",
+        "nodeId1": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+        "nodeId2": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+        "bitcoinKey1": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
+        "bitcoinKey2": "032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b3",
+        "unknownFields": ""
       },
       "channelUpdate": {
-        "signature": "3045022100eef406f8282b1115d4122f0e18c3b280378ef5fe1b827dd50fee627deeed986e0220629839a7425185d053d958037ee3817ba67fe6c74ead3ddc4ddb6fb3b5934f1001",
-        "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
-        "shortChannelId": "565779x2711x0",
-        "timestamp": 1553521796,
+        "signature": "f331625e39043b243c86cbe53615ba8ed87f85ae088f145c061562bf9961617c4e85b132610a01a55eb0ca84e90fcc8510f9781a5c387f13a1d1569b211b1e73",
+        "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        "shortChannelId": "538x4x1",
+        "timestamp": 1593698172,
         "messageFlags": 1,
-        "channelFlags": 0,
+        "channelFlags": 1,
         "cltvExpiryDelta": 144,
         "htlcMinimumMsat": 1,
         "feeBaseMsat": 1000,
         "feeProportionalMillionths": 100,
-        "htlcMaximumMsat": 230000000
+        "htlcMaximumMsat": 300000000,
+        "unknownFields": ""
       }
     }
   }
-
 ```
 
 Returns detailed information about a local channel.
@@ -660,13 +817,13 @@ channelId | The channel id of the requested channel | No       | 32-bytes-HexStr
 
 A set of API to query the network view of eclair.
 
-## AllNodes
+## Nodes
 
 ```shell
-curl -u :<eclair_api_password> -X POST "http://localhost:8080/allnodes"
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/nodes"
 
 # with eclair-cli
-eclair-cli allnodes
+eclair-cli nodes
 ```
 
 > The above command returns:
@@ -674,32 +831,96 @@ eclair-cli allnodes
 ```json
 [
   {
-    "signature": "3044022072537adb1a10dab3a4630b578e678f0b5b7f2916af65b5e2a1f71e751b8dddc802200903b8a33fc154b4542acee481446dd674238256d354249d7d10408c413201f201",
-    "features": "",
-    "timestamp": 1553000829,
+    "signature": "3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd",
+    "features": {
+      "activated": [
+        {
+          "name": "basic_mpp",
+          "support": "optional"
+        },
+        {
+          "name": "initial_routing_sync",
+          "support": "optional"
+        },
+        {
+          "name": "option_data_loss_protect",
+          "support": "optional"
+        },
+        {
+          "name": "gossip_queries_ex",
+          "support": "optional"
+        },
+        {
+          "name": "payment_secret",
+          "support": "optional"
+        },
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        },
+        {
+          "name": "gossip_queries",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    },
+    "timestamp": 1593698420,
     "nodeId": "03a8334aba5660e241468e2f0deb2526bfd50d0e3fe808d882913e39094dc1a028",
     "rgbColor": "#33cccc",
     "alias": "cosmicApotheosis",
     "addresses": [
       "138.229.205.237:9735"
-    ]
+    ],
+    "unknownFields": ""
   },
   {
-    "signature": "304502210080e1836a98f69133873a35bea4b9b9d5f5abdad376d526fb2f6ee46aaa77f62b022026ba53b630d76ae9d6c1beec134244a79669a31eb5e6a7cc2038aaefff84382b01",
-    "features": "",
-    "timestamp": 1553008703,
+    "signature": "3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd",
+    "features": {
+      "activated": [
+        {
+          "name": "initial_routing_sync",
+          "support": "optional"
+        },
+        {
+          "name": "option_data_loss_protect",
+          "support": "optional"
+        },
+        {
+          "name": "payment_secret",
+          "support": "optional"
+        },
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    },
+    "timestamp": 1593698420,
     "nodeId": "036a54f02d2186de192e4bcec3f7b47adb43b1fa965793387cd2471990ce1d236b",
     "rgbColor": "#1d236b",
     "alias": "capacity.network",
     "addresses": [
       "95.216.16.21:9735",
       "[2a01:4f9:2a:106a:0:0:0:2]:9736"
-    ]
+    ],
+    "unknownFields": ""
   }
 ]
 ```
 
-Returns information about all public nodes on the lightning network, this information is taken from the _node_announcement_ network message.
+Returns information about public nodes on the lightning network; this information is taken from the _node_announcement_ network message.
+
+### HTTP Request
+
+`POST http://localhost:8080/nodes`
+
+### Parameters
+
+Parameter | Description                         | Optional | Type
+--------- | ----------------------------------- | -------- | -----------------------------------------------
+nodeIds   | The node ids of the nodes to return | Yes      | CSV or JSON list of 33-bytes-HexString (String)
 
 ## AllChannels
 
@@ -753,7 +974,8 @@ eclair-cli allupdates
     "htlcMinimumMsat": 1000,
     "feeBaseMsat": 1000,
     "feeProportionalMillionths": 1,
-    "htlcMaximumMsat": 2970000000
+    "htlcMaximumMsat": 2970000000,
+    "unknownFields": ""
   },
   {
     "signature": "304402201848be0aff000ec279e2d043d1bde8b2c76a9277dab72b9d1523468961c5d78e0220541e233977f2288684dab6ec168e43dc3459d093e901dd6f2b5238c2b888845a01",
@@ -766,12 +988,13 @@ eclair-cli allupdates
     "htlcMinimumMsat": 1000,
     "feeBaseMsat": 1000,
     "feeProportionalMillionths": 2500,
-    "htlcMaximumMsat": 3960000000
+    "htlcMaximumMsat": 3960000000,
+    "unknownFields": ""
   }
 ]
 ```
 
-Returns detailed information about all public channels in the network, the information is mostly taken from the _channel_update_ network messages.
+Returns detailed information about all public channels in the network; the information is mostly taken from the _channel_update_ network messages.
 
 <aside class="warning">
 The allupdates API is CPU intensive for eclair and might slow down the application.
@@ -865,14 +1088,31 @@ eclair-cli createinvoice --description=<some_description> --amountMsat=<some_amo
 
 ```json
 {
-  "prefix": "lnbc",
-  "timestamp": 1555416528,
-  "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-  "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-  "description": "A payment description",
-  "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
-  "expiry": 21600,
-  "amount": 42000
+  "prefix": "lnbcrt",
+  "timestamp": 1593699654,
+  "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+  "serialized": "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+  "description": "#reckless",
+  "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+  "expiry": 3600,
+  "amount": 50000,
+  "features": {
+    "activated": [
+      {
+        "name": "var_onion_optin",
+        "support": "optional"
+      },
+      {
+        "name": "payment_secret",
+        "support": "optional"
+      },
+      {
+        "name": "basic_mpp",
+        "support": "optional"
+      }
+    ],
+    "unknown": []
+  }
 }
 ```
 
@@ -905,13 +1145,31 @@ eclair-cli parseinvoice --invoice=<some_bolt11invoice>
 
 ```json
 {
-  "prefix": "lnbc",
-  "timestamp": 1555416528,
-  "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-  "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-  "description": "wassa wassa",
-  "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
-  "expiry": 21600
+  "prefix": "lnbcrt",
+  "timestamp": 1593699654,
+  "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+  "serialized": "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+  "description": "#reckless",
+  "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+  "expiry": 3600,
+  "amount": 50000,
+  "features": {
+    "activated": [
+      {
+        "name": "var_onion_optin",
+        "support": "optional"
+      },
+      {
+        "name": "payment_secret",
+        "support": "optional"
+      },
+      {
+        "name": "basic_mpp",
+        "support": "optional"
+      }
+    ],
+    "unknown": []
+  }
 }
 ```
 
@@ -1062,76 +1320,113 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
 ```json
 [
   {
-    "id": "10886b3c-1803-415e-b97d-84d1003cda31",
-    "parentId": "10886b3c-1803-415e-b97d-84d1003cda31",
-    "externalId": "cool-id",
-    "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+    "id": "83fcc569-917a-4cac-b42d-6f6b186f21eb",
+    "parentId": "cd5666d5-7678-4458-b50b-21b363b34f5e",
+    "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
     "paymentType": "Standard",
-    "amount": 10000,
-    "recipientAmount": 10000,
-    "recipientNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
-    "createdAt": 1569337970908,
+    "amount": 4827118,
+    "recipientAmount": 90000000,
+    "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+    "createdAt": 1593698975810,
     "paymentRequest": {
       "prefix": "lnbcrt",
-      "timestamp": 1569337848,
-      "nodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
-      "serialized": "lnbcrt100n1pwc5v0cpp5sdkg090gz8lqxphmflhrac7sck3998w54jgddt9yh4067fnep2fsdqqxqrrssk43qe645fs02f84dem2hu7as56c23q928qreslvq65qlpa540gpx9qpgtf8fk9pqqgu7q9g7qgrs8q8g9r7jq0de62nx9dlpk8dh2msqpr894s",
-      "description": "",
-      "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
+      "timestamp": 1593698964,
+      "nodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+      "serialized": "lnbcrt900u1p00m655pp5jv0wry0tnqtkksqjy2shmjfxjxqhzjn2jsxs2lxqk4876yqlc0xqdqjwpex2urpwfjjqn2s2qxqrrss9qtzqqqqqq9qsqsp5wv8k8przrn54tj3wlz03s5z6xp82e959ujfgw05lacnukrpss4ss72jdwx9x9rvx0szts8ewfkhatez3kjujnu77msg5mp3t3vumsexht994k8f6wdrelflr4c5kghl6z02acawr6e9ppcrsex467zhahjcqax4658",
+      "description": "prepare MPP",
+      "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
       "expiry": 3600,
-      "amount": 10000
-    },
-    "status": {
-      "type": "failed",
-      "failures": [
-        {
-          "failureType": {
-            "name": "Remote"
+      "amount": 90000000,
+      "features": {
+        "activated": [
+          {
+            "name": "var_onion_optin",
+            "support": "optional"
           },
-          "failureMessage": "incorrect payment details or unknown payment hash",
-          "failedRoute": [
-            {
-              "nodeId": "02a9d7232139779a93c72eda7d9519957f7bc6c802d8618ca5a75c0b87ebfbc76f",
-              "nextNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
-              "shortChannelId": "1702x2x1"
-            }
-          ]
-        }
-      ],
-      "completedAt": 1569337971168
-    }
-  },
-  {
-    "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
-    "parentId": "c85d70da-d159-4a36-938a-c3d2f967f730",
-    "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
-    "paymentType": "Standard",
-    "amount": 10000,
-    "recipientAmount": 10000,
-    "recipientNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
-    "createdAt": 1569337870892,
-    "paymentRequest": {
-      "prefix": "lnbcrt",
-      "timestamp": 1569337848,
-      "nodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
-      "serialized": "lnbcrt100n1pwc5v0cpp5sdkg090gz8lqxphmflhrac7sck3998w54jgddt9yh4067fnep2fsdqqxqrrssk43qe645fs02f84dem2hu7as56c23q928qreslvq65qlpa540gpx9qpgtf8fk9pqqgu7q9g7qgrs8q8g9r7jq0de62nx9dlpk8dh2msqpr894s",
-      "description": "",
-      "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
-      "expiry": 3600,
-      "amount": 10000
+          {
+            "name": "payment_secret",
+            "support": "optional"
+          },
+          {
+            "name": "basic_mpp",
+            "support": "optional"
+          }
+        ],
+        "unknown": []
+      }
     },
     "status": {
       "type": "sent",
-      "paymentPreimage": "62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4",
-      "feesPaid": 0,
+      "paymentPreimage": "a10d43f61016e052dfe946f24b550a37f538d033cc29999d8df10438d2618943",
+      "feesPaid": 1482,
       "route": [
         {
-          "nodeId": "02a9d7232139779a93c72eda7d9519957f7bc6c802d8618ca5a75c0b87ebfbc76f",
-          "nextNodeId": "037820f011811bcb647a000120e85685dc9706f0afd5614d72086d29704400f63f",
-          "shortChannelId": "1702x2x1"
+          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+          "nextNodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+          "shortChannelId": "538x3x0"
+        },
+        {
+          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+          "nextNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+          "shortChannelId": "538x2x1"
         }
       ],
-      "completedAt": 1569337871061
+      "completedAt": 1593698976205
+    }
+  },
+  {
+    "id": "84c89f34-389f-4d0a-a48a-0eed52e8bcf5",
+    "parentId": "cd5666d5-7678-4458-b50b-21b363b34f5e",
+    "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+    "paymentType": "Standard",
+    "amount": 85172882,
+    "recipientAmount": 90000000,
+    "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+    "createdAt": 1593698975810,
+    "paymentRequest": {
+      "prefix": "lnbcrt",
+      "timestamp": 1593698964,
+      "nodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+      "serialized": "lnbcrt900u1p00m655pp5jv0wry0tnqtkksqjy2shmjfxjxqhzjn2jsxs2lxqk4876yqlc0xqdqjwpex2urpwfjjqn2s2qxqrrss9qtzqqqqqq9qsqsp5wv8k8przrn54tj3wlz03s5z6xp82e959ujfgw05lacnukrpss4ss72jdwx9x9rvx0szts8ewfkhatez3kjujnu77msg5mp3t3vumsexht994k8f6wdrelflr4c5kghl6z02acawr6e9ppcrsex467zhahjcqax4658",
+      "description": "prepare MPP",
+      "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+      "expiry": 3600,
+      "amount": 90000000,
+      "features": {
+        "activated": [
+          {
+            "name": "var_onion_optin",
+            "support": "optional"
+          },
+          {
+            "name": "payment_secret",
+            "support": "optional"
+          },
+          {
+            "name": "basic_mpp",
+            "support": "optional"
+          }
+        ],
+        "unknown": []
+      }
+    },
+    "status": {
+      "type": "sent",
+      "paymentPreimage": "a10d43f61016e052dfe946f24b550a37f538d033cc29999d8df10438d2618943",
+      "feesPaid": 9517,
+      "route": [
+        {
+          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+          "nextNodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+          "shortChannelId": "538x4x1"
+        },
+        {
+          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+          "nextNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+          "shortChannelId": "538x2x1"
+        }
+      ],
+      "completedAt": 1593698976218
     }
   }
 ]
@@ -1167,21 +1462,38 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
 {
   "paymentRequest": {
     "prefix": "lnbcrt",
-    "timestamp": 1569338266,
-    "nodeId": "02a9d7232139779a93c72eda7d9519957f7bc6c802d8618ca5a75c0b87ebfbc76f",
-    "serialized": "lnbcrt10n1pwc5vu6pp52fc79qjkhuz3rys6z87ptxztycyn0a9lgt59htp3h3x602yud0psdq9v9ekgxqrafsdcup549hwl3xkpz4fw6zcsfkng85sswhavn06xlg7jg5tudhj96y9t5ujeudsw2tgchej52ke0u8a8eah0gnkgjtuv4al477gjnuthsplgn8kw",
-    "description": "asd",
-    "paymentHash": "5271e28256bf0511921a11fc15984b260937f4bf42e85bac31bc4da7a89c6bc3",
-    "expiry": 30000,
-    "amount": 1000
+    "timestamp": 1593698964,
+    "nodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+    "serialized": "lnbcrt900u1p00m655pp5jv0wry0tnqtkksqjy2shmjfxjxqhzjn2jsxs2lxqk4876yqlc0xqdqjwpex2urpwfjjqn2s2qxqrrss9qtzqqqqqq9qsqsp5wv8k8przrn54tj3wlz03s5z6xp82e959ujfgw05lacnukrpss4ss72jdwx9x9rvx0szts8ewfkhatez3kjujnu77msg5mp3t3vumsexht994k8f6wdrelflr4c5kghl6z02acawr6e9ppcrsex467zhahjcqax4658",
+    "description": "prepare MPP",
+    "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+    "expiry": 3600,
+    "amount": 90000000,
+    "features": {
+      "activated": [
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        },
+        {
+          "name": "payment_secret",
+          "support": "optional"
+        },
+        {
+          "name": "basic_mpp",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    }
   },
-  "paymentPreimage": "69d56a778eca1619d19d4efc4dbe014ef64005338cb9f6cb88d47e4bac7abc30",
+  "paymentPreimage": "a10d43f61016e052dfe946f24b550a37f538d033cc29999d8df10438d2618943",
   "paymentType": "Standard",
-  "createdAt": 1569338266000,
+  "createdAt": 1593698964000,
   "status": {
     "type": "received",
-    "amount": 1000,
-    "receivedAt": 1569338275797
+    "amount": 90000000,
+    "receivedAt": 1593698976184
   }
 }
 ```
@@ -1206,20 +1518,38 @@ invoice     | The invoice containing the payment hash | Yes      | String
 curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localhost:8080/getinvoice"
 
 # with eclair-cli
-eclair-cli getinvoice --description=<some_description> --paymentHash=<some_hash>
+eclair-cli getinvoice --paymentHash=<some_hash>
 ```
 
 > The above command returns:
 
 ```json
 {
-  "prefix": "lnbc",
-  "timestamp": 1555416528,
-  "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-  "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-  "description": "A payment description",
-  "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
-  "expiry": 21600
+  "prefix": "lnbcrt",
+  "timestamp": 1593699654,
+  "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+  "serialized": "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+  "description": "#reckless",
+  "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+  "expiry": 3600,
+  "amount": 50000,
+  "features": {
+    "activated": [
+      {
+        "name": "var_onion_optin",
+        "support": "optional"
+      },
+      {
+        "name": "payment_secret",
+        "support": "optional"
+      },
+      {
+        "name": "basic_mpp",
+        "support": "optional"
+      }
+    ],
+    "unknown": []
+  }
 }
 ```
 
@@ -1249,22 +1579,51 @@ eclair-cli listinvoices
 ```json
 [
   {
-    "prefix": "lnbc",
-    "timestamp": 1555416528,
-    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-    "description": "A payment description",
-    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
-    "expiry": 21600
+    "prefix": "lnbcrt",
+    "timestamp": 1593699654,
+    "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+    "serialized":   "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e 373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+    "description": "#reckless",
+    "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+    "expiry": 3600,
+    "amount": 50000,
+    "features": {
+      "activated": [
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        },
+        {
+          "name": "payment_secret",
+          "support": "optional"
+        },
+        {
+          "name": "basic_mpp",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    }
   },
   {
-    "prefix": "lnbc",
-    "timestamp": 1555416528,
-    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-    "description": "wassa wassa",
-    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"
-  }
+    "prefix": "lnbcrt",
+    "timestamp": 1593699654,
+    "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+    "serialized":   "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e 373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+    "description": "#reckless",
+    "paymentHash": "b123bc58de65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+    "expiry": 3600,
+    "amount": 25000,
+    "features": {
+      "activated": [
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    }
+  },
 ]
 ```
 
@@ -1295,22 +1654,51 @@ eclair-cli listpendinginvoices
 ```json
 [
   {
-    "prefix": "lnbc",
-    "timestamp": 1555416528,
-    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-    "description": "A payment description",
-    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb",
-    "expiry": 21600
+    "prefix": "lnbcrt",
+    "timestamp": 1593699654,
+    "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+    "serialized":   "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e 373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+    "description": "#reckless",
+    "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+    "expiry": 3600,
+    "amount": 50000,
+    "features": {
+      "activated": [
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        },
+        {
+          "name": "payment_secret",
+          "support": "optional"
+        },
+        {
+          "name": "basic_mpp",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    }
   },
   {
-    "prefix": "lnbc",
-    "timestamp": 1555416528,
-    "nodeId": "036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e",
-    "serialized": "lnbc1pwtt3wspp5elwc50nuxpzlc87fag53mqm25cv96ek2l26xl4w9eca47gw9504sdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqw5axdq7sfenm4zwplmxneu5q2fggj8yvltrt6ckggpll8qxqdaz5duetw998vy0t3f4guyms439p3e3jhaq3khl7vfzwjwghe5hqtmgpqeme4a",
-    "description": "wassa wassa",
-    "paymentHash": "cfdd8a3e7c3045fc1fc9ea291d836aa6185d66cafab46fd5c5ce3b5f21c5a3eb"
-  }
+    "prefix": "lnbcrt",
+    "timestamp": 1593699654,
+    "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+    "serialized":   "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e 373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+    "description": "#reckless",
+    "paymentHash": "b123bc58de65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+    "expiry": 3600,
+    "amount": 25000,
+    "features": {
+      "activated": [
+        {
+          "name": "var_onion_optin",
+          "support": "optional"
+        }
+      ],
+      "unknown": []
+    }
+  },
 ]
 ```
 
@@ -1396,7 +1784,7 @@ Parameter  | Description                                 | Optional | Type
 nodeId     | The destination of the route                | No       | 33-bytes-HexString (String)
 amountMsat | The amount that should go through the route | No       | Millisatoshi (Integer)
 
-# Miscellaneous
+# On-Chain
 
 ## GetNewAddress
 
@@ -1421,6 +1809,107 @@ depend on the configured address-type in `bitcoin.conf`.
 
 `POST http://localhost:8080/getnewaddress`
 
+## SendOnChain
+
+```shell
+curl -u :<eclair_api_password> -X POST -F address=<bitcoin_address> \
+     -F amountSatoshis=<amount> -F confirmationTarget=<number_of_blocks> "http://localhost:8080/sendonchain"
+
+# with eclair-cli
+eclair-cli sendonchain --address=2NEDjKwa56LFcFVjPefuwkN3pyABkMrqpJn --amountSatoshis=25000 --confirmationTarget=6
+```
+
+> The above command returns:
+
+```json
+"d19c45509b2e39c92f2f84a6e07fab95509f5c1959e98f3085c66dc148582751"
+```
+
+Send an on-chain transaction to the given address. The API is only available with the bitcoin-core watcher type.
+The API returns the txid of the bitcoin transaction sent.
+
+### HTTP Request
+
+`POST http://localhost:8080/sendonchain`
+
+### Parameters
+
+Parameter          | Description                          | Optional | Type
+------------------ | ------------------------------------ | -------- | ------------------------
+address            | The bitcoin address of the recipient | No       | Bitcoin address (String)
+amountSatoshis     | The amount that should be sent       | No       | Satoshi (Integer)
+confirmationTarget | The confirmation target (blocks)     | No       | Satoshi (Integer)
+
+## OnChainBalance
+
+```shell
+curl -u :<eclair_api_password> -X POST "http://localhost:8080/onchainbalance"
+
+# with eclair-cli
+eclair-cli onchainbalance
+```
+
+> The above command returns:
+
+```json
+{
+  "confirmed": 1304986456540,
+  "unconfirmed": 0
+}
+```
+
+Retrieves information about the available on-chain Bitcoin balance. Amounts are in Satoshis.
+Unconfirmed balance refers to incoming transactions seen in the mempool.
+
+## OnChainTransactions
+
+```shell
+curl -u :<eclair_api_password> -X -F count=<number_of_results> -F skip=<skipped_results> POST "http://localhost:8080/onchaintransactions"
+
+# with eclair-cli
+eclair-cli onchaintransactions --count=2 --skip=1
+```
+
+> The above command returns:
+
+```json
+[
+  {
+    "address": "2NEDjKwa56LFcFVjPefuwkN3pyABkMrqpJn",
+    "amount": 25000,
+    "fees": 0,
+    "blockHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "confirmations": 0,
+    "txid": "d19c45509b2e39c92f2f84a6e07fab95509f5c1959e98f3085c66dc148582751",
+    "timestamp": 1593700112
+  },
+  {
+    "address": "2NEDjKwa56LFcFVjPefuwkN3pyABkMrqpJn",
+    "amount": 625000000,
+    "fees": 0,
+    "blockHash": "3f66e75bb70c1bc28edda9456fcf96ac68f10053020bee39f4cd45c240a1f05d",
+    "confirmations": 1,
+    "txid": "467e0f4c1fed9db56760e7bdcedb335c6b649fdaa82f51da80481a1101a98329",
+    "timestamp": 1593698170
+  }
+]
+```
+
+Retrieves information about the latest on-chain transactions made by our Bitcoin wallet (most recent transactions first).
+
+### HTTP Request
+
+`POST http://localhost:8080/onchaintransactions`
+
+### Parameters
+
+Parameter | Description                      | Optional | Type
+--------- | -------------------------------- | -------- | -------
+count     | Number of transactions to return | Yes      | Integer
+skip      | Number of transactions to skip   | No       | Integer
+
+# Miscellaneous
+
 ## Audit
 
 ```shell
@@ -1434,61 +1923,87 @@ eclair-cli audit
 
 ```json
 {
-   "sent":[
-      {
-        "type": "payment-sent",
-        "id": "c85d70da-d159-4a36-938a-c3d2f967f730",
-        "paymentHash": "836c8795e811fe0306fb4fee3ee3d0c5a2529dd4ac90d6aca4bd5faf26790a93",
-        "paymentPreimage": "62d6f7517b5066c348cddc0a31ee1ed5e8929de2dbe1c7a24bcb5c7cd0a047e4",
-        "recipientAmount": 100000,
-        "recipientNodeId": "03d41301628a6086aa7a46a2810e73cc1dcdaf4678ea2b3e805befd3b76af31512",
-        "parts": [
-          {
-            "id": "4e8f2440-dbfd-4e76-bb45-a0647a966b2a",
-            "amount": 40000,
-            "feesPaid": 50,
-            "toChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
-            "timestamp": 1569337871061
-          },
-          {
-            "id": "63e9b037-92d6-4f3d-b484-41740fc278f5",
-            "amount": 60000,
-            "feesPaid": 10,
-            "toChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
-            "timestamp": 1569337871061
-          }
-        ]
-      }
-   ],
-   "received":[
+  "sent": [
     {
-      "type": "payment-received",
-      "paymentHash": "5271e28256bf0511921a11fc15984b260937f4bf42e85bac31bc4da7a89c6bc3",
+      "type": "payment-sent",
+      "id": "562c2be9-6d46-4684-bc74-e4a99a77f4fe",
+      "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
+      "paymentPreimage": "84192ee8858166740158ff321ebf5325c3097a17e7753876bd59a5a531ce276b",
+      "recipientAmount": 111000000,
+      "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
       "parts": [
         {
-          "amount": 1000,
-          "fromChannelId": "abab001395fe3e94f58712d65065f362f42e670c45b9e284398866139d98f379",
-          "timestamp": 1569338275801
+          "id": "562c2be9-6d46-4684-bc74-e4a99a77f4fe",
+          "amount": 111000000,
+          "feesPaid": 12100,
+          "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+          "timestamp": 1593698280576
+        }
+      ]
+    },
+    {
+      "type": "payment-sent",
+      "id": "cd5666d5-7678-4458-b50b-21b363b34f5e",
+      "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+      "paymentPreimage": "a10d43f61016e052dfe946f24b550a37f538d033cc29999d8df10438d2618943",
+      "recipientAmount": 90000000,
+      "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+      "parts": [
+        {
+          "id": "83fcc569-917a-4cac-b42d-6f6b186f21eb",
+          "amount": 4827118,
+          "feesPaid": 1482,
+          "toChannelId": "67a548c2677702c19533ea9644a89fa54162866a95079a768dd76a182538f53f",
+          "timestamp": 1593698976205
         },
         {
-          "amount": 1500,
-          "fromChannelId": "8ca125b6ae86c44021337c273bd620e88263d4769de35cccded3cdcb9d1cdcc4",
-          "timestamp": 1569338275803
+          "id": "84c89f34-389f-4d0a-a48a-0eed52e8bcf5",
+          "amount": 85172882,
+          "feesPaid": 9517,
+          "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+          "timestamp": 1593698976218
         }
       ]
     }
-   ],
-   "relayed":[
-      {
-         "type": "payment-relayed",
-         "amountIn":150001,
-         "amountOut":150000,
-         "paymentHash":"427309c52a46f8c005ad840c106fcdc9c4c60f95769525bc91c4a742133e4fe3",
-         "fromChannelId":"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-         "toChannelId":"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-         "timestamp":1553527391064
-      }
-   ]
+  ],
+  "received": [
+    {
+      "type": "payment-received",
+      "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+      "parts": [
+        {
+          "amount": 4827118,
+          "fromChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+          "timestamp": 1593698976184
+        },
+        {
+          "amount": 85172882,
+          "fromChannelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
+          "timestamp": 1593698976184
+        }
+      ]
+    }
+  ],
+  "relayed": [
+    {
+      "type": "payment-relayed",
+      "amountIn": 111012100,
+      "amountOut": 111000000,
+      "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
+      "fromChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+      "toChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+      "timestamp": 1593698280565
+    },
+    {
+      "type": "payment-relayed",
+      "amountIn": 45005500,
+      "amountOut": 45000000,
+      "paymentHash": "c5bd76b696d75b2e548a00f14e30cd694cfb3790e095ab62303abe48f2b3a263",
+      "fromChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+      "toChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+      "timestamp": 1593698492275
+    }
+  ]
 }
 ```
 
@@ -1557,21 +2072,53 @@ eclair-cli channelstats
 ```json
 [
   {
-    "channelId": "57d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-    "avgPaymentAmount": 123,
-    "paymentCount": 55,
-    "relayFee": 3,
-    "networkFee": 3382
+    "channelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
+    "direction": "IN",
+    "avgPaymentAmount": 0,
+    "paymentCount": 0,
+    "relayFee": 0,
+    "networkFee": 26400
+  },
+  {
+    "channelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
+    "direction": "OUT",
+    "avgPaymentAmount": 85172,
+    "paymentCount": 1,
+    "relayFee": 9,
+    "networkFee": 26400
+  },
+  {
+    "channelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+    "direction": "IN",
+    "avgPaymentAmount": 0,
+    "paymentCount": 0,
+    "relayFee": 0,
+    "networkFee": 26400
+  },
+  {
+    "channelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+    "direction": "OUT",
+    "avgPaymentAmount": 53609,
+    "paymentCount": 3,
+    "relayFee": 19,
+    "networkFee": 26400
   }
 ]
 ```
 
 Retrieves information about local channels, the information is then aggregated in order to display
-statistics about the routing activity of the channels, values are in Satoshis.
+statistics about the routing activity of the channels. Values are in Satoshis.
 
 ### HTTP Request
 
 `POST http://localhost:8080/channelstats`
+
+### Parameters
+
+Parameter | Description                                           | Optional | Type
+--------- | ----------------------------------------------------- | -------- | -----------------------------------
+from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
+to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
 
 ## UsableBalances
 
@@ -1610,13 +2157,13 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type": "payment-relayed",
-   "amountIn": 21,
-   "amountOut": 20,
-   "paymentHash": "0000000000000000000000000000000000000000000000000000000000000000",
-   "fromChannelId": "0000000000000000000000000000000000000000000000000000000000000000",
-   "toChannelId": "0100000000000000000000000000000000000000000000000000000000000000",
-   "timestamp": 1553784963659
+  "type": "payment-relayed",
+  "amountIn": 21,
+  "amountOut": 20,
+  "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
+  "fromChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+  "toChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+  "timestamp": 1593698280565
 }
 ```
 
@@ -1624,20 +2171,20 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type": "payment-received",
-   "paymentHash": "0000000000000000000000000000000000000000000000000000000000000000",
-   "parts":[
-     {
-       "amount": 21,
-       "fromChannelId": "0100000000000000000000000000000000000000000000000000000000000000",
-       "timestamp": 1553784963659
-     },
-     {
-       "amount": 24,
-       "fromChannelId": "0200000000000000000000000000000000000000000000000000000000000000",
-       "timestamp": 1553784963873
-     }
-   ]
+  "type": "payment-received",
+  "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+  "parts": [
+    {
+      "amount": 21,
+      "fromChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
+      "timestamp": 1593698976184
+    },
+    {
+      "amount": 24,
+      "fromChannelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
+      "timestamp": 1593698976184
+    }
+  ]
 }
 ```
 
@@ -1645,11 +2192,11 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type":"payment-failed",
-   "id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
-   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
-   "failures":[],
-   "timestamp":1553784963659
+   "type": "payment-failed",
+   "id": "487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
+   "paymentHash": "0000000000000000000000000000000000000000000000000000000000000000",
+   "failures": [],
+   "timestamp": 1553784963659
 }
 ```
 
@@ -1657,28 +2204,28 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type":"payment-sent",
-   "id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
-   "paymentHash":"0000000000000000000000000000000000000000000000000000000000000000",
-   "paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000",
-   "recipientAmount": 45,
-   "recipientNodeId": "02fef72bab86280a4fe30f2710b23a5d4c0d17f5adc4e1f24adabfd16cf6bd3c35",
-   "parts":[
-     {
-       "id":"b8799834-8db9-460b-b754-2942f20e3500",
-       "amount":21,
-       "feesPaid":1,
-       "toChannelId":"0100000000000000000000000000000000000000000000000000000000000000",
-       "timestamp":1553784337711
-     },
-     {
-       "id":"ab348eb7-b0ed-46ff-9274-28cfdbdaae8d",
-       "amount":24,
-       "feesPaid":3,
-       "toChannelId":"0200000000000000000000000000000000000000000000000000000000000000",
-       "timestamp":1553784337735
-     }
-   ]
+  "type": "payment-sent",
+  "id": "562c2be9-6d46-4684-bc74-e4a99a77f4fe",
+  "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
+  "paymentPreimage": "84192ee8858166740158ff321ebf5325c3097a17e7753876bd59a5a531ce276b",
+  "recipientAmount": 45,
+  "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+  "parts": [
+    {
+      "id": "b8799834-8db9-460b-b754-2942f20e3500",
+      "amount": 21,
+      "feesPaid": 1,
+      "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+      "timestamp": 1593698280576
+    },
+    {
+      "id": "ab348eb7-b0ed-46ff-9274-28cfdbdaae8d",
+      "amount": 24,
+      "feesPaid": 3,
+      "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+      "timestamp": 1593698280576
+    }
+  ]
 }
 ```
 
@@ -1686,10 +2233,11 @@ Retrieves information about the available balance of local channels.
 
 ```json
 {
-   "type":"payment-settling-onchain",
-   "amount":21,
-   "paymentHash":"0100000000000000000000000000000000000000000000000000000000000000",
-   "timestamp":1553785442676
+   "type": "payment-settling-onchain",
+   "id": "487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
+   "amount": 21,
+   "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
+   "timestamp": 1553785442676
 }
 ```
 
