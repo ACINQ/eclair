@@ -29,8 +29,8 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Exten
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.{DefaultFormats, Formats}
 import org.json4s.JsonAST.{JString, _}
+import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -255,8 +255,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       sender.expectMsgType[MakeFundingTxResponse].fundingTx
     }
 
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 4)
+    assert(getLocks(sender).size === 4)
 
     wallet.commit(fundingTxes(0)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
@@ -270,15 +269,14 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.rollback(fundingTxes(3)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
 
-    sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(0).txid.toString()))
-    assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(0).toString())
+    extendedClient.getTransaction(fundingTxes(0).txid).pipeTo(sender.ref)
+    sender.expectMsg(fundingTxes(0))
 
-    sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(2).txid.toString()))
-    assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(2).toString())
+    extendedClient.getTransaction(fundingTxes(2).txid).pipeTo(sender.ref)
+    sender.expectMsg(fundingTxes(2))
 
     // NB: from 0.17.0 on bitcoin core will clear locks when a tx is published
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+    assert(getLocks(sender).isEmpty)
   }
 
   test("encrypt wallet") {
@@ -305,16 +303,14 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+    assert(getLocks(sender).isEmpty)
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
     val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
     assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first"))
 
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+    assert(getLocks(sender).isEmpty)
 
     sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
     sender.expectMsgType[JValue]
@@ -323,61 +319,10 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
 
     wallet.commit(fundingTx).pipeTo(sender.ref)
-    assert(sender.expectMsgType[Boolean])
+    sender.expectMsg(true)
 
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
-  }
-
-  test("detect if tx has been doublespent") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-    val wallet = new BitcoinCoreWallet(bitcoinClient)
-    val sender = TestProbe()
-
-    // first let's create a tx
-    val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
-    bitcoinClient.invoke("createrawtransaction", Array.empty, Map(address -> 6)).pipeTo(sender.ref)
-    val JString(noinputTx1) = sender.expectMsgType[JString]
-    bitcoinClient.invoke("fundrawtransaction", noinputTx1).pipeTo(sender.ref)
-    val json = sender.expectMsgType[JValue]
-    val JString(unsignedtx1) = json \ "hex"
-    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx1).pipeTo(sender.ref)
-    val JString(signedTx1) = sender.expectMsgType[JValue] \ "hex"
-    val tx1 = Transaction.read(signedTx1)
-    // let's then generate another tx that double spends the first one
-    val inputs = tx1.txIn.map(txIn => Map("txid" -> txIn.outPoint.txid.toString, "vout" -> txIn.outPoint.index)).toArray
-    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount).sum.toLong * 1.0 / 1e8)).pipeTo(sender.ref)
-    val JString(unsignedtx2) = sender.expectMsgType[JValue]
-    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx2).pipeTo(sender.ref)
-    val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"
-    val tx2 = Transaction.read(signedTx2)
-
-    // test starts here
-
-    // tx1/tx2 haven't been published, so tx1 isn't double spent
-    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-    sender.expectMsg(false)
-    // let's publish tx2
-    bitcoinClient.invoke("sendrawtransaction", tx2.toString).pipeTo(sender.ref)
-    val JString(_) = sender.expectMsgType[JValue]
-    // tx2 hasn't been confirmed so tx1 is still not considered double-spent
-    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-    sender.expectMsg(false)
-    // let's confirm tx2
-    generateBlocks(bitcoincli, 1)
-    wallet.listTransactions(25, 0).pipeTo(sender.ref)
-    val Some(tx) = sender.expectMsgType[List[WalletTransaction]].collectFirst { case tx if tx.address == address => tx }
-    assert(tx.amount < 0.sat)
-    assert(tx.fees < 0.sat)
-    assert(tx.confirmations === 1)
-    assert(tx.txid === tx2.txid)
-    // this time tx1 has been double spent
-    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-    sender.expectMsg(true)
   }
 
   test("getReceivePubkey should return the raw pubkey for the receive address") {
