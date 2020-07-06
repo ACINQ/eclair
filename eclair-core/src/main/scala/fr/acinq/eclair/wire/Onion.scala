@@ -162,6 +162,8 @@ object OnionTlv {
   /** An encrypted trampoline onion packet. */
   case class TrampolineOnion(packet: OnionRoutingPacket) extends OnionTlv
 
+  /** Pre-image included by the sender of a payment in case of a donation */
+  case class KeySend(paymentPreimage: ByteVector32) extends OnionTlv
 }
 
 object Onion {
@@ -228,6 +230,7 @@ object Onion {
     val expiry: CltvExpiry
     val paymentSecret: Option[ByteVector32]
     val totalAmount: MilliSatoshi
+    val keySend: Option[KeySend]
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with LegacyFormat
@@ -235,6 +238,7 @@ object Onion {
   case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat {
     override val paymentSecret = None
     override val totalAmount = amount
+    override val keySend = None
   }
 
   case class ChannelRelayTlvPayload(records: TlvStream[OnionTlv]) extends ChannelRelayPayload with TlvFormat {
@@ -264,6 +268,7 @@ object Onion {
       case MilliSatoshi(0) => amount
       case totalAmount => totalAmount
     }).getOrElse(amount)
+    override val keySend = records.get[KeySend]
   }
 
   def createNodeRelayPayload(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): NodeRelayPayload =
@@ -334,6 +339,8 @@ object OnionCodecs {
 
   private val trampolineOnion: Codec[TrampolineOnion] = variableSizeBytesLong(varintoverflow, trampolineOnionPacketCodec).as[TrampolineOnion]
 
+  private val keySend: Codec[KeySend] = variableSizeBytesLong(varintoverflow, bytes32).as[KeySend]
+
   private val onionTlvCodec = discriminated[OnionTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
@@ -344,6 +351,7 @@ object OnionCodecs {
     .typecase(UInt64(66098), outgoingNodeId)
     .typecase(UInt64(66099), invoiceRoutingInfo)
     .typecase(UInt64(66100), trampolineOnion)
+    .typecase(UInt64(5482373484L), keySend)
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionTlv](onionTlvCodec).complete
 
