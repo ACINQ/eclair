@@ -54,7 +54,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
       process(queue)
   }
 
-  def process(queue: Queue[Pending]) = {
+  def process(queue: Queue[Pending]): Unit = {
     // do we have queued requests?
     if (queue.isEmpty) {
       log.debug("no more requests, going back to idle")

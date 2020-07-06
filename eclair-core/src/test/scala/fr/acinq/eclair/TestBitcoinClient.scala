@@ -25,8 +25,8 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
-  * Created by PM on 26/04/2016.
-  */
+ * Created by PM on 26/04/2016.
+ */
 class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient("", "", "", 0)(http = null)) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -37,14 +37,14 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
     override def run(): Unit = system.eventStream.publish(NewBlock(DUMMY_BLOCK)) // blocks are not actually interpreted
   })
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = {
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
     system.eventStream.publish(NewTransaction(tx))
-    Future.successful(tx.txid.toString())
+    Future.successful(tx.txid)
   }
 
   override def getTxConfirmations(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
 
-  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = ???
+  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("not implemented"))
 
   override def getTransactionShortId(txId: ByteVector32)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((400000, 42))
 

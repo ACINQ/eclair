@@ -25,11 +25,11 @@ import fr.acinq.bitcoin.{Block, Btc, ByteVector32, MilliBtc, OutPoint, Satoshi, 
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse, WalletTransaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
+import org.json4s.{DefaultFormats, Formats}
 import org.json4s.JsonAST.{JString, _}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -39,7 +39,6 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
 import scala.util.{Random, Try}
-
 
 class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
@@ -55,7 +54,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats
+  implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -70,7 +69,6 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   def getLocks(sender: TestProbe = TestProbe()): Set[OutPoint] = {
-    implicit val formats = DefaultFormats
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     val JArray(locks) = sender.expectMsgType[JValue]
     val txids = locks.map { item =>
@@ -125,7 +123,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     }, max = 10 seconds, interval = 1 second)
   }
 
-  test("unlock outpoints correcly") {
+  test("unlock outpoints correctly") {
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
@@ -166,7 +164,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("absence of rounding") {
-    val hexIn = "020000000001404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+    val txIn = Transaction(1, Nil, Nil, 42)
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
 
     0 to 9 foreach { satoshi =>
@@ -188,7 +186,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       wallet.getBalance.pipeTo(sender.ref)
       assert(sender.expectMsgType[OnChainBalance] === OnChainBalance(Satoshi(satoshi), Satoshi(satoshi)))
 
-      wallet.fundTransaction(hexIn, lockUnspents = false, 250).pipeTo(sender.ref)
+      wallet.fundTransaction(txIn, lockUnspents = false, 250).pipeTo(sender.ref)
       val FundTransactionResponse(_, _, fee) = sender.expectMsgType[FundTransactionResponse]
       assert(fee == Satoshi(satoshi))
     }
@@ -232,6 +230,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       password = config.getString("bitcoind.rpcpassword"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
+    val extendedClient = new ExtendedBitcoinClient(bitcoinClient)
     val wallet = new BitcoinCoreWallet(bitcoinClient)
     val sender = TestProbe()
 
@@ -246,7 +245,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 200).pipeTo(sender.ref) // create a tx with an invalid feerate (too little)
       val belowFeeFundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
-      wallet.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
+      extendedClient.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
       assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met"))
       wallet.rollback(belowFeeFundingTx).pipeTo(sender.ref) // rollback the locked outputs
       assert(sender.expectMsgType[Boolean])
