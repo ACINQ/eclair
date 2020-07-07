@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Satoshi, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -51,6 +51,13 @@ trait EclairWallet {
    * Cancels this transaction: this probably translates to "release locks on utxos".
    */
   def rollback(tx: Transaction): Future[Boolean]
+
+  /**
+   * Bumps the fees of a mempool transaction.
+   *
+   * @return the new transaction with updated fees.
+   */
+  def bumpFee(txid: ByteVector32, confirmationTarget: Long): Future[Transaction]
 
   /**
    * Tests whether the inputs of the provided transaction have been spent by another transaction.
