@@ -38,9 +38,11 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   val bitcoinClient = new ExtendedBitcoinClient(rpcClient)
 
-  def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
+
+  private def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
     val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
-    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
+    rpcClient.invoke("fundrawtransaction", hex, FundTransaction.Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
@@ -48,9 +50,22 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     })
   }
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
+  override def bumpFee(txid: ByteVector32, confirmationTarget: Long): Future[Transaction] = {
+    for {
+      txid1 <- rpcClient.invoke("bumpfee", txid, BumpFee.Options(confirmationTarget)).map(json => {
+        val JString(txid1) = json \ "txid"
+        val JDecimal(fee) = json \ "origfee"
+        val JDecimal(fee1) = json \ "fee"
+        logger.info(s"tx=$txid with fee=$fee bumped to tx=$txid1 with fee=$fee1")
+        ByteVector32.fromValidHex(txid1)
+      })
+      tx1 <- bitcoinClient.getTransaction(txid1)
+    } yield tx1
+  }
 
-  def signTransaction(hex: String): Future[SignTransactionResponse] =
+  def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
+
+  private def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransactionwithwallet", hex).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
@@ -61,9 +76,19 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
       SignTransactionResponse(Transaction.read(hex), complete)
     })
 
-  def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
-
-  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = bitcoinClient.publishTransaction(tx)
+  private def signTransactionOrUnlock(tx: Transaction): Future[SignTransactionResponse] = {
+    val f = signTransaction(tx)
+    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
+    f.recoverWith { case _ =>
+      unlockOutpoints(tx.txIn.map(_.outPoint))
+        .recover { case t: Throwable => // no-op, just add a log in case of failure
+          logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t)
+          t
+        }
+        .flatMap(_ => f) // return signTransaction error
+        .recoverWith { case _ => f } // return signTransaction error
+    }
+  }
 
   def listTransactions(count: Int, skip: Int): Future[List[WalletTransaction]] = rpcClient.invoke("listtransactions", "*", count, skip).map {
     case JArray(txs) => txs.map(tx => {
@@ -101,31 +126,6 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     }
   }
 
-  /**
-   *
-   * @param outPoints outpoints to unlock
-   * @return true if all outpoints were successfully unlocked, false otherwise
-   */
-  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
-    // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually lock and the rest would not be processed
-    val futures = outPoints
-      .map(outPoint => Utxo(outPoint.txid, outPoint.index))
-      .map(utxo => rpcClient
-        .invoke("lockunspent", true, List(utxo))
-        .mapTo[JBool]
-        .transformWith {
-          case Success(JBool(result)) => Future.successful(result)
-          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
-            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
-          case Failure(t) =>
-            logger.warn(s"Cannot unlock utxo=$utxo", t)
-            Future.successful(false)
-        })
-    val future = Future.sequence(futures)
-    // return true if all outpoints were unlocked false otherwise
-    future.map(_.forall(b => b))
-  }
-
   override def getBalance: Future[OnChainBalance] = rpcClient.invoke("getbalances").map(json => {
     val JDecimal(confirmed) = json \ "mine" \ "trusted"
     val JDecimal(unconfirmed) = json \ "mine" \ "untrusted_pending"
@@ -141,19 +141,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
   } yield PublicKey(ByteVector.fromValidHex(rawKey))
 
-  private def signTransactionOrUnlock(tx: Transaction): Future[SignTransactionResponse] = {
-    val f = signTransaction(tx)
-    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
-    f.recoverWith { case _ =>
-      unlockOutpoints(tx.txIn.map(_.outPoint))
-        .recover { case t: Throwable => logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t); t } // no-op, just add a log in case of failure
-        .flatMap { case _ => f } // return signTransaction error
-        .recoverWith { case _ => f } // return signTransaction error
-    }
-  }
-
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
-    // partial funding tx
     val partialFundingTx = Transaction(
       version = 2,
       txIn = Seq.empty[TxIn],
@@ -173,7 +161,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     } yield MakeFundingTxResponse(fundingTx, outputIndex, fee)
   }
 
-  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx).transformWith {
+  override def commit(tx: Transaction): Future[Boolean] = bitcoinClient.publishTransaction(tx).transformWith {
     case Success(_) => Future.successful(true)
     case Failure(e) =>
       logger.warn(s"txid=${tx.txid} error=$e")
@@ -185,34 +173,49 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   override def rollback(tx: Transaction): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
 
-  override def doubleSpent(tx: Transaction): Future[Boolean] =
-    for {
-      exists <- bitcoinClient.getTransaction(tx.txid)
-        .map(_ => true) // we have found the transaction
-        .recover {
-          case JsonRPCError(Error(_, message)) if message.contains("index") =>
-            sys.error("Fatal error: bitcoind is indexing!!")
-            System.exit(1) // bitcoind is indexing, that's a fatal error!!
-            false // won't be reached
-          case _ => false
-        }
-      doublespent <- if (exists) {
-        // if the tx is in the blockchain, it can't have been double-spent
-        Future.successful(false)
-      } else {
-        // if the tx wasn't in the blockchain and one of it's input has been spent, it is double-spent
-        // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
-        // the overriding transaction has been confirmed at least once
-        Future.sequence(tx.txIn.map(txIn => bitcoinClient.isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
-      }
-    } yield doublespent
+  override def doubleSpent(tx: Transaction): Future[Boolean] = bitcoinClient.doubleSpent(tx)
+
+  /**
+   * @param outPoints outpoints to unlock
+   * @return true if all outpoints were successfully unlocked, false otherwise
+   */
+  private def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
+    // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
+    val futures = outPoints
+      .map(outPoint => Utxo(outPoint.txid, outPoint.index))
+      .map(utxo => rpcClient
+        .invoke("lockunspent", true, List(utxo))
+        .mapTo[JBool]
+        .transformWith {
+          case Success(JBool(result)) => Future.successful(result)
+          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
+            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
+          case Failure(t) =>
+            logger.warn(s"Cannot unlock utxo=$utxo", t)
+            Future.successful(false)
+        })
+    val future = Future.sequence(futures)
+    // return true if all outpoints were unlocked false otherwise
+    future.map(_.forall(b => b))
+  }
 
 }
 
 object BitcoinCoreWallet {
 
+  object FundTransaction {
+
+    case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
+
+  }
+
+  object BumpFee {
+
+    case class Options(confTarget: Long)
+
+  }
+
   // @formatter:off
-  case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
   case class Utxo(txid: ByteVector32, vout: Long)
   case class WalletTransaction(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Satoshi)

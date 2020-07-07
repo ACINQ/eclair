@@ -23,14 +23,14 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse, WalletTransaction}
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse, Utxo, WalletTransaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JString, _}
+import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -39,7 +39,6 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
 import scala.util.{Random, Try}
-
 
 class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
@@ -55,7 +54,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
   val walletPassword = Random.alphanumeric.take(8).mkString
 
-  implicit val formats = DefaultFormats
+  implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -70,7 +69,6 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   def getLocks(sender: TestProbe = TestProbe()): Set[OutPoint] = {
-    implicit val formats = DefaultFormats
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))
     val JArray(locks) = sender.expectMsgType[JValue]
     val txids = locks.map { item =>
@@ -125,7 +123,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     }, max = 10 seconds, interval = 1 second)
   }
 
-  test("unlock outpoints correcly") {
+  test("unlock outpoints correctly") {
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
@@ -166,7 +164,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("absence of rounding") {
-    val hexIn = "020000000001404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+    val txIn = Transaction(1, Nil, Nil, 42)
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
 
     0 to 9 foreach { satoshi =>
@@ -188,7 +186,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       wallet.getBalance.pipeTo(sender.ref)
       assert(sender.expectMsgType[OnChainBalance] === OnChainBalance(Satoshi(satoshi), Satoshi(satoshi)))
 
-      wallet.fundTransaction(hexIn, lockUnspents = false, 250).pipeTo(sender.ref)
+      wallet.fundTransaction(txIn, lockUnspents = false, 250).pipeTo(sender.ref)
       val FundTransactionResponse(_, _, fee) = sender.expectMsgType[FundTransactionResponse]
       assert(fee == Satoshi(satoshi))
     }
@@ -232,6 +230,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       password = config.getString("bitcoind.rpcpassword"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
+    val extendedClient = new ExtendedBitcoinClient(bitcoinClient)
     val wallet = new BitcoinCoreWallet(bitcoinClient)
     val sender = TestProbe()
 
@@ -246,7 +245,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
       wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 200).pipeTo(sender.ref) // create a tx with an invalid feerate (too little)
       val belowFeeFundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
-      wallet.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
+      extendedClient.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
       assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met"))
       wallet.rollback(belowFeeFundingTx).pipeTo(sender.ref) // rollback the locked outputs
       assert(sender.expectMsgType[Boolean])
@@ -256,8 +255,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
       sender.expectMsgType[MakeFundingTxResponse].fundingTx
     }
 
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 4)
+    assert(getLocks(sender).size === 4)
 
     wallet.commit(fundingTxes(0)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
@@ -271,15 +269,14 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.rollback(fundingTxes(3)).pipeTo(sender.ref)
     assert(sender.expectMsgType[Boolean])
 
-    sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(0).txid.toString()))
-    assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(0).toString())
+    extendedClient.getTransaction(fundingTxes(0).txid).pipeTo(sender.ref)
+    sender.expectMsg(fundingTxes(0))
 
-    sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(2).txid.toString()))
-    assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(2).toString())
+    extendedClient.getTransaction(fundingTxes(2).txid).pipeTo(sender.ref)
+    sender.expectMsg(fundingTxes(2))
 
     // NB: from 0.17.0 on bitcoin core will clear locks when a tx is published
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+    assert(getLocks(sender).isEmpty)
   }
 
   test("encrypt wallet") {
@@ -306,16 +303,14 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+    assert(getLocks(sender).isEmpty)
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     wallet.makeFundingTx(pubkeyScript, MilliBtc(50), 10000).pipeTo(sender.ref)
     val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
     assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first"))
 
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    assert(sender.expectMsgType[JValue](10 seconds).children.size === 0)
+    assert(getLocks(sender).isEmpty)
 
     sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
     sender.expectMsgType[JValue]
@@ -324,61 +319,10 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
 
     wallet.commit(fundingTx).pipeTo(sender.ref)
-    assert(sender.expectMsgType[Boolean])
+    sender.expectMsg(true)
 
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
-  }
-
-  test("detect if tx has been doublespent") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-    val wallet = new BitcoinCoreWallet(bitcoinClient)
-    val sender = TestProbe()
-
-    // first let's create a tx
-    val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
-    bitcoinClient.invoke("createrawtransaction", Array.empty, Map(address -> 6)).pipeTo(sender.ref)
-    val JString(noinputTx1) = sender.expectMsgType[JString]
-    bitcoinClient.invoke("fundrawtransaction", noinputTx1).pipeTo(sender.ref)
-    val json = sender.expectMsgType[JValue]
-    val JString(unsignedtx1) = json \ "hex"
-    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx1).pipeTo(sender.ref)
-    val JString(signedTx1) = sender.expectMsgType[JValue] \ "hex"
-    val tx1 = Transaction.read(signedTx1)
-    // let's then generate another tx that double spends the first one
-    val inputs = tx1.txIn.map(txIn => Map("txid" -> txIn.outPoint.txid.toString, "vout" -> txIn.outPoint.index)).toArray
-    bitcoinClient.invoke("createrawtransaction", inputs, Map(address -> tx1.txOut.map(_.amount).sum.toLong * 1.0 / 1e8)).pipeTo(sender.ref)
-    val JString(unsignedtx2) = sender.expectMsgType[JValue]
-    bitcoinClient.invoke("signrawtransactionwithwallet", unsignedtx2).pipeTo(sender.ref)
-    val JString(signedTx2) = sender.expectMsgType[JValue] \ "hex"
-    val tx2 = Transaction.read(signedTx2)
-
-    // test starts here
-
-    // tx1/tx2 haven't been published, so tx1 isn't double spent
-    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-    sender.expectMsg(false)
-    // let's publish tx2
-    bitcoinClient.invoke("sendrawtransaction", tx2.toString).pipeTo(sender.ref)
-    val JString(_) = sender.expectMsgType[JValue]
-    // tx2 hasn't been confirmed so tx1 is still not considered double-spent
-    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-    sender.expectMsg(false)
-    // let's confirm tx2
-    generateBlocks(bitcoincli, 1)
-    wallet.listTransactions(25, 0).pipeTo(sender.ref)
-    val Some(tx) = sender.expectMsgType[List[WalletTransaction]].collectFirst { case tx if tx.address == address => tx }
-    assert(tx.amount < 0.sat)
-    assert(tx.fees < 0.sat)
-    assert(tx.confirmations === 1)
-    assert(tx.txid === tx2.txid)
-    // this time tx1 has been double spent
-    wallet.doubleSpent(tx1).pipeTo(sender.ref)
-    sender.expectMsg(true)
   }
 
   test("getReceivePubkey should return the raw pubkey for the receive address") {
@@ -435,6 +379,173 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     assert(tx2.amount === -amount)
     assert(tx2.fees < 0.sat)
     assert(tx2.confirmations === 1)
+  }
+
+  def getTxFee(tx: Transaction, client: ExtendedBitcoinClient, sender: TestProbe = TestProbe()): Satoshi = {
+    Future.sequence(tx.txIn.map(txIn => client.getTransaction(txIn.outPoint.txid).map(_.txOut(txIn.outPoint.index.toInt).amount)))
+      .map(in => in.sum - tx.txOut.map(_.amount).sum)
+      .pipeTo(sender.ref)
+    sender.expectMsgType[Satoshi]
+  }
+
+  def bumpFee(tx: Transaction, confirmationTarget: Long, wallet: BitcoinCoreWallet, client: ExtendedBitcoinClient, sender: TestProbe = TestProbe()): Transaction = {
+    wallet.bumpFee(tx.txid, confirmationTarget).pipeTo(sender.ref)
+    val bumpedTx = sender.expectMsgType[Transaction]
+    assert(bumpedTx.txid !== tx.txid)
+    assert(getTxFee(bumpedTx, client, sender) > getTxFee(tx, client, sender))
+    client.getMempool().pipeTo(sender.ref)
+    sender.expectMsg(Seq(bumpedTx)) // the initial transaction should be replaced
+    bumpedTx
+  }
+
+  test("bump fees") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val sender = TestProbe()
+
+    // Create a replaceable, low-fee transaction.
+    val tx1 = {
+      wallet.getReceiveAddress.pipeTo(sender.ref)
+      val address = sender.expectMsgType[String]
+
+      val tx = Transaction(
+        version = 2,
+        txIn = Seq.empty[TxIn],
+        txOut = TxOut(100000 sat, addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
+        lockTime = 0)
+
+      wallet.fundTransaction(tx, lockUnspents = false, 260).pipeTo(sender.ref)
+      val FundTransactionResponse(fundedTx, _, _) = sender.expectMsgType[FundTransactionResponse]
+
+      wallet.signTransaction(fundedTx.copy(txIn = fundedTx.txIn.map(_.copy(sequence = 0)))).pipeTo(sender.ref)
+      val SignTransactionResponse(signedTx, true) = sender.expectMsgType[SignTransactionResponse]
+
+      client.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+
+    // Bump the fee a first time.
+    val tx2 = bumpFee(tx1, 6, wallet, client, sender)
+    // Bump the fee with a higher confirmation target: the fee should still be increased.
+    val tx3 = bumpFee(tx2, 12, wallet, client, sender)
+    // Bump the fee again, but with the same confirmation target.
+    val tx4 = bumpFee(tx3, 12, wallet, client, sender)
+    // Bump the fee with a smaller confirmation target.
+    bumpFee(tx4, 2, wallet, client, sender)
+  }
+
+  test("cannot bump fees (invalid transaction)") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val sender = TestProbe()
+
+    wallet.getReceiveAddress.pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+
+    val tx = Transaction(
+      version = 2,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(100000 sat, addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
+      lockTime = 0)
+
+    {
+      // Transaction is not in mempool.
+      wallet.bumpFee(tx.txid, 6).pipeTo(sender.ref)
+      val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
+      assert(error.code === -5, error)
+    }
+    {
+      // Transaction is not replaceable.
+      wallet.fundTransaction(tx, lockUnspents = false, 260).pipeTo(sender.ref)
+      val FundTransactionResponse(fundedTx, _, _) = sender.expectMsgType[FundTransactionResponse]
+
+      wallet.signTransaction(fundedTx.copy(txIn = fundedTx.txIn.map(_.copy(sequence = TxIn.SEQUENCE_FINAL)))).pipeTo(sender.ref)
+      val SignTransactionResponse(signedTx, true) = sender.expectMsgType[SignTransactionResponse]
+
+      client.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+
+      wallet.bumpFee(signedTx.txid, 6).pipeTo(sender.ref)
+      val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
+      assert(error.message === "Transaction is not BIP 125 replaceable", error)
+    }
+    {
+      // Transaction is already confirmed.
+      wallet.fundTransaction(tx, lockUnspents = false, 260).pipeTo(sender.ref)
+      val FundTransactionResponse(fundedTx, _, _) = sender.expectMsgType[FundTransactionResponse]
+
+      wallet.signTransaction(fundedTx.copy(txIn = fundedTx.txIn.map(_.copy(sequence = 0)))).pipeTo(sender.ref)
+      val SignTransactionResponse(signedTx, true) = sender.expectMsgType[SignTransactionResponse]
+
+      client.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+
+      generateBlocks(bitcoincli, 1)
+      wallet.bumpFee(signedTx.txid, 6).pipeTo(sender.ref)
+      val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
+      assert(error.message.contains("Transaction has been mined"), error)
+    }
+  }
+
+  test("cannot bump fees (not enough utxos available)") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val client = new ExtendedBitcoinClient(bitcoinClient)
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val sender = TestProbe()
+
+    wallet.getBalance.pipeTo(sender.ref)
+    val OnChainBalance(confirmed, _) = sender.expectMsgType[OnChainBalance]
+
+    // We first consolidate our UTxOs.
+    wallet.getReceiveAddress.pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    bitcoinClient.invoke("sendtoaddress", address, confirmed.toBtc.toBigDecimal, "consolidation", "to ourselves", /* subtractfeefromamount */ true).pipeTo(sender.ref)
+    sender.expectMsgType[JString]
+    generateBlocks(bitcoincli, 1)
+
+    wallet.getBalance.pipeTo(sender.ref)
+    val OnChainBalance(confirmed1, _) = sender.expectMsgType[OnChainBalance]
+
+    bitcoinClient.invoke("listunspent").map {
+      case JArray(utxos) => utxos.map(json => {
+        val JString(txid) = json \ "txid"
+        val JInt(index) = json \ "vout"
+        Utxo(ByteVector32.fromValidHex(txid), index.toLong)
+      })
+    }.pipeTo(sender.ref)
+    val utxos = sender.expectMsgType[List[Utxo]]
+    assert(utxos.nonEmpty)
+
+    val tx = Transaction(
+      version = 2,
+      txIn = utxos.map(utxo => TxIn(OutPoint(utxo.txid.reverse, utxo.vout), signatureScript = Nil, sequence = 0)),
+      txOut = TxOut(confirmed1 - 100000.sat, addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
+      lockTime = 0)
+
+    wallet.signTransaction(tx).pipeTo(sender.ref)
+    val SignTransactionResponse(signedTx, true) = sender.expectMsgType[SignTransactionResponse]
+
+    client.publishTransaction(signedTx).pipeTo(sender.ref)
+    sender.expectMsg(signedTx.txid)
+
+    wallet.bumpFee(signedTx.txid, 3).pipeTo(sender.ref)
+    val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
+    assert(error.message.contains("Insufficient funds"), error)
   }
 
 }
