@@ -32,7 +32,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import scala.io.Source
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.Random
 
 /**
  * Created by PM on 16/12/2016.
@@ -104,7 +104,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(claimP2WPKHOutputWeight == weight)
       assert(claimP2WPKHOutputTx.fee >= claimP2WPKHOutputTx.minRelayFee)
     }
-
     {
       // ClaimHtlcDelayedTx
       // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the ClaimDelayedOutputTx
@@ -116,7 +115,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(claimHtlcDelayedWeight == weight)
       assert(claimHtlcDelayedTx.fee >= claimHtlcDelayedTx.minRelayFee)
     }
-
     {
       // MainPenaltyTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
@@ -128,7 +126,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(mainPenaltyWeight == weight)
       assert(mainPenaltyTx.fee >= mainPenaltyTx.minRelayFee)
     }
-
     {
       // HtlcPenaltyTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
@@ -143,7 +140,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(htlcPenaltyWeight == weight)
       assert(htlcPenaltyTx.fee >= htlcPenaltyTx.minRelayFee)
     }
-
     {
       // ClaimHtlcSuccessTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
@@ -159,7 +155,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(claimHtlcSuccessWeight == weight)
       assert(claimHtlcSuccessTx.fee >= claimHtlcSuccessTx.minRelayFee)
     }
-
     {
       // ClaimHtlcTimeoutTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcTimeoutTx
@@ -185,10 +180,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val paymentPreimage1 = randomBytes32
     val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliBtc(100).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket)
     val paymentPreimage2 = randomBytes32
-    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(310), TestConstants.emptyOnionPacket)
     // htlc3 and htlc4 are dust htlcs IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
     val paymentPreimage3 = randomBytes32
-    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit + weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcTimeoutWeight)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit + weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcTimeoutWeight)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(295), TestConstants.emptyOnionPacket)
     val paymentPreimage4 = randomBytes32
     val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, (localDustLimit + weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcSuccessWeight)).toMilliSatoshi, sha256(paymentPreimage4), CltvExpiry(300), TestConstants.emptyOnionPacket)
     val spec = CommitmentSpec(
@@ -199,8 +194,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         IncomingHtlc(htlc4)
       ),
       feeratePerKw = feeratePerKw,
-      toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
-      toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
+      toLocal = 400.mbtc.toMilliSatoshi,
+      toRemote = 300.mbtc.toMilliSatoshi)
 
     val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, spec, DefaultCommitmentFormat)
 
@@ -219,8 +214,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val check = ((commitTx.tx.txIn.head.sequence & 0xffffff) << 24) | (commitTx.tx.lockTime & 0xffffff)
       assert((check ^ num) == commitTxNumber)
     }
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs, DefaultCommitmentFormat)
 
+    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs, DefaultCommitmentFormat)
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
     assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
 
@@ -233,7 +228,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         assert(checkSpendable(signed).isSuccess)
       }
     }
-
     {
       // local spends delayed output of htlc1 timeout tx
       val Right(claimHtlcDelayed) = makeClaimDelayedOutputTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
@@ -244,7 +238,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val claimHtlcDelayed1 = makeClaimDelayedOutputTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayed1 === Left(OutputNotFound))
     }
-
     {
       // remote spends local->remote htlc1/htlc3 output directly in case of success
       for ((htlc, paymentPreimage) <- (htlc1, paymentPreimage1) :: (htlc3, paymentPreimage3) :: Nil) {
@@ -254,7 +247,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         assert(checkSpendable(signed).isSuccess)
       }
     }
-
     {
       // local spends remote->local htlc2/htlc4 output with htlc success tx using payment preimage
       for ((htlcSuccessTx, paymentPreimage) <- (htlcSuccessTxs(1), paymentPreimage2) :: (htlcSuccessTxs(0), paymentPreimage4) :: Nil) {
@@ -266,7 +258,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         assert(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey))
       }
     }
-
     {
       // local spends delayed output of htlc2 success tx
       val Right(claimHtlcDelayed) = makeClaimDelayedOutputTx(htlcSuccessTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
@@ -277,7 +268,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val claimHtlcDelayed1 = makeClaimDelayedOutputTx(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayed1 === Left(AmountBelowDustLimit))
     }
-
+    {
+      // local spends main delayed output
+      val Right(claimMainOutputTx) = makeClaimDelayedOutputTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val localSig = sign(claimMainOutputTx, localDelayedPaymentPriv)
+      val signedTx = addSigs(claimMainOutputTx, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+    }
     {
       // remote spends main output
       val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
@@ -285,7 +282,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
-
     {
       // remote spends remote->local htlc output directly in case of timeout
       val Right(claimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
@@ -293,7 +289,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val signed = addSigs(claimHtlcTimeoutTx, remoteSig)
       assert(checkSpendable(signed).isSuccess)
     }
-
+    {
+      // remote spends local main delayed output with revocation key
+      val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localDelayedPaymentPriv.publicKey, feeratePerKw)
+      val sig = sign(mainPenaltyTx, localRevocationPriv)
+      val signed = addSigs(mainPenaltyTx, sig)
+      assert(checkSpendable(signed).isSuccess)
+    }
     {
       // remote spends offered HTLC output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash)))
@@ -306,7 +308,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
       assert(checkSpendable(signed).isSuccess)
     }
-
     {
       // remote spends received HTLC output with revocation key
       val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.cltvExpiry))
@@ -319,7 +320,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
       assert(checkSpendable(signed).isSuccess)
     }
-
   }
 
   test("sort the htlc outputs using BIP69 and cltv expiry") {
@@ -382,21 +382,21 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc5))).map(_.output.publicKeyScript).contains(htlcOut5.publicKeyScript))
   }
 
-  def checkSuccessOrFailTest[T](input: Try[T]): Unit = input match {
-    case Success(_) => ()
-    case Failure(t) => fail(t)
-  }
+  test("BOLT 3 fee tests") {
+    val dustLimit = 546 sat
+    val bolt3 = {
+      val fetch = Source.fromURL("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
+      // We'll use character '$' to separate tests:
+      val formatted = fetch.mkString.replace("    name:", "$   name:")
+      fetch.close()
+      formatted
+    }
 
-  def htlcIn(amount: Satoshi): DirectedHtlc = IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+    def htlcIn(amount: Satoshi): DirectedHtlc = IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
 
-  def htlcOut(amount: Satoshi): DirectedHtlc = OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
+    def htlcOut(amount: Satoshi): DirectedHtlc = OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
 
-  test("BOLT 2 fee tests") {
-    val bolt3 = Source
-      .fromURL("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
-      .mkString
-      .replace("    name:", "$   name:")
-    // character '$' separates tests
+    case class TestVector(name: String, spec: CommitmentSpec, expectedFee: Satoshi)
 
     // this regex extract params from a given test
     val testRegex = ("""name: (.*)\n""" +
@@ -406,12 +406,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       """.*base commitment transaction fee = ([0-9]+)\n""" +
       """[^$]+""").r
     // this regex extracts htlc direction and amounts
-    val htlcRegex =
-      """.*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""".r
-
-    val dustLimit = 546 sat
-    case class TestSetup(name: String, dustLimit: Satoshi, spec: CommitmentSpec, expectedFee: Satoshi)
-
+    val htlcRegex = """.*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""".r
     val tests = testRegex.findAllIn(bolt3).map(s => {
       val testRegex(name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s
       val htlcs = htlcRegex.findAllIn(s).map(l => {
@@ -421,16 +416,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           case "received" => htlcIn(Satoshi(amount.toLong))
         }
       }).toSet
-      TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeratePerKw = feerate_per_kw.toLong, toLocal = MilliSatoshi(to_local_msat.toLong), toRemote = MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
+      TestVector(name, CommitmentSpec(htlcs, feerate_per_kw.toLong, MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
     }).toSeq
 
-    // simple non-reg test making sure we are not missing tests
-    assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
-
+    assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f") // simple non-reg to make sure we are not missing tests
     tests.foreach(test => {
-      logger.info(s"running BOLT 2 test: '${test.name}'")
-      val fee = commitTxFee(test.dustLimit, test.spec, DefaultCommitmentFormat)
+      logger.info(s"running BOLT 3 test: '${test.name}'")
+      val fee = commitTxFee(dustLimit, test.spec, DefaultCommitmentFormat)
       assert(fee === test.expectedFee)
     })
   }
+
 }
