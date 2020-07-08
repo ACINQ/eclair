@@ -35,6 +35,36 @@ import scala.util.Try
  */
 object Transactions {
 
+  sealed trait CommitmentFormat {
+    // @formatter:off
+    def commitWeight: Int
+    def htlcOutputWeight: Int
+    def htlcTimeoutWeight: Int
+    def htlcSuccessWeight: Int
+    // @formatter:on
+  }
+
+  /**
+   * Commitment format as defined in the v1.0 specification (https://github.com/lightningnetwork/lightning-rfc/tree/v1.0).
+   */
+  case object DefaultCommitmentFormat extends CommitmentFormat {
+    override val commitWeight = 724
+    override val htlcOutputWeight = 172
+    override val htlcTimeoutWeight = 663
+    override val htlcSuccessWeight = 703
+  }
+
+  /**
+   * Commitment format that adds anchor outputs to the commitment transaction and uses custom sighash flags for HTLC
+   * transactions to allow unilateral fee bumping (https://github.com/lightningnetwork/lightning-rfc/pull/688).
+   */
+  case object AnchorOutputsCommitmentFormat extends CommitmentFormat {
+    override val commitWeight = 1124
+    override val htlcOutputWeight = 172
+    override val htlcTimeoutWeight = 666
+    override val htlcSuccessWeight = 706
+  }
+
   // @formatter:off
   case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector)
   object InputInfo {
@@ -92,15 +122,7 @@ object Transactions {
    */
 
   /**
-   * these values are defined in the RFC
-   */
-  val commitWeight = 724
-  val htlcOutputWeight = 172
-  val htlcTimeoutWeight = 663
-  val htlcSuccessWeight = 703
-
-  /**
-   * these values specific to us and used to estimate fees
+   * these values are specific to us (not defined in the specification) and used to estimate fees
    */
   val claimP2WPKHOutputWeight = 438
   val claimHtlcDelayedWeight = 483
@@ -121,27 +143,29 @@ object Transactions {
   def fee2rate(fee: Satoshi, weight: Int): Long = (fee.toLong * 1000L) / weight
 
   /** Offered HTLCs below this amount will be trimmed. */
-  def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = dustLimit + weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
+  def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
+    dustLimit + weight2fee(spec.feeratePerKw, commitmentFormat.htlcTimeoutWeight)
 
-  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[OutgoingHtlc] = {
-    val threshold = offeredHtlcTrimThreshold(dustLimit, spec)
+  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Seq[OutgoingHtlc] = {
+    val threshold = offeredHtlcTrimThreshold(dustLimit, spec, commitmentFormat)
     spec.htlcs
       .collect { case o: OutgoingHtlc if o.add.amountMsat >= threshold => o }
       .toSeq
   }
 
   /** Received HTLCs below this amount will be trimmed. */
-  def receivedHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = dustLimit + weight2fee(spec.feeratePerKw, htlcSuccessWeight)
+  def receivedHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
+    dustLimit + weight2fee(spec.feeratePerKw, commitmentFormat.htlcSuccessWeight)
 
-  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[IncomingHtlc] = {
-    val threshold = receivedHtlcTrimThreshold(dustLimit, spec)
+  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Seq[IncomingHtlc] = {
+    val threshold = receivedHtlcTrimThreshold(dustLimit, spec, commitmentFormat)
     spec.htlcs
       .collect { case i: IncomingHtlc if i.add.amountMsat >= threshold => i }
       .toSeq
   }
 
   /** Fee for an un-trimmed HTLC. */
-  def htlcOutputFee(feeratePerKw: Long): MilliSatoshi = weight2feeMsat(feeratePerKw, htlcOutputWeight)
+  def htlcOutputFee(feeratePerKw: Long, commitmentFormat: CommitmentFormat): MilliSatoshi = weight2feeMsat(feeratePerKw, commitmentFormat.htlcOutputWeight)
 
   /**
    * While fees are generally computed in Satoshis (since this is the smallest on-chain unit), it may be useful in some
@@ -149,17 +173,16 @@ object Transactions {
    * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
    * down to Satoshi.
    */
-  def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec): MilliSatoshi = {
-    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
-    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
-    val weight = commitWeight + htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+  def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
+    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
+    val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
     weight2feeMsat(spec.feeratePerKw, weight)
   }
 
-  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = commitTxFeeMsat(dustLimit, spec).truncateToSatoshi
+  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxFeeMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
 
   /**
-   *
    * @param commitTxNumber         commit tx number
    * @param isFunder               true if local node is funder
    * @param localPaymentBasePoint  local payment base point
@@ -178,7 +201,6 @@ object Transactions {
   }
 
   /**
-   *
    * @param commitTx               commit tx
    * @param isFunder               true if local node is funder
    * @param localPaymentBasePoint  local payment base point
@@ -205,7 +227,7 @@ object Transactions {
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
   /**
-   * Represent a link between a commitment spec item (to-local, to-remote, htlc) and the actual output in the commit tx
+   * Represent a link between a commitment spec item (to-local, to-remote, anchors, htlc) and the actual output in the commit tx
    *
    * @param output           transaction output
    * @param redeemScript     redeem script that matches this output (most of them are p2wsh)
@@ -237,8 +259,9 @@ object Transactions {
                           remotePaymentPubkey: PublicKey,
                           localHtlcPubkey: PublicKey,
                           remoteHtlcPubkey: PublicKey,
-                          spec: CommitmentSpec): CommitmentOutputs = {
-    val commitFee = commitTxFee(localDustLimit, spec)
+                          spec: CommitmentSpec,
+                          commitmentFormat: CommitmentFormat): CommitmentOutputs = {
+    val commitFee = commitTxFee(localDustLimit, spec, commitmentFormat)
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
       (spec.toLocal.truncateToSatoshi - commitFee, spec.toRemote.truncateToSatoshi)
@@ -259,12 +282,12 @@ object Transactions {
         pay2pkh(remotePaymentPubkey),
         ToRemote))
 
-    trimOfferedHtlcs(localDustLimit, spec).foreach { htlc =>
+    trimOfferedHtlcs(localDustLimit, spec, commitmentFormat).foreach { htlc =>
       val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes))
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, OutHtlc(htlc)))
     }
 
-    trimReceivedHtlcs(localDustLimit, spec).foreach { htlc =>
+    trimReceivedHtlcs(localDustLimit, spec, commitmentFormat).foreach { htlc =>
       val redeemScript = htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry)
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, InHtlc(htlc)))
     }
@@ -297,8 +320,9 @@ object Transactions {
                         localRevocationPubkey: PublicKey,
                         toLocalDelay: CltvExpiryDelta,
                         localDelayedPaymentPubkey: PublicKey,
-                        feeratePerKw: Long): Either[TxGenerationSkipped, HtlcTimeoutTx] = {
-    val fee = weight2fee(feeratePerKw, htlcTimeoutWeight)
+                        feeratePerKw: Long,
+                        commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, HtlcTimeoutTx] = {
+    val fee = weight2fee(feeratePerKw, commitmentFormat.htlcTimeoutWeight)
     val redeemScript = output.redeemScript
     val htlc = output.commitmentOutput.outgoingHtlc.add
     val amount = htlc.amountMsat.truncateToSatoshi - fee
@@ -321,8 +345,9 @@ object Transactions {
                         localRevocationPubkey: PublicKey,
                         toLocalDelay: CltvExpiryDelta,
                         localDelayedPaymentPubkey: PublicKey,
-                        feeratePerKw: Long): Either[TxGenerationSkipped, HtlcSuccessTx] = {
-    val fee = weight2fee(feeratePerKw, htlcSuccessWeight)
+                        feeratePerKw: Long,
+                        commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, HtlcSuccessTx] = {
+    val fee = weight2fee(feeratePerKw, commitmentFormat.htlcSuccessWeight)
     val redeemScript = output.redeemScript
     val htlc = output.commitmentOutput.incomingHtlc.add
     val amount = htlc.amountMsat.truncateToSatoshi - fee
@@ -344,16 +369,17 @@ object Transactions {
                   toLocalDelay: CltvExpiryDelta,
                   localDelayedPaymentPubkey: PublicKey,
                   feeratePerKw: Long,
-                  outputs: CommitmentOutputs): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+                  outputs: CommitmentOutputs,
+                  commitmentFormat: CommitmentFormat): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val htlcTimeoutTxs = outputs.zipWithIndex.collect {
       case (CommitmentOutputLink(o, s, OutHtlc(ou)), outputIndex) =>
         val co = CommitmentOutputLink(o, s, OutHtlc(ou))
-        makeHtlcTimeoutTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feeratePerKw)
+        makeHtlcTimeoutTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feeratePerKw, commitmentFormat)
     }.collect { case Right(htlcTimeoutTx) => htlcTimeoutTx }
     val htlcSuccessTxs = outputs.zipWithIndex.collect {
       case (CommitmentOutputLink(o, s, InHtlc(in)), outputIndex) =>
         val co = CommitmentOutputLink(o, s, InHtlc(in))
-        makeHtlcSuccessTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feeratePerKw)
+        makeHtlcSuccessTx(commitTx, co, outputIndex, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, feeratePerKw, commitmentFormat)
     }.collect { case Right(htlcSuccessTx) => htlcSuccessTx }
     (htlcTimeoutTxs, htlcSuccessTxs)
   }

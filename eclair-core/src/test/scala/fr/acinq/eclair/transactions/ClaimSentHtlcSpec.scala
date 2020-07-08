@@ -22,7 +22,6 @@ import fr.acinq.eclair.transactions.Scripts._
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
-
 class ClaimSentHtlcSpec extends AnyFunSuite {
 
   object Alice {
@@ -148,4 +147,5 @@ class ClaimSentHtlcSpec extends AnyFunSuite {
     val tx2 = tx1.updateWitness(0, witness)
     Transaction.correctlySpends(tx2, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
+
 }
