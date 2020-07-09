@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, TestConstants}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, TestConstants}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -38,23 +38,32 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   def commitmentFormat: CommitmentFormat
   // @formatter:on
 
-  val results = collection.mutable.HashMap.empty[String, Map[String, String]]
-  val current = collection.mutable.HashMap.empty[String, String]
-  var name = ""
-  Source.fromInputStream(classOf[TestVectorsSpec].getResourceAsStream(filename)).getLines().toArray.map(s => s.dropWhile(_.isWhitespace)).map(line => {
-    if (line.startsWith("name: ")) {
-      val Array(_, n) = line.split(": ")
-      if (!name.isEmpty) results.put(name, current.toMap)
-      name = n
-      current.clear()
-    } else {
-      line.split(":") match {
-        case Array(k, v) => current.put(k, v)
-        case _ => ()
+  val tests = {
+    val tests = collection.mutable.HashMap.empty[String, Map[String, String]]
+    val current = collection.mutable.HashMap.empty[String, String]
+    var name = ""
+    Source.fromInputStream(classOf[TestVectorsSpec].getResourceAsStream(filename)).getLines().toArray.map(s => s.dropWhile(_.isWhitespace)).foreach(line => {
+      if (line.startsWith("name: ")) {
+        val Array(_, n) = line.split(": ")
+        if (!name.isEmpty) tests.put(name, current.toMap)
+        name = n
+        current.clear()
+      } else {
+        line.split(":") match {
+          case Array(k, v) => current.put(k, v)
+          case _ => ()
+        }
       }
-    }
-  })
-  results.put(name, current.toMap)
+    })
+    tests.put(name, current.toMap)
+    tests
+  }
+
+  def getFeerate(name: String): Long = tests(name)("local_feerate_per_kw").trim.toLong
+
+  def getToLocal(name: String): MilliSatoshi = tests(name)("to_local_msat").trim.toLong.msat
+
+  def getToRemote(name: String): MilliSatoshi = tests(name)("to_remote_msat").trim.toLong.msat
 
   /*
    # start bitcoin-qt or bitcoind in regtest mode with an empty data directory and priority set to false
@@ -150,7 +159,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     case IncomingHtlc(add) => Scripts.htlcReceived(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), add.cltvExpiry, commitmentFormat)
   }
 
-  def dir2string(htlc: DirectedHtlc) = htlc match {
+  def dir2string(htlc: DirectedHtlc): String = htlc match {
     case _: IncomingHtlc => "remote->local"
     case _: OutgoingHtlc => "local->remote"
   }
@@ -162,9 +171,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"htlc $i payment_preimage: ${paymentPreimages(i)}")
   }
 
-  def getFeerate(name: String): Long = results(name)("local_feerate_per_kw").trim.toLong
-
-  def run(spec: CommitmentSpec) = {
+  def run(name: String, specHtlcs: Set[DirectedHtlc]): (CommitTx, Seq[TransactionWithInputInfo]) = {
+    logger.info(s"name: $name")
+    val spec = CommitmentSpec(specHtlcs, getFeerate(name), getToLocal(name), getToRemote(name))
     logger.info(s"to_local_msat: ${spec.toLocal}")
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
@@ -191,10 +200,10 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         remotePaymentBasePoint = Remote.payment_basepoint,
         localIsFunder = true,
         outputs = outputs)
-
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
+      logger.info(s"# local_signature = ${local_sig.dropRight(1).toHex}")
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
-
+      logger.info(s"remote_signature: ${remote_sig.dropRight(1).toHex}")
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
@@ -212,18 +221,6 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       }
     })
 
-    {
-      val tx = Transactions.makeCommitTx(
-        commitmentInput,
-        Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
-        localIsFunder = true, outputs)
-
-      val local_sig = Transactions.sign(tx, Local.funding_privkey)
-      logger.info(s"# local_signature = ${local_sig.dropRight(1).toHex}")
-      val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
-      logger.info(s"remote_signature: ${remote_sig.dropRight(1).toHex}")
-    }
-
     assert(Transactions.getCommitTxNumber(commitTx.tx, isFunder = true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     logger.info(s"output commit_tx: ${commitTx.tx}")
@@ -237,8 +234,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       outputs,
       commitmentFormat)
 
-    logger.info(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
     val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)
+    logger.info(s"num_htlcs: ${htlcTxs.length}")
 
     htlcTxs.collect {
       case tx: HtlcSuccessTx =>
@@ -278,199 +275,134 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     (commitTx, signedTxs)
   }
 
+  def verifyHtlcTxs(name: String, htlcTxs: Seq[TransactionWithInputInfo]): Unit = {
+    val check = (0 to 4).flatMap(i =>
+      tests(name).get(s"output htlc_success_tx $i").toSeq ++ tests(name).get(s"output htlc_timeout_tx $i").toSeq
+    ).toSet.map((tx: String) => Transaction.read(tx))
+    assert(htlcTxs.map(_.tx).toSet === check)
+  }
+
   test("simple commitment tx with no HTLCs") {
     val name = "simple commitment tx with no HTLCs"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = getFeerate(name), toLocal = 7000000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, _) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+    val (commitTx, _) = run(name, Set.empty[DirectedHtlc])
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
   }
 
   test("commitment tx with all five HTLCs untrimmed (minimum feerate)") {
     val name = "commitment tx with all five HTLCs untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, _) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+    val (commitTx, _) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
   }
 
   test("commitment tx with seven outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with seven outputs untrimmed (maximum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with six outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with six outputs untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with six outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with six outputs untrimmed (maximum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with five outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with five outputs untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with five outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with five outputs untrimmed (maximum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with four outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with four outputs untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with four outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with four outputs untrimmed (maximum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with three outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with three outputs untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with three outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with three outputs untrimmed (maximum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with two outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with two outputs untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with two outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with two outputs untrimmed (maximum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with one output untrimmed (minimum feerate)") {
     val name = "commitment tx with one output untrimmed (minimum feerate)"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
     assert(commitTx.tx.txOut.length == 1)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with fee greater than funder amount") {
     val name = "commitment tx with fee greater than funder amount"
-    logger.info(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L msat, toRemote = 3000000000L msat)
-
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
-
-    val check = (0 to 4).flatMap(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).toSet.map { s: String => Transaction.read(s) }
-    assert(htlcTxs.map(_.tx).toSet == check)
+    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   // Added to the spec in https://github.com/lightningnetwork/lightning-rfc/pull/539
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
     val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
-    val someHtlc = Seq(
+    val someHtlcs = Seq(
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
       OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket)),
       OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket))
     )
-    val spec = CommitmentSpec(htlcs = someHtlc.toSet, feeratePerKw = getFeerate(name), toLocal = 6988000000L.msat, toRemote = 3000000000L.msat)
 
-    val (commitTx, htlcTxs) = run(spec)
-    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+    val (commitTx, htlcTxs) = run(name, someHtlcs.toSet[DirectedHtlc])
+    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
 
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
-    assert(htlcTxs(0).tx == Transaction.read(results(name)("output htlc_success_tx 0")))
-    assert(htlcTxs(1).tx == Transaction.read(results(name)("output htlc_timeout_tx 1")))
-    assert(htlcTxs(2).tx == Transaction.read(results(name)("output htlc_timeout_tx 2")))
+    assert(htlcTxs(0).tx == Transaction.read(tests(name)("output htlc_success_tx 0")))
+    assert(htlcTxs(1).tx == Transaction.read(tests(name)("output htlc_timeout_tx 1")))
+    assert(htlcTxs(2).tx == Transaction.read(tests(name)("output htlc_timeout_tx 2")))
   }
 
 }
