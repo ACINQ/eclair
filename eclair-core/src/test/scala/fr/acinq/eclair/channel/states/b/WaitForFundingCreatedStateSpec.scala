@@ -31,8 +31,8 @@ import org.scalatest.{Outcome, Tag}
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
@@ -72,7 +72,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
     import f._
-    val fees = Satoshi(Transactions.commitWeight * TestConstants.feeratePerKw / 1000)
+    val fees = Satoshi(Transactions.DefaultCommitmentFormat.commitWeight * TestConstants.feeratePerKw / 1000)
     val reserve = Bob.channelParams.channelReserve
     val missing = 100.sat - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]

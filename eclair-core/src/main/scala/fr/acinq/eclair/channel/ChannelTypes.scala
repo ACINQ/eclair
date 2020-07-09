@@ -22,7 +22,7 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.CommitTx
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -168,7 +168,7 @@ case object Nothing extends Data
 
 sealed trait HasCommitments extends Data {
   def commitments: Commitments
-  def channelId = commitments.channelId
+  def channelId: ByteVector32 = commitments.channelId
 }
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
@@ -257,16 +257,16 @@ case class ChannelVersion(bits: BitVector) {
 
   require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
 
+  val commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
+
   def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
   def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
   def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
 
   private def isSet(bit: Int) = bits.reverse.get(bit)
 
-  // formatter:off
   def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
   def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
-  // formatter:on
 }
 
 object ChannelVersion {
