@@ -26,7 +26,8 @@ import org.scalatest.{BeforeAndAfterAll, TestSuite}
  */
 abstract class TestKitBaseClass extends TestKit(ActorSystem("test")) with TestSuite with BeforeAndAfterAll {
 
-  override def afterAll {
+  override def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
   }
+
 }
