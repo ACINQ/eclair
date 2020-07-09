@@ -37,4 +37,5 @@ class BatchingBitcoinJsonRPCClient(rpcClient: BasicBitcoinJsonRPCClient)(implici
       (batchingClient ? JsonRPCRequest(method = method, params = params)).mapTo[JsonAST.JValue]
     }
   }
+
 }
