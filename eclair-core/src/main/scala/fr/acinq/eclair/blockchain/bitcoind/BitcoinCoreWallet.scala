@@ -42,25 +42,12 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   private def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
     val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
-    rpcClient.invoke("fundrawtransaction", hex, FundTransaction.Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
+    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
       FundTransactionResponse(Transaction.read(hex), changepos.intValue, toSatoshi(fee))
     })
-  }
-
-  override def bumpFee(txid: ByteVector32, confirmationTarget: Long): Future[Transaction] = {
-    for {
-      txid1 <- rpcClient.invoke("bumpfee", txid, BumpFee.Options(confirmationTarget)).map(json => {
-        val JString(txid1) = json \ "txid"
-        val JDecimal(fee) = json \ "origfee"
-        val JDecimal(fee1) = json \ "fee"
-        logger.info(s"tx=$txid with fee=$fee bumped to tx=$txid1 with fee=$fee1")
-        ByteVector32.fromValidHex(txid1)
-      })
-      tx1 <- bitcoinClient.getTransaction(txid1)
-    } yield tx1
   }
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] = signTransaction(Transaction.write(tx).toHex)
@@ -203,19 +190,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
 object BitcoinCoreWallet {
 
-  object FundTransaction {
-
-    case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
-
-  }
-
-  object BumpFee {
-
-    case class Options(confTarget: Long)
-
-  }
-
   // @formatter:off
+  case class Options(lockUnspents: Boolean, feeRate: BigDecimal)
   case class Utxo(txid: ByteVector32, vout: Long)
   case class WalletTransaction(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Satoshi)

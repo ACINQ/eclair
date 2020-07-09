@@ -46,8 +46,6 @@ class TestWallet extends EclairWallet {
     Future.successful(true)
   }
 
-  override def bumpFee(txid: ByteVector32, confirmationTarget: Long): Future[Transaction] = Future.successful(Transaction(version = 2, txIn = Nil, txOut = Nil, lockTime = 0))
-
   override def doubleSpent(tx: Transaction): Future[Boolean] = Future.successful(false)
 }
 
