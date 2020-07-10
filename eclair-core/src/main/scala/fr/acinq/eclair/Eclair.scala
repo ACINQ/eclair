@@ -39,6 +39,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPa
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement, GenericTlv}
+import fr.acinq.eclair.wire.Onion.keySendTagValue
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -390,7 +391,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
     val paymentPreimage = randomBytes32
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
-    val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
+    val keySendTlvRecords = Seq(GenericTlv(keySendTagValue, paymentPreimage))
     val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams), userCustomTlvs = keySendTlvRecords)
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
