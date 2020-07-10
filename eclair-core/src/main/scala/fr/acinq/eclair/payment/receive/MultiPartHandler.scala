@@ -93,10 +93,22 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                   pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
               }
           }
-          case None =>
-            Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
-            val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
-            PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.add.channelId, cmdFail)
+          case None => p.payload.keySend match {
+            case Some(keySend) =>
+              val paymentPreimage = keySend.paymentPreimage
+              val amount = Some(p.payload.totalAmount)
+              val paymentHash = Crypto.sha256(paymentPreimage)
+              val desc = "Donation"
+              // Insert a fake invoice and then restart the incoming payment handler
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc)
+              log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
+              db.addIncomingPayment(paymentRequest, paymentPreimage)
+              ctx.self ! p
+            case None =>
+              Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
+              val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
+              PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.add.channelId, cmdFail)
+          }
         }
       }
 
