@@ -224,9 +224,13 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("sendtonode") {
-                          formFields(amountMsatFormParam, paymentHashFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?) {
-                            (amountMsat, paymentHash, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
+                          formFields(amountMsatFormParam, paymentHashFormParam.?, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "keysend".?) {
+                            case (_, None, _, _, _, _, _, None) =>
+                              reject(MalformedFormFieldRejection("paymentHash", "paymentHash is optional only when a KeySend payment is used"))
+                            case (amountMsat, Some(paymentHash), nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, None) =>
                               complete(eclairApi.send(externalId_opt, nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
+                            case (amountMsat, _, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, Some(keysend)) =>
+                              complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
                           }
                         } ~
                         path("sendtoroute") {
