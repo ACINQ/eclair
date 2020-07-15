@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, ChannelCommandResponse}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
@@ -98,8 +98,14 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = "Donation"
+              val features =  if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
+                PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+              } else {
+                PaymentRequestFeatures(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+              }
+
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc)
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, features = Some(features))
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
