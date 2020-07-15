@@ -230,7 +230,7 @@ object Onion {
     val expiry: CltvExpiry
     val paymentSecret: Option[ByteVector32]
     val totalAmount: MilliSatoshi
-    val keySend: Option[KeySend]
+    val paymentPreimage: Option[ByteVector32]
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with LegacyFormat
@@ -238,7 +238,7 @@ object Onion {
   case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat {
     override val paymentSecret = None
     override val totalAmount = amount
-    override val keySend = None
+    override val paymentPreimage = None
   }
 
   case class ChannelRelayTlvPayload(records: TlvStream[OnionTlv]) extends ChannelRelayPayload with TlvFormat {
@@ -268,7 +268,7 @@ object Onion {
       case MilliSatoshi(0) => amount
       case totalAmount => totalAmount
     }).getOrElse(amount)
-    override val keySend = records.get[KeySend]
+    override val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
   }
 
   def createNodeRelayPayload(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): NodeRelayPayload =
