@@ -34,7 +34,12 @@ object Scripts {
    * @param sig     raw ECDSA signature (r,s)
    * @param sighash sighash flags
    */
-  def der(sig: ByteVector64, sighash: Byte = SIGHASH_ALL.toByte): ByteVector = Crypto.compact2der(sig) :+ sighash
+  def der(sig: ByteVector64, sighash: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighash.toByte
+
+  def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
+    case DefaultCommitmentFormat => SIGHASH_ALL
+    case AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+  }
 
   def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] =
     if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
@@ -200,8 +205,8 @@ object Scripts {
   /**
    * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
    */
-  def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector) =
-    ScriptWitness(ByteVector.empty :: der(remoteSig) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
+  def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat) =
+    ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
@@ -253,8 +258,8 @@ object Scripts {
   /**
    * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcOffered script from commit tx)
    */
-  def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
-    ScriptWitness(ByteVector.empty :: der(remoteSig) :: der(localSig) :: ByteVector.empty :: htlcOfferedScript :: Nil)
+  def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat) =
+    ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: ByteVector.empty :: htlcOfferedScript :: Nil)
 
   /** Extract the payment hash from a 2nd-stage HTLC Timeout transaction's witness script */
   def extractPaymentHashFromHtlcTimeout: PartialFunction[ScriptWitness, ByteVector] = {
