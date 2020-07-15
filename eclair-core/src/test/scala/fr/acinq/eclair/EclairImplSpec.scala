@@ -388,4 +388,35 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     paymentInitiator.expectMsg(SendPaymentToRouteRequest(1000 msat, 1200 msat, Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
   }
 
+  test("call sendWithPreimage, which generate a random preimage, to perform a KeySend payment") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+    val nodeId = randomKey.publicKey
+
+    eclair.sendWithPreimage(None, nodeId, 12345 msat)
+    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send.externalId === None)
+    assert(send.recipientNodeId === nodeId)
+    assert(send.recipientAmount === 12345.msat)
+    assert(send.paymentRequest === None)
+  }
+
+  test("call sendWithPreimage, giving a specific preimage, to perform a KeySend payment") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+    val nodeId = randomKey.publicKey
+    val paymentPreimage = ByteVector32(hex"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+    val expectedPaymentHash = Crypto.sha256(paymentPreimage)
+
+    eclair.sendWithPreimage(None, nodeId, 12345 msat, paymentPreimage = paymentPreimage)
+    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
+    assert(send.externalId === None)
+    assert(send.recipientNodeId === nodeId)
+    assert(send.recipientAmount === 12345.msat)
+    assert(send.paymentRequest === None)
+    assert(send.paymentHash === expectedPaymentHash)
+  }
+
 }

@@ -82,6 +82,7 @@ case object PaymentType {
   val Standard = "Standard"
   val SwapIn = "SwapIn"
   val SwapOut = "SwapOut"
+  val KeySend = "KeySend"
 }
 
 /**
