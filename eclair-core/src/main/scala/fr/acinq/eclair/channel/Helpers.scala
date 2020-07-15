@@ -545,7 +545,7 @@ object Helpers {
         case HtlcTxAndSigs(txinfo@HtlcSuccessTx(_, _, paymentHash), localSig, remoteSig) if preimages.exists(r => sha256(r) == paymentHash) =>
           generateTx("htlc-success") {
             val preimage = preimages.find(r => sha256(r) == paymentHash).get
-            Right(Transactions.addSigs(txinfo, localSig, remoteSig, preimage))
+            Right(Transactions.addSigs(txinfo, localSig, remoteSig, preimage, commitmentFormat))
           }
 
         // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
@@ -553,7 +553,7 @@ object Helpers {
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) =>
           generateTx("htlc-timeout") {
-            Right(Transactions.addSigs(txinfo, localSig, remoteSig))
+            Right(Transactions.addSigs(txinfo, localSig, remoteSig, commitmentFormat))
           }
       }.flatten
 

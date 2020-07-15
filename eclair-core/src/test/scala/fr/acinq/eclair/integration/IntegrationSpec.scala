@@ -1084,7 +1084,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 2, Some(address))
     // and we wait for C'channel to close
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
-    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 9,  11, 24)
+    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 9, 11, 24)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -1302,8 +1302,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // F will publish the commitment above, which is now revoked
     val revokedCommitTx = localCommitF.commitTx.tx
-    val htlcSuccess = Transactions.addSigs(htlcSuccessTxs.head.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcSuccessTxs.head.localSig, htlcSuccessTxs.head.remoteSig, preimage1).tx
-    val htlcTimeout = Transactions.addSigs(htlcTimeoutTxs.head.txinfo.asInstanceOf[Transactions.HtlcTimeoutTx], htlcTimeoutTxs.head.localSig, htlcTimeoutTxs.head.remoteSig).tx
+    val htlcSuccess = Transactions.addSigs(htlcSuccessTxs.head.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcSuccessTxs.head.localSig, htlcSuccessTxs.head.remoteSig, preimage1, commitmentsF.commitmentFormat).tx
+    val htlcTimeout = Transactions.addSigs(htlcTimeoutTxs.head.txinfo.asInstanceOf[Transactions.HtlcTimeoutTx], htlcTimeoutTxs.head.localSig, htlcTimeoutTxs.head.remoteSig, commitmentsF.commitmentFormat).tx
     Transaction.correctlySpends(htlcSuccess, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     Transaction.correctlySpends(htlcTimeout, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // we then generate blocks to make the htlc timeout (nothing will happen in the channel because all of them have already been fulfilled)
