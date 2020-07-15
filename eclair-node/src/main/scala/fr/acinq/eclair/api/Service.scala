@@ -224,13 +224,17 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("sendtonode") {
-                          formFields(amountMsatFormParam, paymentHashFormParam.?, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "keysend".?) {
-                            case (_, None, _, _, _, _, _, None) =>
-                              reject(MalformedFormFieldRejection("paymentHash", "paymentHash is optional only when a KeySend payment is used"))
-                            case (amountMsat, Some(paymentHash), nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, None) =>
-                              complete(eclairApi.send(externalId_opt, nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
-                            case (amountMsat, _, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, Some(keysend)) =>
-                              complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
+                          formFields(amountMsatFormParam, nodeIdFormParam, paymentHashFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "keysend".as[Boolean].?) {
+                            case (amountMsat, nodeId, Some(paymentHash), maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, keySend) =>
+                              keySend match  {
+                                case Some(true) => reject(MalformedFormFieldRejection("paymentHash", "You cannot request a KeySend payment and specify a paymentHash"))
+                                case _ => complete(eclairApi.send(externalId_opt, nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
+                              }
+                            case (amountMsat, nodeId, None, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, keySend) =>
+                              keySend match {
+                                case Some(true) => complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
+                                case _ => reject(MalformedFormFieldRejection("paymentHash", "No payment type specified. Either give a paymentHash or use --keysend=true"))
+                              }
                           }
                         } ~
                         path("sendtoroute") {
