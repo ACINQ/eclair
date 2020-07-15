@@ -218,8 +218,7 @@ object Features {
     ChannelRangeQueriesExtended,
     PaymentSecret,
     BasicMultiPartPayment,
-    Wumbo,
-    KeySend
+    Wumbo
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -229,7 +228,8 @@ object Features {
     // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
     // PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
-    TrampolinePayment -> (PaymentSecret :: Nil)
+    TrampolinePayment -> (PaymentSecret :: Nil),
+    KeySend -> (VariableLengthOnion :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
