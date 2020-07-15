@@ -93,9 +93,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                   pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
               }
           }
-          case None => p.payload.keySend match {
-            case Some(keySend) =>
-              val paymentPreimage = keySend.paymentPreimage
+          case None => p.payload.paymentPreimage match {
+            case Some(paymentPreimage) =>
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = "Donation"
