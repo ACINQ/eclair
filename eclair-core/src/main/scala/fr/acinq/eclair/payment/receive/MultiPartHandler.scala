@@ -94,7 +94,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               }
           }
           case None => p.payload.paymentPreimage match {
-            case Some(paymentPreimage) =>
+            case Some(paymentPreimage) if nodeParams.features.hasFeature(Features.KeySend) =>
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = "Donation"
@@ -109,7 +109,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
-            case None =>
+            case _ =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
               val cmdFail = CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(p.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
               PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.add.channelId, cmdFail)
