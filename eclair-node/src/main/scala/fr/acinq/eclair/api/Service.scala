@@ -233,7 +233,7 @@ trait Service extends ExtraDirectives with Logging {
                             case (amountMsat, nodeId, None, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, keySend) =>
                               keySend match {
                                 case Some(true) => complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
-                                case _ => reject(MalformedFormFieldRejection("paymentHash", "No payment type specified. Either give a paymentHash or use --keysend=true"))
+                                case _ => reject(MalformedFormFieldRejection("paymentHash", "No payment type specified. Either provide a paymentHash or use --keysend=true"))
                               }
                           }
                         } ~
