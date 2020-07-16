@@ -425,7 +425,7 @@ class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
 class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
-  override def channelVersion: ChannelVersion = ChannelVersion.STATIC_REMOTEKEY
+  override def channelVersion: ChannelVersion = ChannelVersion.ANCHOR_OUTPUTS
   override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
   // @formatter:on
 }
