@@ -21,7 +21,6 @@ import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -292,10 +291,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-          val channelVersion = Features.canUseFeature(localParams.features, remoteInit.features, StaticRemoteKey) match {
-            case false => ChannelVersion.STANDARD
-            case true => ChannelVersion.STATIC_REMOTEKEY
-          }
+          val channelVersion = ChannelVersion.pickChannelVersion(localParams.features, remoteInit.features)
           val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
