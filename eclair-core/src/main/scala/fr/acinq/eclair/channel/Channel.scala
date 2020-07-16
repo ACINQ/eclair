@@ -1575,7 +1575,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             }
           }
 
-          goto(NORMAL) using manualTransition(SYNCING, NORMAL, d, d.copy(commitments = commitments1)) sending sendQueue
+          goto(NORMAL) using d.copy(commitments = commitments1) sending sendQueue
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
