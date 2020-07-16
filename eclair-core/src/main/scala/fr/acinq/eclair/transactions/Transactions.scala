@@ -185,8 +185,13 @@ object Transactions {
   def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
+    val anchorsCost = commitmentFormat match {
+      case DefaultCommitmentFormat => Satoshi(0)
+      // the funder pays for both anchors all the time, even if only one anchor is present
+      case AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
+    }
     val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2feeMsat(spec.feeratePerKw, weight)
+    weight2feeMsat(spec.feeratePerKw, weight) + anchorsCost
   }
 
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxFeeMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
@@ -291,24 +296,11 @@ object Transactions {
 
     val hasHtlcs = outputs.nonEmpty
 
-    def computeMainOutputs(funderSpecAmount: MilliSatoshi, fundeeSpecAmount: MilliSatoshi): (Satoshi, Satoshi) = commitmentFormat match {
-      // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
-      case DefaultCommitmentFormat =>
-        val commitFee = commitTxFee(localDustLimit, spec, commitmentFormat)
-        (funderSpecAmount.truncateToSatoshi - commitFee, fundeeSpecAmount.truncateToSatoshi)
-      case AnchorOutputsCommitmentFormat =>
-        val commitFee = commitTxFee(localDustLimit, spec, commitmentFormat)
-        // We won't add an anchor for the fundee if he has nothing at stake (which typically happens when a new channel is opened without any push_msat)
-        val fundeeAnchorSkipped = fundeeSpecAmount < localDustLimit && !hasHtlcs
-        val anchorsCost = if (fundeeAnchorSkipped) AnchorOutputsCommitmentFormat.anchorAmount else AnchorOutputsCommitmentFormat.anchorAmount * 2
-        (funderSpecAmount.truncateToSatoshi - commitFee - anchorsCost, fundeeSpecAmount.truncateToSatoshi)
-    }
-
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      computeMainOutputs(spec.toLocal, spec.toRemote)
+      (spec.toLocal.truncateToSatoshi - commitTxFee(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
     } else {
-      computeMainOutputs(spec.toRemote, spec.toLocal).swap
-    }
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxFee(localDustLimit, spec, commitmentFormat))
+    } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     if (toLocalAmount >= localDustLimit) {
       outputs.append(CommitmentOutputLink(
