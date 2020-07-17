@@ -17,10 +17,10 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
-import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.db.IncomingPaymentStatus
@@ -160,10 +160,14 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     sender.send(normalHandler, ReceivePayment(Some(42000 msat), "1 coffee"))
-    assert(sender.expectMsgType[PaymentRequest].expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
+    val pr1 = sender.expectMsgType[PaymentRequest]
+    assert(pr1.minFinalCltvExpiryDelta === Some(nodeParams.fulfillSafetyBeforeTimeoutBlocks + 3))
+    assert(pr1.expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
 
     sender.send(normalHandler, ReceivePayment(Some(42000 msat), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
-    assert(sender.expectMsgType[PaymentRequest].expiry === Some(60))
+    val pr2 = sender.expectMsgType[PaymentRequest]
+    assert(pr2.minFinalCltvExpiryDelta === Some(nodeParams.fulfillSafetyBeforeTimeoutBlocks + 3))
+    assert(pr2.expiry === Some(60))
   }
 
   test("Payment request generation with trampoline support") { _ =>
@@ -272,7 +276,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.features.allowMultiPart)
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr.paymentHash, CltvExpiryDelta(1).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket)
+    val lowCltvExpiry = nodeParams.fulfillSafetyBeforeTimeoutBlocks.toCltvExpiry(nodeParams.currentBlockHeight)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr.paymentHash, lowCltvExpiry, TestConstants.emptyOnionPacket)
     sender.send(mppHandler, IncomingPacket.FinalPacket(add, Onion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, pr.paymentSecret.get)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))

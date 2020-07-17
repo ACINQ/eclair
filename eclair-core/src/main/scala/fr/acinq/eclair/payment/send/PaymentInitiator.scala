@@ -192,7 +192,7 @@ object PaymentInitiator {
    *                           the payment will automatically be retried in case of TrampolineFeeInsufficient errors.
    *                           For example, [(10 msat, 144), (15 msat, 288)] will first send a payment with a fee of 10
    *                           msat and cltv of 144, and retry with 15 msat and 288 in case an error occurs.
-   * @param finalExpiryDelta   expiry delta for the final recipient.
+   * @param finalExpiryDelta   expiry delta for the final recipient when the [[paymentRequest]] doesn't specify it.
    * @param routeParams        (optional) parameters to fine-tune the routing algorithm.
    */
   case class SendTrampolinePaymentRequest(recipientAmount: MilliSatoshi,
@@ -205,7 +205,7 @@ object PaymentInitiator {
     val paymentHash = paymentRequest.paymentHash
 
     // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
+    def finalExpiry(currentBlockHeight: Long) = paymentRequest.minFinalCltvExpiryDelta.getOrElse(finalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
   }
 
   /**
@@ -213,7 +213,7 @@ object PaymentInitiator {
    * @param paymentHash      payment hash.
    * @param recipientNodeId  id of the final recipient.
    * @param maxAttempts      maximum number of retries.
-   * @param finalExpiryDelta expiry delta for the final recipient.
+   * @param finalExpiryDelta expiry delta for the final recipient when the [[paymentRequest]] doesn't specify it.
    * @param paymentRequest   (optional) Bolt 11 invoice.
    * @param externalId       (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param assistedRoutes   (optional) routing hints (usually from a Bolt 11 invoice).
@@ -231,7 +231,7 @@ object PaymentInitiator {
                                 routeParams: Option[RouteParams] = None,
                                 userCustomTlvs: Seq[GenericTlv] = Nil) {
     // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
+    def finalExpiry(currentBlockHeight: Long) = paymentRequest.flatMap(_.minFinalCltvExpiryDelta).getOrElse(finalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
   }
 
   /**
@@ -256,7 +256,7 @@ object PaymentInitiator {
    *                              sure all partial payments use the same parentId. If not provided, a random parentId will
    *                              be generated that can be used for the remaining partial payments.
    * @param paymentRequest        Bolt 11 invoice.
-   * @param finalExpiryDelta      expiry delta for the final recipient.
+   * @param finalExpiryDelta      expiry delta for the final recipient when the [[paymentRequest]] doesn't specify it.
    * @param route                 route to use to reach either the final recipient or the first trampoline node.
    * @param trampolineSecret      if trampoline is used, this is a secret to protect the payment to the first trampoline
    *                              node against probing. When manually sending a multi-part payment, you need to make sure
@@ -283,7 +283,7 @@ object PaymentInitiator {
     val paymentHash = paymentRequest.paymentHash
 
     // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = finalExpiryDelta.toCltvExpiry(currentBlockHeight + 1)
+    def finalExpiry(currentBlockHeight: Long) = paymentRequest.minFinalCltvExpiryDelta.getOrElse(finalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
   }
 
   /**
