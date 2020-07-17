@@ -20,13 +20,13 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, ChannelCommandResponse}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
@@ -244,7 +244,14 @@ object MultiPartHandler {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, currentBlockHeight)), commit = true)
     val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))
-    val paymentCltvOk = validatePaymentCltv(payment, record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry(currentBlockHeight))
+    // https://github.com/lightningnetwork/lightning-rfc/pull/785 changed the default final cltv_expiry_delta from 9 to 18.
+    // When we pay an invoice that doesn't provide a minFinalCltvExpiryDelta we use the new value, but when receiving
+    // payments we need to accept the old one, because we must wait for wallets and users to update and start sending the
+    // new value, otherwise we would reject too many payments.
+    // TODO (@t-bast): remove that work-around once all implementations have shipped the new value and the network had
+    // enough time to upgrade.
+    val previousDefaultMinFinalCltvExpiryDelta = CltvExpiryDelta(9)
+    val paymentCltvOk = validatePaymentCltv(payment, record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(previousDefaultMinFinalCltvExpiryDelta).toCltvExpiry(currentBlockHeight))
     val paymentStatusOk = validatePaymentStatus(payment, record)
     val paymentFeaturesOk = validateInvoiceFeatures(payment, record.paymentRequest)
     if (paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk) None else Some(cmdFail)
