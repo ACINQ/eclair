@@ -44,7 +44,7 @@ import kamon.context.Context
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
-import scala.util.Try
+import scala.util.{Random, Try}
 
 /**
  * Created by PM on 24/05/2016.
@@ -90,7 +90,10 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       val txid = pc.fundingTxid
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(pc.ann.bitcoinKey1, pc.ann.bitcoinKey2)))
-      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+      // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
+      context.system.scheduler.scheduleOnce(Random.nextLong(1 + nodeParams.watchSpentWindow.toSeconds).seconds) {
+        watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+      }
     }
 
     // on restart we update our node announcement
