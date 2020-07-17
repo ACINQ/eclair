@@ -425,7 +425,8 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   }
 
   def scheduleNextPing(): Unit = {
-    setTimer(SEND_PING_TIMER, SendPing, 30 seconds)
+    log.debug("next ping scheduled in {}", conf.pingInterval)
+    setTimer(SEND_PING_TIMER, SendPing, conf.pingInterval)
   }
 
   initialize()
