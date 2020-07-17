@@ -63,7 +63,7 @@ object Channel {
   val MAX_NEGOTIATION_ITERATIONS = 20
 
   // this is defined in BOLT 11
-  val MIN_CLTV_EXPIRY_DELTA = CltvExpiryDelta(9)
+  val MIN_CLTV_EXPIRY_DELTA = CltvExpiryDelta(18)
   val MAX_CLTV_EXPIRY_DELTA = CltvExpiryDelta(7 * 144) // one week
 
   // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
