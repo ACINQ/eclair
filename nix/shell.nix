@@ -24,14 +24,13 @@ stdenv.mkDerivation {
     nix-prefetch-scripts
     openssh
     cacert
+    perl
     git
+    jq
   ];
 
   TERM="xterm-256color";
   GIT_SSL_CAINFO="${cacert}/etc/ssl/certs/ca-bundle.crt";
   NIX_SSL_CERT_FILE="${cacert}/etc/ssl/certs/ca-bundle.crt";
   NIX_PATH="/nix/var/nix/profiles/per-user/root/channels";
-  shellHook = ''
-    mvn  -Dmaven.repo.local=$(mktemp -d -t maven)  org.nixos.mvn2nix:mvn2nix-maven-plugin:mvn2nix
-  '';
 }
