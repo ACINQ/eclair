@@ -98,7 +98,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = "Donation"
-              val features =  if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
+              val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
                 PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
               } else {
                 PaymentRequestFeatures(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
