@@ -17,20 +17,20 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
-import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
-import fr.acinq.eclair.db.IncomingPaymentStatus
+import fr.acinq.eclair.db.{IncomingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{GetPendingPayments, PendingPayments, ReceivePayment}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiry, CltvExpiryDelta, Features, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiry, CltvExpiryDelta, Features, LongToBtcAmount, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, UInt64, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -52,9 +52,15 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     ActivatedFeature(BasicMultiPartPayment, Optional)
   ))
 
+  val featuresWithKeySend = Features(Set(
+    ActivatedFeature(VariableLengthOnion, Optional),
+    ActivatedFeature(KeySend, Optional)
+  ))
+
   case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, register: TestProbe, eventListener: TestProbe, sender: TestProbe) {
     lazy val normalHandler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, register.ref))
     lazy val mppHandler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithMpp), register.ref))
+    lazy val keySendHandler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithKeySend), register.ref))
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -455,4 +461,26 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     })
   }
 
+  test("KeySend payment in a single HTLC") { f =>
+    import f._
+
+    val amountMsat = 42000 msat
+    val paymentPreimage = randomBytes32
+    val paymentHash = Crypto.sha256(paymentPreimage)
+    val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
+
+    sender.send(keySendHandler, ReceivePayment(None, "Donation (KeySend)", paymentPreimage = Some(paymentPreimage), paymentType = PaymentType.KeySend ))
+    val pr = sender.expectMsgType[PaymentRequest]
+    assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.nodeId.toString)
+
+    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    sender.send(keySendHandler, IncomingPacket.FinalPacket(add, Onion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, userCustomTlvs = keySendTlvRecords)))
+    register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+
+    val paymentReceived = eventListener.expectMsgType[PaymentReceived]
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0) :: Nil))
+    val received = nodeParams.db.payments.getIncomingPayment(paymentHash)
+    assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
+  }
 }
