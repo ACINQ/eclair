@@ -183,7 +183,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           connection ! Tcp.ResumeReading
           stay using d.copy(decryptor = dec1)
         } else {
-          log.debug(s"read {} messages, waiting for readacks", plaintextMessages.size)
+          log.debug("read {} messages, waiting for readacks", plaintextMessages.size)
           val unackedReceived = sendToListener(d.listener, plaintextMessages)
           stay using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
         }
@@ -191,6 +191,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
       case Event(ReadAck(msg: T), d: NormalData[T]) =>
         // how many occurences of this message are still unacked?
         val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
+        log.debug("acking message {}", msg)
         // if all occurences have been acked then we remove the entry from the map
         val unackedReceived1 = if (remaining > 0) d.unackedReceived + (msg -> remaining) else d.unackedReceived - msg
         if (unackedReceived1.isEmpty) {
@@ -198,6 +199,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           connection ! Tcp.ResumeReading
           stay using d.copy(unackedReceived = unackedReceived1)
         } else {
+          log.debug("still waiting for readacks, unacked={}", unackedReceived1)
           stay using d.copy(unackedReceived = unackedReceived1)
         }
 
