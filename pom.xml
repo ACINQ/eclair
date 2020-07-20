@@ -245,7 +245,7 @@
             <plugin>
                 <groupId>org.scoverage</groupId>
                 <artifactId>scoverage-maven-plugin</artifactId>
-                <version>1.4.0-RC1</version>
+                <version>1.4.1</version>
                 <configuration>
                     <skip>${maven.test.skip}</skip>
                     <scalaVersion>${scala.version}</scalaVersion>
