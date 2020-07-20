@@ -21,8 +21,6 @@ import java.util.UUID
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, ScriptFlags, Transaction}
-import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
@@ -32,9 +30,8 @@ import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
+import fr.acinq.eclair.{FeatureSupport, Features, NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
-import scodec.bits._
 
 import scala.concurrent.duration._
 
@@ -77,17 +74,22 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
-  def reachNormal(setup: SetupFixture,
-                  tags: Set[String] = Set.empty): Unit = {
+  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelVersion = if(tags.contains("static_remotekey")) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.STANDARD
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams) = if(tags.contains("static_remotekey")) {
-      (Alice.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))),
-       Bob.channelParams.copy(features = Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet))))
+    val (aliceParams, bobParams, channelVersion) = if (tags.contains("anchor_outputs")) {
+      val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
+      val aliceParams = Alice.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      val bobParams = Bob.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      (aliceParams, bobParams, ChannelVersion.ANCHOR_OUTPUTS)
+    } else if (tags.contains("static_remotekey")) {
+      val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
+      val aliceParams = Alice.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      val bobParams = Bob.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      (aliceParams, bobParams, ChannelVersion.STATIC_REMOTEKEY)
     } else {
-      (Alice.channelParams, Bob.channelParams)
+      (Alice.channelParams, Bob.channelParams, ChannelVersion.STANDARD)
     }
 
     val aliceInit = Init(aliceParams.features)
