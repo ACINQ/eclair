@@ -20,13 +20,13 @@ import akka.actor.Actor.Receive
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel, ChannelCommandResponse}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, ChannelCommandResponse}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
@@ -66,7 +66,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
           Some(PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*))
         }
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
+        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDeltaBlocks, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
         paymentRequest
@@ -78,7 +78,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
     case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(p.add.paymentHash))) {
         db.getIncomingPayment(p.add.paymentHash) match {
-          case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
+          case Some(record) => validatePayment(nodeParams, p, record) match {
             case Some(cmdFail) =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
               PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.add.channelId, cmdFail)
@@ -216,7 +216,8 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentCltv(payment: IncomingPacket.FinalPacket, minExpiry: CltvExpiry)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
+    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(nodeParams.minFinalExpiryDeltaBlocks).toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
@@ -240,11 +241,11 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePayment(payment: IncomingPacket.FinalPacket, record: IncomingPayment, currentBlockHeight: Long)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
+  private def validatePayment(nodeParams: NodeParams, payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
-    val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, currentBlockHeight)), commit = true)
+    val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))
-    val paymentCltvOk = validatePaymentCltv(payment, record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA).toCltvExpiry(currentBlockHeight))
+    val paymentCltvOk = validatePaymentCltv(nodeParams, payment, record)
     val paymentStatusOk = validatePaymentStatus(payment, record)
     val paymentFeaturesOk = validateInvoiceFeatures(payment, record.paymentRequest)
     if (paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk) None else Some(cmdFail)
