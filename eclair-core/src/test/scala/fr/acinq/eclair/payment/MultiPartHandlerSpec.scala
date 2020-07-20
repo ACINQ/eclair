@@ -487,4 +487,21 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
     assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
   }
+
+  test("KeySend payment without the feature activated") { f =>
+    import f._
+
+    val amountMsat = 42000 msat
+    val paymentPreimage = randomBytes32
+    val paymentHash = Crypto.sha256(paymentPreimage)
+    val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.KeySend(paymentPreimage))))
+
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+
+    val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
+    sender.send(normalHandler, IncomingPacket.FinalPacket(add, payload))
+
+    f.register.expectMsg(Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), commit = true)))
+    assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
+  }
 }
