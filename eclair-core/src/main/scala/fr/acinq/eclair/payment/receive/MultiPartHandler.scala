@@ -26,7 +26,7 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}
 
@@ -220,7 +220,11 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentCltv(payment: IncomingPacket.FinalPacket, minExpiry: CltvExpiry)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
+    // The default `min_final_cltv_expiry` we accept is our `fulfill_safety_before_timeout` to which we add one block for
+    // safety (to handle races between our peer acknowledging the HTLC fulfill and a new block being produced).
+    val defaultMinFinalCltvExpiryDelta = nodeParams.fulfillSafetyBeforeTimeoutBlocks + 1
+    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(defaultMinFinalCltvExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
@@ -248,10 +252,7 @@ object MultiPartHandler {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))
-    // The default `min_final_cltv_expiry` we accept is our `fulfill_safety_before_timeout` to which we add one block for
-    // safety (to handle races between our peer acknowledging the HTLC fulfill and a new block being produced).
-    val defaultMinFinalCltvExpiryDelta = nodeParams.fulfillSafetyBeforeTimeoutBlocks + 1
-    val paymentCltvOk = validatePaymentCltv(payment, record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(defaultMinFinalCltvExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight))
+    val paymentCltvOk = validatePaymentCltv(nodeParams, payment, record)
     val paymentStatusOk = validatePaymentStatus(payment, record)
     val paymentFeaturesOk = validateInvoiceFeatures(payment, record.paymentRequest)
     if (paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk) None else Some(cmdFail)
