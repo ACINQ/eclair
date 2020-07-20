@@ -95,7 +95,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     payFsm.expectMsgType[SendPaymentConfig]
     val FinalTlvPayload(tlvs) = payFsm.expectMsgType[SendPayment].finalPayload
     assert(tlvs.get[AmountToForward].get.amount == finalAmount)
-    assert(tlvs.get[OutgoingCltv].get.cltv == req.finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
+    assert(tlvs.get[OutgoingCltv].get.cltv == req.fallbackFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
     assert(tlvs.unknown == keySendTlvRecords)
   }
 
