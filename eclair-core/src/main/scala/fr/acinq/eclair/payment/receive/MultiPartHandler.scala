@@ -56,10 +56,6 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
       Try {
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
         val paymentHash = Crypto.sha256(paymentPreimage)
-        // We must set a `min_final_cltv_expiry` bigger than our `fulfill_safety_before_timeout`. Otherwise when we receive
-        // a payment, if a new block is produced while we're waiting for our peer to acknowledge our fulfill we'll end up
-        // closing the channel because it violates `fulfill_safety_before_timeout`.
-        val minFinalExpiryDelta = nodeParams.fulfillSafetyBeforeTimeoutBlocks + 3
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
@@ -70,7 +66,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
           Some(PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*))
         }
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
+        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDeltaBlocks, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
         paymentRequest
@@ -221,10 +217,7 @@ object MultiPartHandler {
   }
 
   private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
-    // The default `min_final_cltv_expiry` we accept is our `fulfill_safety_before_timeout` to which we add one block for
-    // safety (to handle races between our peer acknowledging the HTLC fulfill and a new block being produced).
-    val defaultMinFinalCltvExpiryDelta = nodeParams.fulfillSafetyBeforeTimeoutBlocks + 1
-    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(defaultMinFinalCltvExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
+    val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(nodeParams.minFinalExpiryDeltaBlocks).toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false

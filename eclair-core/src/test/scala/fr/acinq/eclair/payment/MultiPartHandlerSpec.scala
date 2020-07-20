@@ -63,7 +63,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val register = TestProbe()
       val eventListener = TestProbe()
       system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, CltvExpiryDelta(12).toCltvExpiry(nodeParams.currentBlockHeight), register, eventListener, TestProbe())))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeParams.minFinalExpiryDeltaBlocks.toCltvExpiry(nodeParams.currentBlockHeight), register, eventListener, TestProbe())))
     }
   }
 
@@ -161,12 +161,12 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     sender.send(normalHandler, ReceivePayment(Some(42000 msat), "1 coffee"))
     val pr1 = sender.expectMsgType[PaymentRequest]
-    assert(pr1.minFinalCltvExpiryDelta === Some(nodeParams.fulfillSafetyBeforeTimeoutBlocks + 3))
+    assert(pr1.minFinalCltvExpiryDelta === Some(nodeParams.minFinalExpiryDeltaBlocks))
     assert(pr1.expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
 
     sender.send(normalHandler, ReceivePayment(Some(42000 msat), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
     val pr2 = sender.expectMsgType[PaymentRequest]
-    assert(pr2.minFinalCltvExpiryDelta === Some(nodeParams.fulfillSafetyBeforeTimeoutBlocks + 3))
+    assert(pr2.minFinalCltvExpiryDelta === Some(nodeParams.minFinalExpiryDeltaBlocks))
     assert(pr2.expiry === Some(60))
   }
 
