@@ -124,9 +124,16 @@ object PaymentRequest {
     Block.TestnetGenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc")
 
-  def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
-            description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
-            extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
+  def apply(chainHash: ByteVector32,
+            amount: Option[MilliSatoshi],
+            paymentHash: ByteVector32,
+            privateKey: PrivateKey,
+            description: String,
+            minFinalCltvExpiryDelta: CltvExpiryDelta,
+            fallbackAddress: Option[String] = None,
+            expirySeconds: Option[Long] = None,
+            extraHops: List[List[ExtraHop]] = Nil,
+            timestamp: Long = System.currentTimeMillis() / 1000L,
             features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
@@ -136,6 +143,7 @@ object PaymentRequest {
         Some(Description(description)),
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
+        Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
         features).flatten
       val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32) :: Nil else Nil
       val routingInfoTags = extraHops.map(RoutingInfo)
