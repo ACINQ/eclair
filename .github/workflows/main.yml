@@ -30,7 +30,7 @@ jobs:
       run: echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
 
     - name: Build with Maven
-      run: mvn scoverage:report
+      run: mvn compile && mvn scoverage:report
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
