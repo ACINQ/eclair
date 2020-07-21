@@ -34,5 +34,3 @@ jobs:
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v1
-      with:
-        file: ./eclair-core/target/scoverage.xml
