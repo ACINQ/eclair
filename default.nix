@@ -31,7 +31,7 @@ mavenix.buildMaven {
   #
   postInstall = ''
     makeWrapper ${jre_headless}/bin/java $out/bin/eclair \
-      --add-flags "-jar $out/share/java/eclair-node_2.13-0.4.1-SNAPSHOT.jar"
+      --add-flags "-jar $out/share/java/eclair-node_2.13-0.4.1-SNAPSHOT.jar fr.acinq.eclair.Boot"
   '';
 
   # Add extra maven dependencies which might not have been picked up
