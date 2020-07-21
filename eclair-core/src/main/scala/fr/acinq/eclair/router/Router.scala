@@ -91,7 +91,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(pc.ann.bitcoinKey1, pc.ann.bitcoinKey2)))
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
-      context.system.scheduler.scheduleOnce(Random.nextLong(1 + nodeParams.watchSpentWindow.toSeconds).seconds) {
+      context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.watchSpentWindow.toSeconds).seconds) {
         watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
       }
     }
