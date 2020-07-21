@@ -30,7 +30,7 @@ mavenix.buildMaven {
   #   hooks can be set here also.
   #
   postInstall = ''
-    makeWrapper ${jre_headless}/bin/java $out/bin/eclair \
+    makeWrapper ${jdk11}/bin/java $out/bin/eclair \
       --add-flags "-cp $out/share/java/eclair-node_2.13-0.4.1-SNAPSHOT.jar fr.acinq.eclair.Boot"
   '';
 
