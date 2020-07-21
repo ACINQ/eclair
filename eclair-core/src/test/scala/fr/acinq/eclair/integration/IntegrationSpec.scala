@@ -50,11 +50,11 @@ import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PublicChannel, RouteParams, NORMAL => _, State => _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
-import org.json4s.DefaultFormats
+import org.json4s.{DefaultFormats, Formats}
 import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -125,8 +125,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     s"eclair.features.${StaticRemoteKey.rfcName}" -> "optional"
   ).asJava))
 
+  val withAnchorOutputs = withStaticRemoteKey.withFallback(ConfigFactory.parseMap(Map(
+    s"eclair.features.${AnchorOutputs.rfcName}" -> "optional"
+  ).asJava))
 
-  implicit val formats = DefaultFormats
+  implicit val formats: Formats = DefaultFormats
 
   override def beforeAll: Unit = {
     startBitcoind()
@@ -172,15 +175,15 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   test("starting eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel-flags" -> 0).asJava).withFallback(commonFeatures).withFallback(commonConfig)) // A's channels are private
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withStaticRemoteKey).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withAnchorOutputs).withFallback(withWumbo).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(commonConfig))
+    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
     instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085).asJava).withFallback(withWumbo).withFallback(commonConfig))
     instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086).asJava).withFallback(commonConfig))
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.expiry-delta-blocks" -> 138, "eclair.server.port" -> 29738, "eclair.api.port" -> 28088).asJava).withFallback(commonConfig))
     instantiateEclairNode("F5", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F5", "eclair.expiry-delta-blocks" -> 139, "eclair.server.port" -> 29739, "eclair.api.port" -> 28089).asJava).withFallback(commonConfig))
-    instantiateEclairNode("F6", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F6", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)) // supports optional option_static_remotekey
+    instantiateEclairNode("F6", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F6", "eclair.expiry-delta-blocks" -> 140, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 141, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
 
     // by default C has a normal payment handler, but this can be overridden in tests
@@ -860,10 +863,10 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
   }
 
-  test("send payments and close the channel C -> F6 with option_static_remotekey") {
+  test("send payments and close the channel C -> F6 with option_anchor_outputs/option_static_remotekey") {
     // initially all the balance is on C side and F6 doesn't have an output
     val sender = TestProbe()
-    sender.send(nodes("F6").register, 'channelsTo)
+    sender.send(nodes("F6").register, Symbol("channelsTo"))
     // retrieve the channelId of C <--> F6
     val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
 
@@ -871,8 +874,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val initialStateDataF6 = sender.expectMsgType[DATA_NORMAL]
     val initialCommitmentIndex = initialStateDataF6.commitments.localCommit.index
 
-    // the 'to remote' address is a simple P2WPKH spending to the remote payment basepoint
-    val toRemoteAddress = Script.pay2wpkh(initialStateDataF6.commitments.remoteParams.paymentBasepoint)
+    // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
+    val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF6.commitments.remoteParams.paymentBasepoint))
 
     // toRemote output of C as seen by F6
     val Some(toRemoteOutC) = initialStateDataF6.commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))

@@ -36,7 +36,7 @@ object Scripts {
    */
   def der(sig: ByteVector64, sighash: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighash.toByte
 
-  def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
+  private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case DefaultCommitmentFormat => SIGHASH_ALL
     case AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
