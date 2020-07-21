@@ -50,7 +50,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, test.tags)
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) {
@@ -93,7 +93,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2bob.expectNoMsg(200 millis)
   }
 
-  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { f =>
+  def testClosingSigned(f: FixtureParam): Unit = {
     import f._
     // alice initiates the negotiation
     val aliceCloseSig1 = alice2bob.expectMsgType[ClosingSigned]
@@ -108,6 +108,16 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
     assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig1.feeSatoshis)
     awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
+    val Some(closingTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
+    assert(closingTx.txOut.length === 2) // NB: in the anchor outputs case, anchors are removed from the closing tx
+  }
+
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") {
+    testClosingSigned _
+  }
+
+  test("recv ClosingSigned (anchor outputs)", Tag("anchor_outputs")) {
+    testClosingSigned _
   }
 
   private def testFeeConverge(f: FixtureParam) = {
@@ -202,7 +212,6 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2blockchain.expectNoMsg(100 millis)
     assert(alice.stateName == CLOSING)
   }
-
 
   test("recv CMD_CLOSE") { f =>
     import f._

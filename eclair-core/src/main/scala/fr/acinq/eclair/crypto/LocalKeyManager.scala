@@ -32,7 +32,6 @@ object LocalKeyManager {
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
 
-
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
@@ -43,11 +42,11 @@ object LocalKeyManager {
 }
 
 /**
-  * This class manages secrets and private keys.
-  * It exports points and public keys, and provides signing methods
-  *
-  * @param seed seed from which keys will be derived
-  */
+ * This class manages secrets and private keys.
+ * It exports points and public keys, and provides signing methods
+ *
+ * @param seed seed from which keys will be derived
+ */
 class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyManager {
   private val master = DeterministicWallet.generate(seed)
 
@@ -57,14 +56,14 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   private val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()
     .maximumSize(6 * 200) // 6 keys per channel * 200 channels
     .build[KeyPath, ExtendedPrivateKey](new CacheLoader[KeyPath, ExtendedPrivateKey] {
-    override def load(keyPath: KeyPath): ExtendedPrivateKey = derivePrivateKey(master, keyPath)
-  })
+      override def load(keyPath: KeyPath): ExtendedPrivateKey = derivePrivateKey(master, keyPath)
+    })
 
   private val publicKeys: LoadingCache[KeyPath, ExtendedPublicKey] = CacheBuilder.newBuilder()
     .maximumSize(6 * 200) // 6 keys per channel * 200 channels
     .build[KeyPath, ExtendedPublicKey](new CacheLoader[KeyPath, ExtendedPublicKey] {
-    override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
-  })
+      override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
+    })
 
   private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): List[Long] = (LocalKeyManager.channelKeyBasePath(chainHash) ++ channelKeyPath.path) :+ index
 
@@ -82,7 +81,9 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
 
   override def newFundingKeyPath(isFunder: Boolean): KeyPath = {
     val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
+
     def next() = secureRandom.nextInt() & 0xFFFFFFFFL
+
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
   }
 
@@ -101,42 +102,41 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long) = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   /**
-    *
-    * @param tx        input transaction
-    * @param publicKey extended public key
-    * @return a signature generated with the private key that matches the input
-    *         extended public key
-    */
+   * @param tx        input transaction
+   * @param publicKey extended public key
+   * @return a signature generated with the private key that matches the input
+   *         extended public key
+   */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     Transactions.sign(tx, privateKey.privateKey)
   }
 
   /**
-    * This method is used to spend funds send to htlc keys/delayed keys
-    *
-    * @param tx          input transaction
-    * @param publicKey   extended public key
-    * @param remotePoint remote point
-    * @return a signature generated with a private key generated from the input keys's matching
-    *         private key and the remote point.
-    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey): ByteVector64 = {
+   * This method is used to spend funds sent to htlc keys/delayed keys
+   *
+   * @param tx          input transaction
+   * @param publicKey   extended public key
+   * @param remotePoint remote point
+   * @param sighashType sighash flags
+   * @return a signature generated with a private key generated from the input keys's matching
+   *         private key and the remote point.
+   */
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sighashType: Int): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-    Transactions.sign(tx, currentKey)
+    Transactions.sign(tx, currentKey, sighashType)
   }
 
-  
   /**
-    * Ths method is used to spend revoked transactions, with the corresponding revocation key
-    *
-    * @param tx           input transaction
-    * @param publicKey    extended public key
-    * @param remoteSecret remote secret
-    * @return a signature generated with a private key generated from the input keys's matching
-    *         private key and the remote secret.
-    */
+   * Ths method is used to spend revoked transactions, with the corresponding revocation key
+   *
+   * @param tx           input transaction
+   * @param publicKey    extended public key
+   * @param remoteSecret remote secret
+   * @return a signature generated with a private key generated from the input keys's matching
+   *         private key and the remote secret.
+   */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)

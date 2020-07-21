@@ -384,9 +384,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("supported payment request features") {
-
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
-
     val featureBits = Map(
       PaymentRequestFeatures(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
@@ -397,9 +395,9 @@ class PaymentRequestSpec extends AnyFunSuite {
       PaymentRequestFeatures(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000110000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"          0000110000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      PaymentRequestFeatures(bin"          0000100000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"          0000100000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),

@@ -116,7 +116,8 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
     val sig = keyManager.sign(
       ClaimP2WPKHOutputTx(InputInfo(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
       keyManager.paymentPoint(channelKeyPath),
-      ce.myCurrentPerCommitmentPoint)
+      ce.myCurrentPerCommitmentPoint,
+      SIGHASH_ALL)
     val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
     Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }

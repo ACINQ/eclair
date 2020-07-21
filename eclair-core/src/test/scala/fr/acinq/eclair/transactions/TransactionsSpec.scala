@@ -20,7 +20,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{anchor, htlcOffered, htlcReceived, toLocalDelayed}
@@ -309,7 +309,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, DefaultCommitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
         // check remote sig
-        assert(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey))
+        assert(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey, Scripts.htlcRemoteSighash(DefaultCommitmentFormat)))
       }
     }
     {
@@ -539,6 +539,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = sign(htlcTimeoutTx, remoteHtlcPriv, Scripts.htlcRemoteSighash(AnchorOutputsCommitmentFormat))
         val signedTx = addSigs(htlcTimeoutTx, localSig, remoteSig, AnchorOutputsCommitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
+        // local detects when remote doesn't use the right sighash flags
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
+        for (sighash <- invalidSighash) {
+          val invalidRemoteSig = sign(htlcTimeoutTx, remoteHtlcPriv, sighash)
+          val invalidTx = addSigs(htlcTimeoutTx, localSig, invalidRemoteSig, AnchorOutputsCommitmentFormat)
+          assert(checkSpendable(invalidTx).isFailure)
+        }
       }
     }
     {
@@ -558,6 +565,16 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = sign(htlcSuccessTx, remoteHtlcPriv, Scripts.htlcRemoteSighash(AnchorOutputsCommitmentFormat))
         val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, AnchorOutputsCommitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
+        // check remote sig
+        assert(checkSig(htlcSuccessTx, remoteSig, remoteHtlcPriv.publicKey, Scripts.htlcRemoteSighash(AnchorOutputsCommitmentFormat)))
+        // local detects when remote doesn't use the right sighash flags
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
+        for (sighash <- invalidSighash) {
+          val invalidRemoteSig = sign(htlcSuccessTx, remoteHtlcPriv, sighash)
+          val invalidTx = addSigs(htlcSuccessTx, localSig, invalidRemoteSig, paymentPreimage, AnchorOutputsCommitmentFormat)
+          assert(checkSpendable(invalidTx).isFailure)
+          assert(!checkSig(invalidTx, invalidRemoteSig, remoteHtlcPriv.publicKey, Scripts.htlcRemoteSighash(AnchorOutputsCommitmentFormat)))
+        }
       }
     }
     {
