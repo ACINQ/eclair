@@ -22,7 +22,7 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.CommitTx
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -168,7 +168,7 @@ case object Nothing extends Data
 
 sealed trait HasCommitments extends Data {
   def commitments: Commitments
-  def channelId = commitments.channelId
+  def channelId: ByteVector32 = commitments.channelId
 }
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
@@ -257,29 +257,46 @@ case class ChannelVersion(bits: BitVector) {
 
   require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
 
+  val commitmentFormat: CommitmentFormat = if (isSet(USE_ANCHOR_OUTPUTS_BIT)) {
+    AnchorOutputsCommitmentFormat
+  } else {
+    DefaultCommitmentFormat
+  }
+
   def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
   def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
   def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
 
   private def isSet(bit: Int) = bits.reverse.get(bit)
 
-  // formatter:off
   def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
   def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
-  // formatter:on
 }
 
 object ChannelVersion {
   import scodec.bits._
+
   val LENGTH_BITS: Int = 4 * 8
 
   private val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
   private val USE_STATIC_REMOTEKEY_BIT = 1
+  private val USE_ANCHOR_OUTPUTS_BIT = 2
 
   private def setBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
+  def pickChannelVersion(localFeatures: Features, remoteFeatures: Features): ChannelVersion = {
+    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
+      ANCHOR_OUTPUTS
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {
+      STATIC_REMOTEKEY
+    } else {
+      STANDARD
+    }
+  }
 
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
   val STANDARD = ZEROES | setBit(USE_PUBKEY_KEYPATH_BIT)
   val STATIC_REMOTEKEY = STANDARD | setBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
+  val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | setBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
 }
 // @formatter:on

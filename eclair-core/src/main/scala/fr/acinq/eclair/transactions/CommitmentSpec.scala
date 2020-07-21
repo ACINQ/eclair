@@ -31,6 +31,10 @@ object CommitmentOutput {
 
   case object ToRemote extends CommitmentOutput
 
+  case object ToLocalAnchor extends CommitmentOutput
+
+  case object ToRemoteAnchor extends CommitmentOutput
+
   case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
 
   case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput

@@ -21,7 +21,6 @@ import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -292,10 +291,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-          val channelVersion = Features.canUseFeature(localParams.features, remoteInit.features, StaticRemoteKey) match {
-            case false => ChannelVersion.STANDARD
-            case true => ChannelVersion.STATIC_REMOTEKEY
-          }
+          val channelVersion = ChannelVersion.pickChannelVersion(localParams.features, remoteInit.features)
           val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
@@ -734,7 +730,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
-              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec) ++ Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
+              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat) ++
+                Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat)
               trimmedHtlcs.map(_.add).foreach { htlc =>
                 log.info(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
@@ -1316,8 +1313,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
-        case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
+        case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarii (future remote commit)
       }
       timedoutHtlcs.foreach { add =>
