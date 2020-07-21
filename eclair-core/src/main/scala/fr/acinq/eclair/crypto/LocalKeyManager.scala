@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import fr.acinq.eclair.{Features, ShortChannelId, secureRandom}
 import scodec.bits.ByteVector
 
@@ -102,45 +102,50 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long) = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   /**
-   * @param tx        input transaction
-   * @param publicKey extended public key
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
    * @return a signature generated with the private key that matches the input
    *         extended public key
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
-    Transactions.sign(tx, privateKey.privateKey)
+    Transactions.sign(tx, privateKey.privateKey, txOwner, commitmentFormat)
   }
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
    *
-   * @param tx          input transaction
-   * @param publicKey   extended public key
-   * @param remotePoint remote point
-   * @param sighashType sighash flags
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param remotePoint      remote point
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input keys's matching
    *         private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sighashType: Int): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-    Transactions.sign(tx, currentKey, sighashType)
+    Transactions.sign(tx, currentKey, txOwner, commitmentFormat)
   }
 
   /**
    * Ths method is used to spend revoked transactions, with the corresponding revocation key
    *
-   * @param tx           input transaction
-   * @param publicKey    extended public key
-   * @param remoteSecret remote secret
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param remoteSecret     remote secret
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input keys's matching
    *         private key and the remote secret.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
     val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
-    Transactions.sign(tx, currentKey)
+    Transactions.sign(tx, currentKey, txOwner, commitmentFormat)
   }
 
   override def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): (ByteVector64, ByteVector64) = {

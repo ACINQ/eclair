@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SIGHASH_ALL}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
@@ -466,12 +466,11 @@ object Commitments {
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(keyManager, channelVersion, remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+        val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Remote, commitmentFormat)
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
         val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
-        // we sign the *remote* txs with different sighash flags depending on the commitment format
-        val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, Scripts.htlcRemoteSighash(commitmentFormat)))
+        val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, TxOwner.Remote, commitmentFormat))
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
         log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(outgoing).map(_.id).mkString(","), spec.htlcs.collect(incoming).map(_.id).mkString(","), remoteCommitTx.tx)
@@ -513,7 +512,7 @@ object Commitments {
     val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-    val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath))
+    val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
 
     log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(incoming).map(_.id).mkString(","), spec.htlcs.collect(outgoing).map(_.id).mkString(","), localCommitTx.tx)
 
@@ -527,8 +526,7 @@ object Commitments {
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
       throw HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
     }
-    // we always sign our *local* txs with SIGHASH_ALL (otherwise relaying nodes could malleate the tx)
-    val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, SIGHASH_ALL))
+    val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat))
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     // combine the sigs to make signed txes
     val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
@@ -539,7 +537,8 @@ object Commitments {
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
       case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-        if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, Scripts.htlcRemoteSighash(commitmentFormat))) {
+        // we verify the signature from their point of view, where it is a remote tx
+        if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, TxOwner.Remote, commitmentFormat)) {
           throw InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
         }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
