@@ -36,7 +36,7 @@ import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration.{FiniteDuration, _}
+import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 /**
