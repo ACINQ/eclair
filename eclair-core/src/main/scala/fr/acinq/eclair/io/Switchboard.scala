@@ -81,6 +81,12 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
+    case f: Peer.SendFCMToken =>
+      getPeer(f.nodeId) match {
+        case Some(peer) => peer forward f
+        case None => log.error(s"could not register fcm token=${f.token} with unknown peer=${f.nodeId}")
+      }
+
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)

@@ -63,7 +63,7 @@ object LightningMessageCodecs {
   val magic: Codec[Boolean] = recover(constant(hex"fe 47010000"))
 
   // we have limited space for backup, largest message is commit_sig with 30 htlcs in each direction: 65535B - (32B + 64B + 2*30*64B) = 61599B ~= 60000B
-  val channeldataoptional: Codec[Option[ByteVector]] = choice(optional(magic, limitedSizeBytes( 60000, variableSizeBytesLong(varintoverflow, bytes))), provide(Option.empty[ByteVector]))
+  val channeldataoptional: Codec[Option[ByteVector]] = choice(optional(magic, limitedSizeBytes(60000, variableSizeBytesLong(varintoverflow, bytes))), provide(Option.empty[ByteVector]))
 
   val channelReestablishCodec: Codec[ChannelReestablish] = (
     ("channelId" | bytes32) ::
@@ -347,6 +347,9 @@ object LightningMessageCodecs {
 
   //
 
+  val fcmTokenCodec: Codec[FCMToken] =
+    ("fcmToken" | variableSizeBytes(uint16, utf8)).as[FCMToken]
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -376,15 +379,15 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-  // NB: blank lines to minimize merge conflicts
+    // NB: blank lines to minimize merge conflicts
     .typecase(35001, payToOpenRequestCodec)
     .typecase(35003, payToOpenResponseCodec)
-  //
+    //
     .typecase(35005, swapInPendingCodec)
     .typecase(35007, swapInRequestCodec)
     .typecase(35009, swapInResponseCodec)
     .typecase(35015, swapInConfirmedCodec)
-  //
+    //
     .typecase(35011, swapOutRequestCodec)
     .typecase(35013, swapOutResponseCodec)
   //
@@ -392,6 +395,8 @@ object LightningMessageCodecs {
   //
 
   //
+
+    .typecase(35017, fcmTokenCodec)
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
