@@ -235,7 +235,7 @@ object NodeRelayer {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)
-    } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDeltaBlocks) {
+    } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDelta) {
       Some(TrampolineExpiryTooSoon)
     } else {
       None
@@ -244,7 +244,7 @@ object NodeRelayer {
 
   /** Compute route params that honor our fee and cltv requirements. */
   private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
-    val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDeltaBlocks
+    val routeMaxCltv = expiryIn - expiryOut - nodeParams.expiryDelta
     val routeMaxFee = amountIn - amountOut - nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, amountOut)
     RouteCalculation.getDefaultRouteParams(nodeParams.routerConf).copy(
       maxFeeBase = routeMaxFee,

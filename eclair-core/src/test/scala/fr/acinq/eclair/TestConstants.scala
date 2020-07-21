@@ -63,6 +63,7 @@ object TestConstants {
   }
 
   sealed trait TestDatabases {
+    // @formatter:off
     val connection: Connection
     def network(): NetworkDb
     def audit(): AuditDb
@@ -72,9 +73,11 @@ object TestConstants {
     def pendingRelay(): PendingRelayDb
     def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
     def close(): Unit
+    // @formatter:on
   }
 
   case class TestSqliteDatabases(connection: Connection = sqliteInMemory()) extends TestDatabases {
+    // @formatter:off
     override def network(): NetworkDb = new SqliteNetworkDb(connection)
     override def audit(): AuditDb = new SqliteAuditDb(connection)
     override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
@@ -83,6 +86,7 @@ object TestConstants {
     override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = ()
+    // @formatter:on
   }
 
   case class TestPgDatabases() extends TestDatabases {
@@ -96,9 +100,9 @@ object TestConstants {
     config.setDataSource(pg.getPostgresDatabase)
 
     implicit val ds = new HikariDataSource(config)
-
     implicit val lock = NoLock
 
+    // @formatter:off
     override def network(): NetworkDb = new PgNetworkDb
     override def audit(): AuditDb = new PgAuditDb
     override def channels(): ChannelsDb = new PgChannelsDb
@@ -107,14 +111,17 @@ object TestConstants {
     override def pendingRelay(): PendingRelayDb = new PgPendingRelayDb
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = pg.close()
+    // @formatter:on
   }
 
   def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {
+    // @formatter:off
     def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
     using(TestSqliteDatabases())(f)
     using(TestPgDatabases())(f)
+    // @formatter:on
   }
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
@@ -148,12 +155,13 @@ object TestConstants {
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
-      expiryDeltaBlocks = CltvExpiryDelta(144),
-      fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
+      expiryDelta = CltvExpiryDelta(144),
+      fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
+      minFinalExpiryDelta = CltvExpiryDelta(18),
       htlcMinimum = 0 msat,
       minDepthBlocks = 3,
-      toRemoteDelayBlocks = CltvExpiryDelta(144),
-      maxToLocalDelayBlocks = CltvExpiryDelta(1000),
+      toRemoteDelay = CltvExpiryDelta(144),
+      maxToLocalDelay = CltvExpiryDelta(1000),
       feeBase = 546000 msat,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -205,7 +213,7 @@ object TestConstants {
       nodeParams,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       None,
-      true,
+      isFunder = true,
       fundingSatoshis
     ).copy(
       channelReserve = 10000 sat // Bob will need to keep that much satoshis as direct payment
@@ -235,12 +243,13 @@ object TestConstants {
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
-      expiryDeltaBlocks = CltvExpiryDelta(144),
-      fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
+      expiryDelta = CltvExpiryDelta(144),
+      fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
+      minFinalExpiryDelta = CltvExpiryDelta(18),
       htlcMinimum = 1000 msat,
       minDepthBlocks = 3,
-      toRemoteDelayBlocks = CltvExpiryDelta(144),
-      maxToLocalDelayBlocks = CltvExpiryDelta(1000),
+      toRemoteDelay = CltvExpiryDelta(144),
+      maxToLocalDelay = CltvExpiryDelta(1000),
       feeBase = 546000 msat,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -292,7 +301,7 @@ object TestConstants {
       nodeParams,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       None,
-      false,
+      isFunder = false,
       fundingSatoshis).copy(
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )

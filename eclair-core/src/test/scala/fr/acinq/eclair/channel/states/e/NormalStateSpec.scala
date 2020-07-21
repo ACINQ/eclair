@@ -1936,7 +1936,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
     sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong))
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -1971,7 +1971,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r, commit = false))
     sender.expectMsg(ChannelCommandResponse.Ok)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong))
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)
@@ -2011,7 +2011,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
-    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeoutBlocks).toLong))
+    sender.send(bob, CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong))
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
     assert(isFatal)

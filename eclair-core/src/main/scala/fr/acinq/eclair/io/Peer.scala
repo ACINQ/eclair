@@ -412,7 +412,7 @@ object Peer {
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.htlcMinimum,
-      toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
+      toSelfDelay = nodeParams.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       isFunder = isFunder,
       defaultFinalScriptPubKey = defaultFinalScriptPubkey,
