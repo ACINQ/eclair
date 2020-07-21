@@ -467,7 +467,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     })
   }
 
-  test("KeySend payment in a single HTLC") { f =>
+  test("PaymentHandler should handle single-part KeySend payment") { f =>
     import f._
 
     val amountMsat = 42000 msat
@@ -488,7 +488,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
   }
 
-  test("KeySend payment without the feature activated") { f =>
+  test("PaymentHandler should reject KeySend payment when feature is disabled") { f =>
     import f._
 
     val amountMsat = 42000 msat
