@@ -329,10 +329,10 @@ object PostRestartHtlcCleaner {
             val timedoutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) =>
                 val confirmedTxs = c.localCommitPublished.commitTx :: c.localCommitPublished.htlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
               case Some(c: Closing.RemoteClose) =>
                 val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
               case _ => Seq.empty[UpdateAddHtlc]
             }).map(_.id).toSet
             overriddenHtlcs ++ timedoutHtlcs
