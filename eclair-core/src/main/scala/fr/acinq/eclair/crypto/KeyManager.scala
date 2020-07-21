@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import fr.acinq.eclair.{Features, ShortChannelId}
 
 trait KeyManager {
@@ -62,35 +62,40 @@ trait KeyManager {
   def newFundingKeyPath(isFunder: Boolean): DeterministicWallet.KeyPath
 
   /**
-   * @param tx        input transaction
-   * @param publicKey extended public key
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
    * @return a signature generated with the private key that matches the input
    *         extended public key
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
    *
-   * @param tx          input transaction
-   * @param publicKey   extended public key
-   * @param remotePoint remote point
-   * @param sighashType sighash flags
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param remotePoint      remote point
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input keys's matching
    *         private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, sighashType: Int): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
 
   /**
    * Ths method is used to spend revoked transactions, with the corresponding revocation key
    *
-   * @param tx           input transaction
-   * @param publicKey    extended public key
-   * @param remoteSecret remote secret
+   * @param tx               input transaction
+   * @param publicKey        extended public key
+   * @param remoteSecret     remote secret
+   * @param txOwner          owner of the transaction (local/remote)
+   * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input keys's matching
    *         private key and the remote secret.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
 
   /**
    * Sign a channel announcement message
