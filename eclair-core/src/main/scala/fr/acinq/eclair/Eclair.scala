@@ -390,9 +390,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
     val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
-    // TODO For now MIN_CLTV_EXPIRY_DELTA is set to 9 (spec requirement). But the lnd implementation require 13 as a minimum (see https://github.com/lightningnetwork/lnd/blob/master/invoices/invoiceregistry.go#L675)
-    // The merge request #1483 will bump the MIN_CLTV_EXPIRY_DELTA to 18. Until then we use this "magic value" of 13 to be interoperable with all implementations
-    val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, finalExpiryDelta = CltvExpiryDelta(13), externalId = externalId_opt, routeParams = Some(routeParams), userCustomTlvs = keySendTlvRecords)
+    val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams), userCustomTlvs = keySendTlvRecords)
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 }

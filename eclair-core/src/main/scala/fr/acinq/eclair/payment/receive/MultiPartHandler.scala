@@ -105,7 +105,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               }
 
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, features = Some(features))
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, features = Some(features))
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
