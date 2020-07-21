@@ -55,12 +55,12 @@ case class NodeParams(keyManager: KeyManager,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
-                      expiryDeltaBlocks: CltvExpiryDelta,
-                      fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
-                      minFinalExpiryDeltaBlocks: CltvExpiryDelta,
+                      expiryDelta: CltvExpiryDelta,
+                      fulfillSafetyBeforeTimeout: CltvExpiryDelta,
+                      minFinalExpiryDelta: CltvExpiryDelta,
                       htlcMinimum: MilliSatoshi,
-                      toRemoteDelayBlocks: CltvExpiryDelta,
-                      maxToLocalDelayBlocks: CltvExpiryDelta,
+                      toRemoteDelay: CltvExpiryDelta,
+                      maxToLocalDelay: CltvExpiryDelta,
                       minDepthBlocks: Int,
                       feeBase: MilliSatoshi,
                       feeProportionalMillionth: Int,
@@ -182,11 +182,11 @@ object NodeParams {
     val offeredCLTV = CltvExpiryDelta(config.getInt("to-remote-delay-blocks"))
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
-    val expiryDeltaBlocks = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
-    val fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
-    require(fulfillSafetyBeforeTimeoutBlocks * 2 < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
-    val minFinalExpiryDeltaBlocks = CltvExpiryDelta(config.getInt("min-final-expiry-delta-blocks"))
-    require(minFinalExpiryDeltaBlocks > fulfillSafetyBeforeTimeoutBlocks, "min-final-expiry-delta-blocks must be strictly greater than fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
+    val expiryDelta = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
+    val fulfillSafetyBeforeTimeout = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
+    require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
+    val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("min-final-expiry-delta-blocks"))
+    require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "min-final-expiry-delta-blocks must be strictly greater than fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
@@ -258,12 +258,12 @@ object NodeParams {
       ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
-      expiryDeltaBlocks = expiryDeltaBlocks,
-      fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
-      minFinalExpiryDeltaBlocks = minFinalExpiryDeltaBlocks,
+      expiryDelta = expiryDelta,
+      fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
+      minFinalExpiryDelta = minFinalExpiryDelta,
       htlcMinimum = htlcMinimum,
-      toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
-      maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
+      toRemoteDelay = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
+      maxToLocalDelay = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
       feeBase = feeBase,
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),

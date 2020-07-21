@@ -92,7 +92,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
           case Nil =>
             log.info("trampoline node couldn't find a route after all retries")
             val trampolineRoute = Seq(
-              NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
+              NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
               NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
             )
             val localFailure = pf.copy(failures = Seq(LocalFailure(trampolineRoute, RouteNotFound)))
@@ -147,7 +147,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
 
   private def buildTrampolinePayment(r: SendTrampolinePaymentRequest, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): (MilliSatoshi, CltvExpiry, OnionRoutingPacket) = {
     val trampolineRoute = Seq(
-      NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDeltaBlocks, 0 msat),
+      NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
       NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
     val finalPayload = if (r.paymentRequest.features.allowMultiPart) {

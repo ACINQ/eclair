@@ -63,7 +63,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val register = TestProbe()
       val eventListener = TestProbe()
       system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeParams.minFinalExpiryDeltaBlocks.toCltvExpiry(nodeParams.currentBlockHeight), register, eventListener, TestProbe())))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeParams.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight), register, eventListener, TestProbe())))
     }
   }
 
@@ -161,12 +161,12 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     sender.send(normalHandler, ReceivePayment(Some(42000 msat), "1 coffee"))
     val pr1 = sender.expectMsgType[PaymentRequest]
-    assert(pr1.minFinalCltvExpiryDelta === Some(nodeParams.minFinalExpiryDeltaBlocks))
+    assert(pr1.minFinalCltvExpiryDelta === Some(nodeParams.minFinalExpiryDelta))
     assert(pr1.expiry === Some(Alice.nodeParams.paymentRequestExpiry.toSeconds))
 
     sender.send(normalHandler, ReceivePayment(Some(42000 msat), "1 coffee with custom expiry", expirySeconds_opt = Some(60)))
     val pr2 = sender.expectMsgType[PaymentRequest]
-    assert(pr2.minFinalCltvExpiryDelta === Some(nodeParams.minFinalExpiryDeltaBlocks))
+    assert(pr2.minFinalCltvExpiryDelta === Some(nodeParams.minFinalExpiryDelta))
     assert(pr2.expiry === Some(60))
   }
 
@@ -276,7 +276,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.features.allowMultiPart)
 
-    val lowCltvExpiry = nodeParams.fulfillSafetyBeforeTimeoutBlocks.toCltvExpiry(nodeParams.currentBlockHeight)
+    val lowCltvExpiry = nodeParams.fulfillSafetyBeforeTimeout.toCltvExpiry(nodeParams.currentBlockHeight)
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr.paymentHash, lowCltvExpiry, TestConstants.emptyOnionPacket)
     sender.send(mppHandler, IncomingPacket.FinalPacket(add, Onion.createMultiPartPayload(add.amountMsat, 1000 msat, add.cltvExpiry, pr.paymentSecret.get)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message

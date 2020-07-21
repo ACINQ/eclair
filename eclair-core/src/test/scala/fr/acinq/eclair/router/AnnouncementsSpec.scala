@@ -55,7 +55,7 @@ class AnnouncementsSpec extends AnyFunSuite {
   }
 
   test("create valid signed channel update announcement") {
-    val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey.publicKey, ShortChannelId(45561L), Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimum, Alice.nodeParams.feeBase, Alice.nodeParams.feeProportionalMillionth, 500000000 msat)
+    val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey.publicKey, ShortChannelId(45561L), Alice.nodeParams.expiryDelta, Alice.nodeParams.htlcMinimum, Alice.nodeParams.feeBase, Alice.nodeParams.feeProportionalMillionth, 500000000 msat)
     assert(checkSig(ann, Alice.nodeParams.nodeId))
     assert(checkSig(ann, randomKey.publicKey) === false)
   }
