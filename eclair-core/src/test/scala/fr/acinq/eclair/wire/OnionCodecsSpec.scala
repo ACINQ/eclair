@@ -183,8 +183,8 @@ class OnionCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode variable-length (tlv) final per-hop payload with custom user records") {
-    val tlvs = TlvStream[OnionTlv](Seq(AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42))), Seq(GenericTlv(5482373484L, hex"16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")))
-    val bin = hex"31 02020231 04012a ff0000000146c6616c2016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828"
+    val tlvs = TlvStream[OnionTlv](Seq(AmountToForward(561 msat), OutgoingCltv(CltvExpiry(42))), Seq(GenericTlv(5432123456L, hex"16c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828")))
+    val bin = hex"31 02020231 04012a ff0000000143c7a0402016c7ec71663784ff100b6eface1e60a97b92ea9d18b8ece5e558586bc7453828"
 
     val encoded = finalPerHopPayloadCodec.encode(FinalTlvPayload(tlvs)).require.bytes
     assert(encoded === bin)

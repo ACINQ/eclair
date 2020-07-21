@@ -192,6 +192,11 @@ object Features {
     val mandatory = 50
   }
 
+  case object KeySend extends Feature {
+    val rfcName = "keysend"
+    val mandatory = 54
+  }
+
   val knownFeatures: Set[Feature] = Set(
     OptionDataLossProtect,
     InitialRoutingSync,
@@ -202,7 +207,8 @@ object Features {
     BasicMultiPartPayment,
     Wumbo,
     TrampolinePayment,
-    StaticRemoteKey
+    StaticRemoteKey,
+    KeySend
   )
 
   private val supportedMandatoryFeatures: Set[Feature] = Set(
@@ -222,7 +228,8 @@ object Features {
     // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
     // PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
-    TrampolinePayment -> (PaymentSecret :: Nil)
+    TrampolinePayment -> (PaymentSecret :: Nil),
+    KeySend -> (VariableLengthOnion :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
