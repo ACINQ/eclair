@@ -734,7 +734,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
-              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec) ++ Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec)
+              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat) ++
+                Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat)
               trimmedHtlcs.map(_.add).foreach { htlc =>
                 log.info(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
@@ -1316,8 +1317,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedoutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
-        case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
+        case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarii (future remote commit)
       }
       timedoutHtlcs.foreach { add =>
