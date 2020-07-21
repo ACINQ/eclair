@@ -14,5 +14,5 @@ docker run -it --rm \
   -w "/app" nixos/nix:2.3 sh -c "
   nix-shell ./nix/shell.nix --pure \
    --option sandbox false \
-   -v --show-trace
+   -vvvvv --show-trace
   "

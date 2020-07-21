@@ -9,6 +9,9 @@ let nixpkgs = import ./nixpkgs.nix;
     haskell-ide = import (
       fetchTarball "https://github.com/tim2CF/ultimate-haskell-ide/tarball/master"
     ) {};
+    mavenix = import (
+      fetchTarball "https://github.com/nix-community/mavenix/tarball/master"
+    ) {};
 in
 with pkgs';
 
@@ -20,6 +23,7 @@ stdenv.mkDerivation {
     # java
     jdk11
     maven
+    mavenix.cli
     # utils
     nix-prefetch-scripts
     openssh
