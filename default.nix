@@ -33,6 +33,7 @@ mavenix.buildMaven {
     export THIS_COMMIT="$(git rev-parse --short=7 HEAD)"
     export THIS_DIST="eclair-node-0.4.1-SNAPSHOT-$THIS_COMMIT"
     (cd ./eclair-node/target/ && \
+      ls && \
       unzip -o "./$THIS_DIST-bin.zip" && \
       mv "./$THIS_DIST" "$out")
   '';
