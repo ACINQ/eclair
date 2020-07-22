@@ -29,9 +29,11 @@ mavenix.buildMaven {
   # Attributes are passed to the underlying `stdenv.mkDerivation`, so build
   #   hooks can be set here also.
   #
+  preBuild = ''
+    rm -rf ./.git
+  '';
   installPhase = ''
-    export THIS_COMMIT="$(git rev-parse --short=7 HEAD)"
-    export THIS_DIST="eclair-node-0.4.1-SNAPSHOT-$THIS_COMMIT"
+    export THIS_DIST="eclair-node-0.4.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
       ls && \
       unzip -o "./$THIS_DIST-bin.zip" && \
