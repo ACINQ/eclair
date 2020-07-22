@@ -28,6 +28,7 @@ stdenv.mkDerivation {
     nix-prefetch-scripts
     openssh
     cacert
+    unzip
     perl
     git
     jq

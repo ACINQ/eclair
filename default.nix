@@ -18,7 +18,7 @@ mavenix.buildMaven {
 
   # Add build dependencies
   #
-  buildInputs = [ git makeWrapper wget jdk11 maven openssh cacert ];
+  buildInputs = [ git unzip makeWrapper wget jdk11 maven openssh cacert ];
 
   # Set build environment variables
   #
@@ -29,9 +29,12 @@ mavenix.buildMaven {
   # Attributes are passed to the underlying `stdenv.mkDerivation`, so build
   #   hooks can be set here also.
   #
-  postInstall = ''
-    makeWrapper ${jdk11}/bin/java $out/bin/eclair \
-      --add-flags "-cp $out/share/java/eclair-node_2.13-0.4.1-SNAPSHOT.jar fr.acinq.eclair.Boot"
+  installPhase = ''
+    export THIS_COMMIT="$(git rev-parse --short=7 HEAD)"
+    export THIS_DIST="eclair-node-0.4.1-SNAPSHOT-$THIS_COMMIT"
+    (cd ./eclair-node/target/ && \
+      unzip -o "./$THIS_DIST-bin.zip" && \
+      mv "./$THIS_DIST" "$out")
   '';
 
   # Add extra maven dependencies which might not have been picked up
