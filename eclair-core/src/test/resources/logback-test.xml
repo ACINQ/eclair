@@ -50,9 +50,9 @@
     <logger name="fr.acinq.eclair.db.FileBackupHandler" level="OFF"/>
 
     <root level="INFO">
-        <!--appender-ref ref="FILE"/>
-        <appender-ref ref="CONSOLEWARN"/>
-        <appender-ref ref="CONSOLE"/-->
+        <!--<appender-ref ref="FILE"/>-->
+        <!--<appender-ref ref="CONSOLEWARN"/>-->
+        <!--<appender-ref ref="CONSOLE"/>-->
     </root>
 
 </configuration>
