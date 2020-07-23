@@ -21,7 +21,7 @@ import fr.acinq.eclair.db.FeeratesDb
 import scala.concurrent.{ExecutionContext, Future}
 
 
-class DbFeeProvider(db: FeeratesDb, provider: FeeProvider)(implicit ec: ExecutionContext) extends FeeProvider {
+class DbFeeProvider(val db: FeeratesDb, provider: FeeProvider)(implicit ec: ExecutionContext) extends FeeProvider {
 
   /** This method retrieves feerates from the provider, and store results in the database */
   override def getFeerates: Future[FeeratesPerKB] =
