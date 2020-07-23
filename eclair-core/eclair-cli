@@ -26,19 +26,58 @@ where OPTIONS can be:
   -h                    Show this help
   -s                    Some commands can print a trimmed JSON
 
-and COMMAND is one of:
-  getinfo, connect, disconnect, open, close, forceclose, updaterelayfee,
-  peers, channels, channel, allnodes, allchannels, allupdates
-  findroute, findroutetonode, parseinvoice, payinvoice, sendtonode,
-  sendtoroute, getsentinfo, createinvoice, getinvoice, listinvoices,
-  listpendinginvoices, getreceivedinfo, audit, networkfees,
-  channelstats, usablebalances
+and COMMAND is one of the available commands:
+
+  === Node ===
+    - getinfo
+    - connect
+    - disconnect
+    - peers
+    - allnodes
+    - audit
+
+  === Channel ===
+    - open
+    - close
+    - forceclose
+    - channel
+    - channels
+    - allchannels
+    - allupdates
+    - channelstats
+    - networkfees
+    - updaterelayfee
+
+  === Path-finding ===
+    - findroute
+    - findroutetonode
+    - networkstats
+
+  === Invoice ===
+    - createinvoice
+    - getinvoice
+    - listinvoices
+    - listpendinginvoices
+    - parseinvoice
+
+  === Payment ===
+    - getnewaddress
+    - usablebalances
+    - onchainbalance
+    - payinvoice
+    - sendtonode
+    - sendtoroute
+    - sendonchain
+    - getsentinfo
+    - getreceivedinfo
+    - onchaintransactions
 
 Examples
 --------
-  eclair-cli -a localhost:1234 peers        list the peers of a node hosted on localhost:1234
-  eclair-cli close --channelId=006fb...     closes the channel with id 006fb...
-
+  eclair-cli -a localhost:1234 peers                  list the peers of a node hosted on localhost:1234
+  eclair-cli connect --nodeId=03864e...               connect to node with id 03864e...
+  eclair-cli open --nodeId=... --fundingSatoshis=...  open a channel to a given node
+  eclair-cli close --channelId=006fb...               closes the channel with id 006fb...
 
 Full documentation here: <https://acinq.github.io/eclair>" 1>&2;
 exit 1;

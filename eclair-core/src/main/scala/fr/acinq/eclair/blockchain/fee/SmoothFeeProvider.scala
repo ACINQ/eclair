@@ -34,6 +34,7 @@ class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: Exe
       _ = append(rate)
     } yield SmoothFeeProvider.smooth(queue)
   }
+
 }
 
 object SmoothFeeProvider {

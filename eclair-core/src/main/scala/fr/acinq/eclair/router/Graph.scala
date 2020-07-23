@@ -378,7 +378,17 @@ object Graph {
      * @param capacity    channel capacity
      * @param balance_opt (optional) available balance that can be sent through this edge
      */
-    case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi])
+    case class GraphEdge(desc: ChannelDesc, update: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
+
+      def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
+        balance_opt.map(balance => balance - reservedCapacity),
+        update.htlcMaximumMsat,
+        Some(capacity.toMilliSatoshi - reservedCapacity)
+      ).flatten.min.max(0 msat)
+
+      def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, amount)
+
+    }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
     case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {

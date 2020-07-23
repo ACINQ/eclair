@@ -45,6 +45,7 @@ class BitgoFeeProvider(chainHash: ByteVector32, readTimeOut: Duration)(implicit 
         .send()
       feeRanges = parseFeeRanges(res.unsafeBody)
     } yield extractFeerates(feeRanges)
+
 }
 
 object BitgoFeeProvider {

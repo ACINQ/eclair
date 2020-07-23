@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, Transaction, TxO
 import fr.acinq.eclair.addressToPublicKeyScript
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
-import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
+import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, OnChainBalance}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -30,9 +30,9 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet with Logging {
 
-  override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
+  override def getBalance: Future[OnChainBalance] = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => OnChainBalance(balance.confirmed, balance.unconfirmed))
 
-  override def getReceiveAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
+  override def getReceiveAddress: Future[String] = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
 
   override def getReceivePubkey(receiveAddress: Option[String] = None): Future[Crypto.PublicKey] = Future.failed(new RuntimeException("Not implemented"))
 
@@ -40,10 +40,10 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
-    (wallet ? CompleteTransaction(tx, feeRatePerKw)).mapTo[CompleteTransactionResponse].map(response => response match {
+    (wallet ? CompleteTransaction(tx, feeRatePerKw)).mapTo[CompleteTransactionResponse].map {
       case CompleteTransactionResponse(tx1, fee1, None) => MakeFundingTxResponse(tx1, 0, fee1)
       case CompleteTransactionResponse(_, _, Some(error)) => throw error
-    })
+    }
   }
 
   override def commit(tx: Transaction): Future[Boolean] =
@@ -70,7 +70,6 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
   def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long): Future[String] = {
     val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash))
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
-
     (wallet ? CompleteTransaction(tx, feeRatePerKw))
       .mapTo[CompleteTransactionResponse]
       .flatMap {
@@ -96,4 +95,5 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
   override def doubleSpent(tx: Transaction): Future[Boolean] = {
     (wallet ? IsDoubleSpent(tx)).mapTo[IsDoubleSpentResponse].map(_.isDoubleSpent)
   }
+
 }

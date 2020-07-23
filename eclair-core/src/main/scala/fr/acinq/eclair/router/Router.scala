@@ -241,7 +241,9 @@ object Router {
                         searchHeuristicsEnabled: Boolean,
                         searchRatioCltv: Double,
                         searchRatioChannelAge: Double,
-                        searchRatioChannelCapacity: Double)
+                        searchRatioChannelCapacity: Double,
+                        mppMinPartAmount: MilliSatoshi,
+                        mppMaxParts: Int)
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
@@ -330,7 +332,9 @@ object Router {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios]) {
+  case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
+
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios], mpp: MultiPartParams) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
       maxFeeBase.max(amount * maxFeePct)
@@ -351,6 +355,10 @@ object Router {
   case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], allowEmpty: Boolean = false) {
     require(allowEmpty || hops.nonEmpty, "route cannot be empty")
     val length = hops.length
+    lazy val fee: MilliSatoshi = {
+      val amountToSend = hops.drop(1).reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
+      amountToSend - amount
+    }
 
     /** This method retrieves the channel update that we used when we built the route. */
     def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)

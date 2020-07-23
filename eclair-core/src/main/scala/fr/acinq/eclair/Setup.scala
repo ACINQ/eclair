@@ -79,7 +79,7 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val keyManager = new LocalKeyManager(seed, NodeParams.hashFromChain(chain))
 
   val database = db match {
     case Some(d) => d
@@ -188,8 +188,9 @@ class Setup(datadir: File,
         case feerates: FeeratesPerKB =>
           feeratesPerKB.set(feerates)
           feeratesPerKw.set(FeeratesPerKw(feerates))
+          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB.get()} feeratesPerKw=${feeratesPerKw.get()}")
+          logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
       })
       _ <- feeratesRetrieved.future

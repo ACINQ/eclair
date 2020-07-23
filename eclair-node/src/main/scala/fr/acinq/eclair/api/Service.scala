@@ -22,27 +22,26 @@ import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRequest, _}
+import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
-import spray.http.CacheDirectives.public
-import spray.http.{HttpMethods, StatusCodes}
+import spray.http.CacheDirectives.{public, _}
 import spray.http.HttpHeaders._
-import spray.http.CacheDirectives._
+import spray.http.{HttpMethods, StatusCodes}
 import spray.routing.authentication.{BasicAuth, UserPass}
-import spray.routing.{ExceptionHandler, HttpServiceActor, MalformedFormFieldRejection, Route}
+import spray.routing.{ExceptionHandler, MalformedFormFieldRejection, Route}
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 
 case class ErrorResponse(error: String)
 
 trait Service extends ExtraDirectives with Logging {
 
-  import JsonSupport.{json4sFormats, serialization, json4sMarshaller}
+  import JsonSupport.json4sMarshaller
 
   implicit val ec = ExecutionContext.global
   implicit val timeout = Timeout(30 seconds)
@@ -74,7 +73,7 @@ trait Service extends ExtraDirectives with Logging {
         authenticate(BasicAuth(userPassAuthenticator _, realm = "Access restricted")) { _ =>
           post {
             path("getinfo") {
-              complete(eclairApi.getInfoResponse())
+              complete(eclairApi.getInfo())
             } ~
               path("connect") {
                 formFields("uri".as[Option[NodeURI]]) { uri =>
@@ -97,22 +96,22 @@ trait Service extends ExtraDirectives with Logging {
                 }
               } ~
               path("updaterelayfee") {
-                withChannelIdentifier { channelIdentifier =>
+                withChannelsIdentifier { channels =>
                   formFields("feeBaseMsat".as[Option[MilliSatoshi]](millisatoshiUnmarshaller), "feeProportionalMillionths".as[Option[Long]]) { (feeBase, feeProportional) =>
-                    complete(eclairApi.updateRelayFee(channelIdentifier :: Nil, feeBase.get, feeProportional.get))
+                    complete(eclairApi.updateRelayFee(channels, feeBase.get, feeProportional.get))
                   }
                 }
               } ~
               path("close") {
-                withChannelIdentifier { channelIdentifier =>
+                withChannelsIdentifier { channels =>
                   formFields("scriptPubKey".as[Option[ByteVector]](binaryDataUnmarshaller)) { scriptPubKey_opt =>
-                    complete(eclairApi.close(channelIdentifier :: Nil, scriptPubKey_opt))
+                    complete(eclairApi.close(channels, scriptPubKey_opt))
                   }
                 }
               } ~
               path("forceclose") {
-                withChannelIdentifier { channelIdentifier =>
-                  complete(eclairApi.forceClose(channelIdentifier :: Nil))
+                withChannelsIdentifier { channels =>
+                  complete(eclairApi.forceClose(channels))
                 }
               } ~
               path("peers") {
@@ -133,6 +132,9 @@ trait Service extends ExtraDirectives with Logging {
               } ~
               path("allchannels") {
                 complete(eclairApi.allChannels())
+              } ~
+              path("networkstats") {
+                complete(eclairApi.networkStats())
               } ~
               path("allupdates") {
                 formFields(nodeIdFormParam_opt) { nodeId_opt =>
@@ -175,6 +177,10 @@ trait Service extends ExtraDirectives with Logging {
                 formFields(amountMsatFormParam_opt, "recipientAmountMsat".as[Option[MilliSatoshi]](millisatoshiUnmarshaller), invoiceFormParam_opt, "finalCltvExpiry".as[Int], "route".as[Option[List[PublicKey]]](pubkeyListUnmarshaller), "externalId".?, "parentId".as[UUID].?, "trampolineSecret".as[Option[ByteVector32]](sha256HashUnmarshaller), "trampolineFeesMsat".as[Option[MilliSatoshi]](millisatoshiUnmarshaller), "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[Option[List[PublicKey]]](pubkeyListUnmarshaller)) {
                   (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) =>
                     complete(eclairApi.sendToRoute(amountMsat.get, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice.get, CltvExpiryDelta(finalCltvExpiry), route.get, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
+                }
+              } ~ path("sendonchain") {
+                formFields("address".as[String], "amountSatoshis".as[Option[Satoshi]](satoshiUnmarshaller), "confirmationTarget".as[Long]) { (address, amount_opt, confirmationTarget) =>
+                  complete(eclairApi.sendOnChain(address, amount_opt.get, confirmationTarget))
                 }
               } ~
               path("getsentinfo") {
@@ -226,6 +232,17 @@ trait Service extends ExtraDirectives with Logging {
               } ~
               path("usablebalances") {
                 complete(eclairApi.usableBalances())
+              } ~
+              path("onchainbalance") {
+                complete(eclairApi.onChainBalance())
+              } ~
+              path("getnewaddress") {
+                complete(eclairApi.newAddress())
+              } ~
+              path("onchaintransactions") {
+                formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
+                  complete(eclairApi.onChainTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
+                }
               }
           }
         }

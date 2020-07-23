@@ -23,6 +23,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import FormParamExtractors._
 import JsonSupport.serialization
 import JsonSupport.json4sJacksonFormats
+import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import shapeless.HNil
 import spray.http.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import spray.httpx.marshalling.Marshaller
@@ -37,7 +38,9 @@ trait ExtraDirectives extends Directives {
 
   // named and typed URL parameters used across several routes
   val shortChannelIdFormParam_opt = "shortChannelId".as[Option[ShortChannelId]](shortChannelIdUnmarshaller)
+  val shortChannelIdsFormParam_opt = "shortChannelIds".as[Option[List[ShortChannelId]]](shortChannelIdsUnmarshaller)
   val channelIdFormParam_opt = "channelId".as[Option[ByteVector32]](sha256HashUnmarshaller)
+  val channelIdsFormParam_opt = "channelIds".as[Option[List[ByteVector32]]](sha256HashesUnmarshaller)
   val nodeIdFormParam_opt = "nodeId".as[Option[PublicKey]](publicKeyUnmarshaller)
   val paymentHashFormParam_opt = "paymentHash".as[Option[ByteVector32]](sha256HashUnmarshaller)
   val fromFormParam_opt = "from".as[Long]
@@ -54,11 +57,20 @@ trait ExtraDirectives extends Directives {
   }
 
   import shapeless.::
-  def withChannelIdentifier: Directive1[Either[ByteVector32, ShortChannelId]] = formFields(channelIdFormParam_opt, shortChannelIdFormParam_opt).hflatMap {
-    case None :: None :: HNil => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
+  def withChannelIdentifier: Directive1[ChannelIdentifier] = formFields(channelIdFormParam_opt, shortChannelIdFormParam_opt).hflatMap {
     case Some(channelId) :: None :: HNil => provide(Left(channelId))
     case None :: Some(shortChannelId) :: HNil => provide(Right(shortChannelId))
-    case _ => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId"))
+    case _ => reject(MalformedFormFieldRejection("channelId/shortChannelId", "Must specify either the channelId or shortChannelId (not both)"))
+  }
+
+  def withChannelsIdentifier: Directive1[List[ChannelIdentifier]] = formFields(channelIdFormParam_opt, channelIdsFormParam_opt, shortChannelIdFormParam_opt, shortChannelIdsFormParam_opt).hflatMap {
+    case None :: None :: None :: None :: HNil => reject(MalformedFormFieldRejection("channelId(s)/shortChannelId(s)", "Must specify channelId, channelIds, shortChannelId or shortChannelIds"))
+    case channelId_opt :: channelIds_opt :: shortChannelId_opt :: shortChannelIds_opt :: HNil =>
+      val channelId: List[ChannelIdentifier] = channelId_opt.map(cid => Left(cid)).toList
+      val channelIds: List[ChannelIdentifier] = channelIds_opt.map(_.map(cid => Left(cid))).toList.flatten
+      val shortChannelId: List[ChannelIdentifier] = shortChannelId_opt.map(scid => Right(scid)).toList
+      val shortChannelIds: List[ChannelIdentifier] = shortChannelIds_opt.map(_.map(scid => Right(scid))).toList.flatten
+      provide((channelId ++ channelIds ++ shortChannelId ++ shortChannelIds).distinct)
   }
 
 }

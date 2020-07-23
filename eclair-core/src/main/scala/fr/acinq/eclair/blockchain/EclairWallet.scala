@@ -16,18 +16,18 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Satoshi, Transaction}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 
 /**
-  * Created by PM on 06/07/2017.
-  */
+ * Created by PM on 06/07/2017.
+ */
 trait EclairWallet {
 
-  def getBalance: Future[Satoshi]
+  def getBalance: Future[OnChainBalance]
 
   def getReceiveAddress: Future[String]
 
@@ -36,37 +36,31 @@ trait EclairWallet {
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]
 
   /**
-    * Committing *must* include publishing the transaction on the network.
-    *
-    * We need to be very careful here, we don't want to consider a commit 'failed' if we are not absolutely sure that the
-    * funding tx won't end up on the blockchain: if that happens and we have cancelled the channel, then we would lose our
-    * funds!
-    *
-    * @param tx
-    * @return true if success
-    *         false IF AND ONLY IF *HAS NOT BEEN PUBLISHED* otherwise funds are at risk!!!
-    */
+   * Committing *must* include publishing the transaction on the network.
+   *
+   * We need to be very careful here, we don't want to consider a commit 'failed' if we are not absolutely sure that the
+   * funding tx won't end up on the blockchain: if that happens and we have cancelled the channel, then we would lose our
+   * funds!
+   *
+   * @return true if success
+   *         false IF AND ONLY IF *HAS NOT BEEN PUBLISHED* otherwise funds are at risk!!!
+   */
   def commit(tx: Transaction): Future[Boolean]
 
   /**
-    * Cancels this transaction: this probably translates to "release locks on utxos".
-    *
-    * @param tx
-    * @return
-    */
+   * Cancels this transaction: this probably translates to "release locks on utxos".
+   */
   def rollback(tx: Transaction): Future[Boolean]
 
-
   /**
-    * Tests whether the inputs of the provided transaction have been spent by another transaction.
-    *
-    * Implementations may always return false if they don't want to implement it
-    *
-    * @param tx
-    * @return
-    */
+   * Tests whether the inputs of the provided transaction have been spent by another transaction.
+   *
+   * Implementations may always return false if they don't want to implement it
+   */
   def doubleSpent(tx: Transaction): Future[Boolean]
 
 }
+
+final case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi)
 
 final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
