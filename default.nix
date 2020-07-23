@@ -21,6 +21,7 @@ mavenix.buildMaven {
   # Add build dependencies
   #
   buildInputs = [ unzip ];
+  propagatedBuildInputs = [ jq jdk11 ];
 
   # Set build environment variables
   #
