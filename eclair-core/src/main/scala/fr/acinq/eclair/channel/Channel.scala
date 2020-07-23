@@ -21,7 +21,6 @@ import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -33,6 +32,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
@@ -292,10 +292,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-          val channelVersion = Features.canUseFeature(localParams.features, remoteInit.features, StaticRemoteKey) match {
-            case false => ChannelVersion.STANDARD
-            case true => ChannelVersion.STATIC_REMOTEKEY
-          }
+          val channelVersion = ChannelVersion.pickChannelVersion(localParams.features, remoteInit.features)
           val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
@@ -391,7 +388,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(keyManager, channelVersion, temporaryChannelId, localParams, remoteParams, fundingAmount, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
       require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
-      val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath))
+      val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath), TxOwner.Remote, channelVersion.commitmentFormat)
       // signature of their initial commitment tx that pays remote pushMsat
       val fundingCreated = FundingCreated(
         temporaryChannelId = temporaryChannelId,
@@ -434,12 +431,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
       // check remote signature validity
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-      val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
+      val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, channelVersion.commitmentFormat)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
-        case Failure(cause) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, signedLocalCommitTx.tx), d, None)
+        case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, signedLocalCommitTx.tx), d, None)
         case Success(_) =>
-          val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey)
+          val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelVersion.commitmentFormat)
           val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
           // watch the funding tx transaction
           val commitInput = localCommitTx.input
@@ -477,7 +474,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(msg@FundingSigned(_, remoteSig), d@DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, channelFlags, channelVersion, fundingCreated)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-      val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey)
+      val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, channelVersion.commitmentFormat)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
