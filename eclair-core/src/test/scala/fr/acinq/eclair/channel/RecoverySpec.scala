@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
 import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, _}
 import org.scalatest.Outcome
@@ -116,7 +116,9 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
     val sig = keyManager.sign(
       ClaimP2WPKHOutputTx(InputInfo(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
       keyManager.paymentPoint(channelKeyPath),
-      ce.myCurrentPerCommitmentPoint)
+      ce.myCurrentPerCommitmentPoint,
+      TxOwner.Local,
+      DefaultCommitmentFormat)
     val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
     Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }

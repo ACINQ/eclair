@@ -29,7 +29,7 @@ import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.concurrent.{Future, Promise}
@@ -66,7 +66,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      val fundingAmount = if(test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
+      val fundingAmount = if (test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
@@ -160,7 +160,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("high-max-funding-size"))  { f =>
+  test("recv AcceptChannel (wumbo size channel)", Tag("wumbo"), Tag("high-max-funding-size")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
