@@ -17,7 +17,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
@@ -200,9 +200,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         remotePaymentBasePoint = Remote.payment_basepoint,
         localIsFunder = true,
         outputs = outputs)
-      val local_sig = Transactions.sign(tx, Local.funding_privkey)
+      val local_sig = Transactions.sign(tx, Local.funding_privkey, TxOwner.Local, commitmentFormat)
       logger.info(s"# local_signature = ${Scripts.der(local_sig).dropRight(1).toHex}")
-      val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
+      val remote_sig = Transactions.sign(tx, Remote.funding_privkey, TxOwner.Remote, commitmentFormat)
       logger.info(s"remote_signature: ${Scripts.der(remote_sig).dropRight(1).toHex}")
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
@@ -239,12 +239,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     htlcTxs.collect {
       case tx: HtlcSuccessTx =>
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, Scripts.htlcRemoteSighash(commitmentFormat))
+        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         logger.info(s"remote_htlc_signature: ${Scripts.der(remoteSig).dropRight(1).toHex}")
       case tx: HtlcTimeoutTx =>
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, Scripts.htlcRemoteSighash(commitmentFormat))
+        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         logger.info(s"remote_htlc_signature: ${Scripts.der(remoteSig).dropRight(1).toHex}")
@@ -252,8 +252,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     val signedTxs = htlcTxs collect {
       case tx: HtlcSuccessTx =>
-        val localSig = Transactions.sign(tx, Local.htlc_privkey)
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, Scripts.htlcRemoteSighash(commitmentFormat))
+        val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
+        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -262,8 +262,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         logger.info(s"output htlc_success_tx $htlcIndex: ${tx1.tx}")
         tx1
       case tx: HtlcTimeoutTx =>
-        val localSig = Transactions.sign(tx, Local.htlc_privkey)
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, Scripts.htlcRemoteSighash(commitmentFormat))
+        val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
+        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# local_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
@@ -425,7 +425,7 @@ class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
 class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
-  override def channelVersion: ChannelVersion = ChannelVersion.STATIC_REMOTEKEY
+  override def channelVersion: ChannelVersion = ChannelVersion.ANCHOR_OUTPUTS
   override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
   // @formatter:on
 }

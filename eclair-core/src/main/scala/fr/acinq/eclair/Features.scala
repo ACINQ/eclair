@@ -78,11 +78,11 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
   }
 
   /**
-    * Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
-    * off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
-    * We use a long enough mask to account for future features.
-    * TODO: remove that once eclair-mobile is patched.
-    */
+   * Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
+   * off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
+   * We use a long enough mask to account for future features.
+   * TODO: remove that once eclair-mobile is patched.
+   */
   def maskFeaturesForEclairMobile(): Features = {
     Features(
       activated = activated.filter {
@@ -190,6 +190,11 @@ object Features {
     val mandatory = 18
   }
 
+  case object AnchorOutputs extends Feature {
+    val rfcName = "option_anchor_outputs"
+    val mandatory = 20
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -214,6 +219,7 @@ object Features {
     Wumbo,
     TrampolinePayment,
     StaticRemoteKey,
+    AnchorOutputs,
     KeySend
   )
 
@@ -234,6 +240,7 @@ object Features {
     // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
     // PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
+    AnchorOutputs -> (StaticRemoteKey :: Nil),
     TrampolinePayment -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )
