@@ -118,9 +118,15 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
 
         log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
 
+        val featureGraphErr = Features.validateFeatureGraph(remoteInit.features)
         if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
+          d.transport ! PoisonPill
+          stay
+        } else if (featureGraphErr.nonEmpty) {
+          log.warning(featureGraphErr.get.message)
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(featureGraphErr.get.message))
           d.transport ! PoisonPill
           stay
         } else if (!Features.areSupported(remoteInit.features)) {
