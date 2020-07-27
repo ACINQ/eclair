@@ -727,15 +727,15 @@ object Transactions {
   val PlaceHolderSig = ByteVector64(ByteVector.fill(64)(0xaa))
   assert(der(PlaceHolderSig).size == 72)
 
-  private def sign(tx: Transaction, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey, sighash: Int): ByteVector64 = {
-    val sigDER = Transaction.signInput(tx, inputIndex = 0, redeemScript, sighash, amount, SIGVERSION_WITNESS_V0, key)
+  private def sign(tx: Transaction, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey, sighashType: Int): ByteVector64 = {
+    val sigDER = Transaction.signInput(tx, inputIndex = 0, redeemScript, sighashType, amount, SIGVERSION_WITNESS_V0, key)
     val sig64 = Crypto.der2compact(sigDER)
     sig64
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighash: Int): ByteVector64 = {
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
     require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
-    sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighash)
+    sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType)
   }
 
   def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(txinfo, key, txinfo.sighash(txOwner, commitmentFormat))
