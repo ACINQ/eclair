@@ -23,13 +23,13 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{ChannelRangeQueries, VariableLengthOnion}
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.router.Router.{GossipDecision, GossipOrigin, LocalGossip, Rebroadcast, RemoteGossip, SendChannelQuery}
-import fr.acinq.eclair.router.{RoutingSyncSpec, _}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -112,7 +112,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val origin = TestProbe()
     probe.watch(peerConnection)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
-    probe.expectTerminated(peerConnection, nodeParams.authTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+    probe.expectTerminated(peerConnection, nodeParams.authTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.AuthenticationFailed("authentication timed out"))
   }
 
@@ -124,7 +124,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
-    probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor  + 1.second) // we don't want dilated time here
+    probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("initialization timed out"))
   }
 
@@ -158,6 +158,23 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
+  }
+
+  test("disconnect if features dependencies not met") { f =>
+    import f._
+    val probe = TestProbe()
+    val origin = TestProbe()
+    probe.watch(transport.ref)
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    transport.expectMsgType[TransportHandler.Listener]
+    transport.expectMsgType[wire.Init]
+    // remote activated MPP but forgot payment secret
+    transport.send(peerConnection, Init(Features(Set(ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(VariableLengthOnion, Optional)))))
+    transport.expectMsgType[TransportHandler.ReadAck]
+    probe.expectTerminated(transport.ref)
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("basic_mpp is set but is missing a dependency (payment_secret)"))
   }
 
   test("masks off MPP and PaymentSecret features") { f =>
