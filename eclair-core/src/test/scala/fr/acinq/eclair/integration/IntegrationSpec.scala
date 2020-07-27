@@ -1353,7 +1353,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
 
-  ignore("generate and validate lots of channels") {
+  test("generate and validate lots of channels") {
     implicit val bitcoinClient: ExtendedBitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
