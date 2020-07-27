@@ -211,6 +211,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMsg(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (insufficient funds) (anchor outputs)", Tag("anchor_outputs")) { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    // The anchor outputs commitment format costs more fees for the funder (bigger commit tx + cost of anchor outputs)
+    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.copy(channelVersion = ChannelVersion.STANDARD).availableBalanceForSend)
+    val add = CMD_ADD_HTLC(initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    sender.send(alice, add)
+
+    val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 20000 sat, fees = 13620 sat)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    alice2bob.expectNoMsg(200 millis)
+  }
+
   test("recv CMD_ADD_HTLC (insufficient funds, missing 1 msat)") { f =>
     import f._
     val sender = TestProbe()
@@ -220,7 +234,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 10000 sat, fees = 0 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
-    alice2bob.expectNoMsg(200 millis)
+    bob2alice.expectNoMsg(200 millis)
   }
 
   test("recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)") { f =>
@@ -459,6 +473,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob, htlc)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = MilliSatoshi(Long.MaxValue), missing = 9223372036083735L sat, reserve = 20000 sat, fees = 8960 sat).getMessage)
+    awaitCond(bob.stateName == CLOSING)
+    // channel should be advertised as down
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsgType[PublishAsap]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs) (anchor outputs)", Tag("anchor_outputs")) { f =>
+    import f._
+    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 400000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 1, 300000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
+    alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 2, 100000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = 100000000 msat, missing = 37060 sat, reserve = 20000 sat, fees = 17060 sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -874,7 +904,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CommitSig (invalid signature)") { f =>
     import f._
     val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins
@@ -1128,14 +1158,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(forward.htlc === htlc)
   }
 
-  test("recv RevokeAndAck (one htlc sent, static_remotekey)", Tag("static_remotekey")) { f =>
+  def testRevokeAndAckHtlcStaticRemoteKey(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
 
-    def aliceToRemoteScript() = {
+    def aliceToRemoteScript(): ByteVector = {
       val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toRemote
       val Some(toRemoteOut) = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.amount == toRemoteAmount.truncateToSatoshi)
       toRemoteOut.publicKeyScript
@@ -1163,6 +1193,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
     // using option_static_remotekey alice's view of bob toRemote script stays the same across commitments
     assert(initialToRemoteScript == aliceToRemoteScript())
+  }
+
+  test("recv RevokeAndAck (one htlc sent, static_remotekey)", Tag("static_remotekey")) {
+    testRevokeAndAckHtlcStaticRemoteKey _
+  }
+
+  test("recv RevokeAndAck (one htlc sent, anchor outputs)", Tag("anchor_outputs")) {
+    testRevokeAndAckHtlcStaticRemoteKey _
   }
 
   test("recv RevocationTimeout") { f =>
@@ -1207,6 +1245,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testReceiveCmdFulfillHtlc _
   }
 
+  test("recv CMD_FULFILL_HTLC (anchor_outputs)", Tag("anchor_outputs")) {
+    testReceiveCmdFulfillHtlc _
+  }
+
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
     import f._
     val sender = TestProbe()
@@ -1241,7 +1283,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
-  private def testUpdateFulfillHtlc(f: FixtureParam) = {
+  private def testUpdateFulfillHtlc(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1266,6 +1308,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv UpdateFulfillHtlc (static_remotekey)", Tag("(static_remotekey)")) {
+    testUpdateFulfillHtlc _
+  }
+
+  test("recv UpdateFulfillHtlc (anchor_outputs)", Tag("anchor_outputs")) {
     testUpdateFulfillHtlc _
   }
 
@@ -1324,7 +1370,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
 
-  private def testCmdFailHtlc(f: FixtureParam) = {
+  private def testCmdFailHtlc(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1338,7 +1384,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
-
   }
 
   test("recv CMD_FAIL_HTLC") {
@@ -1346,6 +1391,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CMD_FAIL_HTLC (static_remotekey)", Tag("static_remotekey")) {
+    testCmdFailHtlc _
+  }
+
+  test("recv CMD_FAIL_HTLC (anchor_outputs)", Tag("anchor_outputs")) {
     testCmdFailHtlc _
   }
 
@@ -1415,7 +1464,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
-  private def testUpdateFailHtlc(f: FixtureParam) = {
+  private def testUpdateFailHtlc(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1436,7 +1485,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFailHtlc") {
     testUpdateFailHtlc _
   }
+
   test("recv UpdateFailHtlc (static_remotekey)", Tag("static_remotekey")) {
+    testUpdateFailHtlc _
+  }
+
+  test("recv UpdateFailHtlc (anchor_outputs)", Tag("anchor_outputs")) {
     testUpdateFailHtlc _
   }
 
@@ -1537,7 +1591,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(fail.reason.length === Sphinx.FailurePacket.PacketLength)
   }
 
-  test("recv CMD_UPDATE_FEE") { f =>
+  private def testCmdUpdateFee(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1547,6 +1601,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
+  }
+
+  test("recv CMD_UPDATE_FEE") {
+    testCmdUpdateFee _
+  }
+
+  test("recv CMD_UPDATE_FEE (anchor outputs)", Tag("anchor_outputs")) {
+    testCmdUpdateFee _
   }
 
   test("recv CMD_UPDATE_FEE (two in a row)") { f =>
@@ -1577,6 +1639,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
     val fee = UpdateFee(ByteVector32.Zeroes, 12000)
+    bob ! fee
+    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
+  }
+
+  test("recv UpdateFee (anchor outputs)", Tag("anchor_outputs")) { f =>
+    import f._
+    val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val fee = UpdateFee(ByteVector32.Zeroes, 8000)
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
   }
@@ -1615,6 +1685,25 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(bob, fee)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 71620000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
+    awaitCond(bob.stateName == CLOSING)
+    // channel should be advertised as down
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
+    bob2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv UpdateFee (sender can't afford it) (anchor outputs)", Tag("anchor_outputs")) { f =>
+    import f._
+    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val sender = TestProbe()
+    // This feerate is just above the threshold: (800000 (alice balance) - 20000 (reserve) - 660 (anchors)) / 1124 (commit tx weight) = 693363
+    val fee = UpdateFee(ByteVector32.Zeroes, 693364)
+    // we first update the feerates so that we don't trigger a 'fee too different' error
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
+    sender.send(bob, fee)
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 1 sat, reserve = 20000 sat, fees = 780001 sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -1679,7 +1768,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     relayerA.expectNoMsg(1 seconds)
   }
 
-  test("recv CMD_CLOSE (no pending htlcs)") { f =>
+  def testCmdClose(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
@@ -1688,6 +1777,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+  }
+
+  test("recv CMD_CLOSE (no pending htlcs)") {
+    testCmdClose _
+  }
+
+  test("recv CMD_CLOSE (no pending htlcs) (anchor outputs)", Tag("anchor_outputs")) {
+    testCmdClose _
   }
 
   test("recv CMD_CLOSE (with unacked sent htlcs)") { f =>
@@ -1744,7 +1841,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv Shutdown (no pending htlcs)") { f =>
+  def testShutdown(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     sender.send(alice, Shutdown(ByteVector32.Zeroes, Bob.channelParams.defaultFinalScriptPubKey))
@@ -1753,6 +1850,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NEGOTIATING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_NEGOTIATING].channelId)
+  }
+
+  test("recv Shutdown (no pending htlcs)") {
+    testShutdown _
+  }
+
+  test("recv Shutdown (no pending htlcs) (anchor outputs)", Tag("anchor_outputs")) {
+    testShutdown _
   }
 
   test("recv Shutdown (with unacked sent htlcs)") { f =>
@@ -1816,7 +1921,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv Shutdown (with signed htlcs)") { f =>
+  def testShutdownWithHtlcs(f: FixtureParam): Unit = {
     import f._
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1826,6 +1931,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(bob, Shutdown(ByteVector32.Zeroes, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
     bob2alice.expectMsgType[Shutdown]
     awaitCond(bob.stateName == SHUTDOWN)
+  }
+
+  test("recv Shutdown (with signed htlcs)") {
+    testShutdownWithHtlcs _
+  }
+
+  test("recv Shutdown (with signed htlcs) (anchor outputs)", Tag("anchor_outputs")) {
+    testShutdownWithHtlcs _
   }
 
   test("recv Shutdown (while waiting for a RevokeAndAck)") { f =>
