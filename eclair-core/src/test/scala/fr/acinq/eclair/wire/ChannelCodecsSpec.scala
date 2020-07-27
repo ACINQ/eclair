@@ -37,7 +37,7 @@ import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
-import org.json4s.{CustomKeySerializer, CustomSerializer}
+import org.json4s.{CustomKeySerializer, CustomSerializer, Formats}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, Codec, DecodeResult}
@@ -92,13 +92,16 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val current02 = hex"0000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val current03 = hex"0000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current04 = hex"0000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current05 = hex"0000000703d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
     assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(4).bits)))
     assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(4).bits)))
     assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(4).bits)))
+    assert(channelVersionCodec.decode(current05.bits) === Attempt.successful(DecodeResult(ChannelVersion.ANCHOR_OUTPUTS, current05.drop(4).bits)))
 
     assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"00000001".bits))
     assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"00000003".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) === Attempt.successful(hex"00000007".bits))
   }
 
   test("encode/decode localparams") {
@@ -125,6 +128,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
     roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
+    roundtrip(o1, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
 
   test("backward compatibility local params with global features") {
@@ -240,7 +244,6 @@ class ChannelCodecsSpec extends AnyFunSuite {
   test("encode/decode origin") {
     val id = UUID.randomUUID()
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
-    val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
     val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
     val trampolineRelayed = TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None)
@@ -418,6 +421,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newjson === refjson)
     }
   }
+
 }
 
 object ChannelCodecsSpec {
@@ -491,91 +495,91 @@ object ChannelCodecsSpec {
 
   object JsonSupport {
 
-    class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ( {
+    class ByteVectorSerializer extends CustomSerializer[ByteVector](_ => ( {
       null
     }, {
       case x: ByteVector => JString(x.toHex)
     }))
 
-    class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ( {
+    class ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
       null
     }, {
       case x: ByteVector32 => JString(x.toHex)
     }))
 
-    class ByteVector64Serializer extends CustomSerializer[ByteVector64](format => ( {
+    class ByteVector64Serializer extends CustomSerializer[ByteVector64](_ => ( {
       null
     }, {
       case x: ByteVector64 => JString(x.toHex)
     }))
 
-    class UInt64Serializer extends CustomSerializer[UInt64](format => ( {
+    class UInt64Serializer extends CustomSerializer[UInt64](_ => ( {
       null
     }, {
       case x: UInt64 => JInt(x.toBigInt)
     }))
 
-    class SatoshiSerializer extends CustomSerializer[Satoshi](format => ( {
+    class SatoshiSerializer extends CustomSerializer[Satoshi](_ => ( {
       null
     }, {
       case x: Satoshi => JInt(x.toLong)
     }))
 
-    class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ( {
+    class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](_ => ( {
       null
     }, {
       case x: MilliSatoshi => JInt(x.toLong)
     }))
 
-    class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ( {
+    class CltvExpirySerializer extends CustomSerializer[CltvExpiry](_ => ( {
       null
     }, {
       case x: CltvExpiry => JLong(x.toLong)
     }))
 
-    class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](format => ( {
+    class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](_ => ( {
       null
     }, {
       case x: CltvExpiryDelta => JInt(x.toInt)
     }))
 
-    class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ( {
+    class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
       null
     }, {
       case x: ShortChannelId => JString(x.toString())
     }))
 
-    class StateSerializer extends CustomSerializer[State](format => ( {
+    class StateSerializer extends CustomSerializer[State](_ => ( {
       null
     }, {
       case x: State => JString(x.toString())
     }))
 
-    class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
+    class ShaChainSerializer extends CustomSerializer[ShaChain](_ => ( {
       null
     }, {
-      case x: ShaChain => JNull
+      case _: ShaChain => JNull
     }))
 
-    class PublicKeySerializer extends CustomSerializer[PublicKey](format => ( {
+    class PublicKeySerializer extends CustomSerializer[PublicKey](_ => ( {
       null
     }, {
       case x: PublicKey => JString(x.toString())
     }))
 
-    class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ( {
+    class PrivateKeySerializer extends CustomSerializer[PrivateKey](_ => ( {
       null
     }, {
-      case x: PrivateKey => JString("XXX")
+      case _: PrivateKey => JString("XXX")
     }))
 
-    class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](format => ( {
+    class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
       null
     }, {
       case x: ChannelVersion => JString(x.bits.toBin)
     }))
 
-    class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ( {
+    class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
       null
     }, {
       case x: Transaction => JObject(List(
@@ -584,7 +588,7 @@ object ChannelCodecsSpec {
       ))
     }))
 
-    class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ( {
+    class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
       null
     }, {
       case x: TransactionWithInputInfo => JObject(List(
@@ -593,31 +597,31 @@ object ChannelCodecsSpec {
       ))
     }))
 
-    class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ( {
+    class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](_ => ( {
       null
     }, {
       case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
     }))
 
-    class OutPointSerializer extends CustomSerializer[OutPoint](format => ( {
+    class OutPointSerializer extends CustomSerializer[OutPoint](_ => ( {
       null
     }, {
       case x: OutPoint => JString(s"${x.txid}:${x.index}")
     }))
 
-    class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ( {
+    class OutPointKeySerializer extends CustomKeySerializer[OutPoint](_ => ( {
       null
     }, {
       case x: OutPoint => s"${x.txid}:${x.index}"
     }))
 
-    class InputInfoSerializer extends CustomSerializer[InputInfo](format => ( {
+    class InputInfoSerializer extends CustomSerializer[InputInfo](_ => ( {
       null
     }, {
       case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
     }))
 
-    implicit val formats = org.json4s.DefaultFormats +
+    implicit val formats: Formats = org.json4s.DefaultFormats +
       new ByteVectorSerializer +
       new ByteVector32Serializer +
       new ByteVector64Serializer +
