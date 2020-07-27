@@ -981,7 +981,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       bitcoinClient.getTxConfirmations(txid).pipeTo(sender.ref)
       val confirmed = sender.expectMsgType[Option[Int]].nonEmpty
       inMempool || confirmed
-    }, max = 60 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
   }
 
   /** Disconnect node C from a given F node. */
