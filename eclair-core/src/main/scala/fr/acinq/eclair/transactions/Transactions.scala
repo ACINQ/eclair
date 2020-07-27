@@ -72,6 +72,13 @@ object Transactions {
     def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new InputInfo(outPoint, txOut, Script.write(redeemScript))
   }
 
+  /** Owner of a given transaction (local/remote). */
+  sealed trait TxOwner
+  object TxOwner {
+    case object Local extends TxOwner
+    case object Remote extends TxOwner
+  }
+
   sealed trait TransactionWithInputInfo {
     def input: InputInfo
     def tx: Transaction
@@ -80,11 +87,22 @@ object Transactions {
       val vsize = (tx.weight() + 3) / 4
       Satoshi(fr.acinq.eclair.MinimumRelayFeeRate * vsize / 1000)
     }
+    /** Sighash flags to use when signing the transaction. */
+    def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
   }
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
-  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32) extends TransactionWithInputInfo
-  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  sealed trait HtlcTx extends TransactionWithInputInfo {
+    override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
+      case DefaultCommitmentFormat => SIGHASH_ALL
+      case AnchorOutputsCommitmentFormat => txOwner match {
+        case TxOwner.Local => SIGHASH_ALL
+        case TxOwner.Remote => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+      }
+    }
+  }
+  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32) extends HtlcTx
+  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends HtlcTx
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimAnchorOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -715,10 +733,12 @@ object Transactions {
     sig64
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int = SIGHASH_ALL): ByteVector64 = {
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
     require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
     sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType)
   }
+
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(txinfo, key, txinfo.sighash(txOwner, commitmentFormat))
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
@@ -788,8 +808,9 @@ object Transactions {
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
-  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey): Boolean = {
-    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, SIGHASH_ALL, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
+  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
+    val sighash = txinfo.sighash(txOwner, commitmentFormat)
+    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, sighash, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
     Crypto.verifySignature(data, sig, pubKey)
   }
 

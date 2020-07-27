@@ -31,12 +31,12 @@ object Scripts {
   /**
    * Convert a raw ECDSA signature (r,s) to a der-encoded signature that can be used in bitcoin scripts.
    *
-   * @param sig     raw ECDSA signature (r,s)
-   * @param sighash sighash flags
+   * @param sig         raw ECDSA signature (r,s)
+   * @param sighashType sighash flags
    */
-  def der(sig: ByteVector64, sighash: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighash.toByte
+  def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighashType.toByte
 
-  def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
+  private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case DefaultCommitmentFormat => SIGHASH_ALL
     case AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
