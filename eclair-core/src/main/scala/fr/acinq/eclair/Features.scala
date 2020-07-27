@@ -94,6 +94,11 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     )
   }
 
+  override def toString: String = {
+    val a = activated.map(f => f.feature.rfcName + ":" + f.support).mkString(",")
+    val u = unknown.map(_.bitIndex).mkString(",")
+    s"features=$a" + (if (unknown.nonEmpty) s" (unknown=$u)" else "")
+  }
 }
 
 object Features {
@@ -133,6 +138,7 @@ object Features {
       config.getString(s"features.$name") match {
         case support if support == Mandatory.toString => Some(Mandatory)
         case support if support == Optional.toString => Some(Optional)
+        case support if support == "disabled" => None
         case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
       }
     }
