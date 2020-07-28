@@ -146,12 +146,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    // It's usually dangerous for Bob to accept HTLCs that are expiring soon. However it's not Alice's decision to reject
+    // them when she's asked to relay; she should forward those HTLCs to Bob, and Bob will choose whether to fail them
+    // or fulfill them (Bob could be #reckless and fulfill HTLCs with a very low expiry delta).
     val expiryTooSmall = CltvExpiry(currentBlockHeight + 3)
     val add = CMD_ADD_HTLC(500000000 msat, randomBytes32, expiryTooSmall, TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
-    val error = ExpiryTooSmall(channelId(alice), Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(currentBlockHeight), expiryTooSmall, currentBlockHeight)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
-    alice2bob.expectNoMsg(200 millis)
+    sender.expectMsg(ChannelCommandResponse.Ok)
+    val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
+    assert(htlc.id === 0)
+    assert(htlc.cltvExpiry === expiryTooSmall)
+    awaitCond(alice.stateData == initialState.copy(
+      commitments = initialState.commitments.copy(
+        localNextHtlcId = 1,
+        localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
+        originChannels = Map(0L -> Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)))
+      )))
   }
 
   test("recv CMD_ADD_HTLC (expiry too big)") { f =>
