@@ -969,7 +969,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   def getBlockCount: Long = {
     // we make sure that all nodes have the same value
     awaitCond(nodes.values.map(_.nodeParams.currentBlockHeight).toSet.size == 1, max = 1 minute, interval = 1 second)
-    // and we return it (NB: it could be a different value at this point
+    // and we return it (NB: it could be a different value at this point)
     nodes.values.head.nodeParams.currentBlockHeight
   }
 
@@ -1000,7 +1000,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   case class ForceCloseFixture(sender: TestProbe, paymentSender: TestProbe, stateListener: TestProbe, paymentId: UUID, htlc: UpdateAddHtlc, preimage: ByteVector32, minerAddress: String, finalAddressC: String, finalAddressF: String)
 
   /** Prepare a C <-> F channel for a force-close test by adding an HTLC that will be hodl-ed at F. */
-  def prepareForceCloseCF(nodeF: String): ForceCloseFixture = {
+  def prepareForceCloseCF(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): ForceCloseFixture = {
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(minerAddress) = sender.expectMsgType[JValue]
@@ -1028,14 +1028,18 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val dataC = sender.expectMsgType[DATA_NORMAL]
+    assert(dataC.commitments.commitmentFormat === commitmentFormat)
+    val finalAddressC = scriptPubKeyToAddress(dataC.commitments.localParams.defaultFinalScriptPubKey)
     sender.send(nodes(nodeF).register, Forward(htlc.channelId, CMD_GETSTATEDATA))
-    val finalAddressF = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val dataF = sender.expectMsgType[DATA_NORMAL]
+    assert(dataF.commitments.commitmentFormat === commitmentFormat)
+    val finalAddressF = scriptPubKeyToAddress(dataF.commitments.localParams.defaultFinalScriptPubKey)
     ForceCloseFixture(sender, paymentSender, stateListener, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
 
-  def testDownstreamFulfillLocalCommit(nodeF: String): Unit = {
-    val forceCloseFixture = prepareForceCloseCF(nodeF)
+  def testDownstreamFulfillLocalCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
+    val forceCloseFixture = prepareForceCloseCF(nodeF, commitmentFormat)
     import forceCloseFixture._
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
@@ -1078,11 +1082,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
-    testDownstreamFulfillLocalCommit("F1")
+    testDownstreamFulfillLocalCommit("F1", Transactions.DefaultCommitmentFormat)
   }
 
-  def testDownstreamFulfillRemoteCommit(nodeF: String): Unit = {
-    val forceCloseFixture = prepareForceCloseCF(nodeF)
+  def testDownstreamFulfillRemoteCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
+    val forceCloseFixture = prepareForceCloseCF(nodeF, commitmentFormat)
     import forceCloseFixture._
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
@@ -1121,11 +1125,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
-    testDownstreamFulfillRemoteCommit("F1")
+    testDownstreamFulfillRemoteCommit("F1", Transactions.DefaultCommitmentFormat)
   }
 
-  def testDownstreamTimeoutLocalCommit(nodeF: String): Unit = {
-    val forceCloseFixture = prepareForceCloseCF(nodeF)
+  def testDownstreamTimeoutLocalCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
+    val forceCloseFixture = prepareForceCloseCF(nodeF, commitmentFormat)
     import forceCloseFixture._
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
@@ -1171,11 +1175,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
-    testDownstreamTimeoutLocalCommit("F1")
+    testDownstreamTimeoutLocalCommit("F1", Transactions.DefaultCommitmentFormat)
   }
 
-  def testDownstreamTimeoutRemoteCommit(nodeF: String): Unit = {
-    val forceCloseFixture = prepareForceCloseCF(nodeF)
+  def testDownstreamTimeoutRemoteCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
+    val forceCloseFixture = prepareForceCloseCF(nodeF, commitmentFormat)
     import forceCloseFixture._
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
@@ -1227,46 +1231,34 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
-    testDownstreamTimeoutRemoteCommit("F1")
+    testDownstreamTimeoutRemoteCommit("F1", Transactions.DefaultCommitmentFormat)
   }
 
-  test("punish a node that has published a revoked commit tx") {
+  case class RevokedCommitFixture(sender: TestProbe, stateListenerC: TestProbe, revokedCommitTx: Transaction, htlcSuccess: Seq[Transaction], htlcTimeout: Seq[Transaction], finalAddressC: String)
+
+  def testRevokedCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): RevokedCommitFixture = {
     val sender = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-    // we create and announce a channel between C and F
-    connect(nodes("C"), nodes("F1"), 5000000 sat, 0 msat)
+    // we create and announce a channel between C and F; we use push_msat to ensure F has a balance
+    connect(nodes("C"), nodes(nodeF), 5000000 sat, 300000000 msat)
     generateBlocks(bitcoincli, 6)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 6, 8, 18)
     // we subscribe to C's channel state transitions
-    val stateListener = TestProbe()
-    nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
+    val stateListenerC = TestProbe()
+    nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
     // we use this to get commitments
     val sigListener = TestProbe()
-    nodes("F1").system.eventStream.subscribe(sigListener.ref, classOf[ChannelSignatureReceived])
+    nodes(nodeF).system.eventStream.subscribe(sigListener.ref, classOf[ChannelSignatureReceived])
     // we use this to control when to fulfill htlcs
     val forwardHandlerC = TestProbe()
     nodes("C").paymentHandler ! new ForwardHandler(forwardHandlerC.ref)
     val forwardHandlerF = TestProbe()
-    nodes("F1").paymentHandler ! new ForwardHandler(forwardHandlerF.ref)
+    nodes(nodeF).paymentHandler ! new ForwardHandler(forwardHandlerF.ref)
     // this is the actual payment handler that we will forward requests to
     val paymentHandlerC = nodes("C").system.actorOf(PaymentHandler.props(nodes("C").nodeParams, nodes("C").register))
-    val paymentHandlerF = nodes("F1").system.actorOf(PaymentHandler.props(nodes("F1").nodeParams, nodes("F1").register))
-    // first we make sure we are in sync with current blockchain height
+    val paymentHandlerF = nodes(nodeF).system.actorOf(PaymentHandler.props(nodes(nodeF).nodeParams, nodes(nodeF).register))
+    // first we make sure nodes are in sync with current blockchain height
     val currentBlockCount = getBlockCount
     awaitCond(getBlockCount == currentBlockCount, max = 20 seconds, interval = 1 second)
-    // first we send 3 mBTC to F so that it has a balance
-    val amountMsat = 300000000.msat
-    sender.send(paymentHandlerF, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
-    val sendReq = SendPaymentRequest(300000000 msat, pr.paymentHash, pr.nodeId, maxAttempts = 3, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)
-    sender.send(nodes("A").paymentInitiator, sendReq)
-    val paymentId = sender.expectMsgType[UUID]
-    // we forward the htlc to the payment handler
-    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket]
-    forwardHandlerF.forward(paymentHandlerF)
-    sigListener.expectMsgType[ChannelSignatureReceived]
-    sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSent].id === paymentId
 
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
@@ -1278,23 +1270,24 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     }
 
     val buffer = TestProbe()
-    send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
+    send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
     forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator) // will be left pending
+    send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
     forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    send(120000000 msat, paymentHandlerC, nodes("F1").paymentInitiator)
+    send(120000000 msat, paymentHandlerC, nodes(nodeF).paymentInitiator)
     forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    send(130000000 msat, paymentHandlerC, nodes("F1").paymentInitiator)
+    send(130000000 msat, paymentHandlerC, nodes(nodeF).paymentInitiator)
     forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket]
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
+    assert(commitmentsF.commitmentFormat === commitmentFormat)
     // in this commitment, both parties should have a main output, and there are four pending htlcs
     val localCommitF = commitmentsF.localCommit.publishableTxs
     assert(localCommitF.commitTx.tx.txOut.size === 6)
@@ -1310,46 +1303,52 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSent].paymentPreimage
+    val preimage2 = sender.expectMsgType[PaymentSent].paymentPreimage
     buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSent].paymentPreimage
+    sender.expectMsgType[PaymentSent]
     buffer.expectMsgType[IncomingPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
-    sender.expectMsgType[PaymentSent].paymentPreimage
-    // this also allows us to get the channel id
-    val channelId = commitmentsF.channelId
-    // we also retrieve C's default final address
-    sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
-    // and we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
-    val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
-    // F will publish the commitment above, which is now revoked
-    val revokedCommitTx = localCommitF.commitTx.tx
-    val htlcSuccess = Transactions.addSigs(htlcSuccessTxs.head.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcSuccessTxs.head.localSig, htlcSuccessTxs.head.remoteSig, preimage1, commitmentsF.commitmentFormat).tx
-    val htlcTimeout = Transactions.addSigs(htlcTimeoutTxs.head.txinfo.asInstanceOf[Transactions.HtlcTimeoutTx], htlcTimeoutTxs.head.localSig, htlcTimeoutTxs.head.remoteSig, commitmentsF.commitmentFormat).tx
-    Transaction.correctlySpends(htlcSuccess, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    Transaction.correctlySpends(htlcTimeout, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    // we then generate blocks to make the htlc timeout (nothing will happen in the channel because all of them have already been fulfilled)
+    sender.expectMsgType[PaymentSent]
+    // we then generate blocks to make htlcs timeout (nothing will happen in the channel because all of them have already been fulfilled)
     generateBlocks(bitcoincli, 40)
-    // then we publish F's revoked transactions
+    // we retrieve C's default final address
+    sender.send(nodes("C").register, Forward(commitmentsF.channelId, CMD_GETSTATEDATA))
+    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    // we prepare the revoked transactions F will publish
+    val revokedCommitTx = localCommitF.commitTx.tx
+    val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map { case (htlcTxAndSigs, preimage) => Transactions.addSigs(htlcTxAndSigs.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcTxAndSigs.localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.commitmentFormat).tx }
+    val htlcTimeout = htlcTimeoutTxs.map(htlcTxAndSigs => Transactions.addSigs(htlcTxAndSigs.txinfo.asInstanceOf[Transactions.HtlcTimeoutTx], htlcTxAndSigs.localSig, htlcTxAndSigs.remoteSig, commitmentsF.commitmentFormat).tx)
+    htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    htlcTimeout.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    RevokedCommitFixture(sender, stateListenerC, revokedCommitTx, htlcSuccess, htlcTimeout, finalAddressC)
+  }
+
+  test("punish a node that has published a revoked commit tx") {
+    val revokedCommitFixture = testRevokedCommit("F1", Transactions.DefaultCommitmentFormat)
+    import revokedCommitFixture._
+
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
+    val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    // F publishes the revoked commitment, one HTLC-success, one HTLC-timeout and leaves the other HTLC outputs unclaimed
     bitcoinClient.publishTransaction(revokedCommitTx).pipeTo(sender.ref)
     sender.expectMsg(revokedCommitTx.txid)
-    bitcoinClient.publishTransaction(htlcSuccess).pipeTo(sender.ref)
-    sender.expectMsg(htlcSuccess.txid)
-    bitcoinClient.publishTransaction(htlcTimeout).pipeTo(sender.ref)
-    sender.expectMsg(htlcTimeout.txid)
-    // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
+    bitcoinClient.publishTransaction(htlcSuccess.head).pipeTo(sender.ref)
+    sender.expectMsg(htlcSuccess.head.txid)
+    bitcoinClient.publishTransaction(htlcTimeout.head).pipeTo(sender.ref)
+    sender.expectMsg(htlcTimeout.head.txid)
+    // at this point C should have 6 recv transactions: its previous main output, F's main output and all htlc outputs (taken as punishment)
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       (receivedByC diff previouslyReceivedByC).size == 6
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make tx confirm
+    // we generate blocks to make txs confirm
     generateBlocks(bitcoincli, 2)
     // and we wait for C's channel to close
-    awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
 
