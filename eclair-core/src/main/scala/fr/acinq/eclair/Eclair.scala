@@ -51,6 +51,10 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 
 case class TimestampQueryFilters(from: Long, to: Long)
 
+case class SignedMessage(nodeId: PublicKey, message: ByteVector, signature: ByteVector64)
+
+case class VerifiedMessage(valid: Boolean, signerNodeId: Option[PublicKey])
+
 object TimestampQueryFilters {
   /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
   val MaxEpochMilliseconds = Duration.fromNanos(Long.MaxValue).toMillis
@@ -134,9 +138,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
-  def signMessage(base64Message: ByteVector): (PublicKey, ByteVector, ByteVector64)
+  def signMessage(base64Message: ByteVector): SignedMessage
 
-  def verifyMessage(base64Message: ByteVector, signature: ByteVector64): (Boolean, Option[PublicKey])
+  def verifyMessage(base64Message: ByteVector, signature: ByteVector64): VerifiedMessage
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -397,11 +401,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def signMessage(base64Message: ByteVector): (PublicKey, ByteVector, ByteVector64) = {
-    (appKit.nodeParams.privateKey.publicKey, ByteVector.empty, ByteVector64.Zeroes)
+  override def signMessage(base64Message: ByteVector): SignedMessage = {
+    SignedMessage(appKit.nodeParams.privateKey.publicKey, ByteVector.empty, ByteVector64.Zeroes)
   }
 
-  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64): (Boolean, Option[PublicKey]) = {
-    (false, None)
+  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64): VerifiedMessage = {
+    VerifiedMessage(false, None)
   }
 }
