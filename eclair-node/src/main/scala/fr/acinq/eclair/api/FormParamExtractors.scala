@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
@@ -58,6 +58,10 @@ object FormParamExtractors {
   implicit val satoshiUnmarshaller: Unmarshaller[String, Satoshi] = Unmarshaller.strict { str => Satoshi(str.toLong) }
 
   implicit val millisatoshiUnmarshaller: Unmarshaller[String, MilliSatoshi] = Unmarshaller.strict { str => MilliSatoshi(str.toLong) }
+
+  implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }
+
+  implicit val signatureUnmarshaller: Unmarshaller[String, ByteVector64] = Unmarshaller.strict { bin => ByteVector64.fromValidHex(bin) }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>
     Try(serialization.read[List[String]](str).map(unmarshal))
