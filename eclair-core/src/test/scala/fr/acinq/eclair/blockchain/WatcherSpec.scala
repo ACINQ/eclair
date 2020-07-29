@@ -18,8 +18,8 @@ package fr.acinq.eclair.blockchain
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{Base58, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import org.json4s.JsonAST.{JString, JValue}
@@ -77,6 +77,27 @@ object WatcherSpec {
   }
 
   /**
+   * Create a transaction that spends a p2wpkh output from an input transaction and sends it to the same address.
+   *
+   * @param tx   tx that sends funds to a p2wpkh of priv
+   * @param priv private key that tx sends funds to
+   * @param to   p2wpkh to send to
+   * @param fee  amount in - amount out
+   * @return a tx spending the input tx
+   */
+  def createSpendP2WPKH(tx: Transaction, priv: PrivateKey, to: PublicKey, fee: Satoshi, sequence: Long, lockTime: Long): Transaction = {
+    // tx sends funds to our key
+    val pub = priv.publicKey
+    val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))
+    // we spend this output and create a similar output with a smaller amount
+    val unsigned = Transaction(2, TxIn(OutPoint(tx, outputIndex), Nil, sequence) :: Nil, TxOut(tx.txOut(outputIndex).amount - fee, Script.pay2wpkh(to)) :: Nil, lockTime)
+    val sig = Transaction.signInput(unsigned, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx.txOut(outputIndex).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+    val signed = unsigned.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
+    Transaction.correctlySpends(signed, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    signed
+  }
+
+  /**
    * Create a chain of unspent txs.
    *
    * @param tx   tx that sends funds to a p2wpkh of priv
@@ -84,27 +105,10 @@ object WatcherSpec {
    * @return a (tx1, tx2) tuple where tx2 spends tx1 which spends tx
    */
   def createUnspentTxChain(tx: Transaction, priv: PrivateKey): (Transaction, Transaction) = {
-    // tx sends funds to our key
-    val pub = priv.publicKey
-    val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))
-
-    val fee = 10000 sat
     // tx1 spends tx
-    val tx1 = {
-      val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx, outputIndex), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx.txOut(outputIndex).amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
-      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx.txOut(outputIndex).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      val tmp1 = tmp.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
-      Transaction.correctlySpends(tmp1, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      tmp1
-    }
+    val tx1 = createSpendP2WPKH(tx, priv, priv.publicKey, 10000 sat, TxIn.SEQUENCE_FINAL, 0)
     // and tx2 spends tx1
-    val tx2 = {
-      val tmp = Transaction(version = 2, txIn = TxIn(OutPoint(tx1, 0), Nil, TxIn.SEQUENCE_FINAL) :: Nil, txOut = TxOut(tx1.txOut.head.amount - fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0)
-      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx1.txOut.head.amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      val tmp1 = tmp.updateWitness(0, ScriptWitness(sig :: pub.value :: Nil))
-      Transaction.correctlySpends(tmp1, tx1 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      tmp1
-    }
+    val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, TxIn.SEQUENCE_FINAL, 0)
     (tx1, tx2)
   }
 

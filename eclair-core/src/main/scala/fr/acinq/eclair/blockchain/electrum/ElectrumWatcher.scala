@@ -48,7 +48,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case _ => log.warning(s"unhandled message $message")
   }
 
-  def receive = disconnected(Set.empty, Queue.empty, SortedMap.empty, Queue.empty)
+  def receive: Receive = disconnected(Set.empty, Queue.empty, SortedMap.empty, Queue.empty)
 
   def disconnected(watches: Set[Watch], publishQueue: Queue[PublishAsap], block2tx: SortedMap[Long, Seq[Transaction]], getTxQueue: Queue[(GetTxWithMeta, ActorRef)]): Receive = {
     case ElectrumClient.ElectrumReady(_, _, _) =>
@@ -64,7 +64,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
   }
 
   def running(height: Int, tip: BlockHeader, watches: Set[Watch], scriptHashStatus: Map[ByteVector32, String], block2tx: SortedMap[Long, Seq[Transaction]], sent: Queue[Transaction]): Receive = {
-    case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) if tip == newtip => ()
+    case ElectrumClient.HeaderSubscriptionResponse(_, newtip) if tip == newtip => ()
 
     case ElectrumClient.HeaderSubscriptionResponse(newheight, newtip) =>
       log.info(s"new tip: ${newtip.blockId} $height")
@@ -74,8 +74,8 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
           client ! ElectrumClient.GetScriptHashHistory(scriptHash)
       }
       val toPublish = block2tx.filterKeys(_ <= newheight)
-      toPublish.values.flatten.foreach(tx => self ! PublishAsap(tx))
-      context become running(newheight, newtip, watches, scriptHashStatus, block2tx -- toPublish.keys, sent)
+      toPublish.values.flatten.foreach(publish)
+      context become running(newheight, newtip, watches, scriptHashStatus, block2tx -- toPublish.keys, sent ++ toPublish.values.flatten)
 
     case watch: Watch if watches.contains(watch) => ()
 
@@ -177,7 +177,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
-        val parentTxid = tx.txIn(0).outPoint.txid
+        val parentTxid = tx.txIn.head.outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
         self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
@@ -186,23 +186,22 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
         context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
-        log.info(s"publishing tx=$tx")
-        client ! ElectrumClient.BroadcastTransaction(tx)
+        publish(tx)
         context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
+      val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
-      val absTimeout = blockHeight + csvTimeout
+      val absTimeout = math.max(blockHeight + csvTimeout, cltvTimeout)
       if (absTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
         context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
-        log.info(s"publishing tx=$tx")
-        client ! ElectrumClient.BroadcastTransaction(tx)
+        publish(tx)
         context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
@@ -220,11 +219,15 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
   }
 
+  def publish(tx: Transaction): Unit = {
+    log.info(s"publishing tx=$tx")
+    client ! ElectrumClient.BroadcastTransaction(tx)
+  }
+
 }
 
 object ElectrumWatcher {
   /**
-   *
    * @param txid funding transaction id
    * @return a (blockHeight, txIndex) tuple that is extracted from the input source
    *         This is used to create unique "dummy" short channel ids for zero-conf channels
@@ -238,7 +241,7 @@ object ElectrumWatcher {
     // collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed)
     // if this ever becomes a problem we could just extract some bits for our dummy height instead of just returning 0
     val height = 0
-    val txIndex = txid.bits.sliceToInt(0, 16, false)
+    val txIndex = txid.bits.sliceToInt(0, 16, signed = false)
     (height, txIndex)
   }
 }
