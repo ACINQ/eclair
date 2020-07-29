@@ -143,7 +143,6 @@ object TestConstants {
         ActivatedFeature(ChannelRangeQueries, Optional),
         ActivatedFeature(ChannelRangeQueriesExtended, Optional),
         ActivatedFeature(VariableLengthOnion, Optional))),
-      overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
       onChainFeeConf = OnChainFeeConf(
@@ -232,7 +231,6 @@ object TestConstants {
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       features = Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
-      overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1000 sat,
       onChainFeeConf = OnChainFeeConf(

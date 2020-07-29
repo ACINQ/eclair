@@ -99,10 +99,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
     case Event(InitializeConnection(peer), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
-      val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
-        case Some(f) => f
-        case None => nodeParams.features.maskFeaturesForEclairMobile()
-      }
+      val localFeatures = nodeParams.features.maskFeaturesForEclairMobile()
       log.info(s"using features=$localFeatures")
       val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
       d.transport ! localInit

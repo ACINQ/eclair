@@ -115,25 +115,6 @@ class StartupSpec extends AnyFunSuite {
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
 
-  test("parse human readable override features") {
-    val perNodeConf = ConfigFactory.parseString(
-      """
-        |  override-features = [ // optional per-node features
-        |      {
-        |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        |          features {
-        |             basic_mpp = mandatory
-        |          }
-        |      }
-        |  ]
-      """.stripMargin
-    )
-
-    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    val perNodeFeatures = nodeParams.overrideFeatures(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    assert(perNodeFeatures.hasFeature(BasicMultiPartPayment, Some(Mandatory)))
-  }
-
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
     val noHtlcMinimumConf = ConfigFactory.parseString("htlc-minimum-msat = 0")
     assert(Try(makeNodeParamsWithDefaults(noHtlcMinimumConf.withFallback(defaultConf))).isFailure)
