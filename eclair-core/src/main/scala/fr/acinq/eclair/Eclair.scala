@@ -22,7 +22,7 @@ import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChann
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendPaymentToRouteResponse}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement, GenericTlv}
+import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -134,6 +134,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
+  def signMessage(base64Message: ByteVector): (PublicKey, ByteVector, ByteVector64)
+
+  def verifyMessage(base64Message: ByteVector, signature: ByteVector64): (Boolean, Option[PublicKey])
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -392,5 +395,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
     val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
     val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams), userCustomTlvs = keySendTlvRecords)
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+  }
+
+  override def signMessage(base64Message: ByteVector): (PublicKey, ByteVector, ByteVector64) = {
+    (appKit.nodeParams.privateKey.publicKey, ByteVector.empty, ByteVector64.Zeroes)
+  }
+
+  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64): (Boolean, Option[PublicKey]) = {
+    (false, None)
   }
 }
