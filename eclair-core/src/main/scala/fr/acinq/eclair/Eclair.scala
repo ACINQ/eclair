@@ -74,6 +74,9 @@ object ApiTypes {
 
 trait Eclair {
 
+  // String prefixed when signing arbitrary data to ensure we don't sign sensitive material
+  private val messagePrefix = ByteVector("Lightning Signed Message:".getBytes)
+
   def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
@@ -138,9 +141,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
-  def signMessage(base64Message: ByteVector): SignedMessage
+  def signMessage(base64Message: ByteVector, prefix: ByteVector = messagePrefix): SignedMessage
 
-  def verifyMessage(base64Message: ByteVector, signature: ByteVector64): VerifiedMessage
+  def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector = messagePrefix): VerifiedMessage
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -401,11 +404,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def signMessage(base64Message: ByteVector): SignedMessage = {
+  override def signMessage(base64Message: ByteVector, prefix: ByteVector): SignedMessage = {
     SignedMessage(appKit.nodeParams.privateKey.publicKey, ByteVector.empty, ByteVector64.Zeroes)
   }
 
-  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64): VerifiedMessage = {
+  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector): VerifiedMessage = {
     VerifiedMessage(false, None)
   }
 }
