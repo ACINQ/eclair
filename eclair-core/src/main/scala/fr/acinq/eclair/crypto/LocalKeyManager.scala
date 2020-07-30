@@ -20,6 +20,7 @@ import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
@@ -153,4 +154,6 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     val localFundingPrivKey = privateKeys.get(fundingKeyPath).privateKey
     Announcements.signChannelAnnouncement(chainHash, shortChannelId, localNodeSecret, remoteNodeId, localFundingPrivKey, remoteFundingKey, features)
   }
+
+  override def signDigest(digest: ByteVector32, privateKey: PrivateKey = nodeKey.privateKey): ByteVector64 = Crypto.sign(digest, privateKey)
 }
