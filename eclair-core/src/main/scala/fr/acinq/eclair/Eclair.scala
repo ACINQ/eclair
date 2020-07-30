@@ -51,7 +51,7 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 
 case class TimestampQueryFilters(from: Long, to: Long)
 
-case class SignedMessage(nodeId: PublicKey, message: ByteVector, signature: ByteVector64)
+case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector64)
 
 case class VerifiedMessage(valid: Boolean, signerNodeId: Option[PublicKey])
 
@@ -407,7 +407,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def signMessage(base64Message: ByteVector, prefix: ByteVector): SignedMessage = {
     val hash256Message = Crypto.hash256(prefix ++ base64Message)
     val signature = appKit.nodeParams.keyManager.signDigest(hash256Message)
-    SignedMessage(appKit.nodeParams.keyManager.nodeId, base64Message, signature)
+    SignedMessage(appKit.nodeParams.keyManager.nodeId, base64Message.toBase64, signature)
   }
 
   override def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector): VerifiedMessage = {

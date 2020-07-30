@@ -446,7 +446,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val signedMessage: SignedMessage = eclair.signMessage(msg)
     assert(signedMessage.nodeId === testKeyManager.nodeId)
-    assert(signedMessage.message === msg)
+    assert(signedMessage.message === msg.toBase64)
     assert(signedMessage.signature === expectedSignature)
     assert(Crypto.verifySignature(dhash256, signedMessage.signature, testKeyManager.nodeKey.publicKey))
   }
