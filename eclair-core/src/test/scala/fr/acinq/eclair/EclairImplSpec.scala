@@ -36,7 +36,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPa
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
-import fr.acinq.eclair.wire.{Color, NodeAnnouncement}
+import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -449,5 +449,77 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(signedMessage.message === msg)
     assert(signedMessage.signature === expectedSignature)
     assert(Crypto.verifySignature(dhash256, signedMessage.signature, testKeyManager.nodeKey.publicKey))
+  }
+
+  test("verify a valid signature created by an active node") { f =>
+    import f._
+
+    val fakeNodePrivateKey = randomKey
+    val fakeNodePublicKey = fakeNodePrivateKey.publicKey
+
+    val msg = ByteVector("aGVsbG8gd29ybGQ=".getBytes()) // echo -n 'hello world' | base64
+    val prefix = ByteVector("Lightning Signed Message:".getBytes())
+    val dhash256 = Crypto.hash256(prefix ++ msg)
+    val signature = Crypto.sign(dhash256, fakeNodePrivateKey)
+
+    forAllDbs { dbs =>
+      val mockNetworkDB = dbs.network()
+      val mockDB = mock[Databases]
+      mockDB.network returns mockNetworkDB
+
+      val mockNodeParams = kit.nodeParams.copy(db = mockDB)
+      val eclair = new EclairImpl(kit.copy(nodeParams = mockNodeParams))
+
+      val fakeNode1 = Announcements.makeNodeAnnouncement(fakeNodePrivateKey, "alice-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val fakeNode2 = Announcements.makeNodeAnnouncement(randomKey, "bob-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val fakeNode3 = Announcements.makeNodeAnnouncement(randomKey, "carol-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val fakeNode4 = Announcements.makeNodeAnnouncement(randomKey, "dave-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      mockNodeParams.db.network.addNode(fakeNode1)
+      mockNodeParams.db.network.addNode(fakeNode2)
+      mockNodeParams.db.network.addNode(fakeNode3)
+      mockNodeParams.db.network.addNode(fakeNode4)
+
+      assert(mockNodeParams.db.network.getNode(fakeNodePublicKey).isDefined)
+
+      val verifiedMessage = eclair.verifyMessage(msg, signature)
+      assert(verifiedMessage.valid)
+      assert(verifiedMessage.signerNodeId.get === fakeNodePublicKey)
+    }
+  }
+
+  test("verify an invalid signature created by an active node") { f =>
+    import f._
+
+    val fakeNodePrivateKey = randomKey
+    val fakeNodePublicKey = fakeNodePrivateKey.publicKey
+
+    val msg = ByteVector("aGVsbG8gd29ybGQ=".getBytes()) // echo -n 'hello world' | base64
+    val prefix = ByteVector("Lightning Signed Message:".getBytes())
+    val dhash256 = Crypto.hash256(prefix ++ msg)
+    val signature = Crypto.sign(dhash256, fakeNodePrivateKey)
+
+    forAllDbs { dbs =>
+      val mockNetworkDB = dbs.network()
+      val mockDB = mock[Databases]
+      mockDB.network returns mockNetworkDB
+
+      val mockNodeParams = kit.nodeParams.copy(db = mockDB)
+      val eclair = new EclairImpl(kit.copy(nodeParams = mockNodeParams))
+
+      val fakeNode1 = Announcements.makeNodeAnnouncement(randomKey, "alice-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val fakeNode2 = Announcements.makeNodeAnnouncement(randomKey, "bob-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val fakeNode3 = Announcements.makeNodeAnnouncement(randomKey, "carol-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val fakeNode4 = Announcements.makeNodeAnnouncement(randomKey, "dave-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      mockNodeParams.db.network.addNode(fakeNode1)
+      mockNodeParams.db.network.addNode(fakeNode2)
+      mockNodeParams.db.network.addNode(fakeNode3)
+      mockNodeParams.db.network.addNode(fakeNode4)
+
+      assert(mockNodeParams.db.network.getNode(fakeNodePublicKey).isEmpty)
+
+      val verifiedMessage = eclair.verifyMessage(msg, signature)
+      assert(!verifiedMessage.valid)
+      assert(verifiedMessage.signerNodeId === None)
+    }
   }
 }
