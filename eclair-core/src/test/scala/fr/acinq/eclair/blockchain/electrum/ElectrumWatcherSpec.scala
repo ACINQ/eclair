@@ -21,11 +21,12 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.Props
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
@@ -57,7 +58,7 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
   val electrumAddress = ElectrumServerAddress(new InetSocketAddress("localhost", electrumPort), SSL.OFF)
 
   test("watch for confirmed transactions") {
-    val probe = TestProbe()
+    val (probe, listener) = (TestProbe(), TestProbe())
     val blockCount = new AtomicLong()
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
@@ -65,16 +66,17 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
     val (address, _) = getNewAddress(bitcoincli)
     val tx = sendToAddress(bitcoincli, address, 1.0)
 
-    val listener = TestProbe()
-    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
-    generateBlocks(bitcoincli, 5)
-    val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
-    assert(confirmed.tx.txid === tx.txid)
+    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut.head.publicKeyScript, 2, BITCOIN_FUNDING_DEPTHOK))
+    generateBlocks(bitcoincli, 2)
+    assert(listener.expectMsgType[WatchEventConfirmed].tx === tx)
+    probe.send(watcher, WatchConfirmed(listener.ref, tx, 4, BITCOIN_FUNDING_DEPTHOK))
+    generateBlocks(bitcoincli, 2)
+    assert(listener.expectMsgType[WatchEventConfirmed].tx === tx)
     system.stop(watcher)
   }
 
   test("watch for spent transactions") {
-    val probe = TestProbe()
+    val (probe, listener) = (TestProbe(), TestProbe())
     val blockCount = new AtomicLong()
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
@@ -82,41 +84,32 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
     val (address, priv) = getNewAddress(bitcoincli)
     val tx = sendToAddress(bitcoincli, address, 1.0)
 
-    // find the output for the address we generated and create a tx that spends it
-    val pos = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
-    assert(pos != -1)
-    val spendingTx = {
-      val tmp = Transaction(version = 2,
-        txIn = TxIn(OutPoint(tx, pos), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(tx.txOut(pos).amount - 1000.sat, publicKeyScript = Script.pay2wpkh(priv.publicKey)) :: Nil,
-        lockTime = 0)
-      val sig = Transaction.signInput(tmp, 0, Script.pay2pkh(priv.publicKey), SIGHASH_ALL, tx.txOut(pos).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      val signedTx = tmp.updateWitness(0, ScriptWitness(sig :: priv.publicKey.value :: Nil))
-      Transaction.correctlySpends(signedTx, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      signedTx
-    }
-
-    val listener = TestProbe()
-    probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
+    // create a tx that spends the previous output
+    val spendingTx = createSpendP2WPKH(tx, priv, priv.publicKey, 1000 sat, TxIn.SEQUENCE_FINAL, 0)
+    val outpointIndex = spendingTx.txIn.head.outPoint.index.toInt
+    probe.send(watcher, WatchSpent(listener.ref, tx.txid, outpointIndex, tx.txOut(outpointIndex).publicKeyScript, BITCOIN_FUNDING_SPENT))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]
     generateBlocks(bitcoincli, 2)
-    listener.expectMsgType[WatchEventSpent](20 seconds)
+    assert(listener.expectMsgType[WatchEventSpent].tx === spendingTx)
     system.stop(watcher)
   }
 
   test("watch for mempool transactions (txs in mempool before we set the watch)") {
-    val probe = TestProbe()
+    val (probe, listener) = (TestProbe(), TestProbe())
     val blockCount = new AtomicLong()
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     probe.send(electrumClient, ElectrumClient.AddStatusListener(probe.ref))
     probe.expectMsgType[ElectrumClient.ElectrumReady]
     val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
 
-    val (address, priv) = getNewAddress(bitcoincli)
+    val (address, priv1) = getNewAddress(bitcoincli)
     val tx = sendToAddress(bitcoincli, address, 1.0)
-    val (tx1, tx2) = createUnspentTxChain(tx, priv)
+    val (_, priv2) = getNewAddress(bitcoincli)
+    val (_, priv3) = getNewAddress(bitcoincli)
+    val tx1 = createSpendP2WPKH(tx, priv1, priv2.publicKey, 10000 sat, TxIn.SEQUENCE_FINAL, 0)
+    val tx2 = createSpendP2WPKH(tx1, priv2, priv3.publicKey, 10000 sat, TxIn.SEQUENCE_FINAL, 0)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
@@ -124,21 +117,21 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
 
     // wait until tx1 and tx2 are in the mempool (as seen by our ElectrumX server)
     awaitCond({
-      probe.send(electrumClient, ElectrumClient.GetScriptHashHistory(ElectrumClient.computeScriptHash(tx2.txOut(0).publicKeyScript)))
+      probe.send(electrumClient, ElectrumClient.GetScriptHashHistory(ElectrumClient.computeScriptHash(tx2.txOut.head.publicKeyScript)))
       val ElectrumClient.GetScriptHashHistoryResponse(_, history) = probe.expectMsgType[ElectrumClient.GetScriptHashHistoryResponse]
-      history.map(_.tx_hash).toSet == Set(tx.txid, tx1.txid, tx2.txid)
+      history.map(_.tx_hash).toSet == Set(tx2.txid)
     }, max = 30 seconds, interval = 5 seconds)
 
-    // then set a watch
-    val listener = TestProbe()
-    probe.send(watcher, WatchConfirmed(listener.ref, tx2.txid, tx2.txOut(0).publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
-    val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
-    assert(confirmed.tx.txid === tx2.txid)
+    // then set watches
+    probe.send(watcher, WatchConfirmed(listener.ref, tx2, 0, BITCOIN_FUNDING_DEPTHOK))
+    assert(listener.expectMsgType[WatchEventConfirmed].tx === tx2)
+    probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT))
+    listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
     system.stop(watcher)
   }
 
   test("watch for mempool transactions (txs not yet in the mempool when we set the watch)") {
-    val probe = TestProbe()
+    val (probe, listener) = (TestProbe(), TestProbe())
     val blockCount = new AtomicLong()
     val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
     probe.send(electrumClient, ElectrumClient.AddStatusListener(probe.ref))
@@ -149,16 +142,62 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
     val tx = sendToAddress(bitcoincli, address, 1.0)
     val (tx1, tx2) = createUnspentTxChain(tx, priv)
 
-    // here we set the watch * before * we publish our transactions
-    val listener = TestProbe()
-    probe.send(watcher, WatchConfirmed(listener.ref, tx2.txid, tx2.txOut(0).publicKeyScript, 0, BITCOIN_FUNDING_DEPTHOK))
+    // here we set watches * before * we publish our transactions
+    probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchConfirmed(listener.ref, tx1, 0, BITCOIN_FUNDING_DEPTHOK))
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
     probe.expectMsgType[JValue]
+    assert(listener.expectMsgType[WatchEventConfirmed].tx === tx1)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx2.toString()))
     probe.expectMsgType[JValue]
+    listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
+    system.stop(watcher)
+  }
 
-    val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
-    assert(confirmed.tx.txid === tx2.txid)
+  test("publish transactions with relative and absolute delays") {
+    import akka.pattern.pipe
+
+    val (probe, listener) = (TestProbe(), TestProbe())
+    val blockCount = new AtomicLong()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val electrumClient = system.actorOf(Props(new ElectrumClientPool(blockCount, Set(electrumAddress))))
+    bitcoinClient.getBlockCount.pipeTo(probe.ref)
+    val initialBlockCount = probe.expectMsgType[Long]
+    probe.send(electrumClient, ElectrumClient.AddStatusListener(probe.ref))
+    awaitCond(probe.expectMsgType[ElectrumClient.ElectrumReady].height >= initialBlockCount, message = s"waiting for tip at $initialBlockCount")
+    val watcher = system.actorOf(Props(new ElectrumWatcher(blockCount, electrumClient)))
+
+    val (address1, priv1) = getNewAddress(bitcoincli)
+    val tx1 = sendToAddress(bitcoincli, address1, 0.2)
+    val (address2, priv2) = getNewAddress(bitcoincli)
+    val tx2 = sendToAddress(bitcoincli, address2, 0.2)
+    val (address3, priv3) = getNewAddress(bitcoincli)
+    val tx3 = sendToAddress(bitcoincli, address3, 0.2)
+    val (_, priv4) = getNewAddress(bitcoincli)
+    generateBlocks(bitcoincli, 1)
+    for (tx <- Seq(tx1, tx2, tx3)) {
+      probe.send(watcher, WatchConfirmed(listener.ref, tx, 1, BITCOIN_FUNDING_DEPTHOK))
+      assert(listener.expectMsgType[WatchEventConfirmed].tx === tx)
+    }
+
+    // spend tx1 with an absolute delay but no relative delay
+    val spend1 = createSpendP2WPKH(tx1, priv1, priv4.publicKey, 5000 sat, sequence = 0, lockTime = blockCount.get + 1)
+    probe.send(watcher, WatchSpent(listener.ref, tx1, spend1.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, PublishAsap(spend1))
+    // spend tx2 with a relative delay but no absolute delay
+    val spend2 = createSpendP2WPKH(tx2, priv2, priv4.publicKey, 3000 sat, sequence = 1, lockTime = 0)
+    probe.send(watcher, WatchSpent(listener.ref, tx2, spend2.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, PublishAsap(spend2))
+    // spend tx3 with both relative and absolute delays
+    val spend3 = createSpendP2WPKH(tx3, priv3, priv4.publicKey, 6000 sat, sequence = 1, lockTime = blockCount.get + 2)
+    probe.send(watcher, WatchSpent(listener.ref, tx3, spend3.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, PublishAsap(spend3))
+
+    generateBlocks(bitcoincli, 1)
+    listener.expectMsgAllOf(WatchEventSpent(BITCOIN_FUNDING_SPENT, spend1), WatchEventSpent(BITCOIN_FUNDING_SPENT, spend2))
+    generateBlocks(bitcoincli, 1)
+    listener.expectMsgAllOf(WatchEventSpent(BITCOIN_FUNDING_SPENT, spend1), WatchEventSpent(BITCOIN_FUNDING_SPENT, spend2), WatchEventSpent(BITCOIN_FUNDING_SPENT, spend3))
+
     system.stop(watcher)
   }
 
@@ -200,5 +239,6 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
       assert(res.tx_opt === None)
       assert(res.lastBlockTimestamp > System.currentTimeMillis().millis.toSeconds - 7200) // this server should be in sync
     }
+    system.stop(watcher)
   }
 }
