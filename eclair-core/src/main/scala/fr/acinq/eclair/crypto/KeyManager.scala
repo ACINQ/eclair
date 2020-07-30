@@ -110,6 +110,15 @@ trait KeyManager {
    *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
    */
   def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): (ByteVector64, ByteVector64)
+
+  /**
+   * Sign a digest, primarily used to prove ownership of the current node
+   *
+   * @param digest     SHA256 digest
+   * @param privateKey private key to sign with, default the one from the current node
+   * @return a signature generated with the private key given in parameter
+   */
+  def signDigest(digest: ByteVector32, privateKey: PrivateKey = nodeKey.privateKey): ByteVector64
 }
 
 object KeyManager {
