@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
+import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.PaymentRequest
@@ -429,4 +430,24 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(expectedPaymentPreimage === ByteVector32(keySendTlv.value))
   }
 
+  test("sign a base64-encoded message with the node's private key") { f =>
+    import f._
+
+    val seed = ByteVector.fromValidHex("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
+    val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+
+    val kitWithTestKeyManager = kit.copy(nodeParams = kit.nodeParams.copy(keyManager = testKeyManager))
+    val eclair = new EclairImpl(kitWithTestKeyManager)
+
+    val msg = ByteVector("aGVsbG8gd29ybGQ=".getBytes()) // echo -n 'hello world' | base64
+    val prefix = ByteVector("Lightning Signed Message:".getBytes())
+    val dhash256 = Crypto.hash256(prefix ++ msg)
+    val expectedSignature = Crypto.sign(dhash256, testKeyManager.nodeKey.privateKey)
+
+    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    assert(signedMessage.nodeId === testKeyManager.nodeId)
+    assert(signedMessage.message === msg)
+    assert(signedMessage.signature === expectedSignature)
+    assert(Crypto.verifySignature(dhash256, signedMessage.signature, testKeyManager.nodeKey.publicKey))
+  }
 }
