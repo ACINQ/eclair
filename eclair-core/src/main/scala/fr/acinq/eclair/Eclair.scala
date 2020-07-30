@@ -412,9 +412,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector): VerifiedMessage = {
     val hash256Message = Crypto.hash256(prefix ++ base64Message)
-    val (pubKeyFromSignature, _) = Crypto.recoverPublicKey(signature, hash256Message)
-    if (appKit.nodeParams.db.network.getNode(pubKeyFromSignature).isDefined)
-      VerifiedMessage(true, Some(pubKeyFromSignature))
+    val (pubKey1, pubKey2) = Crypto.recoverPublicKey(signature, hash256Message)
+    if (appKit.nodeParams.db.network.getNode(pubKey1).isDefined)
+      VerifiedMessage(true, Some(pubKey1))
+    else if (appKit.nodeParams.db.network.getNode(pubKey2).isDefined)
+      VerifiedMessage(true, Some(pubKey2))
     else
       VerifiedMessage(false, None)
   }
