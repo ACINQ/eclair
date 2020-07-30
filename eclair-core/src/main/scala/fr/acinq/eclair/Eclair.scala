@@ -22,7 +22,7 @@ import akka.actor.ActorRef
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChann
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendPaymentToRouteResponse}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement, GenericTlv}
+import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -50,6 +50,10 @@ case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, co
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
 case class TimestampQueryFilters(from: Long, to: Long)
+
+case class SignedMessage(nodeId: PublicKey, message: ByteVector, signature: ByteVector64)
+
+case class VerifiedMessage(valid: Boolean, signerNodeId: Option[PublicKey])
 
 object TimestampQueryFilters {
   /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
@@ -69,6 +73,9 @@ object ApiTypes {
 }
 
 trait Eclair {
+
+  // String prefixed when signing arbitrary data to ensure we don't sign sensitive material
+  private val messagePrefix = ByteVector("Lightning Signed Message:".getBytes)
 
   def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
 
@@ -134,6 +141,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
+  def signMessage(base64Message: ByteVector, prefix: ByteVector = messagePrefix): SignedMessage
+
+  def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector = messagePrefix): VerifiedMessage
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -392,5 +402,20 @@ class EclairImpl(appKit: Kit) extends Eclair {
     val keySendTlvRecords = Seq(GenericTlv(UInt64(5482373484L), paymentPreimage))
     val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams), userCustomTlvs = keySendTlvRecords)
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+  }
+
+  override def signMessage(base64Message: ByteVector, prefix: ByteVector): SignedMessage = {
+    val hash256Message = Crypto.hash256(prefix ++ base64Message)
+    val signature = appKit.nodeParams.keyManager.signDigest(hash256Message)
+    SignedMessage(appKit.nodeParams.keyManager.nodeId, base64Message, signature)
+  }
+
+  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector): VerifiedMessage = {
+    val hash256Message = Crypto.hash256(prefix ++ base64Message)
+    val (pubKeyFromSignature, _) = Crypto.recoverPublicKey(signature, hash256Message)
+    if (appKit.nodeParams.db.network.getNode(pubKeyFromSignature).isDefined)
+      VerifiedMessage(true, Some(pubKeyFromSignature))
+    else
+      VerifiedMessage(false, None)
   }
 }
