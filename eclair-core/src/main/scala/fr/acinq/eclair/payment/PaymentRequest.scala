@@ -461,7 +461,7 @@ object PaymentRequest {
     def decode(input: String): Option[MilliSatoshi] =
       (input match {
         case "" => None
-        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 10 milli-satoshis
+        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 0.1 milli-satoshis
         case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
         case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
         case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
@@ -474,7 +474,7 @@ object PaymentRequest {
     def encode(amount: Option[MilliSatoshi]): String = {
       amount match {
         case None => ""
-        case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 10 milli-satoshis
+        case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 0.1 milli-satoshis
         case Some(amt) if unit(amt) == 'n' => s"${amt.toLong / 100L}n"
         case Some(amt) if unit(amt) == 'u' => s"${amt.toLong / 100000L}u"
         case Some(amt) if unit(amt) == 'm' => s"${amt.toLong / 100000000L}m"
