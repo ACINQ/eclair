@@ -71,7 +71,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("localPaymentBasepoint" | optional(provide(channelVersion.hasStaticRemotekey), publicKey)) ::
+      ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
 
   val remoteParamsCodec: Codec[RemoteParams] = (

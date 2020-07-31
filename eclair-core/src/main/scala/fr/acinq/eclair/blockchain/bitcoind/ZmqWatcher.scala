@@ -97,29 +97,29 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       context become watching(watches, watchedUtxos, block2tx, None)
 
     case TriggerEvent(w, e) if watches.contains(w) =>
-      log.info(s"triggering $w")
+      log.info("triggering {}", w)
       w.channel ! e
       w match {
         case _: WatchSpent =>
-          // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
+          // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx or the commit tx
           // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
           ()
         case _ =>
-          context become watching(watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, None)
+          context become watching(watches - w, removeWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
       }
 
     case CurrentBlockCount(count) =>
       val toPublish = block2tx.filterKeys(_ <= count)
       toPublish.values.flatten.foreach(tx => publish(tx))
-      context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, None)
+      context become watching(watches, watchedUtxos, block2tx -- toPublish.keys, nextTick)
 
     case w: Watch if !watches.contains(w) =>
       w match {
         case WatchSpentBasic(_, txid, outputIndex, _, _) =>
-          // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
+          // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
           client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
             case false =>
-              log.info(s"output=$outputIndex of txid=$txid has already been spent")
+              log.info("output={} of txid={} has already been spent", outputIndex, txid)
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
           }
 
@@ -130,13 +130,13 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               // parent tx was published, we need to make sure this particular output has not been spent
               client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
                 case false =>
-                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
+                  log.info("{}:{} has already been spent, looking for the spending tx in the mempool", txid, outputIndex)
                   client.getMempool().map { mempoolTxs =>
                     mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
                       case Nil =>
-                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
+                        log.warning("{}:{} has already been spent, spending tx not in the mempool, looking in the blockchain...", txid, outputIndex)
                         client.lookForSpendingTx(None, txid, outputIndex).map { tx =>
-                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
+                          log.warning("found the spending tx of {}:{} in the blockchain: txid={}", txid, outputIndex, tx.txid)
                           self ! NewTransaction(tx)
                         }
                       case txs =>
@@ -151,7 +151,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
         case _: WatchLost => () // TODO: not implemented
 
-        case w => log.warning(s"ignoring $w")
+        case w => log.warning("ignoring {}", w)
       }
 
       log.debug("adding watch {} for {}", w, sender)
@@ -165,24 +165,25 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn.head.outPoint.txid
-        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
+        log.info("txid={} has a relative timeout of {} blocks, watching parenttxid={} tx={}", tx.txid, csvTimeout, parentTxid, tx)
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
         self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
-        log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
+        log.info("delaying publication of txid={} until block={} (curblock={})", tx.txid, cltvTimeout, blockCount)
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
-        context become watching(watches, watchedUtxos, block2tx1, None)
+        context become watching(watches, watchedUtxos, block2tx1, nextTick)
       } else publish(tx)
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
-      log.info(s"parent tx of txid=${tx.txid} has been confirmed")
+      log.info("parent tx of txid={} has been confirmed", tx.txid)
       val blockCount = this.blockCount.get()
+      val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
-      val absTimeout = blockHeight + csvTimeout
+      val absTimeout = math.max(blockHeight + csvTimeout, cltvTimeout)
       if (absTimeout > blockCount) {
-        log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
+        log.info("delaying publication of txid={} until block={} (curblock={})", tx.txid, absTimeout, blockCount)
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
-        context become watching(watches, watchedUtxos, block2tx1, None)
+        context become watching(watches, watchedUtxos, block2tx1, nextTick)
       } else publish(tx)
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
@@ -193,7 +194,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       // we remove watches associated to dead actor
       val deprecatedWatches = watches.filter(_.channel == channel)
       val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
-      context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, None))
+      context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, nextTick))
 
     case Symbol("watches") => sender ! watches
 
@@ -204,14 +205,12 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def publish(tx: Transaction, isRetry: Boolean = false): Unit = {
-    log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx=$tx")
+    log.info("publishing tx (isRetry={}): txid={} tx={}", isRetry, tx.txid, tx)
     client.publishTransaction(tx)(singleThreadExecutionContext).recover {
       case t: Throwable if t.getMessage.contains("(code: -25)") && !isRetry => // we retry only once
         import akka.pattern.after
-
-        import scala.concurrent.duration._
         after(3 seconds, context.system.scheduler)(Future.successful({})).map(_ => publish(tx, isRetry = true))
-      case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
+      case t: Throwable => log.error("cannot publish tx: reason={} txid={} tx={}", t.getMessage, tx.txid, tx)
     }
   }
 
@@ -237,7 +236,7 @@ object ZmqWatcher {
 
   case object TickNewBlock
 
-  def utxo(w: Watch): Option[OutPoint] =
+  private def utxo(w: Watch): Option[OutPoint] =
     w match {
       case w: WatchSpent => Some(OutPoint(w.txId.reverse, w.outputIndex))
       case w: WatchSpentBasic => Some(OutPoint(w.txId.reverse, w.outputIndex))

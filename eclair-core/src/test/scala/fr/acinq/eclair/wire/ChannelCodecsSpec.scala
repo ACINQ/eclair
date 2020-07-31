@@ -121,14 +121,14 @@ class ChannelCodecsSpec extends AnyFunSuite {
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      staticPaymentBasepoint = None,
+      walletStaticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       features = Features(randomBytes(256)))
-    val o1 = o.copy(staticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
+    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
     roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
-    roundtrip(o1, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
+    roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
 
   test("backward compatibility local params with global features") {
@@ -436,7 +436,7 @@ object ChannelCodecsSpec {
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
-    staticPaymentBasepoint = None,
+    walletStaticPaymentBasepoint = None,
     isFunder = true,
     features = Features.empty)
 
