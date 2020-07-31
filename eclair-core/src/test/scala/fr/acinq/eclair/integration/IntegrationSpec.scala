@@ -935,11 +935,16 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     bitcoinClient.getTransaction(commitTx.txid).pipeTo(sender.ref)
     val tx = sender.expectMsgType[Transaction](10 seconds)
-
     // the unilateral close contains the static toRemote output
     assert(tx.txOut.exists(_.publicKeyScript == toRemoteOutC.publicKeyScript))
+    // bury the unilateral close in a block, C should claim its main output
+    generateBlocks(bitcoincli, 2)
+    awaitCond({
+      bitcoinClient.getMempool().pipeTo(sender.ref)
+      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid === commitTx.txid)
+    }, max = 20 seconds, interval = 1 second)
 
-    // bury the unilateral close in a block, since there are no outputs to claim the channel can go to CLOSED state
+    // get the claim-remote-output confirmed, then the channel can go to the CLOSED state
     generateBlocks(bitcoincli, 2)
     awaitCond({
       nodes("C").register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
@@ -1086,6 +1091,10 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     testDownstreamFulfillLocalCommit("F1", Transactions.DefaultCommitmentFormat)
   }
 
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs)") {
+    testDownstreamFulfillLocalCommit("F2", Transactions.AnchorOutputsCommitmentFormat)
+  }
+
   def testDownstreamFulfillRemoteCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
     val forceCloseFixture = prepareForceCloseCF(nodeF, commitmentFormat)
     import forceCloseFixture._
@@ -1127,6 +1136,10 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
     testDownstreamFulfillRemoteCommit("F1", Transactions.DefaultCommitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs)") {
+    testDownstreamFulfillRemoteCommit("F2", Transactions.AnchorOutputsCommitmentFormat)
   }
 
   def testDownstreamTimeoutLocalCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
@@ -1181,6 +1194,10 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
     testDownstreamTimeoutLocalCommit("F1", Transactions.DefaultCommitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs)") {
+    testDownstreamTimeoutLocalCommit("F2", Transactions.AnchorOutputsCommitmentFormat)
   }
 
   def testDownstreamTimeoutRemoteCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): Unit = {
@@ -1241,6 +1258,10 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     testDownstreamTimeoutRemoteCommit("F1", Transactions.DefaultCommitmentFormat)
   }
 
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs)") {
+    testDownstreamTimeoutRemoteCommit("F2", Transactions.AnchorOutputsCommitmentFormat)
+  }
+
   case class RevokedCommitFixture(sender: TestProbe, stateListenerC: TestProbe, revokedCommitTx: Transaction, htlcSuccess: Seq[Transaction], htlcTimeout: Seq[Transaction], finalAddressC: String)
 
   def testRevokedCommit(nodeF: String, commitmentFormat: Transactions.CommitmentFormat): RevokedCommitFixture = {
@@ -1295,9 +1316,12 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMsg(1 second)
     assert(commitmentsF.commitmentFormat === commitmentFormat)
-    // in this commitment, both parties should have a main output, and there are four pending htlcs
+    // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
     val localCommitF = commitmentsF.localCommit.publishableTxs
-    assert(localCommitF.commitTx.tx.txOut.size === 6)
+    commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTx.tx.txOut.size === 6)
+      case Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTx.tx.txOut.size === 8)
+    }
     val htlcTimeoutTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: Transactions.HtlcTimeoutTx, _, _) => h }
     val htlcSuccessTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: Transactions.HtlcSuccessTx, _, _) => h }
     assert(htlcTimeoutTxs.size === 2)
@@ -1343,6 +1367,34 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // F publishes the revoked commitment, one HTLC-success, one HTLC-timeout and leaves the other HTLC outputs unclaimed
     bitcoinClient.publishTransaction(revokedCommitTx).pipeTo(sender.ref)
     sender.expectMsg(revokedCommitTx.txid)
+    bitcoinClient.publishTransaction(htlcSuccess.head).pipeTo(sender.ref)
+    sender.expectMsg(htlcSuccess.head.txid)
+    bitcoinClient.publishTransaction(htlcTimeout.head).pipeTo(sender.ref)
+    sender.expectMsg(htlcTimeout.head.txid)
+    // at this point C should have 6 recv transactions: its previous main output, F's main output and all htlc outputs (taken as punishment)
+    awaitCond({
+      val receivedByC = listReceivedByAddress(finalAddressC, sender)
+      (receivedByC diff previouslyReceivedByC).size == 6
+    }, max = 30 seconds, interval = 1 second)
+    // we generate blocks to make txs confirm
+    generateBlocks(bitcoincli, 2)
+    // and we wait for C's channel to close
+    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
+    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
+  }
+
+  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+    val revokedCommitFixture = testRevokedCommit("F2", Transactions.AnchorOutputsCommitmentFormat)
+    import revokedCommitFixture._
+
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
+    val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    // F publishes the revoked commitment: it can't publish the HTLC txs because of the CSV 1
+    bitcoinClient.publishTransaction(revokedCommitTx).pipeTo(sender.ref)
+    sender.expectMsg(revokedCommitTx.txid)
+    // get the revoked commitment confirmed: now HTLC txs can be published
+    generateBlocks(bitcoincli, 2)
     bitcoinClient.publishTransaction(htlcSuccess.head).pipeTo(sender.ref)
     sender.expectMsg(htlcSuccess.head.txid)
     bitcoinClient.publishTransaction(htlcTimeout.head).pipeTo(sender.ref)
