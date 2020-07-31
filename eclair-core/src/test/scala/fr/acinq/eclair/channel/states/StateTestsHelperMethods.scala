@@ -80,13 +80,11 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val (aliceParams, bobParams, channelVersion) = if (tags.contains("anchor_outputs")) {
       val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
-      val aliceParams = Alice.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      val bobParams = Bob.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      (aliceParams, bobParams, ChannelVersion.ANCHOR_OUTPUTS)
+      (Alice.channelParams.copy(features = features), Bob.channelParams.copy(features = features), ChannelVersion.ANCHOR_OUTPUTS)
     } else if (tags.contains("static_remotekey")) {
       val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      val aliceParams = Alice.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      val bobParams = Bob.channelParams.copy(features = features, staticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      val aliceParams = Alice.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      val bobParams = Bob.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
       (aliceParams, bobParams, ChannelVersion.STATIC_REMOTEKEY)
     } else {
       (Alice.channelParams, Bob.channelParams, ChannelVersion.STANDARD)

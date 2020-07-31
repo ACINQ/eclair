@@ -276,14 +276,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   }
 
   def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef], channelVersion: ChannelVersion): (ActorRef, LocalParams) = {
-    val (finalScript, localPaymentBasepoint) = channelVersion match {
-      case v if v.hasStaticRemotekey =>
+    val (finalScript, walletStaticPaymentBasepoint) = channelVersion match {
+      case v if v.paysDirectlyToWallet =>
         val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
         (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
       case _ =>
         (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash), None)
     }
-    val localParams = makeChannelParams(nodeParams, finalScript, localPaymentBasepoint, funder, fundingAmount)
+    val localParams = makeChannelParams(nodeParams, finalScript, walletStaticPaymentBasepoint, funder, fundingAmount)
     val channel = spawnChannel(nodeParams, origin_opt)
     (channel, localParams)
   }
@@ -390,13 +390,13 @@ object Peer {
 
   // @formatter:on
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
     val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)
-    makeChannelParams(nodeParams, defaultFinalScriptPubkey, localPaymentBasepoint, isFunder, fundingAmount, fundingKeyPath)
+    makeChannelParams(nodeParams, defaultFinalScriptPubkey, walletStaticPaymentBasepoint, isFunder, fundingAmount, fundingKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, staticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi, fundingKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       fundingKeyPath,
@@ -408,7 +408,7 @@ object Peer {
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       isFunder = isFunder,
       defaultFinalScriptPubKey = defaultFinalScriptPubkey,
-      staticPaymentBasepoint = staticPaymentBasepoint,
+      walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
       features = nodeParams.features)
   }
 }
