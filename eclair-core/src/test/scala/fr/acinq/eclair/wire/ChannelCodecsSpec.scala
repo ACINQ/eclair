@@ -24,6 +24,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
@@ -232,7 +233,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
-      feeratePerKw = Random.nextInt(Int.MaxValue),
+      feeratePerKw = FeeratePerKw(Random.nextInt(Int.MaxValue).sat),
       toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
     )
@@ -479,8 +480,8 @@ object ChannelCodecsSpec {
     val fundingAmount = fundingTx.txOut.head.amount
     val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
 
-    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
+    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
     val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 32L,
       remoteNextHtlcId = 4L,
@@ -541,6 +542,12 @@ object ChannelCodecsSpec {
       null
     }, {
       case x: CltvExpiryDelta => JInt(x.toInt)
+    }))
+
+    class FeeratePerKwSerializer extends CustomSerializer[FeeratePerKw](_ => ( {
+      null
+    }, {
+      case x: FeeratePerKw => JLong(x.toLong)
     }))
 
     class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
@@ -630,6 +637,7 @@ object ChannelCodecsSpec {
       new MilliSatoshiSerializer +
       new CltvExpirySerializer +
       new CltvExpiryDeltaSerializer +
+      new FeeratePerKwSerializer +
       new ShortChannelIdSerializer +
       new StateSerializer +
       new ShaChainSerializer +

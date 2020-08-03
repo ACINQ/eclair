@@ -24,6 +24,7 @@ import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -520,10 +521,10 @@ object ElectrumWallet {
   case object GetData extends Request
   case class GetDataResponse(state: Data) extends Response
 
-  case class CompleteTransaction(tx: Transaction, feeRatePerKw: Long) extends Request
+  case class CompleteTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw) extends Request
   case class CompleteTransactionResponse(tx: Transaction, fee: Satoshi, error: Option[Throwable]) extends Response
 
-  case class SendAll(publicKeyScript: ByteVector, feeRatePerKw: Long) extends Request
+  case class SendAll(publicKeyScript: ByteVector, feeRatePerKw: FeeratePerKw) extends Request
   case class SendAllResponse(tx: Transaction, fee: Satoshi) extends Response
 
   case class CommitTransaction(tx: Transaction) extends Request
@@ -939,9 +940,8 @@ object ElectrumWallet {
      *         our utxos spent by this tx are locked and won't be available for spending
      *         until the tx has been cancelled. If the tx is committed, they will be removed
      */
-    def completeTransaction(tx: Transaction, feeRatePerKw: Long, minimumFee: Satoshi, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean): (Data, Transaction, Satoshi) = {
+    def completeTransaction(tx: Transaction, feeRatePerKw: FeeratePerKw, minimumFee: Satoshi, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean): (Data, Transaction, Satoshi) = {
       require(tx.txIn.isEmpty, "cannot complete a tx that already has inputs")
-      require(feeRatePerKw >= 0, "fee rate cannot be negative")
       val amount = tx.txOut.map(_.amount).sum
       require(amount > dustLimit, "amount to send is below dust limit")
 
@@ -1055,7 +1055,7 @@ object ElectrumWallet {
      * @return a (tx, fee) tuple, tx is a signed transaction that spends all our balance and
      *         fee is the associated bitcoin network fee
      */
-    def spendAll(publicKeyScript: ByteVector, feeRatePerKw: Long): (Transaction, Satoshi) = {
+    def spendAll(publicKeyScript: ByteVector, feeRatePerKw: FeeratePerKw): (Transaction, Satoshi) = {
       // use confirmed and unconfirmed balance
       val amount = balance._1 + balance._2
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
@@ -1067,7 +1067,7 @@ object ElectrumWallet {
       (tx3, fee)
     }
 
-    def spendAll(publicKeyScript: Seq[ScriptElt], feeRatePerKw: Long): (Transaction, Satoshi) = spendAll(Script.write(publicKeyScript), feeRatePerKw)
+    def spendAll(publicKeyScript: Seq[ScriptElt], feeRatePerKw: FeeratePerKw): (Transaction, Satoshi) = spendAll(Script.write(publicKeyScript), feeRatePerKw)
   }
 
   object Data {
