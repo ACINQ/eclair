@@ -18,9 +18,9 @@ package fr.acinq.eclair.blockchain.fee
 
 trait FeeEstimator {
 
-  def getFeeratePerKb(target: Int): Long
+  def getFeeratePerKb(target: Int): FeeratePerKB
 
-  def getFeeratePerKw(target: Int): Long
+  def getFeeratePerKw(target: Int): FeeratePerKw
 
 }
 

@@ -21,6 +21,7 @@ import java.util.UUID
 import akka.actor.{ActorRef, Props, Status}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
@@ -473,7 +474,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, InsufficientFunds(channelId_bc, origin.amountOut, 100 sat, 0 sat, 0 sat), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, FeerateTooDifferent(channelId_bc, 1000, 300), origin, Some(channelUpdate_bc), None)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, FeerateTooDifferent(channelId_bc, FeeratePerKw(1000 sat), FeeratePerKw(300 sat)), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
 
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = 2)
