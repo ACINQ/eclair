@@ -21,6 +21,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, ExtendedBitcoinClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
@@ -38,10 +39,10 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
 
   val bitcoinClient = new ExtendedBitcoinClient(rpcClient)
 
-  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: FeeratePerKw): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
 
-  private def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: Long): Future[FundTransactionResponse] = {
-    val feeRatePerKB = BigDecimal(feerateKw2KB(feeRatePerKw))
+  private def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: FeeratePerKw): Future[FundTransactionResponse] = {
+    val feeRatePerKB = BigDecimal(FeeratePerKB(feeRatePerKw).toLong)
     rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
@@ -128,7 +129,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
   } yield PublicKey(ByteVector.fromValidHex(rawKey))
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = {
     val partialFundingTx = Transaction(
       version = 2,
       txIn = Seq.empty[TxIn],

@@ -89,19 +89,19 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       port = config.getInt("bitcoind.rpcport"))
 
     // the regtest client doesn't have enough data to estimate fees yet, so it's suppose to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6, 7))
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat)))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
 
     val fees = Map(
-      1 -> 1500,
-      2 -> 1400,
-      6 -> 1300,
-      12 -> 1200,
-      36 -> 1100,
-      72 -> 1000,
-      144 -> 900
+      1 -> FeeratePerKB(1500 sat),
+      2 -> FeeratePerKB(1400 sat),
+      6 -> FeeratePerKB(1300 sat),
+      12 -> FeeratePerKB(1200 sat),
+      36 -> FeeratePerKB(1100 sat),
+      72 -> FeeratePerKB(1000 sat),
+      144 -> FeeratePerKB(900 sat)
     )
 
     val ref = FeeratesPerKB(
@@ -121,13 +121,13 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
-          val feerate = satoshi2btc(Satoshi(fees(blocks))).toBigDecimal
+          val feerate = satoshi2btc(fees(blocks).feerate).toBigDecimal
           Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))(ec)
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
       }
     }
 
-    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(1, 2, 3, 4, 5, 6, 7))
+    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat)))
     mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }
