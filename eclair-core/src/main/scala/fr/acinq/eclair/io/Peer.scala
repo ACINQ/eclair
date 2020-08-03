@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.wire._
@@ -375,11 +376,11 @@ object Peer {
   }
 
   case class Disconnect(nodeId: PublicKey)
-  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
+  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) {
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
     require(pushMsat >= 0.msat, s"pushMsat must be positive")
-    fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum $MinimumFeeratePerKw rate/kw"))
+    fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum ${FeeratePerKw.MinimumFeeratePerKw} rate/kw"))
   }
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)

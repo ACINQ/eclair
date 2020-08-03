@@ -17,6 +17,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire._
 
 /**
@@ -69,7 +70,7 @@ case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
-final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
 

@@ -91,7 +91,7 @@ object ChannelCodecs extends Logging {
 
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
-      ("feeratePerKw" | uint32) ::
+      ("feeratePerKw" | feeratePerKw) ::
       ("toLocal" | millisatoshi) ::
       ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
@@ -281,7 +281,7 @@ object ChannelCodecs extends Logging {
    * We use the fact that the discriminated codec encodes using the first suitable codec it finds in the list to handle
    * database migration.
    *
-   * For example, a data encoded with type 01 will be decoded using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
+   * For example, a data encoded with type 01 will be decoded using [[LegacyChannelCodecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
    * encoded to a type 08 using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec]].
    *
    * More info here: https://github.com/scodec/scodec/issues/122
