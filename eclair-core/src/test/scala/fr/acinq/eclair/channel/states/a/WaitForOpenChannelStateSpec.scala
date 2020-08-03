@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.{Block, Btc, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
@@ -154,7 +155,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // set a very small fee
-    val tinyFee = 253
+    val tinyFee = FeeratePerKw(253 sat)
     bob ! open.copy(feeratePerKw = tinyFee)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
@@ -166,7 +167,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // set a very small fee
-    val tinyFee = 252
+    val tinyFee = FeeratePerKw(252 sat)
     bob ! open.copy(feeratePerKw = tinyFee)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id

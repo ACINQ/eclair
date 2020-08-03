@@ -17,13 +17,14 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
 class CommitmentSpecSpec extends AnyFunSuite {
   test("add, fulfill and fail htlcs from the sender side") {
-    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = 1000, toLocal = 5000000 msat, toRemote = 0 msat)
+    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = FeeratePerKw(1000 sat), toLocal = 5000000 msat, toRemote = 0 msat)
     val R = randomBytes32
     val H = Crypto.sha256(R)
 
@@ -45,7 +46,7 @@ class CommitmentSpecSpec extends AnyFunSuite {
   }
 
   test("add, fulfill and fail htlcs from the receiver side") {
-    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = 1000, toLocal = 0 msat, toRemote = (5000 * 1000) msat)
+    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = FeeratePerKw(1000 sat), toLocal = 0 msat, toRemote = (5000 * 1000) msat)
     val R = randomBytes32
     val H = Crypto.sha256(R)
 

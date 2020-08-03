@@ -18,6 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, ScriptFlags, Transaction}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
@@ -59,7 +60,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     tests
   }
 
-  def getFeerate(name: String): Long = tests(name)("local_feerate_per_kw").trim.toLong
+  def getFeerate(name: String): FeeratePerKw = FeeratePerKw(tests(name)("local_feerate_per_kw").trim.toLong.sat)
 
   def getToLocal(name: String): MilliSatoshi = tests(name)("to_local_msat").trim.toLong.msat
 
