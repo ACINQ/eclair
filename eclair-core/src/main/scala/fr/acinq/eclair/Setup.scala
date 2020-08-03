@@ -28,7 +28,7 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
@@ -65,9 +65,9 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir          directory where eclair-core will write/read its data.
- * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
- * @param db               optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir  directory where eclair-core will write/read its data.
+ * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ * @param db       optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             seed_opt: Option[ByteVector] = None,
@@ -118,9 +118,8 @@ class Setup(datadir: File,
 
   val feeEstimator = new FeeEstimator {
     // @formatter:off
-    override def getFeeratePerKb(target: Int): Long = feeratesPerKB.get().feePerBlock(target)
-
-    override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
+    override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get().feePerBlock(target)
+    override def getFeeratePerKw(target: Int): FeeratePerKw = feeratesPerKw.get().feePerBlock(target)
     // @formatter:on
   }
 
@@ -145,8 +144,6 @@ class Setup(datadir: File,
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
         port = config.getInt("bitcoind.rpcport"))
-      implicit val timeout = Timeout(30 seconds)
-      implicit val formats = org.json4s.DefaultFormats
       val future = for {
         json <- bitcoinClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
         // Make sure wallet support is enabled in bitcoind.
@@ -217,19 +214,19 @@ class Setup(datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
-          block_1 = config.getLong("on-chain-fees.default-feerates.1"),
-          blocks_2 = config.getLong("on-chain-fees.default-feerates.2"),
-          blocks_6 = config.getLong("on-chain-fees.default-feerates.6"),
-          blocks_12 = config.getLong("on-chain-fees.default-feerates.12"),
-          blocks_36 = config.getLong("on-chain-fees.default-feerates.36"),
-          blocks_72 = config.getLong("on-chain-fees.default-feerates.72"),
-          blocks_144 = config.getLong("on-chain-fees.default-feerates.144")
+          block_1 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1"))),
+          blocks_2 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.2"))),
+          blocks_6 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.6"))),
+          blocks_12 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.12"))),
+          blocks_36 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.36"))),
+          blocks_72 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.72"))),
+          blocks_144 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.144")))
         )
         feeratesPerKB.set(confDefaultFeerates)
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
-      minFeeratePerByte = config.getLong("min-feerate")
+      minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("min-feerate")))
       smoothFeerateWindow = config.getInt("smooth-feerate-window")
       readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
@@ -244,7 +241,7 @@ class Setup(datadir: File,
         case Success(feerates) =>
           feeratesPerKB.set(feerates)
           feeratesPerKw.set(FeeratesPerKw(feerates))
-          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
+          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
@@ -275,7 +272,6 @@ class Setup(datadir: File,
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
           val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
-          implicit val timeout = Timeout(30 seconds)
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getReceiveAddress.map(address => logger.info(s"initial wallet address=$address"))

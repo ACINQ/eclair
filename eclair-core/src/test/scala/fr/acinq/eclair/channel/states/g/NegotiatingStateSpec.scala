@@ -24,7 +24,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -54,12 +54,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) {
-        alice.feeEstimator.setFeerate(FeeratesPerKw.single(4319))
-        bob.feeEstimator.setFeerate(FeeratesPerKw.single(4319))
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(4319 sat)))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(4319 sat)))
       }
       else {
-        alice.feeEstimator.setFeerate(FeeratesPerKw.single(10000))
-        bob.feeEstimator.setFeerate(FeeratesPerKw.single(10000))
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
       }
       sender.send(bob, CMD_CLOSE(None))
       bob2alice.expectMsgType[Shutdown]
@@ -70,11 +70,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
       if (test.tags.contains("fee2")) {
-        alice.feeEstimator.setFeerate(FeeratesPerKw.single(4316))
-        bob.feeEstimator.setFeerate(FeeratesPerKw.single(4316))
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(4316 sat)))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(4316 sat)))
       } else {
-        alice.feeEstimator.setFeerate(FeeratesPerKw.single(5000))
-        bob.feeEstimator.setFeerate(FeeratesPerKw.single(5000))
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(5000 sat)))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(5000 sat)))
       }
       alice2bob.forward(bob)
       awaitCond(bob.stateName == NEGOTIATING)

@@ -31,6 +31,7 @@ import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse, SSL}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass}
 import fr.acinq.{bitcoin, eclair}
@@ -159,7 +160,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val btcWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val btcClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     val future = for {
-      FundTransactionResponse(tx1, _, _) <- btcWallet.fundTransaction(tx, lockUnspents = false, 10000)
+      FundTransactionResponse(tx1, _, _) <- btcWallet.fundTransaction(tx, lockUnspents = false, FeeratePerKw(10000 sat))
       SignTransactionResponse(tx2, true) <- btcWallet.signTransaction(tx1)
       txid <- btcClient.publishTransaction(tx2)
     } yield txid
@@ -223,7 +224,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx, 20000))
+    probe.send(wallet, CompleteTransaction(tx, FeeratePerKw(20000 sat)))
     val CompleteTransactionResponse(tx1, _, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -255,7 +256,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     probe.send(bitcoincli, BitcoinReq("getnewaddress"))
     val JString(address) = probe.expectMsgType[JValue]
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx, 20000))
+    probe.send(wallet, CompleteTransaction(tx, FeeratePerKw(20000 sat)))
     val CompleteTransactionResponse(tx1, _, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -282,7 +283,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
       probe.send(bitcoincli, BitcoinReq("getnewaddress"))
       val JString(address) = probe.expectMsgType[JValue]
       val tmp = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
-      probe.send(wallet, CompleteTransaction(tmp, 20000))
+      probe.send(wallet, CompleteTransaction(tmp, FeeratePerKw(20000 sat)))
       val CompleteTransactionResponse(tx, _, None) = probe.expectMsgType[CompleteTransactionResponse]
       probe.send(wallet, CancelTransaction(tx))
       probe.expectMsg(CancelTransactionResponse(tx))
@@ -292,7 +293,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
       probe.send(bitcoincli, BitcoinReq("getnewaddress"))
       val JString(address) = probe.expectMsgType[JValue]
       val tmp = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fr.acinq.eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0L)
-      probe.send(wallet, CompleteTransaction(tmp, 20000))
+      probe.send(wallet, CompleteTransaction(tmp, FeeratePerKw(20000 sat)))
       val CompleteTransactionResponse(tx, _, None) = probe.expectMsgType[CompleteTransactionResponse]
       probe.send(wallet, CancelTransaction(tx))
       probe.expectMsg(CancelTransactionResponse(tx))
@@ -340,7 +341,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
 
     // send all our funds to ourself, so we have only one utxo which is the worse case here
     val GetCurrentReceiveAddressResponse(address) = getCurrentAddress(probe)
-    probe.send(wallet, SendAll(Script.write(eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)), 750))
+    probe.send(wallet, SendAll(Script.write(eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)), FeeratePerKw(750 sat)))
     val SendAllResponse(tx, _) = probe.expectMsgType[SendAllResponse]
     probe.send(wallet, BroadcastTransaction(tx))
     val BroadcastTransactionResponse(`tx`, None) = probe.expectMsgType[BroadcastTransactionResponse]
@@ -357,7 +358,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     // send everything to a multisig 2-of-2, with the smallest possible fee rate
     val priv = eclair.randomKey
     val script = Script.pay2wsh(Scripts.multiSig2of2(priv.publicKey, priv.publicKey))
-    probe.send(wallet, SendAll(Script.write(script), eclair.MinimumFeeratePerKw))
+    probe.send(wallet, SendAll(Script.write(script), FeeratePerKw.MinimumFeeratePerKw))
     val SendAllResponse(tx1, _) = probe.expectMsgType[SendAllResponse]
     probe.send(wallet, BroadcastTransaction(tx1))
     val BroadcastTransactionResponse(`tx1`, None) = probe.expectMsgType[BroadcastTransactionResponse]
@@ -379,7 +380,7 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val sig = Transaction.signInput(tx2, 0, Scripts.multiSig2of2(priv.publicKey, priv.publicKey), bitcoin.SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
     val tx3 = tx2.updateWitness(0, ScriptWitness(Seq(ByteVector.empty, sig, sig, Script.write(Scripts.multiSig2of2(priv.publicKey, priv.publicKey)))))
     Transaction.correctlySpends(tx3, Seq(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    val fee = Transactions.weight2fee(tx3.weight(), 253)
+    val fee = Transactions.weight2fee(FeeratePerKw.MinimumFeeratePerKw, tx3.weight())
     val tx4 = tx3.copy(txOut = tx3.txOut(0).copy(amount = tx1.txOut(0).amount - fee) :: Nil)
     val sig1 = Transaction.signInput(tx4, 0, Scripts.multiSig2of2(priv.publicKey, priv.publicKey), bitcoin.SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
     val tx5 = tx4.updateWitness(0, ScriptWitness(Seq(ByteVector.empty, sig1, sig1, Script.write(Scripts.multiSig2of2(priv.publicKey, priv.publicKey)))))

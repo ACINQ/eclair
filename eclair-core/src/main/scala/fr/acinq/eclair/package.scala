@@ -56,59 +56,6 @@ package object eclair {
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
 
-  /**
-   * Converts fee rate in satoshi-per-bytes to fee rate in satoshi-per-kw
-   *
-   * @param feeratePerByte fee rate in satoshi-per-bytes
-   * @return fee rate in satoshi-per-kw
-   */
-  def feerateByte2Kw(feeratePerByte: Long): Long = feerateKB2Kw(feeratePerByte * 1000)
-
-  /**
-   * Converts fee rate in satoshi-per-kw to fee rate in satoshi-per-byte
-   *
-   * @param feeratePerKw fee rate in satoshi-per-kw
-   * @return fee rate in satoshi-per-byte
-   */
-  def feerateKw2Byte(feeratePerKw: Long): Long = feeratePerKw / 250
-
-  /**
-   * why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
-   *
-   * because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
-   * which is (3 * weight) / 4 ...
-   * so we want :
-   * fee > 1000 * virtual size
-   * feerate-per-kw * weight > 1000 * (3 * weight / 4)
-   * feerate_per-kw > 250 + 3000 / (4 * weight)
-   * with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
-   *
-   * see https://github.com/ElementsProject/lightning/pull/1251
-   **/
-  val MinimumFeeratePerKw = 253
-
-  /**
-   * minimum relay fee rate, in satoshi per kilo
-   * bitcoin core uses virtual size and not the actual size in bytes, see above
-   **/
-  val MinimumRelayFeeRate = 1000
-
-  /**
-   * Converts fee rate in satoshi-per-kilobytes to fee rate in satoshi-per-kw
-   *
-   * @param feeratePerKB fee rate in satoshi-per-kilobytes
-   * @return fee rate in satoshi-per-kw
-   */
-  def feerateKB2Kw(feeratePerKB: Long): Long = Math.max(feeratePerKB / 4, MinimumFeeratePerKw)
-
-  /**
-   * Converts fee rate in satoshi-per-kw to fee rate in satoshi-per-kilobyte
-   *
-   * @param feeratePerKw fee rate in satoshi-per-kw
-   * @return fee rate in satoshi-per-kilobyte
-   */
-  def feerateKw2KB(feeratePerKw: Long): Long = feeratePerKw * 4
-
   def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
   /**
