@@ -61,7 +61,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
 
     handlers.getFundingFeeRatePerKb().onComplete {
       case Success(feeSatKb) =>
-        feerateField.setText(FeeratePerByte(feeSatKb).toString)
+        feerateField.setText(FeeratePerByte(feeSatKb.feerate / 1000).toString)
         feerateError.setText("")
       case Failure(t) =>
         logger.error(s"error when estimating funding fee from GUI: ${t.getLocalizedMessage}")
