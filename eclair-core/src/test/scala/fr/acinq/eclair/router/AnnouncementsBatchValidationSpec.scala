@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.{Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, ShortChannelId, randomKey}
@@ -93,7 +94,7 @@ object AnnouncementsBatchValidationSpec {
     // first we publish the funding tx
     val wallet = new BitcoinCoreWallet(extendedBitcoinClient.rpcClient)
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
-    val fundingTxFuture = wallet.makeFundingTx(fundingPubkeyScript, amount, 10000)
+    val fundingTxFuture = wallet.makeFundingTx(fundingPubkeyScript, amount, FeeratePerKw(10000 sat))
     val res = Await.result(fundingTxFuture, 10 seconds)
     Await.result(extendedBitcoinClient.publishTransaction(res.fundingTx), 10 seconds)
     SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)

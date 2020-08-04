@@ -100,7 +100,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
 
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
-      ("feeratePerKw" | uint32) ::
+      ("feeratePerKw" | feeratePerKw) ::
       ("toLocal" | millisatoshi) ::
       ("toRemote" | millisatoshi)).as[CommitmentSpec].decodeOnly
 

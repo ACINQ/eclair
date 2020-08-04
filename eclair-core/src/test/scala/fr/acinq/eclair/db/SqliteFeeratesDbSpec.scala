@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKB
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -33,13 +33,13 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     val sqlite = TestConstants.sqliteInMemory()
     val db = new SqliteFeeratesDb(sqlite)
     val feerate = FeeratesPerKB(
-      block_1 = 150000,
-      blocks_2 = 120000,
-      blocks_6 = 100000,
-      blocks_12 = 90000,
-      blocks_36 = 70000,
-      blocks_72 = 50000,
-      blocks_144 = 20000)
+      block_1 = FeeratePerKB(150000 sat),
+      blocks_2 = FeeratePerKB(120000 sat),
+      blocks_6 = FeeratePerKB(100000 sat),
+      blocks_12 = FeeratePerKB(90000 sat),
+      blocks_36 = FeeratePerKB(70000 sat),
+      blocks_72 = FeeratePerKB(50000 sat),
+      blocks_144 = FeeratePerKB(20000 sat))
 
     db.addOrUpdateFeerates(feerate)
     assert(db.getFeerates().get == feerate)
