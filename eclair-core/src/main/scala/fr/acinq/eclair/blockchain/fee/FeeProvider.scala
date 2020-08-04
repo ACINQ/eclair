@@ -104,8 +104,8 @@ object FeeratePerKw {
 }
 
 /** Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes). */
-case class FeeratesPerKB(block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB) {
-  require(block_1.isValid && blocks_2.isValid && blocks_6.isValid && blocks_12.isValid && blocks_36.isValid && blocks_72.isValid && blocks_144.isValid, "all feerates must be strictly greater than 0")
+case class FeeratesPerKB(block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB, blocks_1008: FeeratePerKB) {
+  require(block_1.isValid && blocks_2.isValid && blocks_6.isValid && blocks_12.isValid && blocks_36.isValid && blocks_72.isValid && blocks_144.isValid && blocks_1008.isValid, "all feerates must be strictly greater than 0")
 
   def feePerBlock(target: Int): FeeratePerKB = target match {
     case 1 => block_1
@@ -114,13 +114,14 @@ case class FeeratesPerKB(block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6
     case t if t <= 12 => blocks_12
     case t if t <= 36 => blocks_36
     case t if t <= 72 => blocks_72
-    case _ => blocks_144
+    case t if t <= 144 => blocks_144
+    case _ => blocks_1008
   }
 }
 
 // stores fee rate in satoshi/kw (1 kw = 1000 weight units)
-case class FeeratesPerKw(block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6: FeeratePerKw, blocks_12: FeeratePerKw, blocks_36: FeeratePerKw, blocks_72: FeeratePerKw, blocks_144: FeeratePerKw) {
-  require(block_1.isValid && blocks_2.isValid && blocks_6.isValid && blocks_12.isValid && blocks_36.isValid && blocks_72.isValid && blocks_144.isValid, "all feerates must be strictly greater than 0")
+case class FeeratesPerKw(block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6: FeeratePerKw, blocks_12: FeeratePerKw, blocks_36: FeeratePerKw, blocks_72: FeeratePerKw, blocks_144: FeeratePerKw, blocks_1008: FeeratePerKw) {
+  require(block_1.isValid && blocks_2.isValid && blocks_6.isValid && blocks_12.isValid && blocks_36.isValid && blocks_72.isValid && blocks_144.isValid && blocks_1008.isValid, "all feerates must be strictly greater than 0")
 
   def feePerBlock(target: Int): FeeratePerKw = target match {
     case 1 => block_1
@@ -129,7 +130,8 @@ case class FeeratesPerKw(block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6
     case t if t <= 12 => blocks_12
     case t if t <= 36 => blocks_36
     case t if t <= 72 => blocks_72
-    case _ => blocks_144
+    case t if t <= 144 => blocks_144
+    case _ => blocks_1008
   }
 }
 
@@ -141,7 +143,8 @@ object FeeratesPerKw {
     blocks_12 = FeeratePerKw(feerates.blocks_12),
     blocks_36 = FeeratePerKw(feerates.blocks_36),
     blocks_72 = FeeratePerKw(feerates.blocks_72),
-    blocks_144 = FeeratePerKw(feerates.blocks_144))
+    blocks_144 = FeeratePerKw(feerates.blocks_144),
+    blocks_1008 = FeeratePerKw(feerates.blocks_1008))
 
   /** Used in tests */
   def single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(
@@ -151,6 +154,7 @@ object FeeratesPerKw {
     blocks_12 = feeratePerKw,
     blocks_36 = feeratePerKw,
     blocks_72 = feeratePerKw,
-    blocks_144 = feeratePerKw)
+    blocks_144 = feeratePerKw,
+    blocks_1008 = feeratePerKw)
 }
 

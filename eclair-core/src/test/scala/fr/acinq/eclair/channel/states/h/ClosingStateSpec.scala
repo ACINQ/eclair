@@ -113,7 +113,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("start fee negotiation from configured block target") { f =>
     import f._
 
-    alice.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(100 sat), FeeratePerKw(250 sat), FeeratePerKw(350 sat), FeeratePerKw(450 sat), FeeratePerKw(600 sat), FeeratePerKw(800 sat), FeeratePerKw(900 sat)))
+    alice.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(100 sat), FeeratePerKw(250 sat), FeeratePerKw(350 sat), FeeratePerKw(450 sat), FeeratePerKw(600 sat), FeeratePerKw(800 sat), FeeratePerKw(900 sat), FeeratePerKw(1000 sat)))
 
     val sender = TestProbe()
     // alice initiates a closing

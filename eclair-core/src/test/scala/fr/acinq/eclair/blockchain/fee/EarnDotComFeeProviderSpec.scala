@@ -65,7 +65,8 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
       blocks_12 = FeeratePerKB(140 * 1000 sat),
       blocks_36 = FeeratePerKB(60 * 1000 sat),
       blocks_72 = FeeratePerKB(40 * 1000 sat),
-      blocks_144 = FeeratePerKB(10 * 1000 sat))
+      blocks_144 = FeeratePerKB(10 * 1000 sat),
+      blocks_1008 = FeeratePerKB(10 * 1000 sat))
     assert(feerates === ref)
   }
 
@@ -88,4 +89,5 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
       Await.result(provider.getFeerates, timeout.duration)
     }
   }
+
 }
