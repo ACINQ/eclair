@@ -21,6 +21,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{anchor, htlcOffered, htlcReceived, toLocalDelayed}
@@ -52,7 +53,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   val commitInput = Funding.makeFundingInputInfo(randomBytes32, 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
   val toLocalDelay = CltvExpiryDelta(144)
   val localDustLimit = Satoshi(546)
-  val feeratePerKw = 22000
+  val feeratePerKw = FeeratePerKw(22000 sat)
 
   test("encode/decode sequence and locktime (one example)") {
     val txnumber = 0x11F71FB268DL
@@ -82,7 +83,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 7000000 msat, ByteVector32.Zeroes, CltvExpiry(550), TestConstants.emptyOnionPacket)),
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket))
     )
-    val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocal = 0 msat, toRemote = 0 msat)
+    val spec = CommitmentSpec(htlcs, feeratePerKw = FeeratePerKw(5000 sat), toLocal = 0 msat, toRemote = 0 msat)
     val fee = Transactions.commitTxFee(546 sat, spec, DefaultCommitmentFormat)
     assert(fee === 5340.sat)
   }
@@ -91,7 +92,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey))
     val localDustLimit = 546 sat
     val toLocalDelay = CltvExpiryDelta(144)
-    val feeratePerKw = fr.acinq.eclair.MinimumFeeratePerKw
+    val feeratePerKw = FeeratePerKw.MinimumFeeratePerKw
     val blockHeight = 400000
 
     {
@@ -753,7 +754,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           case "received" => htlcIn(Satoshi(amount.toLong))
         }
       }).toSet
-      TestVector(name, CommitmentSpec(htlcs, feerate_per_kw.toLong, MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
+      TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(feerate_per_kw.toLong.sat), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
     }).toSeq
 
     assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f") // simple non-reg to make sure we are not missing tests

@@ -24,13 +24,13 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.Origin
+import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, TestKitBaseClass, randomBytes32}
@@ -38,7 +38,6 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -114,7 +113,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("start fee negotiation from configured block target") { f =>
     import f._
 
-    alice.feeEstimator.setFeerate(FeeratesPerKw(100, 250, 350, 450, 600, 800, 900))
+    alice.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(100 sat), FeeratePerKw(250 sat), FeeratePerKw(350 sat), FeeratePerKw(450 sat), FeeratePerKw(600 sat), FeeratePerKw(800 sat), FeeratePerKw(900 sat), FeeratePerKw(1000 sat)))
 
     val sender = TestProbe()
     // alice initiates a closing
@@ -127,7 +126,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceData = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
     val mutualClosingFeeRate = alice.feeEstimator.getFeeratePerKw(alice.feeTargets.mutualCloseBlockTarget)
     val expectedFirstProposedFee = Closing.firstClosingFee(aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey, mutualClosingFeeRate)(akka.event.NoLogging)
-    assert(alice.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == 250)
+    assert(alice.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == FeeratePerKw(250 sat))
     assert(closing.feeSatoshis == expectedFirstProposedFee)
   }
 
@@ -302,7 +301,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.forward(alice)
     // agreeing on a closing fee
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(100))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(100 sat)))
     alice2bob.forward(bob)
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
     bob2alice.forward(alice)

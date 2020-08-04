@@ -28,7 +28,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
@@ -373,21 +373,21 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     val sender = TestProbe()
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(20000))
-    sender.send(bob, CurrentFeerates(FeeratesPerKw.single(20000)))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(20000 sat)))
+    sender.send(bob, CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(20000 sat))))
     bob2alice.expectNoMsg(100 millis) // we don't close because the commitment doesn't contain any HTLC
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val upstream = Upstream.Local(UUID.randomUUID())
     val add = CMD_ADD_HTLC(500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream)
     sender.send(bob, add)
-    val error = FeerateTooDifferent(channelId(bob), 20000, 10000)
+    val error = FeerateTooDifferent(channelId(bob), FeeratePerKw(20000 sat), FeeratePerKw(10000 sat))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(upstream.id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
     bob2alice.expectNoMsg(100 millis) // we don't close the channel, we can simply avoid using it while we disagree on feerate
 
     // we now agree on feerate so we can send HTLCs
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(11000))
-    sender.send(bob, CurrentFeerates(FeeratesPerKw.single(11000)))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
+    sender.send(bob, CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(11000 sat))))
     bob2alice.expectNoMsg(100 millis)
     sender.send(bob, add)
     sender.expectMsg(ChannelCommandResponse.Ok)
@@ -762,7 +762,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
-    sender.send(alice, CMD_UPDATE_FEE(654564))
+    sender.send(alice, CMD_UPDATE_FEE(FeeratePerKw(654564 sat)))
     sender.expectMsg(ChannelCommandResponse.Ok)
     alice2bob.expectMsgType[UpdateFee]
     sender.send(alice, CMD_SIGN)
@@ -854,14 +854,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, commit = false))
+    sender.send(alice, CMD_UPDATE_FEE(TestConstants.feeratePerKw + FeeratePerKw(1000 sat), commit = false))
     sender.expectMsg(ChannelCommandResponse.Ok)
     sender.send(alice, CMD_SIGN)
     sender.expectMsg(ChannelCommandResponse.Ok)
 
     // actual test begins (note that channel sends a CMD_SIGN to itself when it receives RevokeAndAck and there are changes)
     val updateFee = alice2bob.expectMsgType[UpdateFee]
-    assert(updateFee.feeratePerKw == TestConstants.feeratePerKw + 1000)
+    assert(updateFee.feeratePerKw === TestConstants.feeratePerKw + FeeratePerKw(1000 sat))
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
@@ -1605,7 +1605,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(alice, CMD_UPDATE_FEE(20000))
+    sender.send(alice, CMD_UPDATE_FEE(FeeratePerKw(20000 sat)))
     sender.expectMsg(ChannelCommandResponse.Ok)
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
@@ -1625,10 +1625,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(alice, CMD_UPDATE_FEE(20000))
+    sender.send(alice, CMD_UPDATE_FEE(FeeratePerKw(20000 sat)))
     sender.expectMsg(ChannelCommandResponse.Ok)
     val fee1 = alice2bob.expectMsgType[UpdateFee]
-    sender.send(alice, CMD_UPDATE_FEE(30000))
+    sender.send(alice, CMD_UPDATE_FEE(FeeratePerKw(30000 sat)))
     sender.expectMsg(ChannelCommandResponse.Ok)
     val fee2 = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
@@ -1640,7 +1640,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_UPDATE_FEE(20000))
+    sender.send(bob, CMD_UPDATE_FEE(FeeratePerKw(20000 sat)))
     sender.expectMsg(Failure(FundeeCannotSendUpdateFee(channelId(bob))))
     assert(initialState == bob.stateData)
   }
@@ -1648,7 +1648,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee = UpdateFee(ByteVector32.Zeroes, 12000)
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
   }
@@ -1656,7 +1656,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (anchor outputs)", Tag("anchor_outputs")) { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee = UpdateFee(ByteVector32.Zeroes, 8000)
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(8000 sat))
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
   }
@@ -1664,9 +1664,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (two in a row)") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
+    val fee1 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee1
-    val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
+    val fee2 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(14000 sat))
     bob ! fee2
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)))
   }
@@ -1675,7 +1675,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    sender.send(alice, UpdateFee(ByteVector32.Zeroes, 12000))
+    sender.send(alice, UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat)))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
@@ -1689,7 +1689,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    val fee = UpdateFee(ByteVector32.Zeroes, 100000000)
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
@@ -1708,7 +1708,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     // This feerate is just above the threshold: (800000 (alice balance) - 20000 (reserve) - 660 (anchors)) / 1124 (commit tx weight) = 693363
-    val fee = UpdateFee(ByteVector32.Zeroes, 693364)
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(693364 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     sender.send(bob, fee)
@@ -1725,12 +1725,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
 
-    bob.feeEstimator.setFeerate(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
+    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat), FeeratePerKw(6000 sat), FeeratePerKw(12000 sat), FeeratePerKw(36000 sat), FeeratePerKw(72000 sat), FeeratePerKw(140000 sat), FeeratePerKw(160000 sat)))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     val localFeerate = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
-    assert(localFeerate === 2000)
-    val remoteFeerate = 4000
+    assert(localFeerate === FeeratePerKw(2000 sat))
+    val remoteFeerate = FeeratePerKw(4000 sat)
     sender.send(bob, UpdateFee(ByteVector32.Zeroes, remoteFeerate))
     bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
 
@@ -1753,7 +1753,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val expectedFeeratePerKw = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
     assert(bobCommitments.localCommit.spec.feeratePerKw == expectedFeeratePerKw)
-    sender.send(bob, UpdateFee(ByteVector32.Zeroes, 252))
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, FeeratePerKw(252 sat)))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
     awaitCond(bob.stateName == CLOSING)
@@ -2152,7 +2152,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val event = CurrentFeerates(FeeratesPerKw(100, 200, 600, 1200, 3600, 7200, 14400))
+    val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
     sender.send(alice, event)
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(Alice.nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)))
   }
@@ -2160,7 +2160,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
     val sender = TestProbe()
-    val event = CurrentFeerates(FeeratesPerKw.single(10010))
+    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
     sender.send(alice, event)
     alice2bob.expectNoMsg(500 millis)
   }
@@ -2168,7 +2168,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
     val sender = TestProbe()
-    val event = CurrentFeerates(FeeratesPerKw.single(11000))
+    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
     sender.send(bob, event)
     bob2alice.expectNoMsg(500 millis)
   }
@@ -2180,8 +2180,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val sender = TestProbe()
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(14000))
-    val event = CurrentFeerates(FeeratesPerKw.single(14000))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
+    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
     sender.send(bob, event)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap] // commit tx
@@ -2194,8 +2194,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     val sender = TestProbe()
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(1000))
-    val event = CurrentFeerates(FeeratesPerKw.single(1000))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(1000 sat)))
+    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(1000 sat)))
     sender.send(bob, event)
     bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
 
