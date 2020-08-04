@@ -72,23 +72,28 @@ case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
 
 object FeeratePerKw {
   /**
-   * Minimum relay fee rate.
+   * Minimum relay fee rate in satoshi per kilo-vbyte (taken from Bitcoin Core).
    * Note that Bitcoin Core uses a *virtual size* and not the actual size in bytes: see [[MinimumFeeratePerKw]] below.
    */
   val MinimumRelayFeeRate = 1000
 
   /**
-   * why 253 and not 250 since feerate-per-kw is feerate-per-kb / 250 and the minimum relay fee rate is 1000 satoshi/Kb ?
+   * Why 253 and not 250 since feerate-per-kw should be feerate-per-kvb / 4 and the minimum relay fee rate is
+   * 1000 satoshi/kvb (see [[MinimumRelayFeeRate]])?
    *
-   * because bitcoin core uses neither the actual tx size in bytes or the tx weight to check fees, but a "virtual size"
-   * which is (3 * weight) / 4 ...
-   * so we want :
+   * Because Bitcoin Core uses neither the actual tx size in bytes nor the tx weight to check fees, but a "virtual size"
+   * which is (3 + weight) / 4.
+   * So we want:
    * fee > 1000 * virtual size
-   * feerate-per-kw * weight > 1000 * (3 * weight / 4)
-   * feerate_per-kw > 250 + 3000 / (4 * weight)
-   * with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
+   * feerate-per-kw * weight > 1000 * (3 + weight / 4)
+   * feerate-per-kw > 250 + 3000 / (4 * weight)
    *
-   * see https://github.com/ElementsProject/lightning/pull/1251
+   * With a conservative minimum weight of 400, assuming the result of the division may be rounded up and using strict
+   * inequality to err on the side of safety, we get:
+   * feerate-per-kw > 252
+   * hence feerate-per-kw >= 253
+   *
+   * See also https://github.com/ElementsProject/lightning/pull/1251
    */
   val MinimumFeeratePerKw = FeeratePerKw(253 sat)
 
