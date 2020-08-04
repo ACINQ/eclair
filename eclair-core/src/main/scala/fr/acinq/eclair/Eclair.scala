@@ -407,7 +407,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def signMessage(base64Message: ByteVector, prefix: ByteVector): SignedMessage = {
     val hash256Message = Crypto.hash256(prefix ++ base64Message)
     val signature = appKit.nodeParams.keyManager.signDigest(hash256Message)
-    SignedMessage(appKit.nodeParams.keyManager.nodeId, base64Message.toBase64, signature)
+    SignedMessage(appKit.nodeParams.nodeId, base64Message.toBase64, signature)
   }
 
   override def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector): VerifiedMessage = {
