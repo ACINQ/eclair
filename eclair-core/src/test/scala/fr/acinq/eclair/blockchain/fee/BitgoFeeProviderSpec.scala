@@ -66,7 +66,8 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
       blocks_12 = FeeratePerKB(96254 sat),
       blocks_36 = FeeratePerKB(71098 sat),
       blocks_72 = FeeratePerKB(68182 sat),
-      blocks_144 = FeeratePerKB(16577 sat))
+      blocks_144 = FeeratePerKB(16577 sat),
+      blocks_1008 = FeeratePerKB(5070 sat))
     assert(feerates === ref)
   }
 
@@ -92,4 +93,5 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     }
     assert(e.getMessage.contains("timed out") || e.getMessage.contains("timeout"))
   }
+
 }

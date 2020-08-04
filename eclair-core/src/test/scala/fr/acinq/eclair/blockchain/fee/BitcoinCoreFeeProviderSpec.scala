@@ -35,7 +35,6 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
 import scala.util.Random
 
-
 class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   val commonConfig = ConfigFactory.parseMap(Map(
@@ -89,7 +88,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       port = config.getInt("bitcoind.rpcport"))
 
     // the regtest client doesn't have enough data to estimate fees yet, so it's suppose to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat)))
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
@@ -101,7 +100,8 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       12 -> FeeratePerKB(1200 sat),
       36 -> FeeratePerKB(1100 sat),
       72 -> FeeratePerKB(1000 sat),
-      144 -> FeeratePerKB(900 sat)
+      144 -> FeeratePerKB(900 sat),
+      1008 -> FeeratePerKB(400 sat)
     )
 
     val ref = FeeratesPerKB(
@@ -111,7 +111,8 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       blocks_12 = fees(12),
       blocks_36 = fees(36),
       blocks_72 = fees(72),
-      blocks_144 = fees(144))
+      blocks_144 = fees(144),
+      blocks_1008 = fees(1008))
 
     val mockBitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
@@ -127,7 +128,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       }
     }
 
-    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat)))
+    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }

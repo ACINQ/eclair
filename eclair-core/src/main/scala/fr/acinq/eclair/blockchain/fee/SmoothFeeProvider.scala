@@ -49,6 +49,7 @@ object SmoothFeeProvider {
       blocks_12 = avg(rates.map(_.blocks_12)),
       blocks_36 = avg(rates.map(_.blocks_36)),
       blocks_72 = avg(rates.map(_.blocks_72)),
-      blocks_144 = avg(rates.map(_.blocks_144)))
+      blocks_144 = avg(rates.map(_.blocks_144)),
+      blocks_1008 = avg(rates.map(_.blocks_1008)))
 
 }

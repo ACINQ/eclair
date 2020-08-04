@@ -80,6 +80,7 @@ object EarnDotComFeeProvider {
       blocks_12 = extractFeerate(feeRanges, 12),
       blocks_36 = extractFeerate(feeRanges, 36),
       blocks_72 = extractFeerate(feeRanges, 72),
-      blocks_144 = extractFeerate(feeRanges, 144))
+      blocks_144 = extractFeerate(feeRanges, 144),
+      blocks_1008 = extractFeerate(feeRanges, 1008))
 
 }
