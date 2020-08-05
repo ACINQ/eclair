@@ -32,7 +32,7 @@ import akka.stream.{Materializer, OverflowStrategy}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
@@ -310,10 +310,20 @@ trait Service extends ExtraDirectives with Logging {
                           formFields("count".as[Int].?, "skip".as[Int].?) { (count_opt, skip_opt) =>
                             complete(eclairApi.onChainTransactions(count_opt.getOrElse(10), skip_opt.getOrElse(0)))
                           }
+                        } ~
+                        path("signmessage") {
+                          formFields("msg".as[String]) { message =>
+                            complete(eclairApi.signMessage(message))
+                          }
+                        } ~
+                        path("verifymessage") {
+                          formFields("msg".as[String], "sig".as[ByteVector](binaryDataUnmarshaller)) { (message, signature) =>
+                            complete(eclairApi.verifyMessage(message, signature))
+                          }
+                        } ~ get {
+                        path("ws") {
+                          handleWebSocketMessages(makeSocketHandler)
                         }
-                    } ~ get {
-                      path("ws") {
-                        handleWebSocketMessages(makeSocketHandler)
                       }
                     }
                   }
