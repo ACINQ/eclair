@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
 import org.scalatest.funsuite.AnyFunSuite
@@ -140,5 +140,22 @@ class LocalKeyManagerSpec extends AnyFunSuite {
     assert(keyManager.delayedPaymentPoint(channelKeyPath).publicKey == PrivateKey(hex"6bc30b0852fbc653451662a1ff6ad530f311d58b5e5661b541eb57dba8206937").publicKey)
     assert(keyManager.htlcPoint(channelKeyPath).publicKey == PrivateKey(hex"b1be27b5232e3bc5d6a261949b4ee68d96fa61f481998d36342e2ad99444cf8a").publicKey)
     assert(keyManager.commitmentSecret(channelKeyPath, 0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("eeb3bad6808e8bb5f1774581ccf64aa265fef38eca80a1463d6310bb801b3ba7"), 0xFFFFFFFFFFFFL))
+  }
+
+  test("generate a signature from a digest") {
+    val seed = ByteVector.fromValidHex("deadbeef")
+    val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+
+    val privkey = PrivateKey(hex"8d3f3c8ef68a047676329ad867ab3e1b75885989a1ecd0bae3cc6ce3064a00d4")
+    val expectedSignature = ByteVector64(hex"8f693e4db0f0e58ef02813d2414296b4d535f58343c136869e03db2a8a794a29238a580e4a3fcf0bbb0b7cde5fe5e53482056ed8cb201846af88bc897ba85e32")
+    val expectedRecoveryId = 1
+    val expectedPublicKey = PublicKey(hex"02ec8f6801d53fba134d032af7bc33ce1fd3d6373743f1317272d6a7d05ee9b30d")
+    val digest = ByteVector32(hex"d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9") // sha256(sha256("hello"))
+
+    assert(privkey.publicKey === expectedPublicKey)
+
+    val (signature, recid) = testKeyManager.signDigest(digest, privkey)
+    assert(signature === expectedSignature)
+    assert(recid === expectedRecoveryId)
   }
 }
