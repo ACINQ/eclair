@@ -416,6 +416,9 @@ class EclairImpl(appKit: Kit) extends Eclair {
     val signature = ByteVector64(recoverableSignature.tail)
     val recoveryId = recoverableSignature.head.toInt - 31
     val pubKeyFromSignature = Crypto.recoverPublicKey(signature, signedBytes, recoveryId)
+    if (!pubKeyFromSignature.isValid)
+      VerifiedMessage(false, None)
+
     if (Crypto.verifySignature(signedBytes, signature, pubKeyFromSignature))
       VerifiedMessage(true, Some(pubKeyFromSignature))
     else
