@@ -61,8 +61,6 @@ object FormParamExtractors {
 
   implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }
 
-  implicit val signatureUnmarshaller: Unmarshaller[String, ByteVector64] = Unmarshaller.strict { bin => ByteVector64.fromValidHex(bin) }
-
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>
     Try(serialization.read[List[String]](str).map(unmarshal))
       .recoverWith(_ => Try(str.split(",").toList.map(unmarshal)))

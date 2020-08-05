@@ -51,7 +51,7 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 
 case class TimestampQueryFilters(from: Long, to: Long)
 
-case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector64)
+case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
 
 case class VerifiedMessage(valid: Boolean, signerNodeId: Option[PublicKey])
 
@@ -141,9 +141,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
-  def signMessage(base64Message: ByteVector, prefix: ByteVector = messagePrefix): SignedMessage
+  def signMessage(message: String, prefix: ByteVector = messagePrefix): SignedMessage
 
-  def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector = messagePrefix): VerifiedMessage
+  def verifyMessage(message: String, recoverableSignature: ByteVector, prefix: ByteVector = messagePrefix): VerifiedMessage
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -404,19 +404,19 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def signMessage(base64Message: ByteVector, prefix: ByteVector): SignedMessage = {
-    val hash256Message = Crypto.hash256(prefix ++ base64Message)
-    val signature = appKit.nodeParams.keyManager.signDigest(hash256Message)
-    SignedMessage(appKit.nodeParams.nodeId, base64Message.toBase64, signature)
+  override def signMessage(message: String, prefix: ByteVector): SignedMessage = {
+    val hash256Message = Crypto.hash256(prefix ++ ByteVector(message.getBytes))
+    val (signature, recoveryId) = appKit.nodeParams.keyManager.signDigest(hash256Message)
+    SignedMessage(appKit.nodeParams.nodeId, message, (recoveryId + 31).toByte +: signature)
   }
 
-  override def verifyMessage(base64Message: ByteVector, signature: ByteVector64, prefix: ByteVector): VerifiedMessage = {
-    val hash256Message = Crypto.hash256(prefix ++ base64Message)
-    val (pubKey1, pubKey2) = Crypto.recoverPublicKey(signature, hash256Message)
-    if (appKit.nodeParams.db.network.getNode(pubKey1).isDefined)
-      VerifiedMessage(true, Some(pubKey1))
-    else if (appKit.nodeParams.db.network.getNode(pubKey2).isDefined)
-      VerifiedMessage(true, Some(pubKey2))
+  override def verifyMessage(message: String, recoverableSignature: ByteVector, prefix: ByteVector): VerifiedMessage = {
+    val hash256Message = Crypto.hash256(prefix ++ ByteVector(message.getBytes))
+    val signature = ByteVector64(recoverableSignature.tail)
+    val recoveryId = recoverableSignature.head.toInt - 31
+    val pubKeyFromSignature = Crypto.recoverPublicKey(signature, hash256Message, recoveryId)
+    if (Crypto.verifySignature(hash256Message, signature, pubKeyFromSignature))
+      VerifiedMessage(true, Some(pubKeyFromSignature))
     else
       VerifiedMessage(false, None)
   }

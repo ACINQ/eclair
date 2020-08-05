@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
@@ -430,96 +430,66 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(expectedPaymentPreimage === ByteVector32(keySendTlv.value))
   }
 
-  test("sign a base64-encoded message with the node's private key") { f =>
+  test("sign an arbitrary message with the node's private key") { f =>
     import f._
 
     val seed = ByteVector.fromValidHex("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
     val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    // Node PrivateKey: 8e07f14767110b9fc5233aa6954a6e72a4a7bc7acdf0bedf26a292b99299cea0
+
+    val pubkey = PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee")
+    val expectedSignature = ByteVector64(hex"c8fcba9f0135e27ad9a587fafb1dbfa4e02b0118b550c7cec3db46e06fd795977a1273d15177f36ace51c3e1fa81ef87345e6077569df3d8037fdc2c0bec9186")
+    val expectedRecoveryId = 0
+    val expectedDigest = ByteVector32(hex"cbedbc1542fb139e2e10954f1ff9f82e8a1031cc63260636bbc45a90114552ea")
 
     val kitWithTestKeyManager = kit.copy(nodeParams = kit.nodeParams.copy(keyManager = testKeyManager))
     val eclair = new EclairImpl(kitWithTestKeyManager)
 
-    val msg = ByteVector("aGVsbG8gd29ybGQ=".getBytes()) // echo -n 'hello world' | base64
-    val prefix = ByteVector("Lightning Signed Message:".getBytes())
-    val dhash256 = Crypto.hash256(prefix ++ msg)
-    val expectedSignature = Crypto.sign(dhash256, testKeyManager.nodeKey.privateKey)
+    val msg = "hello, world"
+    val prefix = "Lightning Signed Message:"
+    val dhash256 = Crypto.hash256(ByteVector((prefix ++ msg).getBytes))
+
+    assert(dhash256 === expectedDigest)
 
     val signedMessage: SignedMessage = eclair.signMessage(msg)
-    assert(signedMessage.nodeId === testKeyManager.nodeId)
-    assert(signedMessage.message === msg.toBase64)
-    assert(signedMessage.signature === expectedSignature)
-    assert(Crypto.verifySignature(dhash256, signedMessage.signature, testKeyManager.nodeKey.publicKey))
+    assert(signedMessage.nodeId === pubkey)
+    assert(signedMessage.message === msg)
+    assert(ByteVector64(signedMessage.signature.tail) === expectedSignature)
+    assert(signedMessage.signature.head === expectedRecoveryId)
+    assert(Crypto.verifySignature(dhash256, ByteVector64(signedMessage.signature.tail), testKeyManager.nodeId))
   }
 
-  test("verify a valid signature created by an active node") { f =>
+  test("verify a valid signature") { f =>
     import f._
 
-    val fakeNodePrivateKey = randomKey
-    val fakeNodePublicKey = fakeNodePrivateKey.publicKey
+    val seed = ByteVector.fromValidHex("e58cd727c1a759345014206b0133ce4585808c5411c11c4732c26c104f8ea985ef")
+    val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    // Node PrivateKey: 254ad8bb0160109e3a270e28a1484a8786e95303a51c259b245323108f78a8c4
 
-    val msg = ByteVector("aGVsbG8gd29ybGQ=".getBytes()) // echo -n 'hello world' | base64
-    val prefix = ByteVector("Lightning Signed Message:".getBytes())
-    val dhash256 = Crypto.hash256(prefix ++ msg)
-    val signature = Crypto.sign(dhash256, fakeNodePrivateKey)
+    val expectedNodeId = PublicKey(hex"03a388397c88aa96df64d6a8ab6daa3101c12fdba95820714a67914191e1d4cd8f")
 
-    forAllDbs { dbs =>
-      val mockNetworkDB = dbs.network()
-      val mockDB = mock[Databases]
-      mockDB.network returns mockNetworkDB
+    val kitWithTestKeyManager = kit.copy(nodeParams = kit.nodeParams.copy(keyManager = testKeyManager))
+    val eclair = new EclairImpl(kitWithTestKeyManager)
 
-      val mockNodeParams = kit.nodeParams.copy(db = mockDB)
-      val eclair = new EclairImpl(kit.copy(nodeParams = mockNodeParams))
+    val msg = "super secret message"
+    // sha256(sha256("Lightning Signed Message:super secret message"))
+    val signature = 32.toByte +: ByteVector64(hex"97918faa65e1a49e1b0661299a4755a328d412dffe8852bc95420fb323639c840fc1c85a9ba7b909908e5654a5c6b19074b569ff3afbe284a7c208b2cdd0197e")
 
-      val fakeNode1 = Announcements.makeNodeAnnouncement(fakeNodePrivateKey, "alice-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val fakeNode2 = Announcements.makeNodeAnnouncement(randomKey, "bob-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val fakeNode3 = Announcements.makeNodeAnnouncement(randomKey, "carol-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val fakeNode4 = Announcements.makeNodeAnnouncement(randomKey, "dave-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      mockNodeParams.db.network.addNode(fakeNode1)
-      mockNodeParams.db.network.addNode(fakeNode2)
-      mockNodeParams.db.network.addNode(fakeNode3)
-      mockNodeParams.db.network.addNode(fakeNode4)
-
-      assert(mockNodeParams.db.network.getNode(fakeNodePublicKey).isDefined)
-
-      val verifiedMessage = eclair.verifyMessage(msg, signature)
-      assert(verifiedMessage.valid)
-      assert(verifiedMessage.signerNodeId.get === fakeNodePublicKey)
-    }
+    val verifiedMessage = eclair.verifyMessage(msg, signature)
+    assert(verifiedMessage.valid)
+    assert(verifiedMessage.signerNodeId === Some(expectedNodeId))
   }
 
-  test("verify an invalid signature created by an active node") { f =>
+  test("verify an invalid signature for the given message") { f =>
     import f._
 
-    val fakeNodePrivateKey = randomKey
-    val fakeNodePublicKey = fakeNodePrivateKey.publicKey
+    val eclair = new EclairImpl(kit)
 
-    val msg = ByteVector("aGVsbG8gd29ybGQ=".getBytes()) // echo -n 'hello world' | base64
-    val prefix = ByteVector("Lightning Signed Message:".getBytes())
-    val dhash256 = Crypto.hash256(prefix ++ msg)
-    val signature = Crypto.sign(dhash256, fakeNodePrivateKey)
+    val msg = "pas le bon message"
+    val signature = 32.toByte +: ByteVector64(hex"199cea5405210312f144e967803c5b09b1fece2ff0f1e905b605b5e8df9e7cf60ed58effddd3ac6fff7368e277fe02a7dd74c2e39d3bbdf4855c4ede8ffcb4ba")
 
-    forAllDbs { dbs =>
-      val mockNetworkDB = dbs.network()
-      val mockDB = mock[Databases]
-      mockDB.network returns mockNetworkDB
-
-      val mockNodeParams = kit.nodeParams.copy(db = mockDB)
-      val eclair = new EclairImpl(kit.copy(nodeParams = mockNodeParams))
-
-      val fakeNode1 = Announcements.makeNodeAnnouncement(randomKey, "alice-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val fakeNode2 = Announcements.makeNodeAnnouncement(randomKey, "bob-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val fakeNode3 = Announcements.makeNodeAnnouncement(randomKey, "carol-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val fakeNode4 = Announcements.makeNodeAnnouncement(randomKey, "dave-node", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      mockNodeParams.db.network.addNode(fakeNode1)
-      mockNodeParams.db.network.addNode(fakeNode2)
-      mockNodeParams.db.network.addNode(fakeNode3)
-      mockNodeParams.db.network.addNode(fakeNode4)
-
-      assert(mockNodeParams.db.network.getNode(fakeNodePublicKey).isEmpty)
-
-      val verifiedMessage = eclair.verifyMessage(msg, signature)
-      assert(!verifiedMessage.valid)
-      assert(verifiedMessage.signerNodeId === None)
-    }
+    val verifiedMessage = eclair.verifyMessage(msg, signature)
+    assert(!verifiedMessage.valid)
+    assert(verifiedMessage.signerNodeId === None)
   }
 }
