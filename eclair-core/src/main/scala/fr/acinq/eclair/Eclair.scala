@@ -68,14 +68,15 @@ object TimestampQueryFilters {
   }
 }
 
+object SignedMessage {
+  def signedBytes(message: String): ByteVector32 = Crypto.hash256(ByteVector(("Lightning Signed Message:" ++ message).getBytes))
+}
+
 object ApiTypes {
   type ChannelIdentifier = Either[ByteVector32, ShortChannelId]
 }
 
 trait Eclair {
-
-  // String prefixed when signing arbitrary data to ensure we don't sign sensitive material
-  private val messagePrefix = ByteVector("Lightning Signed Message:".getBytes)
 
   def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String]
 
@@ -141,9 +142,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
-  def signMessage(message: String, prefix: ByteVector = messagePrefix): SignedMessage
+  def signMessage(message: String): SignedMessage
 
-  def verifyMessage(message: String, recoverableSignature: ByteVector, prefix: ByteVector = messagePrefix): VerifiedMessage
+  def verifyMessage(message: String, recoverableSignature: ByteVector): VerifiedMessage
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -404,18 +405,18 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def signMessage(message: String, prefix: ByteVector): SignedMessage = {
-    val hash256Message = Crypto.hash256(prefix ++ ByteVector(message.getBytes))
-    val (signature, recoveryId) = appKit.nodeParams.keyManager.signDigest(hash256Message)
+  override def signMessage(message: String): SignedMessage = {
+    val bytesToSign = SignedMessage.signedBytes(message)
+    val (signature, recoveryId) = appKit.nodeParams.keyManager.signDigest(bytesToSign)
     SignedMessage(appKit.nodeParams.nodeId, message, (recoveryId + 31).toByte +: signature)
   }
 
-  override def verifyMessage(message: String, recoverableSignature: ByteVector, prefix: ByteVector): VerifiedMessage = {
-    val hash256Message = Crypto.hash256(prefix ++ ByteVector(message.getBytes))
+  override def verifyMessage(message: String, recoverableSignature: ByteVector): VerifiedMessage = {
+    val signedBytes = SignedMessage.signedBytes(message)
     val signature = ByteVector64(recoverableSignature.tail)
     val recoveryId = recoverableSignature.head.toInt - 31
-    val pubKeyFromSignature = Crypto.recoverPublicKey(signature, hash256Message, recoveryId)
-    if (Crypto.verifySignature(hash256Message, signature, pubKeyFromSignature))
+    val pubKeyFromSignature = Crypto.recoverPublicKey(signature, signedBytes, recoveryId)
+    if (Crypto.verifySignature(signedBytes, signature, pubKeyFromSignature))
       VerifiedMessage(true, Some(pubKeyFromSignature))
     else
       VerifiedMessage(false, None)
