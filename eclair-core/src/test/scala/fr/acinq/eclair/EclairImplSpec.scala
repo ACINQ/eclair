@@ -429,4 +429,57 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(expectedPaymentPreimage === ByteVector32(keySendTlv.value))
   }
 
+  test("sign & verify an arbitrary message with the node's private key") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val msg = "hello, world"
+
+    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
+    assert(signedMessage.message === msg)
+
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, signedMessage.signature)
+    assert(verifiedMessage.valid)
+    assert(verifiedMessage.signerNodeId === Some(kit.nodeParams.nodeId))
+
+    val prefix = "Lightning Signed Message:"
+    val dhash256 = Crypto.hash256(ByteVector((prefix ++ msg).getBytes))
+    val expectedDigest = ByteVector32(hex"cbedbc1542fb139e2e10954f1ff9f82e8a1031cc63260636bbc45a90114552ea")
+    assert(dhash256 === expectedDigest)
+    assert(Crypto.verifySignature(dhash256, ByteVector64(signedMessage.signature.tail), kit.nodeParams.nodeId))
+  }
+
+  test("verify an invalid signature for the given message") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val msg = "hello, world"
+    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
+    assert(signedMessage.message === msg)
+
+    val wrongMsg = "world, hello"
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
+    assert(verifiedMessage.valid)
+    assert(verifiedMessage.signerNodeId !== Some(kit.nodeParams.nodeId))
+  }
+
+  test("ensure that an invalid recoveryId cause the signature verification to fail") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val msg = "hello, world"
+    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
+    assert(signedMessage.message === msg)
+
+    val invalidSignature = (if (signedMessage.signature.head.toInt == 31) 32 else 31).toByte +: signedMessage.signature.tail
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, invalidSignature)
+    assert(!verifiedMessage.valid)
+    assert(verifiedMessage.signerNodeId === None)
+  }
 }

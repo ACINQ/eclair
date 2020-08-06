@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
 import org.scalatest.funsuite.AnyFunSuite
@@ -69,7 +69,7 @@ class LocalKeyManagerSpec extends AnyFunSuite {
   }
 
   def makefundingKeyPath(entropy: ByteVector, isFunder: Boolean) = {
-    val items = for(i <- 0 to 7) yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
+    val items = for (i <- 0 to 7) yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
     val last = DeterministicWallet.hardened(if (isFunder) 1L else 0L)
     KeyPath(items :+ last)
   }
@@ -140,5 +140,16 @@ class LocalKeyManagerSpec extends AnyFunSuite {
     assert(keyManager.delayedPaymentPoint(channelKeyPath).publicKey == PrivateKey(hex"6bc30b0852fbc653451662a1ff6ad530f311d58b5e5661b541eb57dba8206937").publicKey)
     assert(keyManager.htlcPoint(channelKeyPath).publicKey == PrivateKey(hex"b1be27b5232e3bc5d6a261949b4ee68d96fa61f481998d36342e2ad99444cf8a").publicKey)
     assert(keyManager.commitmentSecret(channelKeyPath, 0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("eeb3bad6808e8bb5f1774581ccf64aa265fef38eca80a1463d6310bb801b3ba7"), 0xFFFFFFFFFFFFL))
+  }
+
+  test("generate a signature from a digest") {
+    val seed = hex"deadbeef"
+    val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val digest = ByteVector32(hex"d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9") // sha256(sha256("hello"))
+
+    val (signature, recid) = testKeyManager.signDigest(digest)
+    val recoveredPubkey = Crypto.recoverPublicKey(signature, digest, recid)
+    assert(recoveredPubkey === testKeyManager.nodeId)
+    assert(Crypto.verifySignature(digest, signature, testKeyManager.nodeId))
   }
 }
