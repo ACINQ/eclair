@@ -143,19 +143,13 @@ class LocalKeyManagerSpec extends AnyFunSuite {
   }
 
   test("generate a signature from a digest") {
-    val seed = ByteVector.fromValidHex("deadbeef")
+    val seed = hex"deadbeef"
     val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    val privkey = PrivateKey(hex"8d3f3c8ef68a047676329ad867ab3e1b75885989a1ecd0bae3cc6ce3064a00d4")
-    val expectedSignature = ByteVector64(hex"8f693e4db0f0e58ef02813d2414296b4d535f58343c136869e03db2a8a794a29238a580e4a3fcf0bbb0b7cde5fe5e53482056ed8cb201846af88bc897ba85e32")
-    val expectedRecoveryId = 1
-    val expectedPublicKey = PublicKey(hex"02ec8f6801d53fba134d032af7bc33ce1fd3d6373743f1317272d6a7d05ee9b30d")
     val digest = ByteVector32(hex"d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9") // sha256(sha256("hello"))
 
-    assert(privkey.publicKey === expectedPublicKey)
-
-    val (signature, recid) = testKeyManager.signDigest(digest, privkey)
-    assert(signature === expectedSignature)
-    assert(recid === expectedRecoveryId)
+    val (signature, recid) = testKeyManager.signDigest(digest)
+    val recoveredPubkey = Crypto.recoverPublicKey(signature, digest, recid)
+    assert(recoveredPubkey === testKeyManager.nodeId)
+    assert(Crypto.verifySignature(digest, signature, testKeyManager.nodeId))
   }
 }

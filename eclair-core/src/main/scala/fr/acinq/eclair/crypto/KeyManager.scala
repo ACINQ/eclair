@@ -114,6 +114,10 @@ trait KeyManager {
   /**
    * Sign a digest, primarily used to prove ownership of the current node
    *
+   * When recovering a public key from an ECDSA signature for secp256k1, there are 4 possible matching curve points
+   * that can be found. The recoveryId identifies which of these points is the correct one to speed up recovery
+   * (otherwise we would need to check the signature's validity for each of these points to find the correct one).
+   *
    * @param digest     SHA256 digest
    * @param privateKey private key to sign with, default the one from the current node
    * @return a (signature, recoveryId) pair. signature is a signature of the digest parameter generated with the

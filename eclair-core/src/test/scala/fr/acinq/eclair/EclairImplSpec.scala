@@ -430,54 +430,26 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(expectedPaymentPreimage === ByteVector32(keySendTlv.value))
   }
 
-  test("sign an arbitrary message with the node's private key") { f =>
+  test("sign & verify an arbitrary message with the node's private key") { f =>
     import f._
 
-    val seed = ByteVector.fromValidHex("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-    val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    // Node PrivateKey: 8e07f14767110b9fc5233aa6954a6e72a4a7bc7acdf0bedf26a292b99299cea0
-
-    val pubkey = PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee")
-    val expectedSignature = ByteVector64(hex"c8fcba9f0135e27ad9a587fafb1dbfa4e02b0118b550c7cec3db46e06fd795977a1273d15177f36ace51c3e1fa81ef87345e6077569df3d8037fdc2c0bec9186")
-    val expectedRecoveryId = 0
-    val expectedDigest = ByteVector32(hex"cbedbc1542fb139e2e10954f1ff9f82e8a1031cc63260636bbc45a90114552ea")
-
-    val kitWithTestKeyManager = kit.copy(nodeParams = kit.nodeParams.copy(keyManager = testKeyManager))
-    val eclair = new EclairImpl(kitWithTestKeyManager)
+    val eclair = new EclairImpl(kit)
 
     val msg = "hello, world"
-    val prefix = "Lightning Signed Message:"
-    val dhash256 = Crypto.hash256(ByteVector((prefix ++ msg).getBytes))
-
-    assert(dhash256 === expectedDigest)
 
     val signedMessage: SignedMessage = eclair.signMessage(msg)
-    assert(signedMessage.nodeId === pubkey)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
     assert(signedMessage.message === msg)
-    assert(ByteVector64(signedMessage.signature.tail) === expectedSignature)
-    assert(signedMessage.signature.head === expectedRecoveryId)
-    assert(Crypto.verifySignature(dhash256, ByteVector64(signedMessage.signature.tail), testKeyManager.nodeId))
-  }
 
-  test("verify a valid signature") { f =>
-    import f._
-
-    val seed = ByteVector.fromValidHex("e58cd727c1a759345014206b0133ce4585808c5411c11c4732c26c104f8ea985ef")
-    val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    // Node PrivateKey: 254ad8bb0160109e3a270e28a1484a8786e95303a51c259b245323108f78a8c4
-
-    val expectedNodeId = PublicKey(hex"03a388397c88aa96df64d6a8ab6daa3101c12fdba95820714a67914191e1d4cd8f")
-
-    val kitWithTestKeyManager = kit.copy(nodeParams = kit.nodeParams.copy(keyManager = testKeyManager))
-    val eclair = new EclairImpl(kitWithTestKeyManager)
-
-    val msg = "super secret message"
-    // sha256(sha256("Lightning Signed Message:super secret message"))
-    val signature = 32.toByte +: ByteVector64(hex"97918faa65e1a49e1b0661299a4755a328d412dffe8852bc95420fb323639c840fc1c85a9ba7b909908e5654a5c6b19074b569ff3afbe284a7c208b2cdd0197e")
-
-    val verifiedMessage = eclair.verifyMessage(msg, signature)
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, signedMessage.signature)
     assert(verifiedMessage.valid)
-    assert(verifiedMessage.signerNodeId === Some(expectedNodeId))
+    assert(verifiedMessage.signerNodeId === Some(kit.nodeParams.nodeId))
+
+    val prefix = "Lightning Signed Message:"
+    val dhash256 = Crypto.hash256(ByteVector((prefix ++ msg).getBytes))
+    val expectedDigest = ByteVector32(hex"cbedbc1542fb139e2e10954f1ff9f82e8a1031cc63260636bbc45a90114552ea")
+    assert(dhash256 === expectedDigest)
+    assert(Crypto.verifySignature(dhash256, ByteVector64(signedMessage.signature.tail), kit.nodeParams.nodeId))
   }
 
   test("verify an invalid signature for the given message") { f =>
@@ -485,10 +457,29 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    val msg = "pas le bon message"
-    val signature = 32.toByte +: ByteVector64(hex"199cea5405210312f144e967803c5b09b1fece2ff0f1e905b605b5e8df9e7cf60ed58effddd3ac6fff7368e277fe02a7dd74c2e39d3bbdf4855c4ede8ffcb4ba")
+    val msg = "hello, world"
+    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
+    assert(signedMessage.message === msg)
 
-    val verifiedMessage = eclair.verifyMessage(msg, signature)
+    val wrongMsg = "world, hello"
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
+    assert(verifiedMessage.valid)
+    assert(verifiedMessage.signerNodeId !== Some(kit.nodeParams.nodeId))
+  }
+
+  test("ensure that an invalid recoveryId cause the signature verification to fail") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val msg = "hello, world"
+    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
+    assert(signedMessage.message === msg)
+
+    val invalidSignature = (if (signedMessage.signature.head.toInt == 31) 32 else 31).toByte +: signedMessage.signature.tail
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, invalidSignature)
     assert(!verifiedMessage.valid)
     assert(verifiedMessage.signerNodeId === None)
   }
