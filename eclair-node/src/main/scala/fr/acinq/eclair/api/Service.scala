@@ -32,11 +32,11 @@ import akka.stream.{Materializer, OverflowStrategy}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
-import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -48,6 +48,7 @@ case class ErrorResponse(error: String)
 trait Service extends ExtraDirectives with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
+
   import JsonSupport.{formats, marshaller, serialization}
 
   def password: String
@@ -226,7 +227,7 @@ trait Service extends ExtraDirectives with Logging {
                         path("sendtonode") {
                           formFields(amountMsatFormParam, nodeIdFormParam, paymentHashFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "keysend".as[Boolean].?) {
                             case (amountMsat, nodeId, Some(paymentHash), maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, keySend) =>
-                              keySend match  {
+                              keySend match {
                                 case Some(true) => reject(MalformedFormFieldRejection("paymentHash", "You cannot request a KeySend payment and specify a paymentHash"))
                                 case _ => complete(eclairApi.send(externalId_opt, nodeId, amountMsat, paymentHash, maxAttempts_opt = maxAttempts_opt, feeThresholdSat_opt = feeThresholdSat_opt, maxFeePct_opt = maxFeePct_opt))
                               }

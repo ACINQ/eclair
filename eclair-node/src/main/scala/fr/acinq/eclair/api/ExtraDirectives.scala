@@ -20,14 +20,13 @@ import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
-import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}

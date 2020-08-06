@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
 import org.scalatest.funsuite.AnyFunSuite
@@ -69,7 +69,7 @@ class LocalKeyManagerSpec extends AnyFunSuite {
   }
 
   def makefundingKeyPath(entropy: ByteVector, isFunder: Boolean) = {
-    val items = for(i <- 0 to 7) yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
+    val items = for (i <- 0 to 7) yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
     val last = DeterministicWallet.hardened(if (isFunder) 1L else 0L)
     KeyPath(items :+ last)
   }
