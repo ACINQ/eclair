@@ -53,7 +53,7 @@ case class TimestampQueryFilters(from: Long, to: Long)
 
 case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
 
-case class VerifiedMessage(valid: Boolean, signerNodeId: Option[PublicKey])
+case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 object TimestampQueryFilters {
   /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
@@ -416,10 +416,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
     val signature = ByteVector64(recoverableSignature.tail)
     val recoveryId = recoverableSignature.head.toInt - 31
     val pubKeyFromSignature = Crypto.recoverPublicKey(signature, signedBytes, recoveryId)
-    if (Crypto.verifySignature(signedBytes, signature, pubKeyFromSignature)) {
-      VerifiedMessage(true, Some(pubKeyFromSignature))
-    } else {
-      VerifiedMessage(false, None)
-    }
+    VerifiedMessage(true, pubKeyFromSignature)
   }
 }

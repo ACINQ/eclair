@@ -442,7 +442,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, signedMessage.signature)
     assert(verifiedMessage.valid)
-    assert(verifiedMessage.signerNodeId === Some(kit.nodeParams.nodeId))
+    assert(verifiedMessage.publicKey === kit.nodeParams.nodeId)
 
     val prefix = "Lightning Signed Message:"
     val dhash256 = Crypto.hash256(ByteVector((prefix ++ msg).getBytes))
@@ -464,7 +464,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val wrongMsg = "world, hello"
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
     assert(verifiedMessage.valid)
-    assert(verifiedMessage.signerNodeId !== Some(kit.nodeParams.nodeId))
+    assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 
   test("ensure that an invalid recoveryId cause the signature verification to fail") { f =>
@@ -479,7 +479,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val invalidSignature = (if (signedMessage.signature.head.toInt == 31) 32 else 31).toByte +: signedMessage.signature.tail
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, invalidSignature)
-    assert(!verifiedMessage.valid)
-    assert(verifiedMessage.signerNodeId === None)
+    assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 }
