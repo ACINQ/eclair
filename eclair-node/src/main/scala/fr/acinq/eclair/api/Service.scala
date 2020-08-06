@@ -313,12 +313,12 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("signmessage") {
-                          formFields("msg".as[String]) { message =>
+                          formFields("msg".as[ByteVector](base64DataUnmarshaller)) { message =>
                             complete(eclairApi.signMessage(message))
                           }
                         } ~
                         path("verifymessage") {
-                          formFields("msg".as[String], "sig".as[ByteVector](binaryDataUnmarshaller)) { (message, signature) =>
+                          formFields("msg".as[ByteVector](base64DataUnmarshaller), "sig".as[ByteVector](binaryDataUnmarshaller)) { (message, signature) =>
                             complete(eclairApi.verifyMessage(message, signature))
                           }
                         } ~ get {

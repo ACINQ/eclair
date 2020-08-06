@@ -434,18 +434,19 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    val msg = "hello, world"
+    val base64Msg = "aGVsbG8sIHdvcmxk" // echo -n 'hello, world' | base64
+    val bytesMsg = ByteVector.fromValidBase64(base64Msg)
 
-    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    val signedMessage: SignedMessage = eclair.signMessage(bytesMsg)
     assert(signedMessage.nodeId === kit.nodeParams.nodeId)
-    assert(signedMessage.message === msg)
+    assert(signedMessage.message === base64Msg)
 
-    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, signedMessage.signature)
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(bytesMsg, signedMessage.signature)
     assert(verifiedMessage.valid)
     assert(verifiedMessage.publicKey === kit.nodeParams.nodeId)
 
-    val prefix = "Lightning Signed Message:"
-    val dhash256 = Crypto.hash256(ByteVector((prefix ++ msg).getBytes))
+    val prefix = ByteVector("Lightning Signed Message:".getBytes)
+    val dhash256 = Crypto.hash256(prefix ++ bytesMsg)
     val expectedDigest = ByteVector32(hex"cbedbc1542fb139e2e10954f1ff9f82e8a1031cc63260636bbc45a90114552ea")
     assert(dhash256 === expectedDigest)
     assert(Crypto.verifySignature(dhash256, ByteVector64(signedMessage.signature.tail), kit.nodeParams.nodeId))
@@ -456,12 +457,14 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    val msg = "hello, world"
-    val signedMessage: SignedMessage = eclair.signMessage(msg)
-    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
-    assert(signedMessage.message === msg)
+    val base64Msg = "aGVsbG8sIHdvcmxk" // echo -n 'hello, world' | base64
+    val bytesMsg = ByteVector.fromValidBase64(base64Msg)
 
-    val wrongMsg = "world, hello"
+    val signedMessage: SignedMessage = eclair.signMessage(bytesMsg)
+    assert(signedMessage.nodeId === kit.nodeParams.nodeId)
+    assert(signedMessage.message === base64Msg)
+
+    val wrongMsg = ByteVector.fromValidBase64(base64Msg.tail)
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
     assert(verifiedMessage.valid)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
@@ -472,13 +475,15 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    val msg = "hello, world"
-    val signedMessage: SignedMessage = eclair.signMessage(msg)
+    val base64Msg = "aGVsbG8sIHdvcmxk" // echo -n 'hello, world' | base64
+    val bytesMsg = ByteVector.fromValidBase64(base64Msg)
+
+    val signedMessage: SignedMessage = eclair.signMessage(bytesMsg)
     assert(signedMessage.nodeId === kit.nodeParams.nodeId)
-    assert(signedMessage.message === msg)
+    assert(signedMessage.message === base64Msg)
 
     val invalidSignature = (if (signedMessage.signature.head.toInt == 31) 32 else 31).toByte +: signedMessage.signature.tail
-    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(msg, invalidSignature)
+    val verifiedMessage: VerifiedMessage = eclair.verifyMessage(bytesMsg, invalidSignature)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 }

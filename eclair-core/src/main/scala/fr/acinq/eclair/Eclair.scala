@@ -69,7 +69,7 @@ object TimestampQueryFilters {
 }
 
 object SignedMessage {
-  def signedBytes(message: String): ByteVector32 = Crypto.hash256(ByteVector(("Lightning Signed Message:" ++ message).getBytes))
+  def signedBytes(message: ByteVector): ByteVector32 = Crypto.hash256(ByteVector("Lightning Signed Message:".getBytes) ++ message)
 }
 
 object ApiTypes {
@@ -142,9 +142,9 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
-  def signMessage(message: String): SignedMessage
+  def signMessage(message: ByteVector): SignedMessage
 
-  def verifyMessage(message: String, recoverableSignature: ByteVector): VerifiedMessage
+  def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 }
 
 class EclairImpl(appKit: Kit) extends Eclair {
@@ -405,13 +405,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 
-  override def signMessage(message: String): SignedMessage = {
+  override def signMessage(message: ByteVector): SignedMessage = {
     val bytesToSign = SignedMessage.signedBytes(message)
     val (signature, recoveryId) = appKit.nodeParams.keyManager.signDigest(bytesToSign)
-    SignedMessage(appKit.nodeParams.nodeId, message, (recoveryId + 31).toByte +: signature)
+    SignedMessage(appKit.nodeParams.nodeId, message.toBase64, (recoveryId + 31).toByte +: signature)
   }
 
-  override def verifyMessage(message: String, recoverableSignature: ByteVector): VerifiedMessage = {
+  override def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage = {
     val signedBytes = SignedMessage.signedBytes(message)
     val signature = ByteVector64(recoverableSignature.tail)
     val recoveryId = recoverableSignature.head.toInt - 31
