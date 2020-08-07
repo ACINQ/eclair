@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 import akka.actor.ActorRef
@@ -69,7 +70,8 @@ object TimestampQueryFilters {
 }
 
 object SignedMessage {
-  def signedBytes(message: ByteVector): ByteVector32 = Crypto.hash256(ByteVector("Lightning Signed Message:".getBytes) ++ message)
+  def signedBytes(message: ByteVector): ByteVector32 =
+    Crypto.hash256(ByteVector("Lightning Signed Message:".getBytes(StandardCharsets.UTF_8)) ++ message)
 }
 
 object ApiTypes {
