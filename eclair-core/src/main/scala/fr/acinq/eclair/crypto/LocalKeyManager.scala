@@ -153,4 +153,11 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     val localFundingPrivKey = privateKeys.get(fundingKeyPath).privateKey
     Announcements.signChannelAnnouncement(chainHash, shortChannelId, localNodeSecret, remoteNodeId, localFundingPrivKey, remoteFundingKey, features)
   }
+
+  override def signDigest(digest: ByteVector32, privateKey: PrivateKey = nodeKey.privateKey): (ByteVector64, Int) = {
+    val signature = Crypto.sign(digest, privateKey)
+    val (pub1, _) = Crypto.recoverPublicKey(signature, digest)
+    val recoveryId = if (nodeId == pub1) 0 else 1
+    (signature, recoveryId)
+  }
 }
