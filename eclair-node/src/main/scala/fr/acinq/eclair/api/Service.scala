@@ -321,10 +321,10 @@ trait Service extends ExtraDirectives with Logging {
                           formFields("msg".as[ByteVector](base64DataUnmarshaller), "sig".as[ByteVector](binaryDataUnmarshaller)) { (message, signature) =>
                             complete(eclairApi.verifyMessage(message, signature))
                           }
-                        } ~ get {
-                        path("ws") {
-                          handleWebSocketMessages(makeSocketHandler)
                         }
+                    } ~ get {
+                      path("ws") {
+                        handleWebSocketMessages(makeSocketHandler)
                       }
                     }
                   }
