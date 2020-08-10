@@ -39,7 +39,7 @@ class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: Exe
 
 object SmoothFeeProvider {
 
-  def avg(i: Seq[Long]): Long = i.sum / i.size
+  def avg(i: Seq[FeeratePerKB]): FeeratePerKB = FeeratePerKB(i.map(_.feerate).sum / i.size)
 
   def smooth(rates: Seq[FeeratesPerKB]): FeeratesPerKB =
     FeeratesPerKB(
@@ -49,5 +49,7 @@ object SmoothFeeProvider {
       blocks_12 = avg(rates.map(_.blocks_12)),
       blocks_36 = avg(rates.map(_.blocks_36)),
       blocks_72 = avg(rates.map(_.blocks_72)),
-      blocks_144 = avg(rates.map(_.blocks_144)))
+      blocks_144 = avg(rates.map(_.blocks_144)),
+      blocks_1008 = avg(rates.map(_.blocks_1008)))
+
 }

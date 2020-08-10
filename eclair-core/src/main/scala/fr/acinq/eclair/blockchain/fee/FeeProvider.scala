@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.LongToBtcAmount
 
 import scala.concurrent.Future
 
@@ -29,54 +30,129 @@ trait FeeProvider {
 
 case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates: channels may be at risk")
 
-// stores fee rate in satoshi/kb (1 kb = 1000 bytes)
-case class FeeratesPerKB(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long, blocks_144: Long) {
-  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0 && blocks_144 > 0, "all feerates must be strictly greater than 0")
+/** Fee rate in satoshi-per-bytes. */
+case class FeeratePerByte(feerate: Satoshi)
 
-  def feePerBlock(target: Int): Long = target match {
+object FeeratePerByte {
+  def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw).feerate / 1000)
+}
+
+/** Fee rate in satoshi-per-kilo-bytes (1 kB = 1000 bytes). */
+case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
+  // @formatter:off
+  override def compare(that: FeeratePerKB): Int = feerate.compare(that.feerate)
+  def max(other: FeeratePerKB): FeeratePerKB = if (this > other) this else other
+  def min(other: FeeratePerKB): FeeratePerKB = if (this < other) this else other
+  def toLong: Long = feerate.toLong
+  // @formatter:on
+}
+
+object FeeratePerKB {
+  // @formatter:off
+  def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate * 1000)
+  def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate * 4)
+  // @formatter:on
+}
+
+/** Fee rate in satoshi-per-kilo-weight. */
+case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
+  // @formatter:off
+  override def compare(that: FeeratePerKw): Int = feerate.compare(that.feerate)
+  def max(other: FeeratePerKw): FeeratePerKw = if (this > other) this else other
+  def min(other: FeeratePerKw): FeeratePerKw = if (this < other) this else other
+  def +(other: FeeratePerKw): FeeratePerKw = FeeratePerKw(feerate + other.feerate)
+  def *(d: Double): FeeratePerKw = FeeratePerKw(feerate * d)
+  def *(l: Long): FeeratePerKw = FeeratePerKw(feerate * l)
+  def /(l: Long): FeeratePerKw = FeeratePerKw(feerate / l)
+  def toLong: Long = feerate.toLong
+  // @formatter:on
+}
+
+object FeeratePerKw {
+  /**
+   * Minimum relay fee rate in satoshi per kilo-vbyte (taken from Bitcoin Core).
+   * Note that Bitcoin Core uses a *virtual size* and not the actual size in bytes: see [[MinimumFeeratePerKw]] below.
+   */
+  val MinimumRelayFeeRate = 1000
+
+  /**
+   * Why 253 and not 250 since feerate-per-kw should be feerate-per-kvb / 4 and the minimum relay fee rate is
+   * 1000 satoshi/kvb (see [[MinimumRelayFeeRate]])?
+   *
+   * Because Bitcoin Core uses neither the actual tx size in bytes nor the tx weight to check fees, but a "virtual size"
+   * which is (3 + weight) / 4.
+   * So we want:
+   * fee > 1000 * virtual size
+   * feerate-per-kw * weight > 1000 * (3 + weight / 4)
+   * feerate-per-kw > 250 + 3000 / (4 * weight)
+   *
+   * With a conservative minimum weight of 400, assuming the result of the division may be rounded up and using strict
+   * inequality to err on the side of safety, we get:
+   * feerate-per-kw > 252
+   * hence feerate-per-kw >= 253
+   *
+   * See also https://github.com/ElementsProject/lightning/pull/1251
+   */
+  val MinimumFeeratePerKw = FeeratePerKw(253 sat)
+
+  // @formatter:off
+  def apply(feeratePerKB: FeeratePerKB): FeeratePerKw = MinimumFeeratePerKw.max(FeeratePerKw(feeratePerKB.feerate / 4))
+  def apply(feeratePerByte: FeeratePerByte): FeeratePerKw = FeeratePerKw(FeeratePerKB(feeratePerByte))
+  // @formatter:on
+}
+
+/** Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes). */
+case class FeeratesPerKB(block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB, blocks_1008: FeeratePerKB) {
+  require(block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
+
+  def feePerBlock(target: Int): FeeratePerKB = target match {
     case 1 => block_1
     case 2 => blocks_2
     case t if t <= 6 => blocks_6
     case t if t <= 12 => blocks_12
     case t if t <= 36 => blocks_36
     case t if t <= 72 => blocks_72
-    case _ => blocks_144
+    case t if t <= 144 => blocks_144
+    case _ => blocks_1008
   }
 }
 
 // stores fee rate in satoshi/kw (1 kw = 1000 weight units)
-case class FeeratesPerKw(block_1: Long, blocks_2: Long, blocks_6: Long, blocks_12: Long, blocks_36: Long, blocks_72: Long, blocks_144: Long) {
-  require(block_1 > 0 && blocks_2 > 0 && blocks_6 > 0 && blocks_12 > 0 && blocks_36 > 0 && blocks_72 > 0 && blocks_144 > 0, "all feerates must be strictly greater than 0")
+case class FeeratesPerKw(block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6: FeeratePerKw, blocks_12: FeeratePerKw, blocks_36: FeeratePerKw, blocks_72: FeeratePerKw, blocks_144: FeeratePerKw, blocks_1008: FeeratePerKw) {
+  require(block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
 
-  def feePerBlock(target: Int): Long = target match {
+  def feePerBlock(target: Int): FeeratePerKw = target match {
     case 1 => block_1
     case 2 => blocks_2
     case t if t <= 6 => blocks_6
     case t if t <= 12 => blocks_12
     case t if t <= 36 => blocks_36
     case t if t <= 72 => blocks_72
-    case _ => blocks_144
+    case t if t <= 144 => blocks_144
+    case _ => blocks_1008
   }
 }
 
 object FeeratesPerKw {
   def apply(feerates: FeeratesPerKB): FeeratesPerKw = FeeratesPerKw(
-    block_1 = feerateKB2Kw(feerates.block_1),
-    blocks_2 = feerateKB2Kw(feerates.blocks_2),
-    blocks_6 = feerateKB2Kw(feerates.blocks_6),
-    blocks_12 = feerateKB2Kw(feerates.blocks_12),
-    blocks_36 = feerateKB2Kw(feerates.blocks_36),
-    blocks_72 = feerateKB2Kw(feerates.blocks_72),
-    blocks_144 = feerateKB2Kw(feerates.blocks_144))
+    block_1 = FeeratePerKw(feerates.block_1),
+    blocks_2 = FeeratePerKw(feerates.blocks_2),
+    blocks_6 = FeeratePerKw(feerates.blocks_6),
+    blocks_12 = FeeratePerKw(feerates.blocks_12),
+    blocks_36 = FeeratePerKw(feerates.blocks_36),
+    blocks_72 = FeeratePerKw(feerates.blocks_72),
+    blocks_144 = FeeratePerKw(feerates.blocks_144),
+    blocks_1008 = FeeratePerKw(feerates.blocks_1008))
 
   /** Used in tests */
-  def single(feeratePerKw: Long): FeeratesPerKw = FeeratesPerKw(
+  def single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(
     block_1 = feeratePerKw,
     blocks_2 = feeratePerKw,
     blocks_6 = feeratePerKw,
     blocks_12 = feeratePerKw,
     blocks_36 = feeratePerKw,
     blocks_72 = feeratePerKw,
-    blocks_144 = feeratePerKw)
+    blocks_144 = feeratePerKw,
+    blocks_1008 = feeratePerKw)
 }
 

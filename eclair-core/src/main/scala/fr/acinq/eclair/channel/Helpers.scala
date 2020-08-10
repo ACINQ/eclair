@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
@@ -192,8 +192,8 @@ object Helpers {
    * To avoid spamming our peers with fee updates every time there's a small variation, we only update the fee when the
    * difference exceeds a given ratio (updateFeeMinDiffRatio).
    */
-  def shouldUpdateFee(currentFeeratePerKw: Long, nextFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
-    currentFeeratePerKw == 0 || Math.abs((currentFeeratePerKw - nextFeeratePerKw).toDouble / currentFeeratePerKw) > updateFeeMinDiffRatio
+  def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw, updateFeeMinDiffRatio: Double): Boolean =
+    currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
 
   /**
    * @param referenceFeePerKw  reference fee rate per kiloweight
@@ -201,15 +201,15 @@ object Helpers {
    * @param maxFeerateMismatch maximum fee rate mismatch tolerated
    * @return true if the difference between proposed and reference fee rates is too high.
    */
-  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatch: FeerateTolerance): Boolean =
+  def isFeeDiffTooHigh(referenceFeePerKw: FeeratePerKw, currentFeePerKw: FeeratePerKw, maxFeerateMismatch: FeerateTolerance): Boolean =
     currentFeePerKw < referenceFeePerKw * maxFeerateMismatch.ratioLow || referenceFeePerKw * maxFeerateMismatch.ratioHigh < currentFeePerKw
 
   /**
    * @param remoteFeeratePerKw remote fee rate per kiloweight
    * @return true if the remote fee rate is too small
    */
-  def isFeeTooSmall(remoteFeeratePerKw: Long): Boolean = {
-    remoteFeeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw
+  def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
+    remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
   def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId): AnnouncementSignatures = {
@@ -261,7 +261,7 @@ object Helpers {
      *
      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
      */
-    def makeFirstCommitTxs(keyManager: KeyManager, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: Long, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(keyManager: KeyManager, channelVersion: ChannelVersion, temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushMsat: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxHash: ByteVector32, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: PublicKey): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingAmount.toMilliSatoshi - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingAmount.toMilliSatoshi - pushMsat
 
@@ -445,7 +445,7 @@ object Helpers {
       }
     }
 
-    def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeratePerKw: Long)(implicit log: LoggingAdapter): Satoshi = {
+    def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeratePerKw: FeeratePerKw)(implicit log: LoggingAdapter): Satoshi = {
       import commitments._
       // this is just to estimate the weight, it depends on size of the pubkey scripts
       val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
@@ -457,7 +457,7 @@ object Helpers {
     def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Satoshi = {
       val requestedFeerate = feeEstimator.getFeeratePerKw(feeTargets.mutualCloseBlockTarget)
       // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
-      val feeratePerKw = Math.min(requestedFeerate, commitments.localCommit.spec.feeratePerKw)
+      val feeratePerKw = requestedFeerate.min(commitments.localCommit.spec.feeratePerKw)
       firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, feeratePerKw)
     }
 
@@ -826,7 +826,7 @@ object Helpers {
      * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
      * the upstream node would get refunded after a timeout.
      *
-     * @return   a set of pairs (add, preimage) if extraction was successful:
+     * @return a set of pairs (add, preimage) if extraction was successful:
      *           - add is the htlc in the downstream channel from which we extracted the preimage
      *           - preimage needs to be sent to the upstream channel
      */

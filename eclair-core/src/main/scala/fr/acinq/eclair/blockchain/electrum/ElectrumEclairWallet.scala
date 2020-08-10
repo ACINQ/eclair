@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, Transaction, TxO
 import fr.acinq.eclair.addressToPublicKeyScript
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, OnChainBalance}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -38,7 +39,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
 
   def getXpub: Future[GetXpubResponse] = (wallet ? GetXpub).mapTo[GetXpubResponse]
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
     (wallet ? CompleteTransaction(tx, feeRatePerKw)).mapTo[CompleteTransactionResponse].map {
       case CompleteTransactionResponse(tx1, fee1, None) => MakeFundingTxResponse(tx1, 0, fee1)
@@ -67,7 +68,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
       case CancelTransactionResponse(_) => false
     }
 
-  def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long): Future[String] = {
+  def sendPayment(amount: Satoshi, address: String, feeRatePerKw: FeeratePerKw): Future[String] = {
     val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash))
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
     (wallet ? CompleteTransaction(tx, feeRatePerKw))
@@ -81,7 +82,7 @@ class ElectrumEclairWallet(val wallet: ActorRef, chainHash: ByteVector32)(implic
       }
   }
 
-  def sendAll(address: String, feeRatePerKw: Long): Future[(Transaction, Satoshi)] = {
+  def sendAll(address: String, feeRatePerKw: FeeratePerKw): Future[(Transaction, Satoshi)] = {
     val publicKeyScript = Script.write(addressToPublicKeyScript(address, chainHash))
     (wallet ? SendAll(publicKeyScript, feeRatePerKw))
       .mapTo[SendAllResponse]

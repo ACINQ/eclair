@@ -16,23 +16,20 @@
 
 package fr.acinq.eclair.blockchain.fee
 
+import fr.acinq.eclair.LongToBtcAmount
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.Random
 
-
 class FallbackFeeProviderSpec extends AnyFunSuite {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
   /**
-    * This provider returns a constant value, but fails after ttl tries
-    *
-    * @param ttl
-    * @param feeratesPerKB
-    */
+   * This provider returns a constant value, but fails after ttl tries
+   */
   class FailingFeeProvider(ttl: Int, val feeratesPerKB: FeeratesPerKB) extends FeeProvider {
     var i = 0
 
@@ -43,7 +40,9 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
       } else Future.failed(new RuntimeException())
   }
 
-  def dummyFeerates = FeeratesPerKB(1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000), 1000 + Random.nextInt(10000))
+  def dummyFeerate = FeeratePerKB(1000.sat + Random.nextInt(10000).sat)
+
+  def dummyFeerates = FeeratesPerKB(dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate)
 
   def await[T](f: Future[T]): T = Await.result(f, 3 seconds)
 
@@ -54,7 +53,7 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
     val provider5 = new FailingFeeProvider(5, dummyFeerates) // fails after 5 tries
     val provider7 = new FailingFeeProvider(Int.MaxValue, dummyFeerates) // "never" fails
 
-    val fallbackFeeProvider = new FallbackFeeProvider(provider0 :: provider1 :: provider3 :: provider5 :: provider7 :: Nil, 1)
+    val fallbackFeeProvider = new FallbackFeeProvider(provider0 :: provider1 :: provider3 :: provider5 :: provider7 :: Nil, FeeratePerByte(1 sat))
 
     assert(await(fallbackFeeProvider.getFeerates) === provider1.feeratesPerKB)
 
@@ -69,14 +68,14 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
     assert(await(fallbackFeeProvider.getFeerates) === provider5.feeratesPerKB)
 
     assert(await(fallbackFeeProvider.getFeerates) === provider7.feeratesPerKB)
-
   }
 
   test("ensure minimum feerate") {
-    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKB(1000, 1000, 1000, 1000, 1000, 1000, 1000))
-    val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, 2)
-    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerKB(2000, 2000, 2000, 2000, 2000, 2000, 1000))
+    val feeratePerKB = FeeratePerKB(1000 sat)
+    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKB(feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB))
+    val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, FeeratePerByte(2 sat))
+    val expectedFeeratePerKB = FeeratePerKB(2000 sat)
+    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerKB(expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, feeratePerKB, feeratePerKB))
   }
-
 
 }
