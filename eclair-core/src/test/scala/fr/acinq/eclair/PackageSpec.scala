@@ -17,7 +17,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Satoshi, Script}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Script}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -100,11 +100,6 @@ class PackageSpec extends AnyFunSuite {
       addressToPublicKeyScript("1Qbbbbb", Block.LivenetGenesisBlock.hash)
     }
     assert(e.getMessage.contains("is neither a valid Base58 address") && e.getMessage.contains("nor a valid Bech32 address"))
-  }
-
-  test("convert fee rates and enforce a minimum feerate-per-kw") {
-    assert(feerateByte2Kw(1) == MinimumFeeratePerKw)
-    assert(feerateKB2Kw(1000) == MinimumFeeratePerKw)
   }
 
   test("compare short channel ids as unsigned longs") {

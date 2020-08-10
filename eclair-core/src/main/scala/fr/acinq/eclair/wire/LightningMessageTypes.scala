@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
@@ -76,7 +77,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                        channelReserveSatoshis: Satoshi,
                        htlcMinimumMsat: MilliSatoshi,
-                       feeratePerKw: Long,
+                       feeratePerKw: FeeratePerKw,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        fundingPubkey: PublicKey,
@@ -151,7 +152,7 @@ case class RevokeAndAck(channelId: ByteVector32,
                         nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: ByteVector32,
-                     feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
+                     feeratePerKw: FeeratePerKw) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: ByteVector32,
                                   shortChannelId: ShortChannelId,

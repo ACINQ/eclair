@@ -24,6 +24,7 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
@@ -87,6 +88,12 @@ class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](_ => (
   null
 }, {
   case x: CltvExpiryDelta => JInt(x.toInt)
+}))
+
+class FeeratePerKwSerializer extends CustomSerializer[FeeratePerKw](_ => ( {
+  null
+}, {
+  case x: FeeratePerKw => JLong(x.toLong)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
@@ -312,6 +319,7 @@ object JsonSupport extends Json4sSupport {
     new MilliSatoshiSerializer +
     new CltvExpirySerializer +
     new CltvExpiryDeltaSerializer +
+    new FeeratePerKwSerializer +
     new ShortChannelIdSerializer +
     new ChannelIdentifierSerializer +
     new StateSerializer +
