@@ -85,7 +85,7 @@ trait Eclair {
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeerateSatByte_opt: Option[Satoshi], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelCommandResponse]
+  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelCommandResponse]
 
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, ChannelCommandResponse]]]
 
@@ -166,14 +166,14 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[String]
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeerateSatByte_opt: Option[Satoshi], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelCommandResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelCommandResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = fundingAmount,
       pushMsat = pushAmount_opt.getOrElse(0 msat),
-      fundingTxFeeratePerKw_opt = fundingFeerateSatByte_opt.map(f => FeeratePerKw(FeeratePerByte(f))),
+      fundingTxFeeratePerKw_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
       channelFlags = flags_opt.map(_.toByte),
       timeout_opt = Some(openTimeout))).mapTo[ChannelCommandResponse]
   }
