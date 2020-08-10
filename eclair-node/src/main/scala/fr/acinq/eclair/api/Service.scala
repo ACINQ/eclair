@@ -34,6 +34,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
+import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
@@ -145,7 +146,7 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("open") {
-                          formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[Long].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
+                          formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
                             (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
                               complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt))
                           }

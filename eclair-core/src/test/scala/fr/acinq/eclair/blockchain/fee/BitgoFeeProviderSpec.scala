@@ -20,14 +20,15 @@ import akka.actor.ActorSystem
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Block
+import fr.acinq.eclair.LongToBtcAmount
 import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.Await
 
 /**
-  * Created by PM on 27/01/2017.
-  */
+ * Created by PM on 27/01/2017.
+ */
 
 class BitgoFeeProviderSpec extends AnyFunSuite {
 
@@ -51,7 +52,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val fee = extractFeerate(feeRanges, 6)
-    assert(fee === 105566)
+    assert(fee === FeeratePerKB(105566 sat))
   }
 
   test("extract all fees") {
@@ -59,13 +60,14 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKB(
-      block_1 = 149453,
-      blocks_2 = 136797,
-      blocks_6 = 105566,
-      blocks_12 = 96254,
-      blocks_36 = 71098,
-      blocks_72 = 68182,
-      blocks_144 = 16577)
+      block_1 = FeeratePerKB(149453 sat),
+      blocks_2 = FeeratePerKB(136797 sat),
+      blocks_6 = FeeratePerKB(105566 sat),
+      blocks_12 = FeeratePerKB(96254 sat),
+      blocks_36 = FeeratePerKB(71098 sat),
+      blocks_72 = FeeratePerKB(68182 sat),
+      blocks_144 = FeeratePerKB(16577 sat),
+      blocks_1008 = FeeratePerKB(5070 sat))
     assert(feerates === ref)
   }
 
@@ -76,7 +78,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     implicit val sttp = OkHttpFutureBackend()
     implicit val timeout = Timeout(30 seconds)
     val bitgo = new BitgoFeeProvider(Block.LivenetGenesisBlock.hash, 5 seconds)
-    assert(Await.result(bitgo.getFeerates, timeout.duration).block_1 > 0)
+    assert(Await.result(bitgo.getFeerates, timeout.duration).block_1.toLong > 0)
   }
 
   test("check that read timeout is enforced") {
@@ -89,6 +91,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     val e = intercept[Exception] {
       Await.result(bitgo.getFeerates, timeout.duration)
     }
-    assert(e.getMessage.contains("Read timed out"))
+    assert(e.getMessage.contains("timed out") || e.getMessage.contains("timeout"))
   }
+
 }

@@ -36,7 +36,7 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
    * @param nBlocks number of blocks until tx is confirmed
    * @return the current fee estimate in Satoshi/KB
    */
-  def estimateSmartFee(nBlocks: Int): Future[Long] =
+  def estimateSmartFee(nBlocks: Int): Future[FeeratePerKB] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(BitcoinCoreFeeProvider.parseFeeEstimate)
 
   override def getFeerates: Future[FeeratesPerKB] = for {
@@ -47,30 +47,31 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     blocks_36 <- estimateSmartFee(36)
     blocks_72 <- estimateSmartFee(72)
     blocks_144 <- estimateSmartFee(144)
+    blocks_1008 <- estimateSmartFee(1008)
   } yield FeeratesPerKB(
-    block_1 = if (block_1 > 0) block_1 else defaultFeerates.block_1,
-    blocks_2 = if (blocks_2 > 0) blocks_2 else defaultFeerates.blocks_2,
-    blocks_6 = if (blocks_6 > 0) blocks_6 else defaultFeerates.blocks_6,
-    blocks_12 = if (blocks_12 > 0) blocks_12 else defaultFeerates.blocks_12,
-    blocks_36 = if (blocks_36 > 0) blocks_36 else defaultFeerates.blocks_36,
-    blocks_72 = if (blocks_72 > 0) blocks_72 else defaultFeerates.blocks_72,
-    blocks_144 = if (blocks_144 > 0) blocks_144 else defaultFeerates.blocks_144)
+    block_1 = if (block_1.feerate > 0.sat) block_1 else defaultFeerates.block_1,
+    blocks_2 = if (blocks_2.feerate > 0.sat) blocks_2 else defaultFeerates.blocks_2,
+    blocks_6 = if (blocks_6.feerate > 0.sat) blocks_6 else defaultFeerates.blocks_6,
+    blocks_12 = if (blocks_12.feerate > 0.sat) blocks_12 else defaultFeerates.blocks_12,
+    blocks_36 = if (blocks_36.feerate > 0.sat) blocks_36 else defaultFeerates.blocks_36,
+    blocks_72 = if (blocks_72.feerate > 0.sat) blocks_72 else defaultFeerates.blocks_72,
+    blocks_144 = if (blocks_144.feerate > 0.sat) blocks_144 else defaultFeerates.blocks_144,
+    blocks_1008 = if (blocks_1008.feerate > 0.sat) blocks_1008 else defaultFeerates.blocks_1008)
 }
 
 object BitcoinCoreFeeProvider {
-  def parseFeeEstimate(json: JValue): Long = {
+  def parseFeeEstimate(json: JValue): FeeratePerKB = {
     json \ "errors" match {
       case JNothing =>
         json \ "feerate" match {
           case JDecimal(feerate) =>
             // estimatesmartfee returns a fee rate in Btc/KB
-            btc2satoshi(Btc(feerate)).toLong
+            FeeratePerKB(Btc(feerate).toSatoshi)
           case JInt(feerate) if feerate.toLong < 0 =>
-            // negative value means failure
-            feerate.toLong
+            // negative value means failure: should (hopefully) never happen
+            FeeratePerKB(feerate.toLong.sat)
           case JInt(feerate) =>
-            // should (hopefully) never happen
-            btc2satoshi(Btc(feerate.toLong)).toLong
+            FeeratePerKB(Btc(feerate.toLong).toSatoshi)
         }
       case JArray(errors) =>
         val error = errors.collect { case JString(error) => error }.mkString(", ")

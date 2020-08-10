@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import fr.acinq.eclair.LongToBtcAmount
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
@@ -25,8 +26,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import scala.concurrent.Await
 
 /**
-  * Created by PM on 27/01/2017.
-  */
+ * Created by PM on 27/01/2017.
+ */
 
 class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
 
@@ -50,7 +51,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     val json = parse(sample_response)
     val feeRanges = parseFeeRanges(json)
     val fee = extractFeerate(feeRanges, 6)
-    assert(fee === 230 * 1000)
+    assert(fee === FeeratePerKB(230 * 1000 sat))
   }
 
   test("extract all fees") {
@@ -58,20 +59,21 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKB(
-      block_1 = 400 * 1000,
-      blocks_2 = 350 * 1000,
-      blocks_6 = 230 * 1000,
-      blocks_12 = 140 * 1000,
-      blocks_36 = 60 * 1000,
-      blocks_72 = 40 * 1000,
-      blocks_144 = 10 * 1000)
+      block_1 = FeeratePerKB(400 * 1000 sat),
+      blocks_2 = FeeratePerKB(350 * 1000 sat),
+      blocks_6 = FeeratePerKB(230 * 1000 sat),
+      blocks_12 = FeeratePerKB(140 * 1000 sat),
+      blocks_36 = FeeratePerKB(60 * 1000 sat),
+      blocks_72 = FeeratePerKB(40 * 1000 sat),
+      blocks_144 = FeeratePerKB(10 * 1000 sat),
+      blocks_1008 = FeeratePerKB(10 * 1000 sat))
     assert(feerates === ref)
   }
 
   test("make sure API hasn't changed") {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
-    implicit val sttpBackend  = OkHttpFutureBackend()
+    implicit val sttpBackend = OkHttpFutureBackend()
     implicit val timeout = Timeout(30 seconds)
     val provider = new EarnDotComFeeProvider(5 seconds)
     logger.info("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))
@@ -80,11 +82,12 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
   test("check that read timeout is enforced") {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
-    implicit val sttpBackend  = OkHttpFutureBackend()
+    implicit val sttpBackend = OkHttpFutureBackend()
     implicit val timeout = Timeout(5 second)
     val provider = new EarnDotComFeeProvider(1 millisecond)
     intercept[Exception] {
       Await.result(provider.getFeerates, timeout.duration)
     }
   }
+
 }

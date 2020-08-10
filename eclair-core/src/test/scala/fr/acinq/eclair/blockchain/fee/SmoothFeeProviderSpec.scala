@@ -16,24 +16,25 @@
 
 package fr.acinq.eclair.blockchain.fee
 
+import fr.acinq.eclair.LongToBtcAmount
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
-
 class SmoothFeeProviderSpec extends AnyFunSuite {
+
   test("smooth fee rates") {
     val rates = Array(
-      FeeratesPerKB(100, 200, 300, 400, 500, 600, 650),
-      FeeratesPerKB(200, 300, 400, 500, 600, 700, 750),
-      FeeratesPerKB(300, 400, 500, 600, 700, 800, 850),
-      FeeratesPerKB(300, 400, 500, 600, 700, 800, 850),
-      FeeratesPerKB(300, 400, 500, 600, 700, 800, 850)
+      FeeratesPerKB(FeeratePerKB(100 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(650 sat), FeeratePerKB(700 sat)),
+      FeeratesPerKB(FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(750 sat), FeeratePerKB(800 sat)),
+      FeeratesPerKB(FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat), FeeratePerKB(850 sat), FeeratePerKB(900 sat)),
+      FeeratesPerKB(FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat), FeeratePerKB(850 sat), FeeratePerKB(900 sat)),
+      FeeratesPerKB(FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat), FeeratePerKB(850 sat), FeeratePerKB(900 sat))
     )
-    val provider = new FeeProvider {
-       var index = 0
+    val provider: FeeProvider = new FeeProvider {
+      var index = 0
 
       override def getFeerates: Future[FeeratesPerKB] = {
         val rate = rates(index)
@@ -55,8 +56,9 @@ class SmoothFeeProviderSpec extends AnyFunSuite {
     assert(rate1 == rates(0))
     assert(rate2 == SmoothFeeProvider.smooth(Seq(rates(0), rates(1))))
     assert(rate3 == SmoothFeeProvider.smooth(Seq(rates(0), rates(1), rates(2))))
-    assert(rate3 ==  FeeratesPerKB(200, 300, 400, 500, 600, 700, 750))
+    assert(rate3 == FeeratesPerKB(FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(750 sat), FeeratePerKB(800 sat)))
     assert(rate4 == SmoothFeeProvider.smooth(Seq(rates(1), rates(2), rates(3))))
     assert(rate5 == rates(4)) // since the last 3 values are the same
   }
+
 }

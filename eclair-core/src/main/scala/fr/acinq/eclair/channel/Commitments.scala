@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.blockchain.fee.OnChainFeeConf
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
@@ -111,7 +111,7 @@ case class Commitments(channelVersion: ChannelVersion,
       val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced, commitmentFormat)
       // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
       // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw, commitmentFormat)
+      val funderFeeReserve = htlcOutputFee(reduced.feeratePerKw * 2, commitmentFormat)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw, commitmentFormat)
       if (balanceNoFees - commitFees < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
@@ -137,7 +137,7 @@ case class Commitments(channelVersion: ChannelVersion,
       val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced, commitmentFormat)
       // we expect the funder to keep an extra reserve to be able to handle fee increase without getting the channel stuck
       // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-      val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw, commitmentFormat)
+      val funderFeeReserve = htlcOutputFee(reduced.feeratePerKw * 2, commitmentFormat)
       val htlcFees = htlcOutputFee(reduced.feeratePerKw, commitmentFormat)
       if (balanceNoFees - commitFees < receivedHtlcTrimThreshold(localParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
@@ -212,7 +212,7 @@ object Commitments {
     val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
     // the funder needs to keep an extra reserve to be able to handle fee increase without getting the channel stuck
     // (see https://github.com/lightningnetwork/lightning-rfc/issues/728)
-    val funderFeeReserve = htlcOutputFee(2 * reduced.feeratePerKw, commitments.commitmentFormat)
+    val funderFeeReserve = htlcOutputFee(reduced.feeratePerKw * 2, commitments.commitmentFormat)
     val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees + funderFeeReserve else 0.msat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
@@ -409,12 +409,12 @@ object Commitments {
   def receiveFee(commitments: Commitments, fee: UpdateFee, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Try[Commitments] = {
     if (commitments.localParams.isFunder) {
       Failure(FundeeCannotSendUpdateFee(commitments.channelId))
-    } else if (fee.feeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw) {
+    } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
       Failure(FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
-      Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw)
+      Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw.toLong)
       val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
-      log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toDouble / localFeeratePerKw)
+      log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, fee.feeratePerKw, feeConf.maxFeerateMismatch) && commitments.hasPendingOrProposedHtlcs) {
         Failure(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
       } else {
