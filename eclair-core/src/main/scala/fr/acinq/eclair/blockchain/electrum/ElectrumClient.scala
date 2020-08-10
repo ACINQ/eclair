@@ -23,6 +23,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.PooledByteBufAllocator
@@ -189,6 +190,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
       val json = ("method" -> request.method) ~ ("params" -> request.params.map {
         case s: String => new JString(s)
         case b: ByteVector32 => new JString(b.toHex)
+        case f: FeeratePerKw => new JLong(f.toLong)
         case b: Boolean => new JBool(b)
         case t: Int => new JInt(t)
         case t: Long => new JLong(t)
@@ -197,9 +199,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
       val serialized = compact(render(json))
       out.add(serialized)
     }
-
   }
-
 
   /**
     * Forwards incoming messages to the underlying actor
@@ -269,7 +269,7 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
     electrumRequestId
   }
 
-  def receive = disconnected
+  def receive: Receive = disconnected
 
   def disconnected: Receive = {
     case ctx: ChannelHandlerContext =>

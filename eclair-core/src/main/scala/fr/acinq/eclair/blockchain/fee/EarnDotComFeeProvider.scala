@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
+import fr.acinq.bitcoin.Satoshi
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JArray, JInt, JValue}
 import org.json4s.jackson.Serialization
@@ -26,8 +27,8 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
-  * Created by PM on 16/11/2017.
-  */
+ * Created by PM on 16/11/2017.
+ */
 class EarnDotComFeeProvider(readTimeOut: Duration)(implicit http: SttpBackend[Future, Nothing], ec: ExecutionContext) extends FeeProvider {
 
   import EarnDotComFeeProvider._
@@ -64,11 +65,11 @@ object EarnDotComFeeProvider {
     })
   }
 
-  def extractFeerate(feeRanges: Seq[FeeRange], maxBlockDelay: Int): Long = {
+  def extractFeerate(feeRanges: Seq[FeeRange], maxBlockDelay: Int): FeeratePerKB = {
     // first we keep only fee ranges with a max block delay below the limit
     val belowLimit = feeRanges.filter(_.maxDelay <= maxBlockDelay)
     // out of all the remaining fee ranges, we select the one with the minimum higher bound and make sure it is > 0
-    Math.max(belowLimit.minBy(_.maxFee).maxFee, 1)
+    FeeratePerKB(Satoshi(Math.max(belowLimit.minBy(_.maxFee).maxFee, 1)))
   }
 
   def extractFeerates(feeRanges: Seq[FeeRange]): FeeratesPerKB =
@@ -79,6 +80,7 @@ object EarnDotComFeeProvider {
       blocks_12 = extractFeerate(feeRanges, 12),
       blocks_36 = extractFeerate(feeRanges, 36),
       blocks_72 = extractFeerate(feeRanges, 72),
-      blocks_144 = extractFeerate(feeRanges, 144))
+      blocks_144 = extractFeerate(feeRanges, 144),
+      blocks_1008 = extractFeerate(feeRanges, 1008))
 
 }
