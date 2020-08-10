@@ -49,14 +49,14 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     blocks_144 <- estimateSmartFee(144)
     blocks_1008 <- estimateSmartFee(1008)
   } yield FeeratesPerKB(
-    block_1 = if (block_1.isValid) block_1 else defaultFeerates.block_1,
-    blocks_2 = if (blocks_2.isValid) blocks_2 else defaultFeerates.blocks_2,
-    blocks_6 = if (blocks_6.isValid) blocks_6 else defaultFeerates.blocks_6,
-    blocks_12 = if (blocks_12.isValid) blocks_12 else defaultFeerates.blocks_12,
-    blocks_36 = if (blocks_36.isValid) blocks_36 else defaultFeerates.blocks_36,
-    blocks_72 = if (blocks_72.isValid) blocks_72 else defaultFeerates.blocks_72,
-    blocks_144 = if (blocks_144.isValid) blocks_144 else defaultFeerates.blocks_144,
-    blocks_1008 = if (blocks_1008.isValid) blocks_1008 else defaultFeerates.blocks_1008)
+    block_1 = if (block_1.feerate > 0.sat) block_1 else defaultFeerates.block_1,
+    blocks_2 = if (blocks_2.feerate > 0.sat) blocks_2 else defaultFeerates.blocks_2,
+    blocks_6 = if (blocks_6.feerate > 0.sat) blocks_6 else defaultFeerates.blocks_6,
+    blocks_12 = if (blocks_12.feerate > 0.sat) blocks_12 else defaultFeerates.blocks_12,
+    blocks_36 = if (blocks_36.feerate > 0.sat) blocks_36 else defaultFeerates.blocks_36,
+    blocks_72 = if (blocks_72.feerate > 0.sat) blocks_72 else defaultFeerates.blocks_72,
+    blocks_144 = if (blocks_144.feerate > 0.sat) blocks_144 else defaultFeerates.blocks_144,
+    blocks_1008 = if (blocks_1008.feerate > 0.sat) blocks_1008 else defaultFeerates.blocks_1008)
 }
 
 object BitcoinCoreFeeProvider {
@@ -66,12 +66,12 @@ object BitcoinCoreFeeProvider {
         json \ "feerate" match {
           case JDecimal(feerate) =>
             // estimatesmartfee returns a fee rate in Btc/KB
-            FeeratePerKB(btc2satoshi(Btc(feerate)))
+            FeeratePerKB(Btc(feerate).toSatoshi)
           case JInt(feerate) if feerate.toLong < 0 =>
             // negative value means failure: should (hopefully) never happen
             FeeratePerKB(feerate.toLong.sat)
           case JInt(feerate) =>
-            FeeratePerKB(btc2satoshi(Btc(feerate.toLong)))
+            FeeratePerKB(Btc(feerate.toLong).toSatoshi)
         }
       case JArray(errors) =>
         val error = errors.collect { case JString(error) => error }.mkString(", ")

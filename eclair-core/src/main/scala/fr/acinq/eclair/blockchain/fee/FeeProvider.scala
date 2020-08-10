@@ -34,13 +34,12 @@ case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve fee
 case class FeeratePerByte(feerate: Satoshi)
 
 object FeeratePerByte {
-  def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(feeratePerKw.feerate / 250)
+  def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw).feerate / 1000)
 }
 
-/** Fee rate in satoshi-per-kilo-bytes (1 kb = 1000 bytes). */
+/** Fee rate in satoshi-per-kilo-bytes (1 kB = 1000 bytes). */
 case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
   // @formatter:off
-  def isValid: Boolean = feerate.toLong > 0
   override def compare(that: FeeratePerKB): Int = feerate.compare(that.feerate)
   def max(other: FeeratePerKB): FeeratePerKB = if (this > other) this else other
   def min(other: FeeratePerKB): FeeratePerKB = if (this < other) this else other
@@ -58,7 +57,6 @@ object FeeratePerKB {
 /** Fee rate in satoshi-per-kilo-weight. */
 case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
   // @formatter:off
-  def isValid: Boolean = feerate.toLong > 0
   override def compare(that: FeeratePerKw): Int = feerate.compare(that.feerate)
   def max(other: FeeratePerKw): FeeratePerKw = if (this > other) this else other
   def min(other: FeeratePerKw): FeeratePerKw = if (this < other) this else other
@@ -105,7 +103,7 @@ object FeeratePerKw {
 
 /** Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes). */
 case class FeeratesPerKB(block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB, blocks_1008: FeeratePerKB) {
-  require(block_1.isValid && blocks_2.isValid && blocks_6.isValid && blocks_12.isValid && blocks_36.isValid && blocks_72.isValid && blocks_144.isValid && blocks_1008.isValid, "all feerates must be strictly greater than 0")
+  require(block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
 
   def feePerBlock(target: Int): FeeratePerKB = target match {
     case 1 => block_1
@@ -121,7 +119,7 @@ case class FeeratesPerKB(block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6
 
 // stores fee rate in satoshi/kw (1 kw = 1000 weight units)
 case class FeeratesPerKw(block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6: FeeratePerKw, blocks_12: FeeratePerKw, blocks_36: FeeratePerKw, blocks_72: FeeratePerKw, blocks_144: FeeratePerKw, blocks_1008: FeeratePerKw) {
-  require(block_1.isValid && blocks_2.isValid && blocks_6.isValid && blocks_12.isValid && blocks_36.isValid && blocks_72.isValid && blocks_144.isValid && blocks_1008.isValid, "all feerates must be strictly greater than 0")
+  require(block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
 
   def feePerBlock(target: Int): FeeratePerKw = target match {
     case 1 => block_1
