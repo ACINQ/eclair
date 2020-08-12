@@ -27,6 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
@@ -217,6 +218,12 @@ class FailureMessageSerializer extends CustomSerializer[FailureMessage](_ => ( {
   case m: FailureMessage => JString(m.message)
 }))
 
+class FailureTypeSerializer extends CustomSerializer[FailureType](_ => ( {
+  null
+}, {
+  case ft: FailureType => JString(ft.toString)
+}))
+
 class NodeAddressSerializer extends CustomSerializer[NodeAddress](_ => ( {
   null
 }, {
@@ -338,6 +345,7 @@ object JsonSupport extends Json4sSupport {
     new RouteResponseSerializer +
     new ThrowableSerializer +
     new FailureMessageSerializer +
+    new FailureTypeSerializer +
     new NodeAddressSerializer +
     new DirectedHtlcSerializer +
     new PaymentRequestSerializer +
