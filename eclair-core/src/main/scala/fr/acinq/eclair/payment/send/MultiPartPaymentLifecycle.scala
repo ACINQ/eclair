@@ -24,6 +24,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Upstream
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -216,7 +217,19 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   private def gotoAbortedOrStop(d: PaymentAborted): State = {
     if (d.pending.isEmpty) {
-      myStop(d.sender, Left(PaymentFailed(id, paymentHash, d.failures)))
+      val pf = PaymentFailed(id, paymentHash, d.failures)
+      if (cfg.storeInDb) {
+        // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
+        // payment, which may be confusing for users.
+        nodeParams.db.payments.listOutgoingPayments(cfg.parentId) match {
+          case Nil =>
+            val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending)
+            nodeParams.db.payments.addOutgoingPayment(dummyPayment)
+            nodeParams.db.payments.updateOutgoingPayment(pf)
+          case _ =>
+        }
+      }
+      myStop(d.sender, Left(pf))
     } else
       goto(PAYMENT_ABORTED) using d
   }
