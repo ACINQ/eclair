@@ -103,7 +103,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RouteResponse(route +: _), WaitingForRoute(s, c, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
       val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(cfg.upstream, paymentHash, route.hops, c.finalPayload)
-      register ! Register.ForwardShortId(route.hops.head.lastUpdate.shortChannelId, cmd)
+      register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignore, route)
 
     case Event(Status.Failure(t), WaitingForRoute(s, _, failures, _)) =>

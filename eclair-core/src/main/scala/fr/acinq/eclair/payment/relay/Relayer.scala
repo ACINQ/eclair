@@ -183,6 +183,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
     }
 
     case ChannelCommandResponse.Ok => () // ignoring responses from channels
+
+    case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
   }
 
   override def mdc(currentMessage: Any): MDC = {
@@ -234,6 +236,10 @@ object Relayer extends Logging {
       isPublic = commitments.announceChannel)
   }
   case class OutgoingChannels(channels: Seq[OutgoingChannel])
+
+  // internal classes, used for testing
+  private[payment] case class GetChildActors(replyTo: ActorRef)
+  private[payment] case class ChildActors(postRestartCleaner: ActorRef, channelRelayer: ActorRef, nodeRelayer: ActorRef)
   // @formatter:on
 
 }
