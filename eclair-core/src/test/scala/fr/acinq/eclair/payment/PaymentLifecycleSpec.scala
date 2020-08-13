@@ -217,7 +217,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, ignore1, route) = paymentFSM.stateData
     assert(ignore1.nodes.isEmpty)
 
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     sender.send(paymentFSM, Relayer.ForwardRemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, randomBytes32), defaultOrigin, UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket))) // unparsable message
 
     // then the payment lifecycle will ask for a new route excluding all intermediate nodes
@@ -229,7 +229,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd2, _, _, ignore2, _) = paymentFSM.stateData
     assert(ignore2.nodes === Set(c))
     // and reply a 2nd time with an unparsable failure
-    register.expectMsg(ForwardShortId(channelId_ab, cmd2))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd2))
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, defaultPaymentHash)) // unparsable message
 
     // we allow 2 tries, so we send a 2nd request to the router
@@ -252,7 +252,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     sender.send(paymentFSM, Status.Failure(AddHtlcFailed(ByteVector32.Zeroes, defaultPaymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None)))
 
     // then the payment lifecycle will ask for a new route excluding the channel
@@ -275,7 +275,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     sender.send(paymentFSM, UpdateFailMalformedHtlc(ByteVector32.Zeroes, 0, randomBytes32, FailureMessageCodecs.BADONION))
 
     // then the payment lifecycle will ask for a new route excluding the channel
@@ -297,7 +297,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, route) = paymentFSM.stateData
 
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     val failure = TemporaryChannelFailure(update_bc)
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
@@ -327,7 +327,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, route1) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
 
     // we change the cltv expiry
     val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
@@ -344,7 +344,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // router answers with a new route, taking into account the new update
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd2, _, sharedSecrets2, _, route2) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(channelId_ab, cmd2))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd2))
 
     // we change the cltv expiry one more time
     val channelUpdate_bc_modified_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(43), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
@@ -377,7 +377,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
 
     // the node replies with a temporary failure containing the same update as the one we already have (likely a balance issue)
     val failure = TemporaryChannelFailure(update_bc)
@@ -410,7 +410,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
 
     // we change the cltv expiry
     val channelUpdate_bc_modified = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, CltvExpiryDelta(42), htlcMinimumMsat = update_bc.htlcMinimumMsat, feeBaseMsat = update_bc.feeBaseMsat, feeProportionalMillionths = update_bc.feeProportionalMillionths, htlcMaximumMsat = update_bc.htlcMaximumMsat.get)
@@ -431,7 +431,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // router answers with a new route, taking into account the new update
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd2, _, _, _, _) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(channelId_ab, cmd2))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd2))
     assert(cmd2.cltvExpiry > cmd1.cltvExpiry)
   }
 
@@ -450,7 +450,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, _) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
 
     // we disable the channel
     val channelUpdate_cd_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, CltvExpiryDelta(42), update_cd.htlcMinimumMsat, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.htlcMaximumMsat.get, enable = false)
@@ -477,7 +477,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, _, cmd1, Nil, sharedSecrets1, _, route1) = paymentFSM.stateData
 
-    register.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     sender.send(paymentFSM, UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))
 
     // payment lifecycle forwards the embedded channelUpdate to the router

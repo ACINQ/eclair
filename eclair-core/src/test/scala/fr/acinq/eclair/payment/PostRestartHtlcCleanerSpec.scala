@@ -403,12 +403,16 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel_upstream_1.expectNoMsg(100 millis)
     channel_upstream_2.expectNoMsg(100 millis)
 
+    // we need a reference to the post-htlc-restart child actor
+    sender.send(relayer, Relayer.GetChildActors(sender.ref))
+    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
+
     // Payment 2 should fulfill once we receive the preimage.
     val origin_2 = Origin.TrampolineRelayed(upstream_2.adds.map(add => (add.channelId, add.id)).toList, None)
     sender.send(relayer, Relayer.ForwardOnChainFulfill(preimage2, origin_2, htlc_2_2))
     register.expectMsgAllOf(
-      Register.Forward(channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
-      Register.Forward(channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
+      Register.Forward(replyTo = postRestartHtlcCleaner, channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
+      Register.Forward(replyTo = postRestartHtlcCleaner, channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
     )
 
     // Payment 3 should not be failed: we are still waiting for on-chain confirmation.
@@ -422,11 +426,15 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val relayer = f.createRelayer()
     register.expectNoMsg(100 millis)
 
+    // we need a reference to the post-htlc-restart child actor
+    sender.send(relayer, Relayer.GetChildActors(sender.ref))
+    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
+
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
     val fails = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
-      case (channelId, htlcId) => Register.Forward(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+      case (channelId, htlcId) => Register.Forward(postRestartHtlcCleaner, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
@@ -438,7 +446,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
     register.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => Register.Forward(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+      case (channelId, htlcId) => Register.Forward(postRestartHtlcCleaner, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
     }.head)
 
     register.expectNoMsg(100 millis)
@@ -452,11 +460,15 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val relayer = f.createRelayer()
     register.expectNoMsg(100 millis)
 
+    // we need a reference to the post-htlc-restart child actor
+    sender.send(relayer, Relayer.GetChildActors(sender.ref))
+    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
+
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
     val fails = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: Nil
     assert(fails.toSet === testCase.upstream_1.origins.map {
-      case (channelId, htlcId) => Register.Forward(channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
+      case (channelId, htlcId) => Register.Forward(postRestartHtlcCleaner, channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.upstream_1, preimage1))
@@ -465,7 +477,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // This payment has 3 downstream HTLCs, but we should fulfill upstream as soon as we receive the preimage.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_1, testCase.upstream_2, preimage2))
     register.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => Register.Forward(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+      case (channelId, htlcId) => Register.Forward(postRestartHtlcCleaner, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
@@ -481,11 +493,15 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val relayer = f.createRelayer()
     register.expectNoMsg(100 millis)
 
+    // we need a reference to the post-htlc-restart child actor
+    sender.send(relayer, Relayer.GetChildActors(sender.ref))
+    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
+
     sender.send(relayer, buildForwardFail(testCase.downstream_2_1, testCase.upstream_2))
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.upstream_2, preimage2))
     register.expectMsg(testCase.upstream_2.origins.map {
-      case (channelId, htlcId) => Register.Forward(channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+      case (channelId, htlcId) => Register.Forward(postRestartHtlcCleaner, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
@@ -576,12 +592,12 @@ object PostRestartHtlcCleanerSpec {
    *  - the first one has 2 upstream HTLCs and 1 downstream HTLC
    *  - the second one has 1 upstream HTLC and 3 downstream HTLCs
    *  - the third one has 2 downstream HTLCs temporarily stuck in closing channels: the upstream HTLCs have been
-   * correctly resolved when the channel went to closing, so we should ignore that payment (downstream will eventually
-   * settle on-chain).
+   *    correctly resolved when the channel went to closing, so we should ignore that payment (downstream will eventually
+   *    settle on-chain).
    *
    * We also setup one normal relayed payment:
    *  - the downstream HTLC is stuck in a closing channel: the upstream HTLC has been correctly resolved, so we should
-   * ignore that payment (downstream will eventually settle on-chain).
+   *    ignore that payment (downstream will eventually settle on-chain).
    */
   def setupTrampolinePayments(nodeParams: NodeParams): TrampolinePaymentTest = {
     // Upstream HTLCs.

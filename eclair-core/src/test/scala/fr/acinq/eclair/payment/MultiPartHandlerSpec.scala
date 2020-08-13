@@ -369,8 +369,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val commands = f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(commands.toSet === Set(
-      Register.Forward(ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)),
-      Register.Forward(ByteVector32.One, CMD_FAIL_HTLC(1, Right(PaymentTimeout), commit = true))
+      Register.Forward(handler, ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)),
+      Register.Forward(handler, ByteVector32.One, CMD_FAIL_HTLC(1, Right(PaymentTimeout), commit = true))
     ))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
@@ -379,7 +379,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // Extraneous HTLCs should be failed.
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr1.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 42, 200 msat, pr1.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket)), Some(PaymentTimeout)))
-    f.register.expectMsg(Register.Forward(ByteVector32.One, CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true)))
+    f.register.expectMsg(Register.Forward(handler, ByteVector32.One, CMD_FAIL_HTLC(42, Right(PaymentTimeout), commit = true)))
 
     // The payment should still be pending in DB.
     val Some(incomingPayment) = nodeParams.db.payments.getIncomingPayment(pr1.paymentHash)
@@ -401,12 +401,12 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val add3 = add2.copy(id = 43)
     f.sender.send(handler, IncomingPacket.FinalPacket(add3, Onion.createMultiPartPayload(add3.amountMsat, 1000 msat, add3.cltvExpiry, pr.paymentSecret.get)))
 
-    f.register.expectMsg(Register.Forward(add2.channelId, CMD_FAIL_HTLC(add2.id, Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), commit = true)))
+    f.register.expectMsg(Register.Forward(handler, add2.channelId, CMD_FAIL_HTLC(add2.id, Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), commit = true)))
     val cmd1 = f.register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
     assert(cmd1.message.id === add1.id)
     assert(cmd1.channelId === add1.channelId)
     assert(Crypto.sha256(cmd1.message.r) === pr.paymentHash)
-    f.register.expectMsg(Register.Forward(add3.channelId, CMD_FULFILL_HTLC(add3.id, cmd1.message.r, commit = true)))
+    f.register.expectMsg(Register.Forward(handler, add3.channelId, CMD_FULFILL_HTLC(add3.id, cmd1.message.r, commit = true)))
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
     assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0))) === PaymentReceived(pr.paymentHash, PartialPayment(800 msat, ByteVector32.One, 0) :: PartialPayment(200 msat, ByteVector32.Zeroes, 0) :: Nil))
@@ -420,7 +420,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // Extraneous HTLCs should be fulfilled.
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, pr.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket)), None))
-    f.register.expectMsg(Register.Forward(ByteVector32.One, CMD_FULFILL_HTLC(44, cmd1.message.r, commit = true)))
+    f.register.expectMsg(Register.Forward(handler, ByteVector32.One, CMD_FULFILL_HTLC(44, cmd1.message.r, commit = true)))
     assert(f.eventListener.expectMsgType[PaymentReceived].amount === 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1200.msat)
@@ -439,7 +439,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
     f.sender.send(handler, IncomingPacket.FinalPacket(add1, Onion.createMultiPartPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, pr.paymentSecret.get)))
-    f.register.expectMsg(Register.Forward(ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)))
+    f.register.expectMsg(Register.Forward(handler, ByteVector32.One, CMD_FAIL_HTLC(0, Right(PaymentTimeout), commit = true)))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
       f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
@@ -454,7 +454,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(cmd1.channelId === add2.channelId)
     assert(cmd1.message.id === 2)
     assert(Crypto.sha256(cmd1.message.r) === pr.paymentHash)
-    f.register.expectMsg(Register.Forward(add3.channelId, CMD_FULFILL_HTLC(5, cmd1.message.r, commit = true)))
+    f.register.expectMsg(Register.Forward(handler, add3.channelId, CMD_FULFILL_HTLC(5, cmd1.message.r, commit = true)))
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
     assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0))) === PaymentReceived(pr.paymentHash, PartialPayment(300 msat, ByteVector32.One, 0) :: PartialPayment(700 msat, ByteVector32.Zeroes, 0) :: Nil))
@@ -501,7 +501,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
     sender.send(normalHandler, IncomingPacket.FinalPacket(add, payload))
 
-    f.register.expectMsg(Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), commit = true)))
+    f.register.expectMsg(Register.Forward(normalHandler, add.channelId, CMD_FAIL_HTLC(add.id, Right(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), commit = true)))
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
   }
 }

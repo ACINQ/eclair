@@ -101,8 +101,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     }
 
     def main(channel: ActorRef): Receive = {
-      case Register.Forward(_, msg) => channel forward msg
-      case Register.ForwardShortId(_, msg) => channel forward msg
+      case fwd: Register.Forward[_] => channel forward fwd.message
+      case fwd: Register.ForwardShortId[_] => channel forward fwd.message
     }
   }
 
