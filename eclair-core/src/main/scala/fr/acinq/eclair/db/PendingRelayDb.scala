@@ -55,7 +55,7 @@ object PendingRelayDb {
    * incoming htlcs, which would lead to unwanted channel closings.
    */
   def safeSend(register: ActorRef, db: PendingRelayDb, channelId: ByteVector32, cmd: Command with HasHtlcId)(implicit ctx: ActorContext): Unit = {
-    register ! Register.Forward(channelId, cmd)
+    register ! Register.Forward(ctx.self, channelId, cmd)
     // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
     db.addPendingRelay(channelId, cmd)
   }

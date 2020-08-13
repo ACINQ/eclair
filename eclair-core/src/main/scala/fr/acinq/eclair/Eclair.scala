@@ -364,8 +364,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
    * @param channel either a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded).
    */
   private def sendToChannel[T: ClassTag](channel: ApiTypes.ChannelIdentifier, request: Any)(implicit timeout: Timeout): Future[T] = (channel match {
-    case Left(channelId) => appKit.register ? Forward(channelId, request)
-    case Right(shortChannelId) => appKit.register ? ForwardShortId(shortChannelId, request)
+    case Left(channelId) => appKit.register ? Forward(ActorRef.noSender, channelId, request)
+    case Right(shortChannelId) => appKit.register ? ForwardShortId(ActorRef.noSender, shortChannelId, request)
   }).mapTo[T]
 
   /**
