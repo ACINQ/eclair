@@ -289,6 +289,7 @@ object RouteCalculation {
     }
   }
 
+  @tailrec
   private def findMultiPartRouteInternal(g: DirectedGraph,
                                          localNodeId: PublicKey,
                                          targetNodeId: PublicKey,
@@ -299,7 +300,8 @@ object RouteCalculation {
                                          ignoredVertices: Set[PublicKey] = Set.empty,
                                          pendingHtlcs: Seq[Route] = Nil,
                                          routeParams: RouteParams,
-                                         currentBlockHeight: Long): Either[RouterException, Seq[Route]] = {
+                                         currentBlockHeight: Long,
+                                         attemptsLeft: Int = 5): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
     val numRoutes = {
       val directChannelsCount = g.getEdgesBetween(localNodeId, targetNodeId).length
@@ -307,11 +309,19 @@ object RouteCalculation {
     }
     val routeAmount = routeParams.mpp.minPartAmount.min(amount)
     findRouteInternal(g, localNodeId, targetNodeId, routeAmount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
-      case Right(routes) =>
+      case Right(routes: Seq[Graph.WeightedPath]) =>
+        val initUsedCapacity = initializeUsedCapacity(pendingHtlcs)
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
-        split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams) match {
+        split(amount, mutable.Queue(routes: _*), initUsedCapacity, routeParams) match {
           case Right(routes) if validateMultiPartRoute(amount, maxFee, routes) => Right(routes)
-          case _ => Left(RouteNotFound)
+          case _ =>
+            if (attemptsLeft > 0 && routes.size > 1) {
+              val smallerToLargerDescs = routes.flatMap(_.path).sortBy(edge => edge.maxHtlcAmount(initUsedCapacity.getOrElse(edge.update.shortChannelId, 0 msat)))
+              val toExcludeDescs = smallerToLargerDescs.filterNot(extraEdges.contains).take(routes.size / 2).map(_.desc)
+              findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges ++ toExcludeDescs, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight, attemptsLeft - 1)
+            } else {
+              Left(RouteNotFound)
+            }
         }
       case Left(ex) => Left(ex)
     }

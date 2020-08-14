@@ -1535,6 +1535,18 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
   }
 
+  test("skip routes which turn out to have too small routing capacity on splitting") {
+    val rts = RouteParams(randomize = false, 21000 msat, 0.03, 6, CltvExpiryDelta(2016), None, MultiPartParams(1000 msat, 2))
+    val amount = 60000 msat
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(500000 msat)),
+      makeEdge(2L, b, c, 10 msat, 30, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(4L, b, c, 10 msat, 30, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(5L, b, c, 11 msat, 30, minHtlc = 1 msat, capacity = 55 sat),
+    ))
+    val Success(routes) = findMultiPartRoute(g, a, c, amount, 2500 msat, routeParams = rts, currentBlockHeight = 400000)
+  }
+
 }
 
 object RouteCalculationSpec {
