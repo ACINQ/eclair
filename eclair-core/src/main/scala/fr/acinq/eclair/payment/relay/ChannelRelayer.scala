@@ -56,7 +56,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
           register ! Register.ForwardShortId(self, selectedShortChannelId, cmdAdd)
       }
 
-    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, _)))) =>
+    case Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, _))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
@@ -83,7 +83,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case relay: RelayHtlc => Some(relay.r.add.paymentHash)
-      case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(_, _, c: CMD_ADD_HTLC))) => Some(c.paymentHash)
+      case Register.ForwardShortIdFailure(Register.ForwardShortId(_, _, c: CMD_ADD_HTLC)) => Some(c.paymentHash)
       case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
       case _ => None
     }

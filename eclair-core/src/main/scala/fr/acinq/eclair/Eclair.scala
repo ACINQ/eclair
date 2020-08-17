@@ -364,9 +364,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
    * @param channel either a shortChannelId (BOLT encoded) or a channelId (32-byte hex encoded).
    */
   private def sendToChannel[T: ClassTag](channel: ApiTypes.ChannelIdentifier, request: Any)(implicit timeout: Timeout): Future[T] = (channel match {
-    case Left(channelId) => appKit.register ? Forward(ActorRef.noSender, channelId, request)
-    case Right(shortChannelId) => appKit.register ? ForwardShortId(ActorRef.noSender, shortChannelId, request)
-  }).mapTo[T]
+    case Left(channelId) => appKit.register ? Register.Forward(ActorRef.noSender, channelId, request)
+    case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(ActorRef.noSender, shortChannelId, request)
+  }).map {
+    case t: T => t
+    case t: Register.ForwardFailure[T] @unchecked => throw new RuntimeException(s"channel ${t.fwd.channelId} not found")
+    case t: Register.ForwardShortIdFailure[T] @unchecked => throw new RuntimeException(s"channel ${t.fwd.shortChannelId} not found")
+  }
 
   /**
    * Send a request to multiple channels and expect responses.
