@@ -72,7 +72,7 @@ class ThroughputSpec extends AnyFunSuite {
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelVersion.STANDARD)
 
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {

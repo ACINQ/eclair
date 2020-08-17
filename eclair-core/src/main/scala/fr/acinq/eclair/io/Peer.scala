@@ -138,7 +138,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
             val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelVersion)
             val temporaryChannelId = msg.temporaryChannelId
             log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
-            channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit)
+            channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelVersion)
             channel ! msg
             stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
           case Some(_) =>

@@ -69,7 +69,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     within(30 seconds) {
       val fundingAmount = if (test.tags.contains("wumbo")) Btc(5).toSatoshi else TestConstants.fundingSatoshis
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)

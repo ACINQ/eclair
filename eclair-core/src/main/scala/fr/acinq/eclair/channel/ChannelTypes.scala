@@ -76,7 +76,7 @@ case object ERR_INFORMATION_LEAK extends State
  */
 
 case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: FeeratePerKw, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte, channelVersion: ChannelVersion)
-case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
+case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelVersion: ChannelVersion)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
