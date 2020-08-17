@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -67,7 +66,7 @@ class Register extends Actor with ActorLogging {
       val compatReplyTo = if (replyTo == ActorRef.noSender) sender else replyTo
       channels.get(channelId) match {
         case Some(channel) => channel.tell(msg, compatReplyTo)
-        case None => compatReplyTo ! Failure(ForwardFailure(fwd))
+        case None => compatReplyTo ! ForwardFailure(fwd)
       }
 
     case fwd@ForwardShortId(replyTo, shortChannelId, msg) =>
@@ -75,7 +74,7 @@ class Register extends Actor with ActorLogging {
       val compatReplyTo = if (replyTo == ActorRef.noSender) sender else replyTo
       shortIds.get(shortChannelId).flatMap(channels.get) match {
         case Some(channel) => channel.tell(msg, compatReplyTo)
-        case None => compatReplyTo ! Failure(ForwardShortIdFailure(fwd))
+        case None => compatReplyTo ! ForwardShortIdFailure(fwd)
       }
   }
 }
@@ -86,7 +85,7 @@ object Register {
   case class Forward[T](replyTo: ActorRef, channelId: ByteVector32, message: T)
   case class ForwardShortId[T](replyTo: ActorRef, shortChannelId: ShortChannelId, message: T)
 
-  case class ForwardFailure[T](fwd: Forward[T]) extends RuntimeException(s"channel ${fwd.channelId} not found")
-  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId} not found")
+  case class ForwardFailure[T](fwd: Forward[T])
+  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T])
   // @formatter:on
 }
