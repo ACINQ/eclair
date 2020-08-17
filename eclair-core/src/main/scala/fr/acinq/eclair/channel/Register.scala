@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -62,16 +61,18 @@ class Register extends Actor with ActorLogging {
 
     case Symbol("channelsTo") => sender ! channelsTo
 
-    case fwd@Forward(channelId, msg) =>
+    case fwd@Forward(replyTo, channelId, msg) =>
       channels.get(channelId) match {
-        case Some(channel) => channel forward msg
-        case None => sender ! Failure(ForwardFailure(fwd))
+        case Some(channel) => channel.tell(msg, replyTo) // for backward compatibility, we use the replyTo as sender
+        case None if replyTo == ActorRef.noSender => sender ! ForwardFailure(fwd) // compatibility with legacy ask
+        case None => replyTo ! ForwardFailure(fwd)
       }
 
-    case fwd@ForwardShortId(shortChannelId, msg) =>
+    case fwd@ForwardShortId(replyTo, shortChannelId, msg) =>
       shortIds.get(shortChannelId).flatMap(channels.get) match {
-        case Some(channel) => channel forward msg
-        case None => sender ! Failure(ForwardShortIdFailure(fwd))
+        case Some(channel) => channel.tell(msg, replyTo) // for backward compatibility, we use the replyTo as sender
+        case None if replyTo == ActorRef.noSender => sender ! ForwardShortIdFailure(fwd) // compatibility with legacy ask
+        case None => replyTo ! ForwardShortIdFailure(fwd)
       }
   }
 }
@@ -79,10 +80,10 @@ class Register extends Actor with ActorLogging {
 object Register {
 
   // @formatter:off
-  case class Forward[T](channelId: ByteVector32, message: T)
-  case class ForwardShortId[T](shortChannelId: ShortChannelId, message: T)
+  case class Forward[T](replyTo: ActorRef, channelId: ByteVector32, message: T)
+  case class ForwardShortId[T](replyTo: ActorRef, shortChannelId: ShortChannelId, message: T)
 
-  case class ForwardFailure[T](fwd: Forward[T]) extends RuntimeException(s"channel ${fwd.channelId} not found")
-  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId} not found")
+  case class ForwardFailure[T](fwd: Forward[T])
+  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T])
   // @formatter:on
 }

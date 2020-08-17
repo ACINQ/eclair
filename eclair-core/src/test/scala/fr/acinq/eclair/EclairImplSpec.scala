@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import java.util.UUID
 
+import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -283,31 +284,31 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
-    register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_FORCECLOSE))
+    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE))
 
     eclair.forceClose(Right(ShortChannelId("568749x2597x0")) :: Nil)
-    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId("568749x2597x0")) :: Nil)
     register.expectMsgAllOf(
-      Register.Forward(ByteVector32.Zeroes, CMD_FORCECLOSE),
-      Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_FORCECLOSE)
+      Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE),
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE)
     )
 
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None)
-    register.expectMsg(Register.Forward(ByteVector32.Zeroes, CMD_CLOSE(None)))
+    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(None)))
 
     eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, None)
-    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(None)))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(None)))
 
     eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, Some(ByteVector.empty))
-    register.expectMsg(Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(Some(ByteVector.empty))))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(Some(ByteVector.empty))))
 
     eclair.close(Right(ShortChannelId("568749x2597x0")) :: Left(ByteVector32.One) :: Right(ShortChannelId("568749x2597x1")) :: Nil, None)
     register.expectMsgAllOf(
-      Register.ForwardShortId(ShortChannelId("568749x2597x0"), CMD_CLOSE(None)),
-      Register.Forward(ByteVector32.One, CMD_CLOSE(None)),
-      Register.ForwardShortId(ShortChannelId("568749x2597x1"), CMD_CLOSE(None))
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(None)),
+      Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_CLOSE(None)),
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x1"), CMD_CLOSE(None))
     )
   }
 
