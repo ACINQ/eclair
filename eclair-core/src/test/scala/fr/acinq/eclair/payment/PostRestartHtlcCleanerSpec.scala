@@ -369,7 +369,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
         val (_, cmd) = makeCmdAdd(22000000 msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight, preimage1, upstream_1)
         addHtlc(cmd, alice, bob, alice2bob, bob2alice)
         sender.send(alice, CMD_SIGN)
-        sender.expectMsg(ChannelCommandResponse.Ok)
+        sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
         alice2bob.expectMsgType[CommitSig]
       }
 

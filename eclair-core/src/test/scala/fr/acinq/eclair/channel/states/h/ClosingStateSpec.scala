@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel.states.h
 
 import java.util.UUID
 
+import akka.actor.ActorRef
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -271,7 +272,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(ActorRef.noSender, 500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
@@ -471,7 +472,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
     alice2bob.expectMsgType[CommitSig]
     // note that bob doesn't receive the new sig!
     // then we make alice unilaterally close the channel
@@ -500,7 +501,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
     sender.send(alice, CMD_SIGN)
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
     alice2bob.expectMsgType[CommitSig]
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
 

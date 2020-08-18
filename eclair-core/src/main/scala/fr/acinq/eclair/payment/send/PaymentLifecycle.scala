@@ -23,7 +23,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, HtlcsTimedoutDownstream, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, HtlcsTimedoutDownstream, RES_SUCCESS, Register}
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -114,7 +114,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
-    case Event(ChannelCommandResponse.Ok, _) => stay
+    case Event(_: RES_SUCCESS[_], _) => stay
 
     case Event(fulfill: Relayer.ForwardFulfill, WaitingForComplete(s, c, cmd, failures, _, _, route)) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(failures.size + 1)

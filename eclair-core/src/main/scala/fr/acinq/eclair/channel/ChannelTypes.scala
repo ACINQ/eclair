@@ -119,20 +119,21 @@ object Upstream {
 }
 
 sealed trait Command
-sealed trait HasHtlcId { def id: Long }
+sealed trait HasReplyTo { this: Command => def replyTo: ActorRef }
+sealed trait HasHtlcId { this: Command => def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command with HasHtlcId
-final case class CMD_ADD_HTLC(amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Upstream, commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Upstream, commit: Boolean = false, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends Command with HasReplyTo
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
-final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends Command
+sealed trait CloseCommand extends Command
+final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends CloseCommand
+case object CMD_FORCECLOSE extends CloseCommand
 final case class CMD_UPDATE_RELAY_FEE(feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends Command
-case object CMD_FORCECLOSE extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command
-final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data)
 
 /*
        88888888b.  8888888888  .d8888b.  88888888b.    ,ad8888ba,   888b      88  .d8888b.  8888888888  .d8888b.
@@ -145,9 +146,20 @@ final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: 
        88      `8b 8888888888  "Y8888P"  88            `"Y8888Y"'   88      `888  "Y8888P"  8888888888  "Y8888P"
  */
 
+/** response to [[Command]] requests */
+sealed trait CommandResponse[+C <: Command]
+sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
+sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: Throwable }
+
+/** generic responses */
+final case class RES_SUCCESS[+C <: Command](cmd: C) extends CommandSuccess[C]
+final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) extends CommandFailure[C, T]
+
+/** other specific responses */
+final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data) extends CommandSuccess[CMD_GETINFO.type]
+
 sealed trait ChannelCommandResponse
 object ChannelCommandResponse {
-  case object Ok extends ChannelCommandResponse { override def toString  = "ok" }
   case class ChannelOpened(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"created channel $channelId" }
   case class ChannelClosed(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"closed channel $channelId" }
 }

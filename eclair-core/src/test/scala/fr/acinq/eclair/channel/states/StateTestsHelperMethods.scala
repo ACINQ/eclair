@@ -145,7 +145,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
   def addHtlc(cmdAdd: CMD_ADD_HTLC, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): UpdateAddHtlc = {
     val sender = TestProbe()
     sender.send(s, cmdAdd)
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
@@ -155,7 +155,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
   def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
     sender.send(s, CMD_FULFILL_HTLC(id, R))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_FULFILL_HTLC]]
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
@@ -167,7 +167,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
     val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[HasCommitments].commitments)
     sender.send(s, CMD_SIGN)
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
     s2r.expectMsgType[CommitSig]
     s2r.forward(r)
     r2s.expectMsgType[RevokeAndAck]

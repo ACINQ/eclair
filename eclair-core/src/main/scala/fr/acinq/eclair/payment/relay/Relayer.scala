@@ -182,7 +182,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
       case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
     }
 
-    case ChannelCommandResponse.Ok => () // ignoring responses from channels
+    case _: RES_SUCCESS[_] => () // ignoring responses from channels
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
   }

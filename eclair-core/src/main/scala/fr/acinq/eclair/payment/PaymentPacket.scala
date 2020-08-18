@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.payment
 
+import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -239,7 +240,7 @@ object OutgoingPacket {
    */
   def buildCommand(upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: Onion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, finalPayload)
-    CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(ActorRef.noSender, firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true) -> onion.sharedSecrets
   }
 
 }

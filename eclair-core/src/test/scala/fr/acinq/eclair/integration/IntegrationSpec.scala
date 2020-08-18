@@ -855,7 +855,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val finalPubKeyScriptF = sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey
 
     sender.send(nodes("F1").register, Register.Forward(sender.ref, channelId, CMD_CLOSE(Some(finalPubKeyScriptF))))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, channelId, CMD_GETSTATE))
@@ -923,7 +923,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     // now let's force close the channel and check the toRemote is what we had at the beginning
     sender.send(nodes("F2").register, Register.Forward(sender.ref, channelId, CMD_FORCECLOSE))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
     // we then wait for C to detect the unilateral close and go to CLOSING state
     awaitCond({
       nodes("C").register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
@@ -1047,11 +1047,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     disconnectCF(nodeF, htlc.channelId, sender)
     // we then have C unilaterally close the channel (which will make F redeem the htlc onchain)
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSING
+      sender.expectMsgType[State] == OFFLINE
     }, max = 20 seconds, interval = 1 second)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(bitcoincli, 3, Some(minerAddress))
@@ -1094,7 +1094,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     disconnectCF(nodeF, htlc.channelId, sender)
     // then we have F unilaterally close the channel
     sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSING, max = 30 seconds)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(bitcoincli, 3, Some(minerAddress))
@@ -1185,7 +1185,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
     // we ask F to unilaterally close the channel
     sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
     // we wait for C to detect the unilateral close
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))

@@ -46,7 +46,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
 
   override def receive: Receive = {
     case RelayHtlc(r, previousFailures, channelUpdates, node2channels) =>
-      handleRelay(r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
+      handleRelay(self, r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
         case RelayFailure(cmdFail) =>
           Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
@@ -56,7 +56,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
           register ! Register.ForwardShortId(self, selectedShortChannelId, cmdAdd)
       }
 
-    case Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, _))) =>
+    case Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, _, Upstream.Relayed(add), _, _))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
@@ -64,7 +64,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
 
     case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
       case Origin.Relayed(originChannelId, originHtlcId, _, _) => addFailed.originalCommand match {
-        case Some(CMD_ADD_HTLC(_, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
+        case Some(CMD_ADD_HTLC(_, _, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
           log.info(s"retrying htlc #$originHtlcId from channelId=$originChannelId")
           relayer ! Relayer.ForwardAdd(add, previousFailures :+ addFailed)
         case _ =>
@@ -77,7 +77,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       case _ => throw new IllegalArgumentException(s"channel relayer received unexpected failure: $addFailed")
     }
 
-    case ChannelCommandResponse.Ok => // ignoring responses from channels
+    case _: RES_SUCCESS[_] => // ignoring responses from channels
   }
 
   override def mdc(currentMessage: Any): MDC = {
@@ -110,7 +110,7 @@ object ChannelRelayer {
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  def handleRelay(relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[AddHtlcFailed], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
+  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[AddHtlcFailed], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
     import relayPacket._
     log.info(s"relaying htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, payload.outgoingChannelId, previousFailures.size)
     val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
@@ -202,7 +202,7 @@ object ChannelRelayer {
       case Some(channelUpdate) if relayPacket.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amountToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, Upstream.Relayed(add), commit = true, previousFailures = previousFailures))
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(ActorRef.noSender, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, Upstream.Relayed(add), commit = true, previousFailures = previousFailures))
     }
   }
 
