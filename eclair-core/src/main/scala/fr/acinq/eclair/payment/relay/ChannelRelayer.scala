@@ -63,7 +63,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
 
     case addFailed@RES_ADD_FAILED(_, _, _, _, _, _) => addFailed.origin match {
-      case Origin.Relayed(originChannelId, originHtlcId, _, _) => addFailed.originalCommand match {
+      case Origin.Relayed(originChannelId, originHtlcId, _, _, _) => addFailed.originalCommand match {
         case Some(CMD_ADD_HTLC(_, _, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
           log.info(s"retrying htlc #$originHtlcId from channelId=$originChannelId")
           relayer ! Relayer.ForwardAdd(add, previousFailures :+ addFailed)
@@ -114,7 +114,7 @@ object ChannelRelayer {
     import relayPacket._
     log.info(s"relaying htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, payload.outgoingChannelId, previousFailures.size)
     val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
-    selectPreferredChannel(relayPacket, channelUpdates, node2channels, alreadyTried)
+    selectPreferredChannel(replyTo, relayPacket, channelUpdates, node2channels, alreadyTried)
       .flatMap(selectedShortChannelId => channelUpdates.get(selectedShortChannelId).map(_.channelUpdate)) match {
       case None if previousFailures.nonEmpty =>
         // no more channels to try
@@ -125,7 +125,7 @@ object ChannelRelayer {
           .getOrElse(previousFailures.head)
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(translateError(error)), commit = true))
       case channelUpdate_opt =>
-        relayOrFail(relayPacket, channelUpdate_opt, previousFailures)
+        relayOrFail(replyTo, relayPacket, channelUpdate_opt, previousFailures)
     }
   }
 
@@ -135,7 +135,7 @@ object ChannelRelayer {
    *
    * If no suitable channel is found we default to the originally requested channel.
    */
-  def selectPreferredChannel(relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, alreadyTried: Seq[ShortChannelId])(implicit log: LoggingAdapter): Option[ShortChannelId] = {
+  def selectPreferredChannel(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, alreadyTried: Seq[ShortChannelId])(implicit log: LoggingAdapter): Option[ShortChannelId] = {
     import relayPacket.add
     val requestedShortChannelId = relayPacket.payload.outgoingChannelId
     log.debug(s"selecting next channel for htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, requestedShortChannelId, alreadyTried.size)
@@ -157,7 +157,7 @@ object ChannelRelayer {
           .map { shortChannelId =>
             val channelInfo_opt = channelUpdates.get(shortChannelId)
             val channelUpdate_opt = channelInfo_opt.map(_.channelUpdate)
-            val relayResult = relayOrFail(relayPacket, channelUpdate_opt)
+            val relayResult = relayOrFail(replyTo, relayPacket, channelUpdate_opt)
             log.debug(s"candidate channel for htlc #${add.id}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo_opt.map(_.commitments.availableBalanceForSend).getOrElse(""), channelUpdate_opt.getOrElse(""), relayResult)
             (shortChannelId, channelInfo_opt, relayResult)
           }
@@ -188,7 +188,7 @@ object ChannelRelayer {
    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
    * htlc.
    */
-  def relayOrFail(relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty): RelayResult = {
+  def relayOrFail(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty): RelayResult = {
     import relayPacket._
     channelUpdate_opt match {
       case None =>
@@ -202,7 +202,7 @@ object ChannelRelayer {
       case Some(channelUpdate) if relayPacket.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amountToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(ActorRef.noSender, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, Upstream.Relayed(add), commit = true, previousFailures = previousFailures))
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(replyTo, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, Upstream.Relayed(add), commit = true, previousFailures = previousFailures))
     }
   }
 

@@ -972,7 +972,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         log.info(s"updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = false)
         d.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_FAILED(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None)
+//          case add: UpdateAddHtlc =>
+//            relayer ! RES_ADD_FAILED(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None)
+          case add: UpdateAddHtlc =>
+            val addFailed = RES_ADD_FAILED(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None)
+            d.commitments.originChannels(add.id) match {
+              case Origin.Local(_, None) => () // TODO: we used to log an error here
+              case Origin.Local(_, Some(replyTo)) => replyTo ! addFailed
+              case Origin.Relayed(_, _, _, _, None) => () // TODO: this case didn't exist before
+              case Origin.Relayed(_, _, _, _, Some(replyTo)) => replyTo ! addFailed
+              case Origin.TrampolineRelayed(_, None) => ()// TODO: we used to log an error here
+              case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! addFailed
+            }
         }
         d.copy(channelUpdate = channelUpdate)
       } else {
@@ -2338,7 +2349,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def origin(c: CMD_ADD_HTLC): Origin = c.upstream match {
     case Upstream.Local(id) => Origin.Local(id, Some(c.replyTo)) // we were the origin of the payment
-    case Upstream.Relayed(u) => Origin.Relayed(u.channelId, u.id, u.amountMsat, c.amount) // this is a relayed payment to an outgoing channel
+    case Upstream.Relayed(u) => Origin.Relayed(u.channelId, u.id, u.amountMsat, c.amount, Some(c.replyTo)) // this is a relayed payment to an outgoing channel
     case Upstream.TrampolineRelayed(us) => Origin.TrampolineRelayed(us.map(u => (u.channelId, u.id)).toList, Some(c.replyTo)) // this is a relayed payment to an outgoing node
   }
 

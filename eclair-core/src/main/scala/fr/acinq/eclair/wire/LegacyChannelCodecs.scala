@@ -183,14 +183,15 @@ private[wire] object LegacyChannelCodecs extends Logging {
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[Origin.Relayed]
+      ("amountOut" | millisatoshi) ::
+      ("replyTo" | provide(Option.empty[ActorRef]))).as[Origin.Relayed]
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
   val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
     listOfN(uint16, bytes32 ~ int64) ::
-      ("sender" | provide(Option.empty[ActorRef]))
+      ("replyTo" | provide(Option.empty[ActorRef]))
     ).as[Origin.TrampolineRelayed]
 
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)

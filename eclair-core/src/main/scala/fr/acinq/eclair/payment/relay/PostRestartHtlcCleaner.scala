@@ -265,7 +265,7 @@ object PostRestartHtlcCleaner {
   /** Returns true if the given HTLC matches the given origin. */
   private def matchesOrigin(htlcIn: UpdateAddHtlc, origin: Origin): Boolean = origin match {
     case _: Origin.Local => false
-    case Origin.Relayed(originChannelId, originHtlcId, _, _) => originChannelId == htlcIn.channelId && originHtlcId == htlcIn.id
+    case Origin.Relayed(originChannelId, originHtlcId, _, _, _) => originChannelId == htlcIn.channelId && originHtlcId == htlcIn.id
     case Origin.TrampolineRelayed(origins, _) => origins.exists {
       case (originChannelId, originHtlcId) => originChannelId == htlcIn.channelId && originHtlcId == htlcIn.id
     }
@@ -348,7 +348,7 @@ object PostRestartHtlcCleaner {
       // instant whereas the uncooperative close of the downstream channel will take time.
       .filterKeys {
         case _: Origin.Local => true
-        case Origin.Relayed(channelId, htlcId, _, _) => isPendingUpstream(channelId, htlcId)
+        case Origin.Relayed(channelId, htlcId, _, _, _) => isPendingUpstream(channelId, htlcId)
         case Origin.TrampolineRelayed(htlcs, _) => htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId) }
       }
       .toMap

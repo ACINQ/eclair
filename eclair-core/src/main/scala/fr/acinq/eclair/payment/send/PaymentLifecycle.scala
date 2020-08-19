@@ -102,7 +102,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(s, c, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(cfg.upstream, paymentHash, route.hops, c.finalPayload)
+      val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload)
       register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignore, route)
 
@@ -198,7 +198,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       self ! RES_FAILURE(d.cmd, new RuntimeException("first hop returned an UpdateFailMalformedHtlc message"))
       stay
 
-    case Event(addFail: CommandFailure[CMD_ADD_HTLC, Throwable], data@WaitingForComplete(s, c, _, failures, _, _, hops)) =>
+    case Event(addFail: CommandFailure[CMD_ADD_HTLC, Throwable] @unchecked, data@WaitingForComplete(s, c, _, failures, _, _, hops)) =>
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(hops), addFail.t))).increment()
       val isFatal = failures.size + 1 >= c.maxAttempts || // retries exhausted
         addFail.t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs

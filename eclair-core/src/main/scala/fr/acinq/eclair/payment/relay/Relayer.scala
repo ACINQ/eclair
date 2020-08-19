@@ -40,16 +40,16 @@ import scala.concurrent.Promise
 sealed trait Origin
 object Origin {
   /** Our node is the origin of the payment. */
-  case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
+  case class Local(id: UUID, replyTo: Option[ActorRef]) extends Origin // we don't persist reference to local actors
   /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-  case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
+  case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi, replyTo: Option[ActorRef]) extends Origin
   /**
    * Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).
    *
    * @param origins       origin channelIds and htlcIds.
-   * @param paymentSender actor sending the outgoing HTLC (if we haven't restarted and lost the reference).
+   * @param replyTo actor sending the outgoing HTLC (if we haven't restarted and lost the reference).
    */
-  case class TrampolineRelayed(origins: List[(ByteVector32, Long)], paymentSender: Option[ActorRef]) extends Origin
+  case class TrampolineRelayed(origins: List[(ByteVector32, Long)], replyTo: Option[ActorRef]) extends Origin
 }
 // @formatter:on
 
@@ -149,29 +149,21 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
-    case addFailed: RES_ADD_FAILED[_] @unchecked => addFailed.origin match {
-      case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
-      case Origin.Local(_, Some(sender)) => sender ! addFailed
-      case _: Origin.Relayed => channelRelayer forward addFailed
-      case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! addFailed
-    }
-
     case ff: ForwardFulfill => ff.to match {
       case Origin.Local(_, None) => postRestartCleaner forward ff
-      case Origin.Local(_, Some(sender)) => sender ! ff
-      case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
+      case Origin.Local(_, Some(replyTo)) => replyTo ! ff
+      case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut, _) =>
         val cmd = CMD_FULFILL_HTLC(originHtlcId, ff.paymentPreimage, commit = true)
         PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
         context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
       case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
+      case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! ff
     }
 
     case ff: ForwardFail => ff.to match {
       case Origin.Local(_, None) => postRestartCleaner forward ff
-      case Origin.Local(_, Some(sender)) => sender ! ff
-      case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
+      case Origin.Local(_, Some(replyTo)) => replyTo ! ff
+      case Origin.Relayed(originChannelId, originHtlcId, _, _, _) =>
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = ff match {
           case ForwardRemoteFail(fail, _, _) => CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
@@ -180,7 +172,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         }
         PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
       case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
+      case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! ff
     }
 
     case _: RES_SUCCESS[_] => () // ignoring responses from channels

@@ -238,9 +238,9 @@ object OutgoingPacket {
    *
    * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
    */
-  def buildCommand(upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: Onion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
+  def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: Onion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, finalPayload)
-    CMD_ADD_HTLC(ActorRef.noSender, firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true) -> onion.sharedSecrets
   }
 
 }

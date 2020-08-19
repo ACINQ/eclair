@@ -115,7 +115,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(blockHeight = 400000)
-      OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
+      OutgoingPacket.buildCommand(self, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =
@@ -131,7 +131,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
               case u: Relayer.ForwardFail =>
                 log.warning(s"htlc failed: ${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case res: RES_FAILURE[_, _] =>
+              case res: RES_ADD_FAILED[_] @unchecked =>
                 log.error(s"htlc error: ${res.t.getMessage}")
                 initiatePaymentOrStop(remaining - 1)
             }

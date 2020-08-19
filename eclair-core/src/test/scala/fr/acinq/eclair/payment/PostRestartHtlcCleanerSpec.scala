@@ -80,7 +80,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     //          (channel AB2)
 
     val relayedPaymentHash = randomBytes32
-    val relayed = Origin.Relayed(channelId_ab_1, 5, 10 msat, 10 msat)
+    val relayed = Origin.Relayed(channelId_ab_1, 5, 10 msat, 10 msat, None)
     val trampolineRelayedPaymentHash = randomBytes32
     val trampolineRelayed = Origin.TrampolineRelayed((channelId_ab_1, 0L) :: (channelId_ab_2, 2L) :: Nil, None)
 
@@ -525,7 +525,7 @@ object PostRestartHtlcCleanerSpec {
   val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
 
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
-    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
   }
 
@@ -534,7 +534,7 @@ object PostRestartHtlcCleanerSpec {
   def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
-    val (cmd, _) = buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, FinalLegacyPayload(finalAmount, finalExpiry))
     IncomingHtlc(UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion))
   }
 
@@ -618,7 +618,7 @@ object PostRestartHtlcCleanerSpec {
     // The following two origins reference upstream HTLCs that have already been settled.
     // They should be ignored by the post-restart clean-up.
     val origin_3 = Origin.TrampolineRelayed((channelId_ab_1, 57L) :: Nil, None)
-    val origin_4 = Origin.Relayed(channelId_ab_2, 57, 150 msat, 100 msat)
+    val origin_4 = Origin.Relayed(channelId_ab_2, 57, 150 msat, 100 msat, None)
 
     // Downstream HTLCs.
     val htlc_bc_1 = Seq(
