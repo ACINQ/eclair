@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment.relay
 import java.util.UUID
 
 import akka.Done
-import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -137,6 +137,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           } else {
             nodeRelayer forward r
           }
+
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
@@ -150,10 +151,10 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
     case addFailed: RES_ADD_FAILED[_] @unchecked => addFailed.origin match {
       case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
-      case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed.t)
+      case Origin.Local(_, Some(sender)) => sender ! addFailed
       case _: Origin.Relayed => channelRelayer forward addFailed
       case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed.t)
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! addFailed
     }
 
     case ff: ForwardFulfill => ff.to match {

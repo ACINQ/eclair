@@ -23,7 +23,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, ChannelCommandResponse, HtlcsTimedoutDownstream, RES_SUCCESS, Register}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -114,7 +114,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
-    case Event(_: RES_SUCCESS[_], _) => stay
+    case Event(RES_SUCCESS(_: CMD_ADD_HTLC), _) => stay
 
     case Event(fulfill: Relayer.ForwardFulfill, WaitingForComplete(s, c, cmd, failures, _, _, route)) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(failures.size + 1)
@@ -189,25 +189,25 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           retry(failure, data)
       }
 
-    case Event(fail: UpdateFailMalformedHtlc, _) =>
+    case Event(fail: UpdateFailMalformedHtlc, d: WaitingForComplete) =>
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.Malformed).increment()
       log.info(s"first node in the route couldn't parse our htlc: fail=$fail")
       // this is a corner case, that can only happen when the *first* node in the route cannot parse the onion
       // (if this happens higher up in the route, the error would be wrapped in an UpdateFailHtlc and handled above)
       // let's consider it a local error and treat is as such
-      self ! Status.Failure(new RuntimeException("first hop returned an UpdateFailMalformedHtlc message"))
+      self ! RES_FAILURE(d.cmd, new RuntimeException("first hop returned an UpdateFailMalformedHtlc message"))
       stay
 
-    case Event(Status.Failure(t), data@WaitingForComplete(s, c, _, failures, _, _, hops)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(hops), t))).increment()
+    case Event(addFail: CommandFailure[CMD_ADD_HTLC, Throwable], data@WaitingForComplete(s, c, _, failures, _, _, hops)) =>
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(hops), addFail.t))).increment()
       val isFatal = failures.size + 1 >= c.maxAttempts || // retries exhausted
-        t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs
+        addFail.t.isInstanceOf[HtlcsTimedoutDownstream] // htlc timed out so retrying won't help, we need to re-compute cltvs
       if (isFatal) {
-        onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(cfg.fullRoute(hops), t)))
+        onFailure(s, PaymentFailed(id, paymentHash, failures :+ LocalFailure(cfg.fullRoute(hops), addFail.t)))
         myStop()
       } else {
-        log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-        val failure = LocalFailure(cfg.fullRoute(hops), t)
+        log.info(s"received an error message from local, trying to use a different channel (failure=${addFail.t.getMessage})")
+        val failure = LocalFailure(cfg.fullRoute(hops), addFail.t)
         retry(failure, data)
       }
   }

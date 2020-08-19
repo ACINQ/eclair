@@ -253,7 +253,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
-    sender.send(paymentFSM, Status.Failure(ChannelUnavailable(ByteVector32.Zeroes)))
+    sender.send(paymentFSM, RES_ADD_FAILED(ByteVector32.Zeroes, defaultPaymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
