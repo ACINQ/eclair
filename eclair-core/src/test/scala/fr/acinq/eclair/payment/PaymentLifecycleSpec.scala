@@ -18,8 +18,8 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorRef, Status}
+import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
-import fr.acinq.eclair.channel.{AddHtlcFailed, Channel, ChannelUnavailable, Upstream}
+import fr.acinq.eclair.channel.{Channel, ChannelUnavailable, RES_ADD_FAILED, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -253,7 +253,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
-    sender.send(paymentFSM, Status.Failure(AddHtlcFailed(ByteVector32.Zeroes, defaultPaymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None)))
+    sender.send(paymentFSM, Status.Failure(ChannelUnavailable(ByteVector32.Zeroes)))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
@@ -286,7 +286,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (TemporaryChannelFailure)") { routerFixture =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
-    import cfg._
 
     val request = SendPayment(d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 2)
     sender.send(paymentFSM, request)
@@ -369,7 +368,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("payment failed (Update in last attempt)") { routerFixture =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
-    import cfg._
 
     val request = SendPayment(d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 1)
     sender.send(paymentFSM, request)
@@ -576,7 +574,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val failures = Seq(
       LocalFailure(Nil, RouteNotFound),
       RemoteFailure(ChannelHop(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(ChannelHop(a, b, update_ab) :: Nil, AddHtlcFailed(ByteVector32.Zeroes, ByteVector32.Zeroes, ChannelUnavailable(ByteVector32.Zeroes), Local(UUID.randomUUID(), None), None, None)),
+      LocalFailure(ChannelHop(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes)),
       LocalFailure(Nil, RouteNotFound)
     )
     val filtered = PaymentFailure.transformForUser(failures)

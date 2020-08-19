@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -62,7 +62,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
       PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
 
-    case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
+    case addFailed@RES_ADD_FAILED(_, _, _, _, _, _) => addFailed.origin match {
       case Origin.Relayed(originChannelId, originHtlcId, _, _) => addFailed.originalCommand match {
         case Some(CMD_ADD_HTLC(_, _, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
           log.info(s"retrying htlc #$originHtlcId from channelId=$originChannelId")
@@ -84,7 +84,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
     val paymentHash_opt = currentMessage match {
       case relay: RelayHtlc => Some(relay.r.add.paymentHash)
       case Register.ForwardShortIdFailure(Register.ForwardShortId(_, _, c: CMD_ADD_HTLC)) => Some(c.paymentHash)
-      case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -95,7 +95,7 @@ object ChannelRelayer {
 
   def props(nodeParams: NodeParams, relayer: ActorRef, register: ActorRef) = Props(new ChannelRelayer(nodeParams, relayer, register))
 
-  case class RelayHtlc(r: IncomingPacket.ChannelRelayPacket, previousFailures: Seq[AddHtlcFailed], channelUpdates: ChannelUpdates, node2channels: NodeChannels)
+  case class RelayHtlc(r: IncomingPacket.ChannelRelayPacket, previousFailures: Seq[RES_ADD_FAILED[Throwable]], channelUpdates: ChannelUpdates, node2channels: NodeChannels)
 
   // @formatter:off
   sealed trait RelayResult
@@ -110,7 +110,7 @@ object ChannelRelayer {
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[AddHtlcFailed], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
+  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[RES_ADD_FAILED[Throwable]], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
     import relayPacket._
     log.info(s"relaying htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, payload.outgoingChannelId, previousFailures.size)
     val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
@@ -188,7 +188,7 @@ object ChannelRelayer {
    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
    * htlc.
    */
-  def relayOrFail(relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[AddHtlcFailed] = Seq.empty): RelayResult = {
+  def relayOrFail(relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty): RelayResult = {
     import relayPacket._
     channelUpdate_opt match {
       case None =>
@@ -210,7 +210,7 @@ object ChannelRelayer {
    * This helper method translates relaying errors (returned by the downstream outgoing channel) to BOLT 4 standard
    * errors that we should return upstream.
    */
-  def translateError(failure: AddHtlcFailed): FailureMessage = {
+  def translateError(failure: RES_ADD_FAILED[_ <: Throwable]): FailureMessage = {
     val error = failure.t
     val channelUpdate_opt = failure.channelUpdate
     (error, channelUpdate_opt) match {

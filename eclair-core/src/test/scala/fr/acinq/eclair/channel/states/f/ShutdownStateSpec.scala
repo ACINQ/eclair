@@ -111,7 +111,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val add = CMD_ADD_HTLC(ActorRef.noSender, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -132,7 +132,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    sender.expectMsgType[RES_FAILURE[CMD_FULFILL_HTLC, UnknownHtlcId]]
     assert(initialState == bob.stateData)
   }
 
@@ -140,8 +140,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FULFILL_HTLC(1, ByteVector32.Zeroes))
-    sender.expectMsg(Failure(InvalidHtlcPreimage(channelId(bob), 1)))
+    val c = CMD_FULFILL_HTLC(1, ByteVector32.Zeroes)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 1)))
+
     assert(initialState == bob.stateData)
   }
 
@@ -150,8 +152,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
 
-    sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32)) // this will fail
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32)
+    sender.send(bob, c) // this will fail
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
@@ -213,8 +216,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
@@ -222,8 +226,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))
+    sender.send(bob, c) // this will fail
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
@@ -243,8 +248,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
@@ -252,8 +258,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, 42))
-    sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
+    val c = CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, 42)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
   }
 
@@ -261,8 +268,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION)) // this will fail
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_MALFORMED_HTLC(42, randomBytes32, FailureMessageCodecs.BADONION)
+    sender.send(bob, c) // this will fail
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
@@ -549,7 +557,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_UPDATE_FEE(FeeratePerKw(20000 sat)))
-    sender.expectMsg(Failure(FundeeCannotSendUpdateFee(channelId(bob))))
+    sender.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, FundeeCannotSendUpdateFee]]
     assert(initialState == bob.stateData)
   }
 
@@ -803,7 +811,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     sender.send(alice, CMD_CLOSE(None))
-    sender.expectMsg(Failure(ClosingAlreadyInProgress(channelId(alice))))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
   }
 
   test("recv Error") { f =>

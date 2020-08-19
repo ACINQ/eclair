@@ -395,8 +395,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we attempt to send a payment
     sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
-    val failure = sender.expectMsgType[Status.Failure]
-    val AddHtlcFailed(_, _, ChannelUnavailable(_), _, _, _) = failure.cause
+    sender.expectMsgType[RES_ADD_FAILED[ChannelUnavailable]]
 
     // alice will broadcast a new disabled channel_update
     val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]

@@ -131,8 +131,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
               case u: Relayer.ForwardFail =>
                 log.warning(s"htlc failed: ${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case Status.Failure(t) =>
-                log.error(s"htlc error: ${t.getMessage}")
+              case res: RES_FAILURE[_, _] =>
+                log.error(s"htlc error: ${res.t.getMessage}")
                 initiatePaymentOrStop(remaining - 1)
             }
         }

@@ -148,12 +148,12 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
-    case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
+    case addFailed: RES_ADD_FAILED[_] @unchecked => addFailed.origin match {
       case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
-      case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
-      case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
+      case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed.t)
+      case _: Origin.Relayed => channelRelayer forward addFailed
       case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed.t)
     }
 
     case ff: ForwardFulfill => ff.to match {
@@ -190,7 +190,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case ForwardAdd(add, _) => Some(add.paymentHash)
-      case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.paymentHash)
       case ff: ForwardFulfill => Some(ff.htlc.paymentHash)
       case ff: ForwardFail => Some(ff.htlc.paymentHash)
       case _ => None
@@ -210,7 +210,7 @@ object Relayer extends Logging {
 
   // @formatter:off
   sealed trait ForwardMessage
-  case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
+  case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends ForwardMessage
   sealed trait ForwardFulfill extends ForwardMessage { val paymentPreimage: ByteVector32; val to: Origin; val htlc: UpdateAddHtlc }
   case class ForwardRemoteFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFulfill { override val paymentPreimage = fulfill.paymentPreimage }
   case class ForwardOnChainFulfill(paymentPreimage: ByteVector32, to: Origin, htlc: UpdateAddHtlc) extends ForwardFulfill

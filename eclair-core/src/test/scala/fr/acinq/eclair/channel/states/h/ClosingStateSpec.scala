@@ -275,7 +275,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val add = CMD_ADD_HTLC(ActorRef.noSender, 500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), None, Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -285,8 +285,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     val sender = TestProbe()
-    sender.send(alice, CMD_FULFILL_HTLC(42, randomBytes32))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(alice), 42)))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32)
+    sender.send(alice, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(alice), 42)))
 
     // NB: nominal case is tested in IntegrationSpec
   }
@@ -986,8 +987,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val sender = TestProbe()
-    sender.send(alice, CMD_CLOSE(None))
-    sender.expectMsg(Failure(ClosingAlreadyInProgress(channelId(alice))))
+    val c = CMD_CLOSE(None)
+    sender.send(alice, c)
+    sender.expectMsg(RES_FAILURE(c, ClosingAlreadyInProgress(channelId(alice))))
   }
 
 }

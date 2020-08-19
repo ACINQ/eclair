@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.states.c
 
-import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -112,8 +111,9 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv CMD_CLOSE") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, CMD_CLOSE(None))
-    sender.expectMsg(Failure(CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_FUNDING_LOCKED)))
+    val c = CMD_CLOSE(None)
+    sender.send(alice, c)
+    sender.expectMsg(RES_FAILURE(c, CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_FUNDING_LOCKED)))
   }
 
   test("recv CMD_FORCECLOSE") { f =>

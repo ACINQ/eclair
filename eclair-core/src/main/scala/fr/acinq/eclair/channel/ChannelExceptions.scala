@@ -90,6 +90,5 @@ case class CommitmentSyncError                 (override val channelId: ByteVect
 case class RevocationSyncError                 (override val channelId: ByteVector32) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: ByteVector32) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 case class PleasePublishYourCommitment         (override val channelId: ByteVector32) extends ChannelException(channelId, "please publish your local commitment")
-case class AddHtlcFailed                       (override val channelId: ByteVector32, paymentHash: ByteVector32, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends ChannelException(channelId, s"cannot add htlc with origin=$origin reason=${t.getMessage}")
 case class CommandUnavailableInThisState       (override val channelId: ByteVector32, command: String, state: State) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
 // @formatter:on

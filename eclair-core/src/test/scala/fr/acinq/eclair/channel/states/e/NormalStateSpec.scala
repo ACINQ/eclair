@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.e
 
 import java.util.UUID
 
-import akka.actor.{ActorRef, Status}
+import akka.actor.ActorRef
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -172,7 +172,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 500000000 msat, randomBytes32, expiryTooBig, TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = ExpiryTooBig(channelId(alice), maximum = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockCount = currentBlockHeight)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -183,7 +183,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 50 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = HtlcValueTooSmall(channelId(alice), 1000 msat, 50 msat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -196,7 +196,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 0 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, add)
     val error = HtlcValueTooSmall(channelId(bob), 1 msat, 0 msat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     bob2alice.expectNoMsg(200 millis)
   }
 
@@ -217,7 +217,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, MilliSatoshi(Int.MaxValue), randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amount = MilliSatoshi(Int.MaxValue), missing = 1379883 sat, reserve = 20000 sat, fees = 8960 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -231,7 +231,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(alice, add)
 
     val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 20000 sat, fees = 13620 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -243,7 +243,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(bob, add)
 
     val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 10000 sat, fees = 0 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     bob2alice.expectNoMsg(200 millis)
   }
 
@@ -267,7 +267,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val failedAdd = CMD_ADD_HTLC(ActorRef.noSender, 11000000 msat, randomBytes32, CltvExpiry(400144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, failedAdd)
     val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 1720 sat, 10000 sat, 14120 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), failedAdd.paymentHash, error, Origin.Local(failedAdd.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(failedAdd))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(bob), failedAdd.paymentHash, error, Origin.Local(failedAdd.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate), Some(failedAdd)))
   }
 
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { f =>
@@ -286,7 +286,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amount = 1000000 msat, missing = 1000 sat, reserve = 20000 sat, fees = 12400 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -303,7 +303,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 500000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = InsufficientFunds(channelId(alice), amount = 500000000 msat, missing = 335840 sat, reserve = 20000 sat, fees = 12400 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -314,7 +314,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 151000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, add)
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(bob), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     bob2alice.expectNoMsg(200 millis)
   }
 
@@ -329,7 +329,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add1 = CMD_ADD_HTLC(ActorRef.noSender, 75500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(bob, add1)
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add1.paymentHash, error, Origin.Local(add1.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add1))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(bob), add1.paymentHash, error, Origin.Local(add1.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add1)))
     bob2alice.expectNoMsg(200 millis)
   }
 
@@ -346,7 +346,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 10000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -365,7 +365,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add2 = CMD_ADD_HTLC(ActorRef.noSender, TestConstants.fundingSatoshis.toMilliSatoshi * 2 / 3, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add2)
     val error = InsufficientFunds(channelId(alice), add2.amount, 567453 sat, 20000 sat, 10680 sat)
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -382,7 +382,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream)
     sender.send(bob, add)
     val error = FeerateTooDifferent(channelId(bob), FeeratePerKw(20000 sat), FeeratePerKw(10000 sat))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(upstream.id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(bob), add.paymentHash, error, Origin.Local(upstream.id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     bob2alice.expectNoMsg(100 millis) // we don't close the channel, we can simply avoid using it while we disagree on feerate
 
     // we now agree on feerate so we can send HTLCs
@@ -407,7 +407,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(ActorRef.noSender, 500000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
     sender.send(alice, add)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add.paymentHash, error, Origin.Local(add.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add)))
     alice2bob.expectNoMsg(200 millis)
   }
 
@@ -431,7 +431,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
     sender.send(alice, add2)
     val error = NoMoreHtlcsClosingInProgress(channelId(alice))
-    sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
+    sender.expectMsg(RES_ADD_FAILED(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2)))
   }
 
   test("recv UpdateAddHtlc") { f =>
@@ -1265,8 +1265,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val r = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    sender.send(bob, CMD_FULFILL_HTLC(42, r))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FULFILL_HTLC(42, r)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
@@ -1278,8 +1279,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes))
-    sender.expectMsg(Failure(InvalidHtlcPreimage(channelId(bob), 0)))
+    val c = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 0)))
     assert(initialState == bob.stateData)
   }
 
@@ -1288,8 +1290,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32)) // this will fail
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32)
+    sender.send(bob, c) // this will fail
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
@@ -1414,8 +1417,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val r: ByteVector = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
@@ -1424,8 +1428,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))
+    sender.send(bob, c) // this will fail
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
@@ -1450,8 +1455,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION))
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
   }
 
@@ -1459,8 +1465,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42))
-    sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
+    val c = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, 42)
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, InvalidFailureCode(channelId(bob))))
     assert(initialState == bob.stateData)
   }
 
@@ -1469,8 +1476,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)) // this will fail
-    sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+    val c = CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)
+    sender.send(bob, c) // this will fail
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
@@ -1640,8 +1648,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    sender.send(bob, CMD_UPDATE_FEE(FeeratePerKw(20000 sat)))
-    sender.expectMsg(Failure(FundeeCannotSendUpdateFee(channelId(bob))))
+    val c = CMD_UPDATE_FEE(FeeratePerKw(20000 sat))
+    sender.send(bob, c)
+    sender.expectMsg(RES_FAILURE(c, FundeeCannotSendUpdateFee(channelId(bob))))
     assert(initialState == bob.stateData)
   }
 
@@ -1802,14 +1811,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     sender.send(alice, CMD_CLOSE(None))
-    sender.expectMsg(Failure(CannotCloseWithUnsignedOutgoingHtlcs(channelId(bob))))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingHtlcs]]
   }
 
   test("recv CMD_CLOSE (with invalid final script)") { f =>
     import f._
     val sender = TestProbe()
     sender.send(alice, CMD_CLOSE(Some(hex"00112233445566778899")))
-    sender.expectMsg(Failure(InvalidFinalScript(channelId(alice))))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
   }
 
   test("recv CMD_CLOSE (with signed sent htlcs)") { f =>
@@ -1834,7 +1843,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
     sender.send(alice, CMD_CLOSE(None))
-    sender.expectMsg(Failure(ClosingAlreadyInProgress(channelId(alice))))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
   }
 
   test("recv CMD_CLOSE (while waiting for a RevokeAndAck)") { f =>
@@ -2689,8 +2698,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_FAILED[_]].paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_FAILED[_]].paymentHash === htlc2.paymentHash)
     assert(!Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags))
     awaitCond(alice.stateName == OFFLINE)
   }
@@ -2731,8 +2740,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[Status.Failure].cause.asInstanceOf[AddHtlcFailed].paymentHash === htlc2.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_FAILED[_]].paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_FAILED[_]].paymentHash === htlc2.paymentHash)
     val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
     assert(!Announcements.isEnabled(update2a.channelUpdate.channelFlags))

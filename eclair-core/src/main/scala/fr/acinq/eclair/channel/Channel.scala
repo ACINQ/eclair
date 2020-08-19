@@ -632,7 +632,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
       val error = NoMoreHtlcsClosingInProgress(d.channelId)
-      handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), Some(d.channelUpdate), Some(c)), c)
+      handleAddHtlcCommandError(c, d.channelId, error, origin(c), Some(d.channelUpdate))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       Commitments.sendAdd(d.commitments, c, origin(c), nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
@@ -640,7 +640,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           if (c.commit) self ! CMD_SIGN
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
-        case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, cause, origin(c), Some(d.channelUpdate), Some(c)), c)
+        case Failure(cause) => handleAddHtlcCommandError(c, d.channelId, cause, origin(c), Some(d.channelUpdate))
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
@@ -972,7 +972,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         log.info(s"updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = false)
         d.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_FAILED(d.channelId, add.paymentHash, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate), None)
         }
         d.copy(channelUpdate = channelUpdate)
       } else {
@@ -1650,7 +1650,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
       log.info(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
-      handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), None, Some(c)), c) // we don't provide a channel_update: this will be a permanent channel failure
+      handleAddHtlcCommandError(c, d.channelId, error, origin(c), None) // we don't provide a channel_update: this will be a permanent channel failure
 
     case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "close", stateName), c)
 
@@ -1681,7 +1681,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event("disconnecting", _) => stay
 
     // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves which may result in this error being sent back to ourselves, this can be ignored
-    case Event(Status.Failure(_: CannotAffordFees), _) => stay
+    case Event(RES_FAILURE(_: CMD_UPDATE_FEE, _: CannotAffordFees), _) => stay
 
     // funding tx was confirmed in time, let's just ignore this
     case Event(BITCOIN_FUNDING_TIMEOUT, _: HasCommitments) => stay
@@ -1857,14 +1857,30 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     stay using newData
   }
 
-  def handleCommandError(cause: Throwable, cmd: Command) = {
-    log.warning(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
+  def handleAddHtlcCommandError(c: CMD_ADD_HTLC, channelId: ByteVector32, cause: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate]) = {
+    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
+    val replyTo = c match {
+      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo
+      case _ => sender
+    }
+    replyTo ! RES_ADD_FAILED(channelId, c.paymentHash, cause, origin, channelUpdate, Some(c))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
+    stay
+  }
+
+  def handleCommandError(cause: Throwable, c: Command) = {
+    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
     cause match {
       case _: ChannelException => ()
-      case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")
+      case _ => log.error(cause, s"msg=$c stateData=$stateData ")
     }
+    val replyTo = c match {
+      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo
+      case _ => sender
+    }
+    replyTo ! RES_FAILURE(c, cause)
     context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
-    stay replying Status.Failure(cause)
+    stay
   }
 
   /**
@@ -1952,7 +1968,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(stateName) using d.copy(channelUpdate = channelUpdate)
     } else {
       // channel is already disabled, we reply to the request
-      handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, ChannelUnavailable(d.channelId), origin(c), Some(d.channelUpdate), Some(c)), c) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
+      val error = ChannelUnavailable(d.channelId)
+      handleAddHtlcCommandError(c, d.channelId, error, origin(c), Some(d.channelUpdate)) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
     }
   }
 

@@ -22,7 +22,7 @@ import akka.actor.{ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelFlags, ChannelUnavailable, Upstream}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable, RES_ADD_FAILED, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
@@ -215,7 +215,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectNoMsg(100 millis)
 
     val (failedId, failedRoute) :: (_, pendingRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
-    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(LocalFailure(failedRoute.hops, AddHtlcFailed(randomBytes32, paymentHash, ChannelUnavailable(randomBytes32), null, None, None)))))
+    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(LocalFailure(failedRoute.hops, ChannelUnavailable(randomBytes32)))))
 
     // If the router doesn't find routes, we will retry without ignoring the channel: it may work with a different split
     // of the amount to send.
