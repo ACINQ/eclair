@@ -228,6 +228,7 @@
                 <version>2.0.0</version>
                 <configuration>
                     <parallel>true</parallel>
+                    <stdout>I</stdout>
                     <systemProperties>
                         <buildDirectory>${project.build.directory}</buildDirectory>
                     </systemProperties>
