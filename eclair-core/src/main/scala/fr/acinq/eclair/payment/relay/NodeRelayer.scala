@@ -156,19 +156,19 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
         payloadOut.paymentSecret match {
           case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
             log.debug("relaying trampoline payment to non-trampoline recipient using MPP")
-            val payment = SendMultiPartPayment(paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            val payment = SendMultiPartPayment(self, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             spawnOutgoingPayFSM(paymentCfg, multiPart = true) ! payment
           case _ =>
             log.debug("relaying trampoline payment to non-trampoline recipient without MPP")
             val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-            val payment = SendPayment(payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            val payment = SendPayment(self, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             spawnOutgoingPayFSM(paymentCfg, multiPart = false) ! payment
         }
       case None =>
         log.debug("relaying trampoline payment to next trampoline node")
         val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32 // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
+        val payment = SendMultiPartPayment(self, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
         payFSM ! payment
     }
     paymentId
