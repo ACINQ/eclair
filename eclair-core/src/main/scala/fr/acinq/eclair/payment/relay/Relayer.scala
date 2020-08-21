@@ -26,7 +26,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -151,30 +150,12 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
     case RES_ADD_COMPLETED(fwd: RelayBackward) => self ! fwd
 
-    case ff: RelayBackward.RelayFulfill => ff.to match {
-      case Origin.Local(_, None) => postRestartCleaner forward ff
-      case Origin.Local(_, Some(replyTo)) => replyTo ! ff
-      case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut, _) =>
-        val cmd = CMD_FULFILL_HTLC(originHtlcId, ff.paymentPreimage, commit = true)
-        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
-        context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
-      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! ff
-    }
-
-    case ff: RelayBackward.RelayFail => ff.to match {
-      case Origin.Local(_, None) => postRestartCleaner forward ff
-      case Origin.Local(_, Some(replyTo)) => replyTo ! ff
-      case Origin.Relayed(originChannelId, originHtlcId, _, _, _) =>
-        Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = ff match {
-          case RelayBackward.RelayRemoteFail(fail, _, _) => CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
-          case RelayBackward.RelayRemoteFailMalformed(fail, _, _) => CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
-          case _: RelayBackward.RelayOnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
-        }
-        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
-      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! ff
+    case fwd: RelayBackward => fwd.to match {
+      case Origin.Local(_, None) => postRestartCleaner forward fwd
+      case Origin.Local(_, Some(replyTo)) => replyTo ! fwd
+      case Origin.Relayed(_, _, _, _, _) => channelRelayer ! fwd
+      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward fwd
+      case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! fwd
     }
 
     case _: RES_SUCCESS[_] => () // ignoring responses from channels
@@ -185,7 +166,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case RelayForward(add, _) => Some(add.paymentHash)
-      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.c.paymentHash)
       case RES_ADD_COMPLETED(ff: RelayBackward.RelayFulfill) => Some(ff.htlc.paymentHash)
       case RES_ADD_COMPLETED(ff: RelayBackward.RelayFail) => Some(ff.htlc.paymentHash)
       case _ => None
@@ -215,6 +196,7 @@ object Relayer extends Logging {
     case class RelayRemoteFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends RelayFail
     case class RelayRemoteFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends RelayFail
     case class RelayOnChainFail(cause: ChannelException, to: Origin, htlc: UpdateAddHtlc) extends RelayFail
+    case class RelayFailDisconnected(channelUpdate: ChannelUpdate, to: Origin, htlc: UpdateAddHtlc) extends RelayFail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
   }
 
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)

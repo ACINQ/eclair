@@ -116,7 +116,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event(RES_SUCCESS(_: CMD_ADD_HTLC), _) => stay
 
-    case Event(RES_ADD_FAILED(_, _, t: Throwable, _, _, _), d: WaitingForComplete) =>
+    case Event(RES_ADD_FAILED(_, t: Throwable, _), d: WaitingForComplete) =>
       handleLocalFail(d, t, isFatal = false)
 
     case Event(fulfill: Relayer.RelayBackward.RelayFulfill, WaitingForComplete(c, cmd, failures, _, _, route)) =>
@@ -137,6 +137,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         case Relayer.RelayBackward.RelayOnChainFail(cause, _, _) =>
           // if the outgoing htlc is being resolved on chain, we treat it like a local error but we cannot retry
           handleLocalFail(d, cause, isFatal = true)
+        case Relayer.RelayBackward.RelayFailDisconnected(_, _, _) =>
+          // a disconnection occured before the outgoing htlc got signed
+          // again, we consider it a local error and treat is as such
+          handleLocalFail(d, DisconnectedException, isFatal = false)
       }
   }
 
@@ -386,4 +390,5 @@ object PaymentLifecycle {
 
   /** custom exceptions to handle corner cases */
   case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
+  case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
 }

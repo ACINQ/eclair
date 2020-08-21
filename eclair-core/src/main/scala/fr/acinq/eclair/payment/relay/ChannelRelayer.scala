@@ -22,9 +22,9 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.IncomingPacket
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.relay.Relayer.{ChannelUpdates, NodeChannels, OutgoingChannel}
+import fr.acinq.eclair.payment.relay.Relayer.{ChannelUpdates, NodeChannels, OutgoingChannel, RelayBackward}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, nodeFee}
@@ -62,19 +62,37 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
       PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
 
-    case addFailed@RES_ADD_FAILED(_, _, _, _, _, _) => addFailed.origin match {
-      case Origin.Relayed(originChannelId, originHtlcId, _, _, _) => addFailed.originalCommand match {
-        case Some(CMD_ADD_HTLC(_, _, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
-          log.info(s"retrying htlc #$originHtlcId from channelId=$originChannelId")
-          relayer ! Relayer.RelayForward(add, previousFailures :+ addFailed)
-        case _ =>
-          val failure = translateError(addFailed)
-          val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
-          Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-          log.info(s"rejecting htlc #$originHtlcId from channelId=$originChannelId reason=${cmdFail.reason}")
-          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmdFail)
-      }
+    case addFailed@RES_ADD_FAILED(_, _, _) => addFailed.c.upstream match {
+      case Upstream.Relayed(add) =>
+          log.info(s"retrying htlc #${add.id} from channelId=${add.channelId}")
+          relayer ! Relayer.RelayForward(add, addFailed.c.previousFailures :+ addFailed)
+//        case _ =>
+//          // TODO: why is this not done in the post-restart-cleaner?
+//          val failure = translateError(addFailed.t, addFailed.channelUpdate)
+//          val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
+//          Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
+//          log.info(s"rejecting htlc #$originHtlcId from channelId=$originChannelId reason=${cmdFail.reason}")
+//          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmdFail)
       case _ => throw new IllegalArgumentException(s"channel relayer received unexpected failure: $addFailed")
+    }
+
+    case ff: RelayBackward.RelayFulfill => ff.to match {
+      case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut, _) =>
+        val cmd = CMD_FULFILL_HTLC(originHtlcId, ff.paymentPreimage, commit = true)
+        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
+        context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
+    }
+
+    case ff: RelayBackward.RelayFail => ff.to match {
+      case Origin.Relayed(originChannelId, originHtlcId, _, _, _) =>
+        Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
+        val cmd = ff match {
+          case f: RelayBackward.RelayRemoteFail => CMD_FAIL_HTLC(originHtlcId, Left(f.fail.reason), commit = true)
+          case f: RelayBackward.RelayRemoteFailMalformed => CMD_FAIL_MALFORMED_HTLC(originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
+          case _: RelayBackward.RelayOnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
+          case f: RelayBackward.RelayFailDisconnected => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
+        }
+        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
     }
 
     case _: RES_SUCCESS[_] => // ignoring responses from channels
@@ -84,7 +102,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
     val paymentHash_opt = currentMessage match {
       case relay: RelayHtlc => Some(relay.r.add.paymentHash)
       case Register.ForwardShortIdFailure(Register.ForwardShortId(_, _, c: CMD_ADD_HTLC)) => Some(c.paymentHash)
-      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.c.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -123,7 +141,7 @@ object ChannelRelayer {
           .find(_.channelUpdate.map(_.shortChannelId).contains(payload.outgoingChannelId))
           // otherwise we return the error for the first channel tried
           .getOrElse(previousFailures.head)
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(translateError(error)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(translateError(error.t, error.channelUpdate)), commit = true))
       case channelUpdate_opt =>
         relayOrFail(replyTo, relayPacket, channelUpdate_opt, previousFailures)
     }
@@ -210,9 +228,7 @@ object ChannelRelayer {
    * This helper method translates relaying errors (returned by the downstream outgoing channel) to BOLT 4 standard
    * errors that we should return upstream.
    */
-  def translateError(failure: RES_ADD_FAILED[_ <: Throwable]): FailureMessage = {
-    val error = failure.t
-    val channelUpdate_opt = failure.channelUpdate
+  def translateError(error: Throwable, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
     (error, channelUpdate_opt) match {
       case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
       case (_: ExpiryTooBig, _) => ExpiryTooFar

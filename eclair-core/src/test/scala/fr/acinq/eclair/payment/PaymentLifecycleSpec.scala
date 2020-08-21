@@ -254,7 +254,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
-    sender.send(paymentFSM, RES_ADD_FAILED(ByteVector32.Zeroes, defaultPaymentHash, ChannelUnavailable(ByteVector32.Zeroes), Local(id, Some(paymentFSM.underlying.self)), None, None))
+    sender.send(paymentFSM, RES_ADD_FAILED(cmd1, ChannelUnavailable(ByteVector32.Zeroes), None))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
@@ -302,10 +302,33 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     sender.send(paymentFSM, RelayBackward.RelayOnChainFail(HtlcsTimedoutDownstream(randomBytes32, Set.empty), null, null))
 
-    // then the payment lifecycle will ask for a new route excluding the channel
-    routerForwarder.expectNoMessage()
     // this error is fatal
+    routerForwarder.expectNoMessage()
     sender.expectMsgType[PaymentFailed]
+  }
+
+  test("payment failed (disconnected before signing the first htlc)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+    import cfg._
+
+    val request = SendPayment(sender.ref, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 2)
+    sender.send(paymentFSM, request)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
+
+    val WaitingForRoute(_, Nil, _) = paymentFSM.stateData
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg))
+    routerForwarder.forward(routerFixture.router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, cmd1, Nil, _, _, _) = paymentFSM.stateData
+
+    register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
+    val update_bc_disabled = update_bc.copy(channelFlags = Announcements.makeChannelFlags(isNode1 = true, enable = false))
+    sender.send(paymentFSM, RelayBackward.RelayFailDisconnected(update_bc_disabled, null, null))
+
+    // then the payment lifecycle will ask for a new route excluding the channel
+    routerForwarder.expectMsg(defaultRouteRequest(a, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
   }
 
   test("payment failed (TemporaryChannelFailure)") { routerFixture =>

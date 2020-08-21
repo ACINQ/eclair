@@ -162,7 +162,7 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
  * - either [[RES_ADD_FAILED]]
  * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_COMPLETED]] (possibly a while later)
  */
-case class RES_ADD_FAILED[+T <: Throwable](channelId: ByteVector32, paymentHash: ByteVector32, t: T, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=$origin reason=${t.getMessage}" }
+case class RES_ADD_FAILED[+T <: Throwable](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with upstream=${c.upstream} reason=${t.getMessage}" }
 case class RES_ADD_COMPLETED[+F <: Relayer.RelayBackward](fwd: F) extends CommandResponse[CMD_ADD_HTLC]
 
 /** other specific responses */
