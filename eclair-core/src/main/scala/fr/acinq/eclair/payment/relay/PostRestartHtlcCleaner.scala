@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
+import fr.acinq.eclair.payment.relay.Relayer.RelayBackward
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
@@ -106,11 +107,13 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
     case _: ChannelStateChanged => // ignore other channel state changes
 
-    case ff: Relayer.ForwardFulfill =>
+    case RES_ADD_COMPLETED(fwd: RelayBackward) => self ! fwd
+
+    case ff: Relayer.RelayBackward.RelayFulfill =>
       log.info("htlc fulfilled downstream: ({},{})", ff.htlc.channelId, ff.htlc.id)
       handleDownstreamFulfill(brokenHtlcs, ff.to, ff.htlc, ff.paymentPreimage)
 
-    case ff: Relayer.ForwardFail =>
+    case ff: Relayer.RelayBackward.RelayFail =>
       log.info("htlc failed downstream: ({},{},{})", ff.htlc.channelId, ff.htlc.id, ff.getClass.getSimpleName)
       handleDownstreamFailure(brokenHtlcs, ff.to, ff.htlc)
 

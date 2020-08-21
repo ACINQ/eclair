@@ -22,10 +22,10 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.payment.relay.Origin
+import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
@@ -156,8 +156,14 @@ sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandRespo
 final case class RES_SUCCESS[+C <: Command](cmd: C) extends CommandSuccess[C]
 final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) extends CommandFailure[C, T]
 
-/** special case for [[CMD_ADD_HTLC]] */
-case class RES_ADD_FAILED[T <: Throwable](channelId: ByteVector32, paymentHash: ByteVector32, t: T, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=$origin reason=${t.getMessage}" }
+/**
+ * special case for [[CMD_ADD_HTLC]]
+ * note that for this command there is gonna be two response patterns:
+ * - either [[RES_ADD_FAILED]]
+ * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_COMPLETED]] (possibly a while later)
+ */
+case class RES_ADD_FAILED[+T <: Throwable](channelId: ByteVector32, paymentHash: ByteVector32, t: T, origin: Origin, channelUpdate: Option[ChannelUpdate], originalCommand: Option[CMD_ADD_HTLC]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=$origin reason=${t.getMessage}" }
+case class RES_ADD_COMPLETED[+F <: Relayer.RelayBackward](fwd: F) extends CommandResponse[CMD_ADD_HTLC]
 
 /** other specific responses */
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data) extends CommandSuccess[CMD_GETINFO.type]

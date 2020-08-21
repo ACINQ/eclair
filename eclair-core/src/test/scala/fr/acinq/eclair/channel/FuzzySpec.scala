@@ -125,10 +125,10 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
-              case u: Relayer.ForwardFulfill =>
+              case u: Relayer.RelayBackward.RelayFulfill =>
                 log.info(s"successfully sent htlc #${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case u: Relayer.ForwardFail =>
+              case u: Relayer.RelayBackward.RelayFail =>
                 log.warning(s"htlc failed: ${u.htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
               case res: RES_ADD_FAILED[_] @unchecked =>

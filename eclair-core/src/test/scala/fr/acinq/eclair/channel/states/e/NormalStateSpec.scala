@@ -35,6 +35,7 @@ import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Origin
+import fr.acinq.eclair.payment.relay.Relayer.RelayBackward.RelayRemoteFulfill
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
@@ -1011,7 +1012,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     // now bob will forward the htlc downstream
-    val forward = relayerB.expectMsgType[ForwardAdd]
+    val forward = relayerB.expectMsgType[RelayForward]
     assert(forward.add === htlc)
   }
 
@@ -1134,7 +1135,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardRemoteFail]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayBackward.RelayRemoteFail]].fwd
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1163,7 +1164,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardRemoteFailMalformed]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayBackward.RelayRemoteFailMalformed]].fwd
     assert(forward.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1311,7 +1312,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
     // alice immediately propagates the fulfill upstream
-    val forward = relayerA.expectMsgType[ForwardRemoteFulfill]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayRemoteFulfill]].fwd
     assert(forward.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }
@@ -1367,7 +1368,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    relayerB.expectMsgType[ForwardAdd]
+    relayerB.expectMsgType[RelayForward]
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual test begins

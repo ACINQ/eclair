@@ -409,7 +409,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     // Payment 2 should fulfill once we receive the preimage.
     val origin_2 = Origin.TrampolineRelayed(upstream_2.adds.map(add => (add.channelId, add.id)).toList, None)
-    sender.send(relayer, Relayer.ForwardOnChainFulfill(preimage2, origin_2, htlc_2_2))
+    sender.send(relayer, Relayer.RelayBackward.RelayOnChainFulfill(preimage2, origin_2, htlc_2_2))
     register.expectMsgAllOf(
       Register.Forward(replyTo = postRestartHtlcCleaner, channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
       Register.Forward(replyTo = postRestartHtlcCleaner, channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
@@ -539,15 +539,15 @@ object PostRestartHtlcCleanerSpec {
   }
 
   def buildForwardFail(add: UpdateAddHtlc, origin: Origin) =
-    Relayer.ForwardRemoteFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty), origin, add)
+    Relayer.RelayBackward.RelayRemoteFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty), origin, add)
 
   def buildForwardOnChainFail(add: UpdateAddHtlc, origin: Origin) =
-    Relayer.ForwardOnChainFail(HtlcsTimedoutDownstream(add.channelId, Set(add)), origin, add)
+    Relayer.RelayBackward.RelayOnChainFail(HtlcsTimedoutDownstream(add.channelId, Set(add)), origin, add)
 
   def buildForwardFulfill(add: UpdateAddHtlc, origin: Origin, preimage: ByteVector32) =
-    Relayer.ForwardRemoteFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage), origin, add)
+    Relayer.RelayBackward.RelayRemoteFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage), origin, add)
 
-  case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[Relayer.ForwardFail], fulfills: Seq[Relayer.ForwardFulfill])
+  case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[Relayer.RelayBackward.RelayFail], fulfills: Seq[Relayer.RelayBackward.RelayFulfill])
 
   /**
    * We setup two outgoing payments:

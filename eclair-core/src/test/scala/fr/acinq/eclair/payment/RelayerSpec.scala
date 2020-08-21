@@ -74,7 +74,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
@@ -102,7 +102,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId_ab, 123456, firstAmountMsat, paymentHash, firstExpiry, onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
@@ -129,7 +129,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val (channelId_bc_1, channelUpdate_bc_1) = (randomBytes32, channelUpdate_bc.copy(shortChannelId = ShortChannelId("500000x1x1")))
     relayer ! LocalChannelUpdate(null, channelId_bc_1, channelUpdate_bc_1.shortChannelId, c, None, channelUpdate_bc_1, makeCommitments(channelId_bc_1, 49000000 msat))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     // first try
     val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
@@ -174,8 +174,8 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab1 = UpdateAddHtlc(channelId_ab, 561, cmd1.amount, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
     val (cmd2, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(10000000.msat, trampolineAmount, trampolineExpiry, secret_ab, trampolineOnion.packet))
     val add_ab2 = UpdateAddHtlc(channelId_ab, 565, cmd2.amount, cmd2.paymentHash, cmd2.cltvExpiry, cmd2.onion)
-    sender.send(relayer, ForwardAdd(add_ab1))
-    sender.send(relayer, ForwardAdd(add_ab2))
+    sender.send(relayer, RelayForward(add_ab1))
+    sender.send(relayer, RelayForward(add_ab2))
 
     // A multi-part payment FSM should start to relay the payment.
     val routeRequest1 = router.expectMsgType[Router.RouteRequest]
@@ -208,7 +208,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val origin2 = TrampolineRelayed((channelId_ab, 561L) :: (channelId_ab, 565L) :: Nil, Some(register.lastSender))
     val add_bc = UpdateAddHtlc(channelId_bc, 72, cmd1.amount + cmd2.amount, paymentHash, cmd1.cltvExpiry, onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, paymentPreimage)
-    sender.send(relayer, ForwardRemoteFulfill(fulfill_ba, origin2, add_bc))
+    sender.send(relayer, RelayBackward.RelayRemoteFulfill(fulfill_ba, origin2, add_bc))
 
     // we need a reference to the node-relayer child actor
     sender.send(relayer, Relayer.GetChildActors(sender.ref))
@@ -224,7 +224,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops.take(1), FinalLegacyPayload(finalAmount, finalExpiry))
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fp = paymentHandler.expectMsgType[FinalPacket]
     assert(fp.add === add_ab)
@@ -249,7 +249,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(cmd.cltvExpiry === finalExpiry)
 
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fp = paymentHandler.expectMsgType[FinalPacket]
     assert(fp.add === add_ab)
@@ -270,7 +270,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fwdFail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwdFail.channelId === add_ab.channelId)
@@ -290,7 +290,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
@@ -315,7 +315,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
@@ -329,7 +329,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val (cmd1, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), randomBytes32, hops, FinalLegacyPayload(finalAmount, finalExpiry))
     val add_ab1 = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd1.amount, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
-    sender.send(relayer, ForwardAdd(add_ab1))
+    sender.send(relayer, RelayForward(add_ab1))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab1.id)
@@ -349,7 +349,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = Announcements.makeChannelFlags(Announcements.isNode1(channelUpdate_bc.channelFlags), enable = false))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc_disabled, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -368,7 +368,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion.copy(hmac = cmd.onion.hmac.reverse))
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -394,7 +394,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -415,7 +415,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -434,7 +434,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -453,7 +453,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, RelayForward(add_ab))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -489,13 +489,13 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
 
     val add = UpdateAddHtlc(channelId_bc, 7, 1090000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
-    sender.send(relayer, ForwardRemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)), origin, add))
+    sender.send(relayer, RelayBackward.RelayRemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)), origin, add))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Left(ByteVector.fill(12)(3)))
 
-    sender.send(relayer, ForwardRemoteFailMalformed(UpdateFailMalformedHtlc(channelId_bc, 7, ByteVector32.One, FailureMessageCodecs.BADONION), origin, add))
+    sender.send(relayer, RelayBackward.RelayRemoteFailMalformed(UpdateFailMalformedHtlc(channelId_bc, 7, ByteVector32.One, FailureMessageCodecs.BADONION), origin, add))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message.onionHash === ByteVector32.One)
 
-    sender.send(relayer, ForwardOnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add), origin, add))
+    sender.send(relayer, RelayBackward.RelayOnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add), origin, add))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
     register.expectNoMsg(50 millis)
@@ -511,7 +511,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 72, paymentPreimage = ByteVector32.Zeroes)
     val origin = Relayed(channelId_ab, 42, 11000000 msat, 10000000 msat, None)
-    for (fulfill <- Seq(ForwardRemoteFulfill(fulfill_ba, origin, add_bc), ForwardOnChainFulfill(ByteVector32.Zeroes, origin, add_bc))) {
+    for (fulfill <- Seq(RelayBackward.RelayRemoteFulfill(fulfill_ba, origin, add_bc), RelayBackward.RelayOnChainFulfill(ByteVector32.Zeroes, origin, add_bc))) {
       sender.send(relayer, fulfill)
       val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId === origin.originChannelId)
@@ -543,8 +543,8 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_ab1 = UpdateAddHtlc(channelId_ab, 561, cmd1.amount, cmd1.paymentHash, cmd1.cltvExpiry, cmd1.onion)
     val (cmd2, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, Onion.createTrampolinePayload(10000000.msat, trampolineAmount, trampolineExpiry, secret_ab, trampolineOnion.packet))
     val add_ab2 = UpdateAddHtlc(channelId_ab, 565, cmd2.amount, cmd2.paymentHash, cmd2.cltvExpiry, cmd2.onion)
-    sender.send(relayer, ForwardAdd(add_ab1))
-    sender.send(relayer, ForwardAdd(add_ab2))
+    sender.send(relayer, RelayForward(add_ab1))
+    sender.send(relayer, RelayForward(add_ab2))
 
     // A multi-part payment FSM is started to relay the payment downstream.
     val routeRequest = router.expectMsgType[Router.RouteRequest]
@@ -553,10 +553,10 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We simulate a fake htlc fulfill for the downstream channel.
     val payFSM = TestProbe()
     val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), null)
-    val forwardFulfill: ForwardFulfill = if (onChain) {
-      ForwardOnChainFulfill(preimage, TrampolineRelayed(null, Some(payFSM.ref)), add_bc)
+    val forwardFulfill:RelayBackward.RelayFulfill = if (onChain) {
+      RelayBackward.RelayOnChainFulfill(preimage, TrampolineRelayed(null, Some(payFSM.ref)), add_bc)
     } else {
-      ForwardRemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, preimage), TrampolineRelayed(null, Some(payFSM.ref)), add_bc)
+      RelayBackward.RelayRemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, preimage), TrampolineRelayed(null, Some(payFSM.ref)), add_bc)
     }
     sender.send(relayer, forwardFulfill)
 
@@ -587,7 +587,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = Relayed(channelId_ab, 42, 11000000 msat, 10000000 msat, None)
-    for (fail <- Seq(ForwardRemoteFail(fail_ba, origin, add_bc), ForwardOnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc), origin, add_bc))) {
+    for (fail <- Seq(RelayBackward.RelayRemoteFail(fail_ba, origin, add_bc), RelayBackward.RelayOnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc), origin, add_bc))) {
       sender.send(relayer, fail)
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === origin.originChannelId)
@@ -604,7 +604,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = TrampolineRelayed(List((channelId_ab, 42), (randomBytes32, 7)), Some(payFSM.ref))
-    val remoteFailure = ForwardRemoteFail(fail_ba, origin, add_bc)
+    val remoteFailure = RelayBackward.RelayRemoteFail(fail_ba, origin, add_bc)
 
     // a remote failure should be forwarded to the FSM responsible for the payment to trigger the retry mechanism.
     sender.send(relayer, remoteFailure)
@@ -612,7 +612,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     payFSM.expectNoMsg(100 millis)
 
     // same for an on-chain downstream failure.
-    val onChainFailure = ForwardOnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)), origin, add_bc)
+    val onChainFailure = RelayBackward.RelayOnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)), origin, add_bc)
     sender.send(relayer, onChainFailure)
     payFSM.expectMsg(onChainFailure)
     payFSM.expectNoMsg(100 millis)

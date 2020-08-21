@@ -116,17 +116,17 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event(RES_SUCCESS(_: CMD_ADD_HTLC), _) => stay
 
-    case Event(fulfill: Relayer.ForwardFulfill, WaitingForComplete(s, c, cmd, failures, _, _, route)) =>
+    case Event(fulfill: Relayer.RelayBackward.RelayFulfill, WaitingForComplete(s, c, cmd, failures, _, _, route)) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(failures.size + 1)
       val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.htlc.channelId, Some(cfg.fullRoute(route)))
       onSuccess(s, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
       myStop()
 
-    case Event(forwardFail: Relayer.ForwardFail, _) =>
+    case Event(forwardFail: Relayer.RelayBackward.RelayFail, _) =>
       forwardFail match {
-        case Relayer.ForwardRemoteFail(fail, _, _) => self ! fail
-        case Relayer.ForwardRemoteFailMalformed(fail, _, _) => self ! fail
-        case Relayer.ForwardOnChainFail(cause, _, _) => self ! Status.Failure(cause)
+        case Relayer.RelayBackward.RelayRemoteFail(fail, _, _) => self ! fail
+        case Relayer.RelayBackward.RelayRemoteFailMalformed(fail, _, _) => self ! fail
+        case Relayer.RelayBackward.RelayOnChainFail(cause, _, _) => self ! Status.Failure(cause)
       }
       stay
 

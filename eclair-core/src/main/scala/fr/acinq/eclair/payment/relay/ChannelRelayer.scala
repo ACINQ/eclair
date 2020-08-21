@@ -66,7 +66,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       case Origin.Relayed(originChannelId, originHtlcId, _, _, _) => addFailed.originalCommand match {
         case Some(CMD_ADD_HTLC(_, _, _, _, _, Upstream.Relayed(add), _, previousFailures)) =>
           log.info(s"retrying htlc #$originHtlcId from channelId=$originChannelId")
-          relayer ! Relayer.ForwardAdd(add, previousFailures :+ addFailed)
+          relayer ! Relayer.RelayForward(add, previousFailures :+ addFailed)
         case _ =>
           val failure = translateError(addFailed)
           val cmdFail = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)

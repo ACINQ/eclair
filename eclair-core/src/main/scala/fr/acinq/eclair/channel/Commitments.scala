@@ -560,7 +560,7 @@ object Commitments {
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Relayer.ForwardMessage])] = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Relayer.RelayMessage])] = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
@@ -570,17 +570,17 @@ object Commitments {
         val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
-          case add: UpdateAddHtlc => Relayer.ForwardAdd(add)
+          case add: UpdateAddHtlc => Relayer.RelayForward(add)
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
-            Relayer.ForwardRemoteFail(fail, origin, add)
+            Relayer.RelayBackward.RelayRemoteFail(fail, origin, add)
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
-            Relayer.ForwardRemoteFailMalformed(fail, origin, add)
+            Relayer.RelayBackward.RelayRemoteFailMalformed(fail, origin, add)
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment

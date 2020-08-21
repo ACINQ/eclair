@@ -89,8 +89,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       bob2alice.forward(alice)
       alice2bob.expectMsgType[RevokeAndAck]
       alice2bob.forward(bob)
-      relayerB.expectMsgType[ForwardAdd]
-      relayerB.expectMsgType[ForwardAdd]
+      relayerB.expectMsgType[RelayForward]
+      relayerB.expectMsgType[RelayForward]
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
@@ -510,7 +510,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardRemoteFail]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayBackward.RelayRemoteFail]].fwd
     assert(forward.fail === fail)
   }
 
@@ -536,7 +536,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[ForwardRemoteFailMalformed]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayBackward.RelayRemoteFailMalformed]].fwd
     assert(forward.fail === fail)
   }
 
