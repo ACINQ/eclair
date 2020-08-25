@@ -21,7 +21,8 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.Features.VariableLengthOnion
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Upstream}
+import fr.acinq.eclair.channel.Origin.Upstream
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Origin}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
@@ -240,7 +241,12 @@ object OutgoingPacket {
    */
   def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: Onion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, finalPayload)
-    CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true) -> onion.sharedSecrets
+    val origin = upstream match {
+      case u: Upstream.Local => Origin.LocalHot(u, replyTo)
+      case u: Upstream.TrampolineRelayedHot => Origin.TrampolineRelayedHot(u, replyTo)
+      case _ => ??? // TODO: origin cannot be a regular relayed
+    }
+    CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, origin, commit = true) -> onion.sharedSecrets
   }
 
 }

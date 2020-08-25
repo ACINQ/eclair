@@ -24,7 +24,8 @@ import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments, Upstream}
+import fr.acinq.eclair.channel.Origin.Upstream
+import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPacket._

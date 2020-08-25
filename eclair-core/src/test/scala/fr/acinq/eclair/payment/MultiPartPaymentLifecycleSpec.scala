@@ -22,7 +22,8 @@ import akka.actor.{ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable, RES_ADD_FAILED, Upstream}
+import fr.acinq.eclair.channel.Origin.Upstream
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._

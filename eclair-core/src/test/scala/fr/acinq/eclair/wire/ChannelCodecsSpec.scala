@@ -19,17 +19,17 @@ package fr.acinq.eclair.wire
 import java.net.InetSocketAddress
 import java.util.UUID
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.ActorSystem
+import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
-import fr.acinq.eclair.payment.relay.Origin
-import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed, TrampolineRelayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
@@ -243,25 +243,41 @@ class ChannelCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode origin") {
-    val id = UUID.randomUUID()
-    assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
-    val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat, None)
-    assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
-    val trampolineRelayed = TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None)
-    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayed).require).require === trampolineRelayed)
+    val replyTo = TestProbe("replyTo")(ActorSystem("system")).ref
+
+    val localHot = Origin.LocalHot(Upstream.Local(UUID.randomUUID()), replyTo)
+    val localCold = Origin.LocalCold(localHot.upstream)
+    assert(originCodec.decodeValue(originCodec.encode(localHot).require).require === localCold)
+    assert(originCodec.decodeValue(originCodec.encode(localCold).require).require === localCold)
+
+    val add = UpdateAddHtlc(randomBytes32, 4324, 11_000_000 msat, randomBytes32, CltvExpiry(400_000), TestConstants.emptyOnionPacket)
+    val relayedHot = Origin.ChannelRelayedHot(Upstream.ChannelRelayedHot(add, 11_000_000 msat), replyTo)
+    val relayedCold = Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(add.channelId, add.id, add.amountMsat, relayedHot.upstream.amountOut))
+    assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require === relayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require === relayedCold)
+
+    val adds = Seq(
+      UpdateAddHtlc(randomBytes32, 1L, 1_000 msat, randomBytes32, CltvExpiry(400_000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 1L, 2_000 msat, randomBytes32, CltvExpiry(400_000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 2L, 3_000 msat, randomBytes32, CltvExpiry(400_000), TestConstants.emptyOnionPacket),
+    )
+    val trampolineRelayedHot = Origin.TrampolineRelayedHot(Upstream.TrampolineRelayedHot(adds), replyTo)
+    val trampolineRelayedCold = Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold(adds.map(add => (add.channelId, add.id)).toList))
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require === trampolineRelayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedCold).require).require === trampolineRelayedCold)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
-      1L -> Local(UUID.randomUUID(), None),
-      42L -> Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat, None),
-      43L -> TrampolineRelayed((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil, None),
-      130L -> Relayed(randomBytes32, -45, 13000000 msat, 12000000 msat, None),
-      140L -> TrampolineRelayed((randomBytes32, 0L) :: Nil, None),
-      1000L -> Relayed(randomBytes32, 10, 14000000 msat, 13000000 msat, None),
-      -32L -> Relayed(randomBytes32, 54, 15000000 msat, 14000000 msat, None),
-      -54L -> TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None),
-      -4L -> Local(UUID.randomUUID(), None))
+      1L -> Origin.LocalCold(Upstream.Local(UUID.randomUUID())),
+      42L -> Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(randomBytes32, 4324, 12000000 msat, 11000000 msat)),
+      43L -> Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil)),
+      130L -> Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(randomBytes32, -45, 13000000 msat, 12000000 msat)),
+      140L -> Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold((randomBytes32, 0L) :: Nil)),
+      1000L -> Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(randomBytes32, 10, 14000000 msat, 13000000 msat)),
+      -32L -> Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(randomBytes32, 54, 15000000 msat, 14000000 msat)),
+      -54L -> Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil)),
+      -4L -> Origin.LocalCold(Upstream.Local(UUID.randomUUID())))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
 
@@ -472,9 +488,9 @@ object ChannelCodecsSpec {
     IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
 
-  val normal = makeChannelDataNormal(htlcs, Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat, None)))
+  val normal = makeChannelDataNormal(htlcs, Map(42L -> Origin.LocalCold(Upstream.Local(UUID.randomUUID)), 15000L -> Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat))))
 
-  def makeChannelDataNormal(htlcs: Seq[DirectedHtlc], origins: Map[Long, Origin]): DATA_NORMAL = {
+  def makeChannelDataNormal(htlcs: Seq[DirectedHtlc], origins: Map[Long, Origin[Upstream]]): DATA_NORMAL = {
     val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING.toMilliSatoshi)
     val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
     val fundingAmount = fundingTx.txOut.head.amount

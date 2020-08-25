@@ -21,8 +21,9 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
-import fr.acinq.eclair.payment.relay.{Origin, Relayer}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -60,14 +61,14 @@ case class Commitments(channelVersion: ChannelVersion,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
+                       originChannels: Map[Long, Origin[Upstream]], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
 
   require(!channelVersion.hasStaticRemotekey || (channelVersion.hasStaticRemotekey && localParams.staticPaymentBasepoint.isDefined), s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
 
-  val commitmentFormat = channelVersion.commitmentFormat
+  val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -178,7 +179,7 @@ object Commitments {
    * @param cmd         add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
    */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, origin: Origin, blockHeight: Long, feeConf: OnChainFeeConf): Try[(Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, blockHeight: Long, feeConf: OnChainFeeConf): Try[(Commitments, UpdateAddHtlc)] = {
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     if (cmd.cltvExpiry >= maxExpiry) {
@@ -201,7 +202,7 @@ object Commitments {
     // let's compute the current commitment *as seen by them* with this change taken into account
     val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     // we increment the local htlc index and add an entry to the origins map
-    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> origin))
+    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> cmd.origin))
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
@@ -320,7 +321,7 @@ object Commitments {
       case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
-  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin[Upstream], UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(commitments, fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Try((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
       case Some(_) => Failure(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
@@ -366,13 +367,13 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin[Upstream], UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(commitments, fail.id) match {
       case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
       case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] = {
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin[Upstream], UpdateAddHtlc)] = {
     // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       Failure(InvalidFailureCode(commitments.channelId))
@@ -560,7 +561,7 @@ object Commitments {
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Relayer.RelayMessage])] = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Either[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult], Relayer.RelayForward]])] = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
@@ -570,17 +571,17 @@ object Commitments {
         val forwards = commitments.remoteChanges.signed collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
-          case add: UpdateAddHtlc => Relayer.RelayForward(add)
+          case add: UpdateAddHtlc => Right(Relayer.RelayForward(add))
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
-            Relayer.RelayBackward.RelayRemoteFail(fail, origin, add)
+            Left(RES_ADD_COMPLETED(origin, add, HtlcResult.RemoteFail(fail)))
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
-            Relayer.RelayBackward.RelayRemoteFailMalformed(fail, origin, add)
+            Left(RES_ADD_COMPLETED(origin, add, HtlcResult.RemoteFailMalformed(fail)))
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment

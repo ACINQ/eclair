@@ -16,14 +16,13 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.Done
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment._
@@ -34,23 +33,6 @@ import grizzled.slf4j.Logging
 
 import scala.collection.mutable
 import scala.concurrent.Promise
-
-// @formatter:off
-sealed trait Origin
-object Origin {
-  /** Our node is the origin of the payment. */
-  case class Local(id: UUID, replyTo: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-  /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-  case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi, replyTo: Option[ActorRef]) extends Origin
-  /**
-   * Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).
-   *
-   * @param origins       origin channelIds and htlcIds.
-   * @param replyTo actor sending the outgoing HTLC (if we haven't restarted and lost the reference).
-   */
-  case class TrampolineRelayed(origins: List[(ByteVector32, Long)], replyTo: Option[ActorRef]) extends Origin
-}
-// @formatter:on
 
 /**
  * Created by PM on 01/02/2017.
@@ -148,14 +130,12 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
-    case RES_ADD_COMPLETED(fwd: RelayBackward) => self ! fwd
-
-    case fwd: RelayBackward => fwd.to match {
-      case Origin.Local(_, None) => postRestartCleaner forward fwd
-      case Origin.Local(_, Some(replyTo)) => replyTo ! fwd
-      case Origin.Relayed(_, _, _, _, _) => channelRelayer ! fwd
-      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward fwd
-      case Origin.TrampolineRelayed(_, Some(replyTo)) => replyTo ! fwd
+    case r: RES_ADD_COMPLETED[_, _] => r.to match {
+      case _: Origin.LocalCold => postRestartCleaner ! r
+      case o: Origin.LocalHot => o.replyTo ! r
+      case _: Origin.ChannelRelayed => channelRelayer ! r
+      case _: Origin.TrampolineRelayedCold => postRestartCleaner ! r
+      case o: Origin.TrampolineRelayedHot => o.replyTo ! r
     }
 
     case _: RES_SUCCESS[_] => () // ignoring responses from channels
@@ -167,8 +147,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
     val paymentHash_opt = currentMessage match {
       case RelayForward(add, _) => Some(add.paymentHash)
       case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.c.paymentHash)
-      case RES_ADD_COMPLETED(ff: RelayBackward.RelayFulfill) => Some(ff.htlc.paymentHash)
-      case RES_ADD_COMPLETED(ff: RelayBackward.RelayFail) => Some(ff.htlc.paymentHash)
+      case addCompleted: RES_ADD_COMPLETED[_, _] @unchecked => Some(addCompleted.htlc.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -185,20 +164,7 @@ object Relayer extends Logging {
   type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
 
   // @formatter:off
-  sealed trait RelayMessage
-  case class RelayForward(add: UpdateAddHtlc, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends RelayMessage
-  sealed trait RelayBackward extends RelayMessage { def to: Origin; def htlc: UpdateAddHtlc }
-  object RelayBackward {
-    sealed trait RelayFulfill extends RelayBackward { val paymentPreimage: ByteVector32; val to: Origin; val htlc: UpdateAddHtlc }
-    case class RelayRemoteFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends RelayFulfill { override val paymentPreimage = fulfill.paymentPreimage }
-    case class RelayOnChainFulfill(paymentPreimage: ByteVector32, to: Origin, htlc: UpdateAddHtlc) extends RelayFulfill
-    sealed trait RelayFail extends RelayBackward { val to: Origin; val htlc: UpdateAddHtlc }
-    case class RelayRemoteFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends RelayFail
-    case class RelayRemoteFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends RelayFail
-    case class RelayOnChainFail(cause: ChannelException, to: Origin, htlc: UpdateAddHtlc) extends RelayFail
-    case class RelayFailDisconnected(channelUpdate: ChannelUpdate, to: Origin, htlc: UpdateAddHtlc) extends RelayFail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
-  }
-
+  case class RelayForward(add: UpdateAddHtlc, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty)
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
   /**

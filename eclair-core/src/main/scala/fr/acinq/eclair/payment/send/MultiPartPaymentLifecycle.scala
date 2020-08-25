@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.Upstream
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment

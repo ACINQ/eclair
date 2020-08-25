@@ -26,6 +26,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -126,14 +127,14 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC) => ()
-              case u: Relayer.RelayBackward.RelayFulfill =>
-                log.info(s"successfully sent htlc #${u.htlc.id}")
+              case RES_ADD_COMPLETED(_, htlc, _: HtlcResult.Fulfill) =>
+                log.info(s"successfully sent htlc #${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case u: Relayer.RelayBackward.RelayFail =>
-                log.warning(s"htlc failed: ${u.htlc.id}")
+              case RES_ADD_COMPLETED(_, htlc, _: HtlcResult.Fail) =>
+                log.warning(s"htlc failed: ${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case res: RES_ADD_FAILED[_] @unchecked =>
-                log.error(s"htlc error: ${res.t.getMessage}")
+              case RES_ADD_FAILED(_, t: Throwable, _) =>
+                log.error(s"htlc error: ${t.getMessage}")
                 initiatePaymentOrStop(remaining - 1)
             }
         }

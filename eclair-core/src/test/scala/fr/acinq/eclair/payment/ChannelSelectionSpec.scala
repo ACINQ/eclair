@@ -19,7 +19,8 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Upstream}
+import fr.acinq.eclair.channel.Origin.Upstream
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Origin}
 import fr.acinq.eclair.payment.PaymentPacketSpec.makeCommitments
 import fr.acinq.eclair.payment.relay.ChannelRelayer.{RelayFailure, RelaySuccess, relayOrFail, selectPreferredChannel}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
@@ -42,17 +43,18 @@ class ChannelSelectionSpec extends AnyFunSuite {
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, shortChannelId, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat, enable)
 
   test("convert to CMD_FAIL_HTLC/CMD_ADD_HTLC") {
-    val onionPayload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
+    val onionPayload = RelayLegacyPayload(ShortChannelId(12345), 998_900 msat, CltvExpiry(60))
     val relayPayload = IncomingPacket.ChannelRelayPacket(
-      add = UpdateAddHtlc(randomBytes32, 42, 1000000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
+      add = UpdateAddHtlc(randomBytes32, 42, 1_000_000 msat, randomBytes32, CltvExpiry(70), TestConstants.emptyOnionPacket),
       payload = onionPayload,
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
+    val origin = Origin.ChannelRelayedHot(Upstream.ChannelRelayedHot(relayPayload.add, onionPayload.amountToForward), ActorRef.noSender)
 
-    val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10000000 msat, true)
+    val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10_000_000 msat, true)
 
     // nominal case
-    assert(relayOrFail(ActorRef.noSender, relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(ActorRef.noSender, relayPayload.payload.amountToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltv, relayPayload.nextPacket, Upstream.Relayed(relayPayload.add), commit = true)))
+    assert(relayOrFail(ActorRef.noSender, relayPayload, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(ActorRef.noSender, relayPayload.payload.amountToForward, relayPayload.add.paymentHash, relayPayload.payload.outgoingCltv, relayPayload.nextPacket, origin, commit = true)))
     // no channel_update
     assert(relayOrFail(ActorRef.noSender, relayPayload, channelUpdate_opt = None) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(UnknownNextPeer), commit = true)))
     // channel disabled
@@ -65,11 +67,12 @@ class ChannelSelectionSpec extends AnyFunSuite {
     val relayPayload_incorrectcltv = relayPayload.copy(payload = onionPayload.copy(outgoingCltv = CltvExpiry(42)))
     assert(relayOrFail(ActorRef.noSender, relayPayload_incorrectcltv, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(IncorrectCltvExpiry(relayPayload_incorrectcltv.payload.outgoingCltv, channelUpdate)), commit = true)))
     // insufficient fee
-    val relayPayload_insufficientfee = relayPayload.copy(payload = onionPayload.copy(amountToForward = 998910 msat))
+    val relayPayload_insufficientfee = relayPayload.copy(payload = onionPayload.copy(amountToForward = 998_910 msat))
     assert(relayOrFail(ActorRef.noSender, relayPayload_insufficientfee, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(FeeInsufficient(relayPayload_insufficientfee.add.amountMsat, channelUpdate)), commit = true)))
     // note that a generous fee is ok!
-    val relayPayload_highfee = relayPayload.copy(payload = onionPayload.copy(amountToForward = 900000 msat))
-    assert(relayOrFail(ActorRef.noSender, relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(ActorRef.noSender, relayPayload_highfee.payload.amountToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltv, relayPayload_highfee.nextPacket, Upstream.Relayed(relayPayload.add), commit = true)))
+    val relayPayload_highfee = relayPayload.copy(payload = onionPayload.copy(amountToForward = 900_000 msat))
+    val originHighFee = origin.copy(upstream = origin.upstream.copy(amountOut = relayPayload_highfee.payload.amountToForward))
+    assert(relayOrFail(ActorRef.noSender, relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(ActorRef.noSender, relayPayload_highfee.payload.amountToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltv, relayPayload_highfee.nextPacket, originHighFee, commit = true)))
   }
 
   test("channel selection") {

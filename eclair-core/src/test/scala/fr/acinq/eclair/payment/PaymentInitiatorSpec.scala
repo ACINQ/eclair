@@ -24,7 +24,8 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._
-import fr.acinq.eclair.channel.{Channel, Upstream}
+import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}

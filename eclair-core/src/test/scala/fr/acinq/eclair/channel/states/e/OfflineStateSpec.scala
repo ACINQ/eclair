@@ -69,7 +69,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref)))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob)
@@ -149,7 +149,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     val sender = TestProbe()
 
-    sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref)))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
     // add ->b
     alice2bob.forward(bob, ab_add_0)
@@ -394,7 +394,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectNoMsg(300 millis)
 
     // we attempt to send a payment
-    sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID())))
+    sender.send(alice, CMD_ADD_HTLC(ActorRef.noSender, 4200 msat, randomBytes32, CltvExpiry(123456), TestConstants.emptyOnionPacket, localOrigin(sender.ref)))
     sender.expectMsgType[RES_ADD_FAILED[ChannelUnavailable]]
 
     // alice will broadcast a new disabled channel_update

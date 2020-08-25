@@ -22,7 +22,8 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Features.BasicMultiPartPayment
-import fr.acinq.eclair.channel.{Channel, Upstream}
+import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._

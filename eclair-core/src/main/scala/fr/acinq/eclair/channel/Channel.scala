@@ -30,7 +30,6 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions._
@@ -635,7 +634,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      Commitments.sendAdd(d.commitments, c, origin(c), nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
+      Commitments.sendAdd(d.commitments, c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
         case Success((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
@@ -665,7 +664,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Commitments.receiveFulfill(d.commitments, fulfill) match {
         case Success((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! RES_ADD_COMPLETED(Relayer.RelayBackward.RelayRemoteFulfill(fulfill, origin, htlc))
+          relayer ! RES_ADD_COMPLETED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -783,12 +782,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           cancelTimer(RevocationTimeout.toString)
           log.debug("received a new rev, spec:\n{}", Commitments.specs2String(commitments1))
           forwards.foreach {
-            case forwardAdd: Relayer.RelayForward =>
+            case Right(forwardAdd) =>
               log.debug("forwarding {} to relayer", forwardAdd)
               relayer ! forwardAdd
-            case forward: Relayer.RelayBackward =>
-              log.debug("forwarding {} to relayer", forward)
-              relayer ! RES_ADD_COMPLETED(forward)
+            case Left(result) =>
+              log.debug("forwarding {} to relayer", result)
+              relayer ! result
           }
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
@@ -976,7 +975,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         log.info(s"updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = false)
         d.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_COMPLETED(Relayer.RelayBackward.RelayFailDisconnected(channelUpdate, d.commitments.originChannels(add.id), add))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_COMPLETED(d.commitments.originChannels(add.id), add, HtlcResult.Disconnected(channelUpdate))
         }
         d.copy(channelUpdate = channelUpdate)
       } else {
@@ -1017,7 +1016,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Commitments.receiveFulfill(d.commitments, fulfill) match {
         case Success((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! RES_ADD_COMPLETED(Relayer.RelayBackward.RelayRemoteFulfill(fulfill, origin, htlc))
+          relayer ! RES_ADD_COMPLETED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -1125,13 +1124,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           cancelTimer(RevocationTimeout.toString)
           log.debug("received a new rev, spec:\n{}", Commitments.specs2String(commitments1))
           forwards.foreach {
-            case forwardAdd: Relayer.RelayForward =>
+            case Right(forwardAdd) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: failing {}", forwardAdd.add)
               self ! CMD_FAIL_HTLC(forwardAdd.add.id, Right(PermanentChannelFailure), commit = true)
-            case forward: Relayer.RelayBackward =>
+            case Left(forward) =>
               log.debug("forwarding {} to relayer", forward)
-              relayer ! RES_ADD_COMPLETED(forward)
+              relayer ! forward
           }
           if (commitments1.hasNoPendingHtlcs) {
             log.debug("switching to NEGOTIATING spec:\n{}", Commitments.specs2String(commitments1))
@@ -1291,7 +1290,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(htlc.id) match {
           case Some(origin) =>
             log.info(s"fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} origin=$origin")
-            relayer ! RES_ADD_COMPLETED(Relayer.RelayBackward.RelayOnChainFulfill(preimage, origin, htlc))
+            relayer ! RES_ADD_COMPLETED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
           case None =>
             // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
@@ -1330,7 +1329,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-            relayer ! RES_ADD_COMPLETED(Relayer.RelayBackward.RelayOnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add)), origin, add))
+            relayer ! RES_ADD_COMPLETED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
@@ -1341,7 +1340,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
-            relayer ! RES_ADD_COMPLETED(Relayer.RelayBackward.RelayOnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add), origin, add))
+            relayer ! RES_ADD_COMPLETED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
@@ -1350,7 +1349,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
         .onchainOutgoingHtlcs(d.commitments.localCommit, d.commitments.remoteCommit, d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
-        .map(add => (add, d.commitments.originChannels.get(add.id).collect { case Origin.Local(id, _) => id })) // we resolve the payment id if this was a local payment
+        .map(add => (add, d.commitments.originChannels.get(add.id).collect { case o: Origin.Local => o.upstream.id })) // we resolve the payment id if this was a local payment
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // and we also send events related to fee
       Closing.networkFeePaid(tx, d1) foreach { case (fee, desc) => feePaid(fee, tx, desc, d.channelId) }
@@ -2338,12 +2337,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } catch {
         case t: Throwable => handleLocalError(t, event.stateData, None)
       }
-  }
-
-  def origin(c: CMD_ADD_HTLC): Origin = c.upstream match {
-    case Upstream.Local(id) => Origin.Local(id, Some(c.replyTo)) // we were the origin of the payment
-    case Upstream.Relayed(u) => Origin.Relayed(u.channelId, u.id, u.amountMsat, c.amount, Some(c.replyTo)) // this is a relayed payment to an outgoing channel
-    case Upstream.TrampolineRelayed(us) => Origin.TrampolineRelayed(us.map(u => (u.channelId, u.id)).toList, Some(c.replyTo)) // this is a relayed payment to an outgoing node
   }
 
   def feePaid(fee: Satoshi, tx: Transaction, desc: String, channelId: ByteVector32): Unit = Try { // this may fail with an NPE in tests because context has been cleaned up, but it's not a big deal

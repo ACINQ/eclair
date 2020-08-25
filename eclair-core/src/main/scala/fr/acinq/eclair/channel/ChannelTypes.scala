@@ -22,7 +22,8 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.payment.relay.{Origin, Relayer}
+import fr.acinq.eclair.channel.Origin.Upstream
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
@@ -106,16 +107,61 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
        "Y8888P"   "Y88888P"  888       888 888       888 d88P     888 888    Y888 8888888P"   "Y8888P"
  */
 
-sealed trait Upstream
-object Upstream {
+/**
+ * Origin of a payment, answering both questions:
+ * - what actor in the app sent that htlc? (Origin.replyTo)
+ * - what are the parent(s) of this payment in the htlc chain? (Upstream)
+ */
+sealed trait Origin[+U <: Origin.Upstream] { def upstream: U }
+object Origin {
+  /** We have full details and the origin actor is known. */
+  sealed trait Hot[+U <: Upstream] extends Origin[U]
+  /** We have restarted after the payment was sent, we have limited info and the origin actor doesn't exist anymore */
+  sealed trait Cold[+U <: Upstream] extends Origin[U]
+
   /** Our node is the origin of the payment. */
-  final case class Local(id: UUID) extends Upstream
+  sealed trait Local extends Origin[Upstream.Local]
+  case class LocalHot(upstream: Upstream.Local, replyTo: ActorRef) extends Local with Hot[Upstream.Local]
+  case class LocalCold(upstream: Upstream.Local) extends Local with Cold[Upstream.Local]
+
   /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-  final case class Relayed(add: UpdateAddHtlc) extends Upstream
-  /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
-  final case class TrampolineRelayed(adds: Seq[UpdateAddHtlc]) extends Upstream {
-    val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-    val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+  sealed trait ChannelRelayed extends Origin[Upstream.ChannelRelayed]
+  case class ChannelRelayedHot(upstream: Upstream.ChannelRelayedHot, replyTo: ActorRef) extends ChannelRelayed with Hot[Upstream.ChannelRelayed]
+  case class ChannelRelayedCold(upstream: Upstream.ChannelRelayedCold) extends ChannelRelayed with Cold[Upstream.ChannelRelayed]
+
+  /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).*/
+  sealed trait TrampolineRelayed extends Origin[Upstream.TrampolineRelayed]
+  case class TrampolineRelayedHot(upstream: Upstream.TrampolineRelayedHot, replyTo: ActorRef) extends TrampolineRelayed with Hot[Upstream.TrampolineRelayed]
+  case class TrampolineRelayedCold(upstream: Upstream.TrampolineRelayedCold) extends TrampolineRelayed with Cold[Upstream.TrampolineRelayed]
+
+  /** Parents of a payment in the htlc chain */
+  sealed trait Upstream
+  object Upstream {
+    /** Our node is the origin of the payment. */
+    final case class Local(id: UUID) extends Upstream // we don't persist reference to local actors
+
+    /** Our node forwarded a single incoming HTLC to an outgoing channel. */
+    sealed trait ChannelRelayed extends Upstream {
+      def originChannelId: ByteVector32
+      def originHtlcId: Long
+      def amountIn: MilliSatoshi
+      def amountOut: MilliSatoshi
+    }
+    final case class ChannelRelayedHot(add: UpdateAddHtlc, override val amountOut: MilliSatoshi) extends ChannelRelayed {
+      override def originChannelId: ByteVector32 = add.channelId
+      override def originHtlcId: Long = add.id
+      override def amountIn: MilliSatoshi = add.amountMsat
+    }
+    final case class ChannelRelayedCold(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends ChannelRelayed
+
+    /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
+    sealed trait TrampolineRelayed extends Upstream { def htlcs: List[(ByteVector32, Long)] }
+    case class TrampolineRelayedHot(adds: Seq[UpdateAddHtlc]) extends TrampolineRelayed {
+      override def htlcs: List[(ByteVector32, Long)] = adds.map(u => (u.channelId, u.id)).toList
+      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
+      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+    }
+    case class TrampolineRelayedCold(override val htlcs: List[(ByteVector32, Long)]) extends TrampolineRelayed
   }
 }
 
@@ -125,7 +171,7 @@ sealed trait HasHtlcId { this: Command => def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command with HasHtlcId
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, upstream: Upstream, commit: Boolean = false, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends Command with HasReplyTo
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot[Upstream], commit: Boolean = false, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends Command with HasReplyTo
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 sealed trait CloseCommand extends Command
@@ -162,8 +208,19 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
  * - either [[RES_ADD_FAILED]]
  * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_COMPLETED]] (possibly a while later)
  */
-case class RES_ADD_FAILED[+T <: Throwable](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with upstream=${c.upstream} reason=${t.getMessage}" }
-case class RES_ADD_COMPLETED[+F <: Relayer.RelayBackward](fwd: F) extends CommandResponse[CMD_ADD_HTLC]
+final case class RES_ADD_FAILED[+T <: Throwable](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
+sealed trait HtlcResult
+object HtlcResult {
+  sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
+  case class RemoteFulfill(fulfill: UpdateFulfillHtlc) extends Fulfill { override val paymentPreimage = fulfill.paymentPreimage }
+  case class OnChainFulfill(paymentPreimage: ByteVector32) extends Fulfill
+  sealed trait Fail extends HtlcResult
+  case class RemoteFail(fail: UpdateFailHtlc) extends Fail
+  case class RemoteFailMalformed(fail: UpdateFailMalformedHtlc) extends Fail
+  case class OnChainFail(cause: ChannelException) extends Fail
+  case class Disconnected(channelUpdate: ChannelUpdate) extends Fail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
+}
+final case class RES_ADD_COMPLETED[+O <: Origin[_ <: Upstream], +R <: HtlcResult](to: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data) extends CommandSuccess[CMD_GETINFO.type]

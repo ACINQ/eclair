@@ -21,9 +21,9 @@ import java.util.UUID
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
@@ -174,36 +174,37 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation].decodeOnly
 
-  val localCodec: Codec[Origin.Local] = (
-    ("id" | uuid) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.Local]
+  val localColdCodec: Codec[Origin.LocalCold] = (
+    ("id" | uuid)).as[Upstream.Local].as[Origin.LocalCold]
 
-  val relayedCodec: Codec[Origin.Relayed] = (
+  val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.upstream))
+
+  val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi) ::
-      ("replyTo" | provide(Option.empty[ActorRef]))).as[Origin.Relayed]
+      ("amountOut" | millisatoshi)).as[Upstream.ChannelRelayedCold].as[Origin.ChannelRelayedCold]
+
+  val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(o.upstream.originChannelId, o.upstream.originHtlcId, o.upstream.amountIn, o.upstream.amountOut)))
+
+  val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = (
+    listOfN(uint16, bytes32 ~ int64)).as[Upstream.TrampolineRelayedCold].as[Origin.TrampolineRelayedCold]
+
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold(o.upstream.htlcs)))
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
-    listOfN(uint16, bytes32 ~ int64) ::
-      ("replyTo" | provide(Option.empty[ActorRef]))
-    ).as[Origin.TrampolineRelayed]
-
-  val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
+  val originCodec: Codec[Origin[Upstream]] = discriminated[Origin[Upstream]].by(uint16)
     .typecase(0x03, localCodec) // backward compatible
-    .typecase(0x01, provide(Origin.Local(UNKNOWN_UUID, None)))
+    .typecase(0x01, provide(Origin.LocalCold(Upstream.Local(UNKNOWN_UUID))))
     .typecase(0x02, relayedCodec)
     .typecase(0x04, trampolineRelayedCodec)
 
-  val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
+  val originsListCodec: Codec[List[(Long, Origin[Upstream])]] = listOfN(uint16, int64 ~ originCodec)
 
-  val originsMapCodec: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
-    (map: Map[Long, Origin]) => originsListCodec.encode(map.toList),
+  val originsMapCodec: Codec[Map[Long, Origin[Upstream]]] = Codec[Map[Long, Origin[Upstream]]](
+    (map: Map[Long, Origin[Upstream]]) => originsListCodec.encode(map.toList),
     (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
   )
 

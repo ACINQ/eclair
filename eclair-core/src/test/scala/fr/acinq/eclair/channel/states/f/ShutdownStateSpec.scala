@@ -25,11 +25,12 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
@@ -108,7 +109,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     sender.send(alice, add)
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))
@@ -510,8 +511,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayBackward.RelayRemoteFail]].fwd
-    assert(forward.fail === fail)
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.RemoteFail]]
+    assert(forward.result.fail === fail)
   }
 
   test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
@@ -536,8 +537,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[RelayBackward.RelayRemoteFailMalformed]].fwd
-    assert(forward.fail === fail)
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.RemoteFailMalformed]]
+    assert(forward.result.fail === fail)
   }
 
   test("recv CMD_UPDATE_FEE") { f =>

@@ -119,25 +119,25 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RES_ADD_FAILED(_, t: Throwable, _), d: WaitingForComplete) =>
       handleLocalFail(d, t, isFatal = false)
 
-    case Event(fulfill: Relayer.RelayBackward.RelayFulfill, WaitingForComplete(c, cmd, failures, _, _, route)) =>
-      Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(failures.size + 1)
-      val p = PartialPayment(id, c.finalPayload.amount, cmd.amount - c.finalPayload.amount, fulfill.htlc.channelId, Some(cfg.fullRoute(route)))
-      onSuccess(c.replyTo, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
+    case Event(RES_ADD_COMPLETED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
+      Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
+      val p = PartialPayment(id, d.c.finalPayload.amount, d.cmd.amount - d.c.finalPayload.amount, htlc.channelId, Some(cfg.fullRoute(d.route)))
+      onSuccess(d.c.replyTo, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
       myStop()
 
-    case Event(forwardFail: Relayer.RelayBackward.RelayFail, d: WaitingForComplete) =>
-      forwardFail match {
-        case Relayer.RelayBackward.RelayRemoteFail(fail, _, _) => handleRemoteFail(d, fail)
-        case Relayer.RelayBackward.RelayRemoteFailMalformed(fail, _, _) =>
+    case Event(RES_ADD_COMPLETED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
+      fail match {
+        case HtlcResult.RemoteFail(fail) => handleRemoteFail(d, fail)
+        case HtlcResult.RemoteFailMalformed(fail) =>
           log.info(s"first node in the route couldn't parse our htlc: fail=$fail")
           // this is a corner case, that can only happen when the *first* node in the route cannot parse the onion
           // (if this happens higher up in the route, the error would be wrapped in an UpdateFailHtlc and handled above)
           // let's consider it a local error and treat is as such
           handleLocalFail(d, UpdateMalformedException, isFatal = false)
-        case Relayer.RelayBackward.RelayOnChainFail(cause, _, _) =>
+        case HtlcResult.OnChainFail(cause) =>
           // if the outgoing htlc is being resolved on chain, we treat it like a local error but we cannot retry
           handleLocalFail(d, cause, isFatal = true)
-        case Relayer.RelayBackward.RelayFailDisconnected(_, _, _) =>
+        case HtlcResult.Disconnected(_) =>
           // a disconnection occured before the outgoing htlc got signed
           // again, we consider it a local error and treat is as such
           handleLocalFail(d, DisconnectedException, isFatal = false)
