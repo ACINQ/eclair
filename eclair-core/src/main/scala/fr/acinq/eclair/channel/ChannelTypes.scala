@@ -137,8 +137,11 @@ object Origin {
   /** Parents of a payment in the htlc chain */
   sealed trait Upstream
   object Upstream {
+    /** there is a payment lifecycle involved for local and trampoline payments */
+    sealed trait SentByPaymentLifecycle extends Upstream
+
     /** Our node is the origin of the payment. */
-    final case class Local(id: UUID) extends Upstream // we don't persist reference to local actors
+    final case class Local(id: UUID) extends Upstream with SentByPaymentLifecycle // we don't persist reference to local actors
 
     /** Our node forwarded a single incoming HTLC to an outgoing channel. */
     sealed trait ChannelRelayed extends Upstream {
@@ -156,7 +159,7 @@ object Origin {
 
     /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
     sealed trait TrampolineRelayed extends Upstream { def htlcs: List[(ByteVector32, Long)] }
-    case class TrampolineRelayedHot(adds: Seq[UpdateAddHtlc]) extends TrampolineRelayed {
+    case class TrampolineRelayedHot(adds: Seq[UpdateAddHtlc]) extends TrampolineRelayed with SentByPaymentLifecycle {
       override def htlcs: List[(ByteVector32, Long)] = adds.map(u => (u.channelId, u.id)).toList
       val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
       val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min

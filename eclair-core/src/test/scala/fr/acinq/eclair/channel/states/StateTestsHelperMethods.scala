@@ -132,7 +132,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
 
   def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(Upstream.Local(UUID.randomUUID), replyTo)
 
-  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32, upstream: Upstream = Upstream.Local(UUID.randomUUID), replyTo: ActorRef = ActorRef.noSender): (ByteVector32, CMD_ADD_HTLC) = {
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32, upstream: Upstream.SentByPaymentLifecycle = Upstream.Local(UUID.randomUUID), replyTo: ActorRef = ActorRef.noSender): (ByteVector32, CMD_ADD_HTLC) = {
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
     val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
     val cmd = OutgoingPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, destination, null) :: Nil, FinalLegacyPayload(amount, expiry))._1.copy(commit = false)

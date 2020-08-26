@@ -322,7 +322,7 @@ object PaymentInitiator {
                                paymentHash: ByteVector32,
                                recipientAmount: MilliSatoshi,
                                recipientNodeId: PublicKey,
-                               upstream: Upstream,
+                               upstream: Upstream.SentByPaymentLifecycle,
                                paymentRequest: Option[PaymentRequest],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean,
