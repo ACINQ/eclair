@@ -33,7 +33,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.channel.{CMD_CLOSE, ChannelOpenResponse, CommandResponse, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -199,11 +199,12 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'close' method should accept channelIds and shortChannelIds") {
     val shortChannelIdSerialized = "42000x27x3"
-    val channelId = "56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e"
-    val response = Map[ChannelIdentifier, Either[Throwable, ChannelCommandResponse]](
-      Left(ByteVector32.fromValidHex(channelId)) -> Right(ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId))),
-      Left(ByteVector32.fromValidHex(channelId).reverse) -> Left(new RuntimeException("channel not found")),
-      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(ChannelCommandResponse.ChannelClosed(ByteVector32.fromValidHex(channelId.reverse)))
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+    val channelIdSerialized = channelId.toHex
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(None), channelId)),
+      Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
     )
 
     val eclair = mock[Eclair]
@@ -222,7 +223,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         matchTestJson("close", resp)
       }
 
-    Post("/close", FormData("channelId" -> channelId).toEntity) ~>
+    Post("/close", FormData("channelId" -> channelIdSerialized).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
@@ -230,11 +231,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(ByteVector32.fromValidHex(channelId)) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(channelId) :: Nil, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
 
-    Post("/close", FormData("channelIds" -> channelId, "shortChannelIds" -> "42000x27x3,42000x561x1").toEntity) ~>
+    Post("/close", FormData("channelIds" -> channelIdSerialized, "shortChannelIds" -> "42000x27x3,42000x561x1").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
@@ -242,7 +243,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(ByteVector32.fromValidHex(channelId)) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(channelId) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
   }

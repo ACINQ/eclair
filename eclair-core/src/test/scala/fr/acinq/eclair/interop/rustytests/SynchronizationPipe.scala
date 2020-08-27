@@ -127,7 +127,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       a forward msg
       unstashAll()
       exec(script.drop(1), a, b)
-    case d: DATA_NORMAL if script.head.endsWith(":dump") =>
+    case RES_GETSTATEDATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
       import d.commitments._
       val l = List(

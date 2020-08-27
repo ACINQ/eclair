@@ -126,7 +126,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
-              case RES_SUCCESS(_: CMD_ADD_HTLC) => ()
+              case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
               case RES_ADD_COMPLETED(_, htlc, _: HtlcResult.Fulfill) =>
                 log.info(s"successfully sent htlc #${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
@@ -183,7 +183,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     awaitCond({
       val c = CMD_CLOSE(None)
       sender.send(alice, c)
-      sender.expectMsgType[CommandResponse[CMD_CLOSE]] == RES_SUCCESS(c)
+      sender.expectMsgType[CommandResponse[CMD_CLOSE]].isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)
@@ -205,7 +205,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       sender.send(bob, c)
       val resb = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
       // we only need that one of them succeeds
-      resa == RES_SUCCESS(c) || resb == RES_SUCCESS(c)
+      resa.isInstanceOf[RES_SUCCESS[CMD_CLOSE]] || resb.isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)

@@ -276,9 +276,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           goto(OFFLINE) using data
       }
 
-    case Event(c: CloseCommand, _) =>
-      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(ByteVector32.Zeroes))) // for this corner case we answer with an all-zero channel id
-      handleFastClose(c)
+    case Event(c: CloseCommand, d) =>
+      val channelId = Helpers.getChannelId(d)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(channelId)))
+      handleFastClose(c, channelId)
 
     case Event(TickChannelOpenTimeout, _) =>
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
@@ -332,7 +333,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint, open.channelFlags, channelVersion, accept) sending accept
       }
 
-    case Event(c: CloseCommand, _) => handleFastClose(c)
+    case Event(c: CloseCommand, d) =>
+      val channelId = Helpers.getChannelId(d)
+      handleFastClose(c, channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
@@ -368,8 +371,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.lastSent.temporaryChannelId)))
-      handleFastClose(c)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.lastSent.temporaryChannelId)))
+      handleFastClose(c, d.lastSent.temporaryChannelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       channelOpenReplyToUser(Left(RemoteError(e)))
@@ -409,8 +412,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       handleLocalError(ChannelFundingError(d.temporaryChannelId), d, None) // we use a generic exception and don't send the internal error to the peer
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.temporaryChannelId)))
-      handleFastClose(c)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.temporaryChannelId)))
+      handleFastClose(c, d.temporaryChannelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       channelOpenReplyToUser(Left(RemoteError(e)))
@@ -465,8 +468,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_CREATED) =>
-      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.temporaryChannelId)))
-      handleFastClose(c)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.temporaryChannelId)))
+      handleFastClose(c, d.temporaryChannelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
@@ -508,7 +511,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               case Success(true) =>
                 // NB: funding tx isn't confirmed at this point, so technically we didn't really pay the network fee yet, so this is a (fair) approximation
                 feePaid(fundingTxFee, fundingTx, "funding", commitments.channelId)
-                channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelOpened(channelId)))
+                channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)))
               case Success(false) =>
                 channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
                 self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
@@ -524,8 +527,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      channelOpenReplyToUser(Right(ChannelCommandResponse.ChannelClosed(d.channelId)))
-      handleFastClose(c)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
@@ -945,7 +948,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       log.info("updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing() replying RES_SUCCESS(c)
+      goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing() replying RES_SUCCESS(c, d.channelId)
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       val age = System.currentTimeMillis.milliseconds - d.channelUpdate.timestamp.seconds
@@ -1444,7 +1447,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = false)
       // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
-      stay using d.copy(channelUpdate = channelUpdate) storing() replying RES_SUCCESS(c)
+      stay using d.copy(channelUpdate = channelUpdate) storing() replying RES_SUCCESS(c, d.channelId)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
 
@@ -1638,11 +1641,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventLost(BITCOIN_FUNDING_LOST), _) => goto(ERR_FUNDING_LOST)
 
     case Event(CMD_GETSTATE, _) =>
-      sender ! stateName
+      sender ! RES_GETSTATE(stateName)
       stay
 
     case Event(CMD_GETSTATEDATA, _) =>
-      sender ! stateData
+      sender ! RES_GETSTATEDATA(stateData)
       stay
 
     case Event(CMD_GETINFO, _) =>
@@ -1659,7 +1662,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_FORCECLOSE.type, d) =>
       d match {
-        case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying RES_SUCCESS(c)
+        case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c)) replying RES_SUCCESS(c, data.channelId)
         case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
       }
 
@@ -1793,7 +1796,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   /**
    * This function is used to return feedback to user at channel opening
    */
-  def channelOpenReplyToUser(message: Either[ChannelOpenError, ChannelCommandResponse]): Unit = {
+  def channelOpenReplyToUser(message: Either[ChannelOpenError, ChannelOpenResponse]): Unit = {
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
       case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))
@@ -1847,8 +1850,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  def handleFastClose(c: CloseCommand) = {
-    goto(CLOSED) replying RES_SUCCESS(c)
+  def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
+    goto(CLOSED) replying RES_SUCCESS(c, channelId)
   }
 
   def handleCommandSuccess(c: Command, newData: Data) = {
@@ -1856,7 +1859,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo
       case _ => sender
     }
-    replyTo ! RES_SUCCESS(c)
+    val channelId = Helpers.getChannelId(newData)
+    replyTo ! RES_SUCCESS(c, channelId)
     stay using newData
   }
 

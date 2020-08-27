@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
+import fr.acinq.eclair.channel.{ChannelOpenResponse, ChannelVersion, CloseCommand, Command, CommandResponse, RES_SUCCESS, State}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
@@ -139,10 +139,17 @@ class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
   case x: ChannelVersion => JString(x.bits.toBin)
 }))
 
-class ChannelCommandResponseSerializer extends CustomSerializer[ChannelCommandResponse](_ => ( {
+class ChannelOpenResponseSerializer extends CustomSerializer[ChannelOpenResponse](_ => ( {
   null
 }, {
-  case x: ChannelCommandResponse => JString(x.toString)
+  case x: ChannelOpenResponse => JString(x.toString)
+}))
+
+class CommandResponseSerializer extends CustomSerializer[CommandResponse[Command]](_ => ( {
+  null
+}, {
+  case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
+  case x: CommandResponse[Command] => JString(x.toString)
 }))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
@@ -332,7 +339,8 @@ object JsonSupport extends Json4sSupport {
     new OutPointSerializer +
     new OutPointKeySerializer +
     new ChannelVersionSerializer +
-    new ChannelCommandResponseSerializer +
+    new ChannelOpenResponseSerializer +
+    new CommandResponseSerializer +
     new InputInfoSerializer +
     new ColorSerializer +
     new RouteResponseSerializer +

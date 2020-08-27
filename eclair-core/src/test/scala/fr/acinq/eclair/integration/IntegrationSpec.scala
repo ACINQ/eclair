@@ -32,6 +32,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
+import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.crypto.TransportHandler
@@ -51,7 +52,7 @@ import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PublicCha
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, channel, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.{DefaultFormats, Formats}
@@ -182,7 +183,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 137, "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
   }
 
-  def connect(node1: Kit, node2: Kit, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): ChannelCommandResponse.ChannelOpened = {
+  def connect(node1: Kit, node2: Kit, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): ChannelOpenResponse.ChannelOpened = {
     val sender = TestProbe()
     val address = node2.nodeParams.publicAddresses.head
     sender.send(node1.switchboard, Peer.Connect(
@@ -197,7 +198,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       fundingTxFeeratePerKw_opt = None,
       channelFlags = None,
       timeout_opt = None))
-    sender.expectMsgType[ChannelCommandResponse.ChannelOpened](10 seconds)
+    sender.expectMsgType[ChannelOpenResponse.ChannelOpened](10 seconds)
   }
 
   test("connect nodes") {
@@ -296,22 +297,24 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // get the channelId
     sender.send(fundee.register, Symbol("channels"))
     val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
+
     sender.send(fundeeChannel, CMD_GETSTATEDATA)
-    val channelId = sender.expectMsgType[HasCommitments].channelId
+    val channelId = sender.expectMsgType[RES_GETSTATEDATA[HasCommitments]].data.channelId
     awaitCond({
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED
+      sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED
     })
 
     generateBlocks(bitcoincli, 6)
 
     // after 8 blocks the fundee is still waiting for more confirmations
-    fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-    assert(sender.expectMsgType[State] == WAIT_FOR_FUNDING_CONFIRMED)
+    //fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+    new EclairImpl(fundee).channelInfo(Left(channelId))(20 seconds).pipeTo(sender.ref)
+    assert(sender.expectMsgType[RES_GETINFO].state == WAIT_FOR_FUNDING_CONFIRMED)
 
     // after 8 blocks the funder is still waiting for funding_locked from the fundee
     funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-    assert(sender.expectMsgType[State] == WAIT_FOR_FUNDING_LOCKED)
+    assert(sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED)
 
     // simulate a disconnection
     sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
@@ -319,9 +322,9 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     awaitCond({
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val fundeeState = sender.expectMsgType[State]
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[_]].state
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val funderState = sender.expectMsgType[State]
+      val funderState = sender.expectMsgType[RES_GETSTATE[_]].state
       fundeeState == OFFLINE && funderState == OFFLINE
     })
 
@@ -335,9 +338,9 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
       sender.expectMsgAnyOf(10 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
 
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val fundeeState = sender.expectMsgType[State](max = 30 seconds)
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]](max = 30 seconds).state
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val funderState = sender.expectMsgType[State](max = 30 seconds)
+      val funderState = sender.expectMsgType[RES_GETSTATE[State]](max = 30 seconds).state
       fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
     }, max = 30 seconds, interval = 10 seconds)
 
@@ -346,9 +349,9 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     awaitCond({
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val fundeeState = sender.expectMsgType[State]
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]].state
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val funderState = sender.expectMsgType[State]
+      val funderState = sender.expectMsgType[RES_GETSTATE[State]].state
       fundeeState == NORMAL && funderState == NORMAL
     })
 
@@ -848,24 +851,24 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val channelId = channels.head._1
 
     sender.send(nodes("C").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA))
-    val commitmentsC = sender.expectMsgType[DATA_NORMAL].commitments
+    val commitmentsC = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments
     val finalPubKeyScriptC = commitmentsC.localParams.defaultFinalScriptPubKey
     val fundingOutpoint = commitmentsC.commitInput.outPoint
     sender.send(nodes("F1").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA))
-    val finalPubKeyScriptF = sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey
+    val finalPubKeyScriptF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey
 
     sender.send(nodes("F1").register, Register.Forward(sender.ref, channelId, CMD_CLOSE(Some(finalPubKeyScriptF))))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSING
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSING
     }, max = 20 seconds, interval = 1 second)
 
     generateBlocks(bitcoincli, 2)
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSED
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSED
     }, max = 20 seconds, interval = 1 second)
 
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
@@ -888,7 +891,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
 
     sender.send(nodes("F2").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA))
-    val initialStateDataF2 = sender.expectMsgType[DATA_NORMAL]
+    val initialStateDataF2 = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     val initialCommitmentIndex = initialStateDataF2.commitments.localCommit.index
 
     // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
@@ -909,7 +912,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     assert(ps.id == paymentId)
 
     sender.send(nodes("F2").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA))
-    val stateDataF2 = sender.expectMsgType[DATA_NORMAL]
+    val stateDataF2 = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF2.commitments.localCommit.index
     val commitTx = stateDataF2.commitments.localCommit.publishableTxs.commitTx.tx
     val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
@@ -927,7 +930,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // we then wait for C to detect the unilateral close and go to CLOSING state
     awaitCond({
       nodes("C").register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      sender.expectMsgType[State] == CLOSING
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSING
     }, max = 20 seconds, interval = 1 second)
 
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
@@ -941,7 +944,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 2)
     awaitCond({
       nodes("C").register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      sender.expectMsgType[State] == CLOSED
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSED
     }, max = 20 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
@@ -992,7 +995,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // we then wait for F to be in disconnected state
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == OFFLINE
+      sender.expectMsgType[RES_GETSTATE[State]].state == OFFLINE
     }, max = 20 seconds, interval = 1 second)
   }
 
@@ -1027,11 +1030,11 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket].add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))
-    val dataC = sender.expectMsgType[DATA_NORMAL]
+    val dataC = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     assert(dataC.commitments.commitmentFormat === commitmentFormat)
     val finalAddressC = scriptPubKeyToAddress(dataC.commitments.localParams.defaultFinalScriptPubKey)
     sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))
-    val dataF = sender.expectMsgType[DATA_NORMAL]
+    val dataF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     assert(dataF.commitments.commitmentFormat === commitmentFormat)
     val finalAddressF = scriptPubKeyToAddress(dataF.commitments.localParams.defaultFinalScriptPubKey)
     ForceCloseFixture(sender, paymentSender, stateListener, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
@@ -1051,7 +1054,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == OFFLINE
+      sender.expectMsgType[RES_GETSTATE[State]].state == OFFLINE
     }, max = 20 seconds, interval = 1 second)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(bitcoincli, 3, Some(minerAddress))
@@ -1075,7 +1078,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSED
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSED
     }, max = 20 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
@@ -1118,7 +1121,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSED
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSED
     }, max = 20 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
@@ -1137,7 +1140,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, (htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSING, max = 30 seconds)
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))
-    val Some(localCommit) = sender.expectMsgType[DATA_CLOSING].localCommitPublished
+    val Some(localCommit) = sender.expectMsgType[RES_GETSTATEDATA[DATA_CLOSING]].data.localCommitPublished
     // we wait until the commit tx has been broadcast
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     waitForTxBroadcastOrConfirmed(localCommit.commitTx.txid, bitcoinClient, sender)
@@ -1168,7 +1171,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSED
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSED
     }, max = 20 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
@@ -1189,13 +1192,13 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // we wait for C to detect the unilateral close
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))
-      sender.expectMsgType[Data] match {
+      sender.expectMsgType[RES_GETSTATEDATA[Data]].data match {
         case d: DATA_CLOSING if d.remoteCommitPublished.nonEmpty => true
         case _ => false
       }
     }, max = 30 seconds, interval = 1 second)
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))
-    val Some(remoteCommit) = sender.expectMsgType[DATA_CLOSING].remoteCommitPublished
+    val Some(remoteCommit) = sender.expectMsgType[RES_GETSTATEDATA[DATA_CLOSING]].data.remoteCommitPublished
     // we generate enough blocks to make the htlc timeout
     generateBlocks(bitcoincli, (htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
     // we wait until the claim-htlc-timeout has been broadcast
@@ -1224,7 +1227,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 30 seconds)
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[State] == CLOSED
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSED
     }, max = 20 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 5, 7, 16)
   }
@@ -1315,7 +1318,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 40)
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref, commitmentsF.channelId, CMD_GETSTATEDATA))
-    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
+    val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)
     // we prepare the revoked transactions F will publish
     val revokedCommitTx = localCommitF.commitTx.tx
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map { case (htlcTxAndSigs, preimage) => Transactions.addSigs(htlcTxAndSigs.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcTxAndSigs.localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.commitmentFormat).tx }

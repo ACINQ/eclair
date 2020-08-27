@@ -202,7 +202,7 @@ sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
 sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: Throwable }
 
 /** generic responses */
-final case class RES_SUCCESS[+C <: Command](cmd: C) extends CommandSuccess[C]
+final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess[C]
 final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) extends CommandFailure[C, T]
 
 /**
@@ -226,12 +226,21 @@ object HtlcResult {
 final case class RES_ADD_COMPLETED[+O <: Origin[_ <: Upstream], +R <: HtlcResult](to: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
+final case class RES_GETSTATE[+S <: State](state: S) extends CommandSuccess[CMD_GETSTATE.type]
+final case class RES_GETSTATEDATA[+D <: Data](data: D) extends CommandSuccess[CMD_GETSTATEDATA.type]
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data) extends CommandSuccess[CMD_GETINFO.type]
+final case class RES_CLOSE(channelId: ByteVector32) extends CommandSuccess[CMD_CLOSE]
 
-sealed trait ChannelCommandResponse
-object ChannelCommandResponse {
-  case class ChannelOpened(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"created channel $channelId" }
-  case class ChannelClosed(channelId: ByteVector32) extends ChannelCommandResponse { override def toString  = s"closed channel $channelId" }
+/**
+ * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]
+ *
+ * If actor A sends a [[fr.acinq.eclair.io.Peer.OpenChannel]] and actor B sends a [[CMD_CLOSE]], then A will receive a
+ * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[]]
+ */
+sealed trait ChannelOpenResponse
+object ChannelOpenResponse {
+  case class ChannelOpened(channelId: ByteVector32) extends ChannelOpenResponse { override def toString  = s"created channel $channelId" }
+  case class ChannelClosed(channelId: ByteVector32) extends ChannelOpenResponse { override def toString  = s"closed channel $channelId" }
 }
 
 /*
