@@ -210,9 +210,13 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, paymentPreimage)
     sender.send(relayer, ForwardRemoteFulfill(fulfill_ba, origin2, add_bc))
 
+    // we need a reference to the node-relayer child actor
+    sender.send(relayer, Relayer.GetChildActors(sender.ref))
+    val nodeRelayer = sender.expectMsgType[Relayer.ChildActors].nodeRelayer
+
     // it should trigger a fulfill on the upstream HTLCs
-    register.expectMsg(Register.Forward(channelId_ab, CMD_FULFILL_HTLC(561, paymentPreimage, commit = true)))
-    register.expectMsg(Register.Forward(channelId_ab, CMD_FULFILL_HTLC(565, paymentPreimage, commit = true)))
+    register.expectMsg(Register.Forward(nodeRelayer, channelId_ab, CMD_FULFILL_HTLC(561, paymentPreimage, commit = true)))
+    register.expectMsg(Register.Forward(nodeRelayer, channelId_ab, CMD_FULFILL_HTLC(565, paymentPreimage, commit = true)))
   }
 
   test("relay an htlc-add at the final node to the payment handler") { f =>
@@ -553,16 +557,20 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
     sender.send(relayer, forwardFulfill)
 
+    // we need a reference to the node-relayer child actor
+    sender.send(relayer, Relayer.GetChildActors(sender.ref))
+    val nodeRelayer = sender.expectMsgType[Relayer.ChildActors].nodeRelayer
+
     // the FSM responsible for the payment should receive the fulfill and emit a preimage event.
     payFSM.expectMsg(forwardFulfill)
-    system.actorSelection(relayer.path.child("node-relayer")).tell(PreimageReceived(paymentHash, preimage), payFSM.ref)
+    nodeRelayer.tell(PreimageReceived(paymentHash, preimage), payFSM.ref)
 
     // the payment should be immediately fulfilled upstream.
     val upstream1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
     val upstream2 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
     assert(Set(upstream1, upstream2) === Set(
-      Register.Forward(channelId_ab, CMD_FULFILL_HTLC(561, preimage, commit = true)),
-      Register.Forward(channelId_ab, CMD_FULFILL_HTLC(565, preimage, commit = true))
+      Register.Forward(nodeRelayer, channelId_ab, CMD_FULFILL_HTLC(561, preimage, commit = true)),
+      Register.Forward(nodeRelayer, channelId_ab, CMD_FULFILL_HTLC(565, preimage, commit = true))
     ))
 
     register.expectNoMsg(50 millis)
