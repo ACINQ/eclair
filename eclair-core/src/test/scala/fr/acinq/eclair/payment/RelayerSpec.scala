@@ -557,13 +557,13 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
     sender.send(relayer, forwardFulfill)
 
-    // the FSM responsible for the payment should receive the fulfill and emit a preimage event.
-    payFSM.expectMsg(forwardFulfill)
-    system.actorSelection(relayer.path.child("node-relayer")).tell(PreimageReceived(paymentHash, preimage), payFSM.ref)
-
     // we need a reference to the node-relayer child actor
     sender.send(relayer, Relayer.GetChildActors(sender.ref))
     val nodeRelayer = sender.expectMsgType[Relayer.ChildActors].nodeRelayer
+
+    // the FSM responsible for the payment should receive the fulfill and emit a preimage event.
+    payFSM.expectMsg(forwardFulfill)
+    nodeRelayer.tell(PreimageReceived(paymentHash, preimage), payFSM.ref)
 
     // the payment should be immediately fulfilled upstream.
     val upstream1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
