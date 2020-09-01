@@ -74,7 +74,7 @@ class Register extends Actor with ActorLogging {
       // for backward compatibility with legacy ask, we use the replyTo as sender
       val compatReplyTo = if (replyTo == ActorRef.noSender) sender else replyTo
       shortIds.get(shortChannelId).flatMap(channels.get) match {
-        case Some(channel) => channel.tell(msg, compatReplyTo) // for backward compatibility, we use the replyTo as sender
+        case Some(channel) => channel.tell(msg, compatReplyTo)
         case None => compatReplyTo ! Failure(ForwardShortIdFailure(fwd))
       }
   }
