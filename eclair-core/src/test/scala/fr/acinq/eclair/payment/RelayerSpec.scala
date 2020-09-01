@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{ActorRef, Status}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -27,8 +27,8 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPacket}
 import fr.acinq.eclair.payment.relay.Origin._
-import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.router.Router.{ChannelHop, Ignore, NodeHop}
 import fr.acinq.eclair.router.{Announcements, _}
@@ -296,7 +296,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd1.message.upstream === Upstream.Relayed(add_ab))
 
-    register.send(register.lastSender, Status.Failure(Register.ForwardShortIdFailure(fwd1)))
+    register.send(register.lastSender, Register.ForwardShortIdFailure(fwd1))
 
     val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd2.channelId === channelId_ab)
