@@ -21,7 +21,6 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -133,7 +132,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
     case PaymentFailed(id, paymentHash, failures, _) =>
       log.debug("trampoline payment failed downstream (id={})", id)
       pendingOutgoing.get(paymentHash).foreach(p => if (!p.fulfilledUpstream) {
-        rejectPayment(p.upstream, translateError(failures, p.nextPayload.outgoingNodeId))
+        rejectPayment(p.upstream, translateError(nodeParams, failures, p))
       })
       context become main(pendingIncoming, pendingOutgoing - paymentHash)
   }
@@ -257,15 +256,25 @@ object NodeRelayer {
    * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
    * should return upstream.
    */
-  private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
+  private def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], p: PendingResult): Option[FailureMessage] = {
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, RouteNotFound) => f }.nonEmpty
     failures match {
       case Nil => None
-      case LocalFailure(_, BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case LocalFailure(_, BalanceTooLow) :: Nil =>
+        // We have direct channels to the target node, but not enough outgoing liquidity to use those channels.
+        // We check the total routing fee proposed by the sender:
+        //  - if it's low, we tell them to retry with higher fees to find alternative, indirect routes
+        //  - if it's high, we tell them that we don't have enough outgoing liquidity at the moment
+        val routingFeeOk = p.upstream.amountIn - p.nextPayload.amountToForward >= nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, p.nextPayload.amountToForward) * 5
+        if (routingFeeOk) {
+          Some(TemporaryNodeFailure)
+        } else {
+          Some(TrampolineFeeInsufficient)
+        }
       case _ if routeNotFound => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
-        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == outgoingNodeId => e.failureMessage }
+        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == p.nextPayload.outgoingNodeId => e.failureMessage }
         val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, e) => e.failureMessage }
         val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure))
         Some(failure)
