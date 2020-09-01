@@ -25,6 +25,6 @@ import akka.event.DiagnosticLoggingAdapter
  */
 class ForwardHandler(actor: ActorRef) extends ReceiveHandler {
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-    case msg if !msg.isInstanceOf[ReceiveHandler] => actor forward msg
+    case msg => actor forward msg
   }
 }

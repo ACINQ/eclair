@@ -36,12 +36,27 @@ class PaymentHandler(nodeParams: NodeParams, register: ActorRef) extends Actor w
 
   override def receive: Receive = normal(defaultHandler.handle(context, log))
 
-  def normal(handle: Receive): Receive = handle orElse {
+  private def addReceiveHandler(handle: Receive): Receive = {
     case handler: ReceiveHandler =>
       log.info(s"registering handler of type=${handler.getClass.getSimpleName}")
       // NB: the last handler that was added will be the first called
       context become normal(handler.handle(context, log) orElse handle)
   }
+
+  /**
+   * This is a bit subtle because we want handlers to be as generic as possible, but we also want to catch a particular
+   * type of message (the [[ReceiveHandler]]s themselves) to update the list of handlers.
+   *
+   * That's why we *prepend* new handlers, but after a first special handler (addReceiveHandler):
+   *
+   * {{{
+   *    paymentHandler ! handler1
+   *    paymentHandler ! handler2
+   *    paymentHandler ! handler3
+   *    // the current handler is now addReceiveHandler :: handler3 :: handler2 :: handler1
+   * }}}
+   */
+  def normal(handle: Receive): Receive = addReceiveHandler(handle) orElse handle
 
   override def mdc(currentMessage: Any): MDC = Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT))
 }
