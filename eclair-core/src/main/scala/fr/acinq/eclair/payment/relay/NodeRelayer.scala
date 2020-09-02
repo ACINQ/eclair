@@ -258,19 +258,15 @@ object NodeRelayer {
    */
   private def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], p: PendingResult): Option[FailureMessage] = {
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, RouteNotFound) => f }.nonEmpty
+    val routingFeeHigh = p.upstream.amountIn - p.nextPayload.amountToForward >= nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, p.nextPayload.amountToForward) * 5
     failures match {
       case Nil => None
-      case LocalFailure(_, BalanceTooLow) :: Nil =>
+      case LocalFailure(_, BalanceTooLow) :: Nil if routingFeeHigh =>
         // We have direct channels to the target node, but not enough outgoing liquidity to use those channels.
-        // We check the total routing fee proposed by the sender:
-        //  - if it's low, we tell them to retry with higher fees to find alternative, indirect routes
-        //  - if it's high, we tell them that we don't have enough outgoing liquidity at the moment
-        val routingFeeOk = p.upstream.amountIn - p.nextPayload.amountToForward >= nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, p.nextPayload.amountToForward) * 5
-        if (routingFeeOk) {
-          Some(TemporaryNodeFailure)
-        } else {
-          Some(TrampolineFeeInsufficient)
-        }
+        // The routing fee proposed by the sender was high enough to find alternative, indirect routes, but didn't yield
+        // any result so we tell them that we don't have enough outgoing liquidity at the moment.
+        Some(TemporaryNodeFailure)
+      case LocalFailure(_, BalanceTooLow) :: Nil => Some(TrampolineFeeInsufficient) // a higher fee/cltv may find alternative, indirect routes
       case _ if routeNotFound => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
