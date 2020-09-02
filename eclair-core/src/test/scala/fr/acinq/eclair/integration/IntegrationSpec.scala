@@ -1054,7 +1054,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond({
       sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
-      sender.expectMsgType[RES_GETSTATE[State]].state == OFFLINE
+      sender.expectMsgType[RES_GETSTATE[State]].state == CLOSING
     }, max = 20 seconds, interval = 1 second)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(bitcoincli, 3, Some(minerAddress))
