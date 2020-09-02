@@ -119,7 +119,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
           client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
             case false =>
-              log.info("output={} of txid={} has already been spent", outputIndex, txid)
+              log.info(s"output=$outputIndex of txid=$txid has already been spent")
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
           }
 
@@ -130,13 +130,13 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
               // parent tx was published, we need to make sure this particular output has not been spent
               client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
                 case false =>
-                  log.info("{}:{} has already been spent, looking for the spending tx in the mempool", txid, outputIndex)
+                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
                   client.getMempool().map { mempoolTxs =>
                     mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
                       case Nil =>
-                        log.warning("{}:{} has already been spent, spending tx not in the mempool, looking in the blockchain...", txid, outputIndex)
+                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
                         client.lookForSpendingTx(None, txid, outputIndex).map { tx =>
-                          log.warning("found the spending tx of {}:{} in the blockchain: txid={}", txid, outputIndex, tx.txid)
+                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
                           self ! NewTransaction(tx)
                         }
                       case txs =>
@@ -165,23 +165,23 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn.head.outPoint.txid
-        log.info("txid={} has a relative timeout of {} blocks, watching parenttxid={} tx={}", tx.txid, csvTimeout, parentTxid, tx)
+        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx={}", tx)
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
         self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
-        log.info("delaying publication of txid={} until block={} (curblock={})", tx.txid, cltvTimeout, blockCount)
+        log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
         context become watching(watches, watchedUtxos, block2tx1, nextTick)
       } else publish(tx)
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
-      log.info("parent tx of txid={} has been confirmed", tx.txid)
+      log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = math.max(blockHeight + csvTimeout, cltvTimeout)
       if (absTimeout > blockCount) {
-        log.info("delaying publication of txid={} until block={} (curblock={})", tx.txid, absTimeout, blockCount)
+        log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
         context become watching(watches, watchedUtxos, block2tx1, nextTick)
       } else publish(tx)
@@ -205,7 +205,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def publish(tx: Transaction, isRetry: Boolean = false): Unit = {
-    log.info("publishing tx (isRetry={}): txid={} tx={}", isRetry, tx.txid, tx)
+    log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx={}", tx)
     client.publishTransaction(tx)(singleThreadExecutionContext).recover {
       case t: Throwable if t.getMessage.contains("(code: -25)") && !isRetry => // we retry only once
         import akka.pattern.after

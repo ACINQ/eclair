@@ -35,7 +35,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
   override def unhandled(message: Any): Unit = message match {
     case ValidateRequest(c) =>
-      log.info(s"blindly validating channel=$c")
+      log.info("blindly validating channel={}", c)
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
       val fakeFundingTx = Transaction(
@@ -45,7 +45,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         lockTime = 0)
       sender ! ValidateResult(c, Right((fakeFundingTx, UtxoStatus.Unspent)))
 
-    case _ => log.warning(s"unhandled message $message")
+    case _ => log.warning("unhandled message {}", message)
   }
 
   def receive: Receive = disconnected(Set.empty, Queue.empty, SortedMap.empty, Queue.empty)
@@ -178,7 +178,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn.head.outPoint.txid
-        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
+        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx={}", tx)
         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
         self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
@@ -207,8 +207,8 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case ElectrumClient.BroadcastTransactionResponse(tx, error_opt) =>
       error_opt match {
-        case None => log.info(s"broadcast succeeded for txid=${tx.txid} tx=$tx")
-        case Some(error) if error.message.contains("transaction already in block chain") => log.info(s"broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)")
+        case None => log.info(s"broadcast succeeded for txid=${tx.txid} tx={}", tx)
+        case Some(error) if error.message.contains("transaction already in block chain") => log.info(s"broadcast ignored for txid=${tx.txid} tx={} (tx was already in blockchain)", tx)
         case Some(error) => log.error(s"broadcast failed for txid=${tx.txid} tx=$tx with error=$error")
       }
       context become running(height, tip, watches, scriptHashStatus, block2tx, sent diff Seq(tx))
@@ -220,7 +220,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
   }
 
   def publish(tx: Transaction): Unit = {
-    log.info(s"publishing tx=$tx")
+    log.info("publishing tx={}", tx)
     client ! ElectrumClient.BroadcastTransaction(tx)
   }
 
