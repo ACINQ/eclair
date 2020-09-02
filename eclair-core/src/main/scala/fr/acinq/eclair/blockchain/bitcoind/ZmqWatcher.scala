@@ -98,7 +98,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case TriggerEvent(w, e) if watches.contains(w) =>
       log.info("triggering {}", w)
-      w.channel ! e
+      w.replyTo ! e
       w match {
         case _: WatchSpent =>
           // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx or the commit tx
@@ -155,7 +155,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
       }
 
       log.debug("adding watch {} for {}", w, sender)
-      context.watch(w.channel)
+      context.watch(w.replyTo)
       context become watching(watches + w, addWatchedUtxos(watchedUtxos, w), block2tx, nextTick)
 
     case PublishAsap(tx) =>
@@ -190,9 +190,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
     case GetTxWithMeta(txid) => client.getTransactionMeta(txid).pipeTo(sender)
 
-    case Terminated(channel) =>
+    case Terminated(actor) =>
       // we remove watches associated to dead actor
-      val deprecatedWatches = watches.filter(_.channel == channel)
+      val deprecatedWatches = watches.filter(_.replyTo == actor)
       val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
       context.become(watching(watches -- deprecatedWatches, watchedUtxos1, block2tx, nextTick))
 

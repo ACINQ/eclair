@@ -83,25 +83,25 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
-      context.watch(watch.channel)
+      context.watch(watch.replyTo)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
     case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-spent-basic on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
-      context.watch(watch.channel)
+      context.watch(watch.replyTo)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
     case watch@WatchConfirmed(_, txid, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-confirmed on txid=$txid scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
-      context.watch(watch.channel)
+      context.watch(watch.replyTo)
       context become running(height, tip, watches + watch, scriptHashStatus, block2tx, sent)
 
     case Terminated(actor) =>
-      val watches1 = watches.filterNot(_.channel == actor)
+      val watches1 = watches.filterNot(_.replyTo == actor)
       context become running(height, tip, watches1, scriptHashStatus, block2tx, sent)
 
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) =>
