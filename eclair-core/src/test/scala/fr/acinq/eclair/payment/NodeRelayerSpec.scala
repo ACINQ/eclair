@@ -213,15 +213,34 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("fail to relay because outgoing balance isn't sufficient") { f =>
     import f._
 
-    // Receive an upstream multi-part payment.
-    incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
-    val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
-    outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+    {
+      // Receive an upstream multi-part payment.
+      incomingMultiPart.foreach(p => relayer.send(nodeRelayer, p))
+      val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
+      outgoingPayFSM.expectMsgType[SendMultiPartPayment]
 
-    outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
-    incomingMultiPart.foreach(p => register.expectMsg(Register.Forward(nodeRelayer, p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
-    register.expectNoMsg(100 millis)
-    eventListener.expectNoMsg(100 millis)
+      // The proposed fees are low, so we ask the sender to raise them.
+      outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
+      incomingMultiPart.foreach(p => register.expectMsg(Register.Forward(nodeRelayer, p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TrampolineFeeInsufficient), commit = true))))
+      register.expectNoMsg(100 millis)
+      eventListener.expectNoMsg(100 millis)
+    }
+    {
+      // Receive an upstream multi-part payment.
+      val incoming = Seq(
+        createValidIncomingPacket(outgoingAmount, outgoingAmount * 2, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
+        createValidIncomingPacket(outgoingAmount, outgoingAmount * 2, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
+      )
+      incoming.foreach(p => relayer.send(nodeRelayer, p))
+      val outgoingPaymentId = outgoingPayFSM.expectMsgType[SendPaymentConfig].id
+      outgoingPayFSM.expectMsgType[SendMultiPartPayment]
+
+      // The proposed fees are high, so we tell the sender we have an outgoing liquidity issue with the target node.
+      outgoingPayFSM.send(nodeRelayer, PaymentFailed(outgoingPaymentId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
+      incoming.foreach(p => register.expectMsg(Register.Forward(nodeRelayer, p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))))
+      register.expectNoMsg(100 millis)
+      eventListener.expectNoMsg(100 millis)
+    }
   }
 
   test("fail to relay because incoming fee isn't enough to find routes downstream") { f =>
