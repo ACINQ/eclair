@@ -20,21 +20,25 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.Done
 import akka.actor.{ActorRef, Props}
+import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{OutPoint, Script}
+import fr.acinq.bitcoin.{OutPoint, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
-import fr.acinq.eclair.{TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Promise
 import scala.concurrent.duration._
 
@@ -131,13 +135,18 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val (tx1, tx2) = createUnspentTxChain(tx, priv)
 
     val listener = TestProbe()
+    probe.send(watcher, WatchSpentBasic(listener.ref, tx, outputIndex, BITCOIN_FUNDING_SPENT))
     probe.send(watcher, WatchSpent(listener.ref, tx, outputIndex, BITCOIN_FUNDING_SPENT))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
     probe.expectMsgType[JValue]
     // tx and tx1 aren't confirmed yet, but we trigger the WatchEventSpent when we see tx1 in the mempool.
-    listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx1))
-    // Let's confirm tx and tx1: seeing tx1 in a block should trigger WatchEventSpent again.
+    listener.expectMsgAllOf(
+      WatchEventSpentBasic(BITCOIN_FUNDING_SPENT),
+      WatchEventSpent(BITCOIN_FUNDING_SPENT, tx1)
+    )
+    // Let's confirm tx and tx1: seeing tx1 in a block should trigger WatchEventSpent again, but not WatchEventSpentBasic
+    // (which only triggers once).
     generateBlocks(bitcoincli, 2)
     listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx1))
 
@@ -146,8 +155,107 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     probe.expectMsgType[JValue]
     listener.expectNoMsg(1 second)
     generateBlocks(bitcoincli, 1)
+    probe.send(watcher, WatchSpentBasic(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT))
     probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT))
-    listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
+    listener.expectMsgAllOf(
+      WatchEventSpentBasic(BITCOIN_FUNDING_SPENT),
+      WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2)
+    )
+    system.stop(watcher)
+  }
+
+  test("watch for unknown spent transactions") {
+    val probe = TestProbe()
+    val blockCount = new AtomicLong()
+    val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
+    val client = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val watcher = system.actorOf(ZmqWatcher.props(blockCount, client))
+
+    // create a chain of transactions that we don't broadcast yet
+    val (_, priv) = getNewAddress(bitcoincli)
+    val tx1 = {
+      wallet.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), lockUnspents = true, FeeratePerKw(250 sat)).pipeTo(probe.ref)
+      val funded = probe.expectMsgType[FundTransactionResponse].tx
+      wallet.signTransaction(funded).pipeTo(probe.ref)
+      probe.expectMsgType[SignTransactionResponse].tx
+    }
+    val outputIndex = tx1.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+    val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, 1, 0)
+
+    // setup watches before we publish transactions
+    probe.send(watcher, WatchSpent(probe.ref, tx1, outputIndex, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchConfirmed(probe.ref, tx1, 3, BITCOIN_FUNDING_SPENT))
+    client.publishTransaction(tx1).pipeTo(probe.ref)
+    probe.expectMsg(tx1.txid)
+    generateBlocks(bitcoincli, 1)
+    probe.expectNoMsg(1 second)
+    client.publishTransaction(tx2).pipeTo(probe.ref)
+    probe.expectMsgAllOf(tx2.txid, WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
+    probe.expectNoMsg(1 second)
+    generateBlocks(bitcoincli, 1)
+    probe.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2)) // tx2 is confirmed which triggers WatchEventSpent again
+    generateBlocks(bitcoincli, 1)
+    assert(probe.expectMsgType[WatchEventConfirmed].tx === tx1) // tx1 now has 3 confirmations
+    system.stop(watcher)
+  }
+
+  test("publish transactions with relative and absolute delays") {
+    val probe = TestProbe()
+    val blockCount = new AtomicLong()
+    val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
+    val client = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val watcher = system.actorOf(ZmqWatcher.props(blockCount, client))
+    awaitCond(blockCount.get > 0)
+    val (_, priv) = getNewAddress(bitcoincli)
+
+    // tx1 has an absolute delay but no relative delay
+    val initialBlockCount = blockCount.get
+    val tx1 = {
+      wallet.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, initialBlockCount + 5), lockUnspents = true, FeeratePerKw(250 sat)).pipeTo(probe.ref)
+      val funded = probe.expectMsgType[FundTransactionResponse].tx
+      wallet.signTransaction(funded).pipeTo(probe.ref)
+      probe.expectMsgType[SignTransactionResponse].tx
+    }
+    probe.send(watcher, PublishAsap(tx1))
+    generateBlocks(bitcoincli, 4)
+    awaitCond(blockCount.get === initialBlockCount + 4)
+    client.getMempool().pipeTo(probe.ref)
+    assert(!probe.expectMsgType[Seq[Transaction]].exists(_.txid === tx1.txid)) // tx should not be broadcast yet
+    generateBlocks(bitcoincli, 1)
+    awaitCond({
+      client.getMempool().pipeTo(probe.ref)
+      probe.expectMsgType[Seq[Transaction]].exists(_.txid === tx1.txid)
+    }, max = 20 seconds, interval = 1 second)
+
+    // tx2 has a relative delay but no absolute delay
+    val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, sequence = 2, lockTime = 0)
+    probe.send(watcher, WatchConfirmed(probe.ref, tx1, 1, BITCOIN_FUNDING_DEPTHOK))
+    probe.send(watcher, PublishAsap(tx2))
+    generateBlocks(bitcoincli, 1)
+    assert(probe.expectMsgType[WatchEventConfirmed].tx === tx1)
+    generateBlocks(bitcoincli, 2)
+    awaitCond({
+      client.getMempool().pipeTo(probe.ref)
+      probe.expectMsgType[Seq[Transaction]].exists(_.txid === tx2.txid)
+    }, max = 20 seconds, interval = 1 second)
+
+    // tx3 has both relative and absolute delays
+    val tx3 = createSpendP2WPKH(tx2, priv, priv.publicKey, 10000 sat, sequence = 1, lockTime = blockCount.get + 5)
+    probe.send(watcher, WatchConfirmed(probe.ref, tx2, 1, BITCOIN_FUNDING_DEPTHOK))
+    probe.send(watcher, WatchSpent(probe.ref, tx2, 0, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, PublishAsap(tx3))
+    generateBlocks(bitcoincli, 1)
+    assert(probe.expectMsgType[WatchEventConfirmed].tx === tx2)
+    val currentBlockCount = blockCount.get
+    // after 1 block, the relative delay is elapsed, but not the absolute delay
+    generateBlocks(bitcoincli, 1)
+    awaitCond(blockCount.get == currentBlockCount + 1)
+    probe.expectNoMsg(1 second)
+    generateBlocks(bitcoincli, 3)
+    probe.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx3))
+    client.getMempool().pipeTo(probe.ref)
+    probe.expectMsgType[Seq[Transaction]].exists(_.txid === tx3.txid)
+
     system.stop(watcher)
   }
 
