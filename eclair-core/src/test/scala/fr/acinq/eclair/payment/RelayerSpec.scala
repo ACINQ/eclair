@@ -497,9 +497,11 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     // we build a fake htlc for the downstream channel
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 12, amountMsat = 11_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = 72, paymentPreimage = ByteVector32.Zeroes)
-    val origin = Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(channelId_ab, 42, 11_000_000 msat, 10_000_000 msat))
+    val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = add_bc.id, paymentPreimage = ByteVector32.Zeroes)
+    val replyTo = TestProbe()
+    val origin = Origin.ChannelRelayedHot(Upstream.ChannelRelayedHot(add_ab, 10_000_000 msat), replyTo.ref)
     for (fulfill <- Seq(RES_ADD_COMPLETED(origin, add_bc, HtlcResult.RemoteFulfill(fulfill_ba)), RES_ADD_COMPLETED(origin, add_bc, HtlcResult.OnChainFulfill(ByteVector32.Zeroes)))) {
       sender.send(relayer, fulfill)
       val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
@@ -569,9 +571,11 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     // we build a fake htlc for the downstream channel
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
-    val origin = Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(channelId_ab, 42, 11_000_000 msat, 10_000_000 msat))
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = add_bc.id, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
+    val replyTo = TestProbe()
+    val origin = Origin.ChannelRelayedHot(Upstream.ChannelRelayedHot(add_ab, 10_000_000 msat), replyTo.ref)
     for (fail <- Seq(RES_ADD_COMPLETED(origin, add_bc, HtlcResult.RemoteFail(fail_ba)), RES_ADD_COMPLETED(origin, add_bc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc))))) {
       sender.send(relayer, fail)
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]

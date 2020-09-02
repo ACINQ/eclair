@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
+import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -67,13 +67,13 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       log.info(s"retrying htlc #${add.id} from channelId=${add.channelId}")
       relayer ! Relayer.RelayForward(add, previousFailures :+ addFailed)
 
-    case RES_ADD_COMPLETED(o: Origin.ChannelRelayed, htlc, fulfill: HtlcResult.Fulfill) =>
+    case RES_ADD_COMPLETED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill) =>
       val upstream = o.upstream
       val cmd = CMD_FULFILL_HTLC(upstream.originHtlcId, fulfill.paymentPreimage, commit = true)
       PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, upstream.originChannelId, cmd)
       context.system.eventStream.publish(ChannelPaymentRelayed(upstream.amountIn, upstream.amountOut, htlc.paymentHash, upstream.originChannelId, htlc.channelId))
 
-    case RES_ADD_COMPLETED(o: Origin.ChannelRelayed, _, fail: HtlcResult.Fail) =>
+    case RES_ADD_COMPLETED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail) =>
       val upstream = o.upstream
       Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
       val cmd = fail match {

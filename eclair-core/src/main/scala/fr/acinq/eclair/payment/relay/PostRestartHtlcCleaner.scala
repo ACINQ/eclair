@@ -152,6 +152,22 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           // instead spread across multiple local origins) so we can now forget this origin.
           Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
+        case Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(originChannelId, originHtlcId, _, _)) =>
+          if (!brokenHtlcs.settledUpstream.contains(origin)) {
+            log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling 1 HTLC upstream")
+            PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, commit = true))
+          }
+          val relayedOut1 = relayedOut diff Set((fulfilledHtlc.channelId, fulfilledHtlc.id))
+          if (relayedOut1.isEmpty) {
+            log.info(s"payment with paymentHash=${fulfilledHtlc.paymentHash} successfully relayed")
+            // We could emit a TrampolinePaymentRelayed event but that requires more book-keeping on incoming HTLCs.
+            // It seems low priority so isn't done at the moment but can be added when we feel we need it.
+            Metrics.PendingRelayedOut.decrement()
+            context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin, settledUpstream = brokenHtlcs.settledUpstream - origin))
+          } else {
+            context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut + (origin -> relayedOut1), settledUpstream = brokenHtlcs.settledUpstream + origin))
+          }
+
         case Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold(origins)) =>
           // We fulfill upstream as soon as we have the payment preimage available.
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
@@ -171,9 +187,6 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           } else {
             context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut + (origin -> relayedOut1), settledUpstream = brokenHtlcs.settledUpstream + origin))
           }
-        case _: Origin.ChannelRelayed =>
-          Metrics.Unhandled.withTag(Metrics.Hint, origin.getClass.getSimpleName).increment()
-          log.error(s"unsupported origin: ${origin.getClass.getSimpleName}")
       }
       case None =>
         Metrics.Unhandled.withTag(Metrics.Hint, "MissingOrigin").increment()
@@ -201,17 +214,20 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   context.system.eventStream.publish(PaymentFailed(p.parentId, failedHtlc.paymentHash, Nil))
                 }
               })
+              case Origin.ChannelRelayedCold(Upstream.ChannelRelayedCold(originChannelId, originHtlcId, _, _)) =>
+                log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing 1 HTLC upstream")
+                Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
+                // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
+                // very likely that it won't be actionable anyway because of our node restart.
+                PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, CMD_FAIL_HTLC(originHtlcId, Right(TemporaryNodeFailure), commit = true))
               case Origin.TrampolineRelayedCold(Upstream.TrampolineRelayedCold(origins)) =>
-                log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} upstream HTLCs")
+                log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} HTLCs upstream")
                 origins.foreach { case (channelId, htlcId) =>
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
                   PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
                 }
-              case _: Origin.ChannelRelayed =>
-                Metrics.Unhandled.withTag(Metrics.Hint, origin.getClass.getSimpleName).increment()
-                log.error(s"unsupported origin: ${origin.getClass.getSimpleName}")
             }
           }
           // We can forget about this payment since it has been fully settled downstream and upstream.

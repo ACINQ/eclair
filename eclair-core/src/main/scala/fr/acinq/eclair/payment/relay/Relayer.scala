@@ -133,7 +133,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
     case r: RES_ADD_COMPLETED[_, _] => r.to match {
       case _: Origin.LocalCold => postRestartCleaner ! r
       case o: Origin.LocalHot => o.replyTo ! r
-      case _: Origin.ChannelRelayed => channelRelayer ! r
+      case _: Origin.ChannelRelayedCold => postRestartCleaner ! r
+      case _: Origin.ChannelRelayedHot => channelRelayer ! r
       case _: Origin.TrampolineRelayedCold => postRestartCleaner ! r
       case o: Origin.TrampolineRelayedHot => o.replyTo ! r
     }
