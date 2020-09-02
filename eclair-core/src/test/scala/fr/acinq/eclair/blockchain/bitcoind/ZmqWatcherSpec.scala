@@ -209,14 +209,19 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val (_, priv) = getNewAddress(bitcoincli)
 
     // tx1 has an absolute delay but no relative delay
+    val initialBlockCount = blockCount.get
     val tx1 = {
-      wallet.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, blockCount.get + 5), lockUnspents = true, FeeratePerKw(250 sat)).pipeTo(probe.ref)
+      wallet.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, initialBlockCount + 5), lockUnspents = true, FeeratePerKw(250 sat)).pipeTo(probe.ref)
       val funded = probe.expectMsgType[FundTransactionResponse].tx
       wallet.signTransaction(funded).pipeTo(probe.ref)
       probe.expectMsgType[SignTransactionResponse].tx
     }
     probe.send(watcher, PublishAsap(tx1))
-    generateBlocks(bitcoincli, 5)
+    generateBlocks(bitcoincli, 4)
+    awaitCond(blockCount.get === initialBlockCount + 4)
+    client.getMempool().pipeTo(probe.ref)
+    assert(!probe.expectMsgType[Seq[Transaction]].exists(_.txid === tx1.txid)) // tx should not be broadcast yet
+    generateBlocks(bitcoincli, 1)
     awaitCond({
       client.getMempool().pipeTo(probe.ref)
       probe.expectMsgType[Seq[Transaction]].exists(_.txid === tx1.txid)
